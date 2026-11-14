@@ -162,11 +162,11 @@ TEXT = {
     'system_lib_dir': 'Console system modules',
     'browse': 'Browse…',
     'browse_zar': '.zar…',
-    'browse_zar_tip': ('Experimental: pick a packed game file (.zar) instead of a folder. The game unpacks data while '
+    'browse_zar_tip': ('Pick a packed game file (.zar) instead of a folder. The game unpacks data while '
                        'it plays, which costs some CPU: loads can take a bit longer and streaming '
                        'may hitch on slower CPUs. A plain folder is fastest.'),
     'pack_zar': 'Pack…',
-    'pack_zar_tip': ('Experimental: packs the game folder into one compressed .zar file that the port reads directly '
+    'pack_zar_tip': ('Packs the game folder into one compressed .zar file that the port reads directly '
                      '(saves disk space). The folder is kept; delete it yourself after a test start. '
                      'Playing from a .zar uses some extra CPU (slightly longer loads, possible '
                      'hitches on slower CPUs).'),

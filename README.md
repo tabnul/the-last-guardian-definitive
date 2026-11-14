@@ -61,7 +61,7 @@ No game files are included. You need your own copy, dumped from your own PS4.
 - Shader recipes against stutter, calmer wind, and an optional 4x texture pack
 - 7.1 surround, output device choice and headphone surround
 - Language packs for 14 languages
-- [Packed game files](#get-started) (experimental): play straight from one ZArchive `.zar` file
+- [Packed game files](#get-started): play straight from one ZArchive `.zar` file
   and save about half the disk space (about 26 GB becomes about 12.5 GB)
 
 ## Get started
@@ -73,7 +73,7 @@ No game files are included. You need your own copy, dumped from your own PS4.
 3. For audio, copy `libSceNgs2.sprx` from your PS4 firmware into `system_lib/` next to the executable.
 4. Start the launcher, pick the game folder and press **Play**.
 
-**Save half the disk space (experimental):** the port can play the game straight from one packed file. In the
+**Save half the disk space:** the port can play the game straight from one packed file. In the
 launcher, under Game folder, press **Pack…** to turn the folder into a `.zar` file (about 26 GB
 becomes about 12.5 GB, a few minutes), or **.zar…** to pick one you made before. Only the parts the
 game asks for are unpacked, while it plays. Keep the folder until a first start works, then you can
