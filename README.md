@@ -61,6 +61,8 @@ No game files are included. You need your own copy, dumped from your own PS4.
 - Shader recipes against stutter, calmer wind, and an optional 4x texture pack
 - 7.1 surround, output device choice and headphone surround
 - Language packs for 14 languages
+- [Packed game files](#get-started) (experimental): play straight from one ZArchive `.zar` file
+  and save about half the disk space (about 26 GB becomes about 12.5 GB)
 
 ## Get started
 
