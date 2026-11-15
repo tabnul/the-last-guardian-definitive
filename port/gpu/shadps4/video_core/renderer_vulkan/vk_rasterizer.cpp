@@ -6,6 +6,7 @@
 #include <dlfcn.h>
 #endif
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -44,6 +45,99 @@
 #include "video_core/texture_cache/texture_cache.h"
 
 namespace Vulkan {
+
+// tlg: TLG_UI_LOG=1 counters for the interface position sniff and the 21:9 edge rule.
+struct TlgUiLog {
+    bool on = std::getenv("TLG_UI_LOG") != nullptr;
+    u32 sniff = 0, read = 0, skip_modified = 0, skip_pending = 0, skip_shape = 0, no_pos = 0;
+    u32 copy = 0, copy_none = 0;
+    u32 rule = 0, not_wide = 0, fill = 0, moved = 0, right_kept = 0, left = 0;
+    float w = 0, h = 0, lx_kept = 0;
+    // Where each drawn piece's position came from: 0 own read, 1 kept copy, 2 last piece's.
+    u32 via = 0, origin = 0;
+    struct Piece {
+        u32 origin, count;
+        int lx;
+        bool move, menu, clip;
+    };
+    std::array<Piece, 32> pieces{};
+    u32 num_pieces = 0;
+    void Add(u32 o, float lx, bool move, bool menu, bool clip) {
+        for (u32 i = 0; i < num_pieces; ++i) {
+            Piece& q = pieces[i];
+            if (q.origin == o && q.lx == int(lx) && q.move == move && q.menu == menu) {
+                ++q.count;
+                return;
+            }
+        }
+        if (num_pieces < pieces.size()) {
+            pieces[num_pieces++] = {o, 1, int(lx), move, menu, clip};
+        }
+    }
+    std::chrono::steady_clock::time_point last = std::chrono::steady_clock::now();
+    void Tick() {
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last < std::chrono::seconds(2)) {
+            return;
+        }
+        std::printf("UI log: sniff %u read %u (via copy %u, no copy %u) skip(modified %u "
+                    "pending %u shape %u) nopos %u | rule %u notwide %u fill %u moved %u rightkept %u "
+                    "(lx %.0f) left %u vp %.0fx%.0f\n",
+                    sniff, read, copy, copy_none, skip_modified, skip_pending, skip_shape, no_pos,
+                    rule, not_wide, fill, moved, right_kept, lx_kept, left, w, h);
+        for (u32 i = 0; i < num_pieces; ++i) {
+            const Piece& q = pieces[i];
+            std::printf("UI piece: lx %d x%u from %s%s%s%s\n", q.lx, q.count,
+                        q.origin == 0 ? "own read" : q.origin == 1 ? "copy" : "last piece",
+                        q.move ? " MOVED" : "", q.menu ? " menu" : "", q.clip ? " clip" : "");
+        }
+        const bool keep = on;
+        *this = TlgUiLog{};
+        on = keep;
+    }
+};
+static TlgUiLog tlg_ui_log;
+
+// tlg: the game fills its interface vertex buffers with a GPU copy (compute shader a912f7d4:
+// dst[i] = src[i]), so the vertices are GPU-owned and the 21:9 position sniff may not read
+// them from guest memory (#68 #78). The copy's source was snapshotted into the constant ring
+// for the dispatch: keep those bytes for the last small copies, so the sniff reads them
+// there. No guest memory is touched.
+struct TlgUiCopies {
+    static constexpr u64 CopyShader = 0xa912f7d4;
+    static constexpr u64 MaxBytes = 16384;
+    struct Copy {
+        VAddr dst = 0;
+        u64 size = 0;
+        std::array<u8, MaxBytes> bytes;
+    };
+    std::vector<Copy> copies = std::vector<Copy>(128);
+    u32 next = 0;
+    const u8* pending = nullptr;
+    u64 pending_size = 0;
+    void Source(const u8* host, u64 size) {
+        pending = host, pending_size = size;
+    }
+    void Target(VAddr address, u64 size) {
+        if (pending && size <= MaxBytes && size <= pending_size) {
+            Copy& c = copies[next++ % copies.size()];
+            c.dst = address, c.size = size;
+            std::memcpy(c.bytes.data(), pending, size);
+        }
+        pending = nullptr;
+    }
+    /// The bytes of [address, address + size) in the newest copy that covers it, or null.
+    const u8* Find(VAddr address, u64 size) const {
+        for (u32 i = 0; i < copies.size(); ++i) {
+            const Copy& c = copies[(next - 1 - i) % copies.size()];
+            if (c.size && address >= c.dst && address + size <= c.dst + c.size) {
+                return c.bytes.data() + (address - c.dst);
+            }
+        }
+        return nullptr;
+    }
+};
+static TlgUiCopies tlg_ui_copies;
 
 // tlg: TLG_WRITE_ATTRIB=1 reports the shaders whose writable buffer bindings mark the most guest
 // memory GPU-modified. The whole bound range is marked, written or not, and a later guest write
@@ -2599,6 +2693,9 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 }
                 push_data.AddOffset(binding.buffer, 0);
             }
+            if (stage.pgm_hash == TlgUiCopies::CopyShader) {
+                tlg_ui_copies.Source(constant_ring->Data(ring->offset), ring->size);
+            }
             buffer_infos.emplace_back(constant_ring->Handle(), ring->offset, ring->size);
         } else if (desc.IsSpecial()) {
             if (desc.buffer_type == Shader::BufferType::GdsBuffer) {
@@ -2709,6 +2806,13 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                     NoteWrittenBinding(stage.pgm_hash, vsharp.base_address, size);
                 }
                 needs_barrier |= runtime.IsBufferAccessed(buffer, offset, size, desc.is_written);
+                if (stage.pgm_hash == TlgUiCopies::CopyShader) {
+                    if (desc.is_written) {
+                        tlg_ui_copies.Target(vsharp.base_address, size);
+                    } else {
+                        tlg_ui_copies.Source(nullptr, 0);
+                    }
+                }
             }
         }
 
@@ -3903,7 +4007,7 @@ void Rasterizer::UpdateDynamicState(const GraphicsPipeline* pipeline, const bool
             const auto& vs = pipeline->GetStage(Shader::SwStage::Vertex);
             const auto vb = fetch->attributes[0].GetSharp(vs);
             const u32 stride = vb.GetStride();
-            const auto* base = reinterpret_cast<const u8*>(vb.base_address);
+            const u8* base = reinterpret_cast<const u8*>(vb.base_address);
             float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
             // #68 #78: these reads happen on the GPU command thread. Bytes the GPU still owns
             // (written by a pass the CPU has not downloaded, or by a draw not yet recorded) would
@@ -3915,9 +4019,12 @@ void Rasterizer::UpdateDynamicState(const GraphicsPipeline* pipeline, const bool
                 return self->buffer_cache.IsRegionGpuModified(address, size) ||
                        self->PendingWriteOverlaps(address, size);
             };
+            if (tlg_ui_log.on) {
+                ++tlg_ui_log.sniff;
+                tlg_ui_log.Tick();
+            }
             if (base && stride >= 8 && vb.num_records >= 3 &&
-                vb.GetNumberFmt() == AmdGpu::NumberFormat::Float &&
-                !gpu_owned(vb.base_address, u64(vb.num_records) * stride)) {
+                vb.GetNumberFmt() == AmdGpu::NumberFormat::Float) {
                 // The quad's own vertices: the buffer is a shared ring, so go through the
                 // draw's vertex offset and (when indexed) its index buffer.
                 const u32 first = GetDrawOffsets(regs, vs, fetch).first;
@@ -3929,11 +4036,7 @@ void Rasterizer::UpdateDynamicState(const GraphicsPipeline* pipeline, const bool
                                      u64(draw_inputs.index_offset) * index_size)
                                : nullptr;
                 const u32 count = std::min<u32>(regs.num_indices, 16384);
-                if (indices && gpu_owned(reinterpret_cast<VAddr>(indices), u64(count) * index_size)) {
-                    indices = nullptr;
-                    x0 = 1e9f; // unknown position: keep the last piece's
-                } else
-                for (u32 i = 0; i < count; ++i) {
+                const auto index_at = [&](u32 i) {
                     u32 v = i;
                     if (indices) {
                         if (index_size == 2) {
@@ -3944,13 +4047,58 @@ void Rasterizer::UpdateDynamicState(const GraphicsPipeline* pipeline, const bool
                             std::memcpy(&v, indices + i * 4, 4);
                         }
                     }
-                    v += first;
-                    if (v >= vb.num_records) {
-                        x0 = 1e9f;
-                        break;
+                    return u64(v) + first;
+                };
+                // Only the bytes this draw reads are checked. Checking the whole ring skipped
+                // every piece inside a scene (some page of it is always GPU-owned), so the
+                // pieces kept a stale position and the hint boxes landed left or right by luck.
+                bool readable =
+                    !indices || !gpu_owned(reinterpret_cast<VAddr>(indices), u64(count) * index_size);
+                u64 v_lo = ~u64{0}, v_hi = 0;
+                if (readable) {
+                    for (u32 i = 0; i < count; ++i) {
+                        const u64 v = index_at(i);
+                        v_lo = std::min(v_lo, v), v_hi = std::max(v_hi, v);
                     }
+                    readable = v_hi < vb.num_records &&
+                               !gpu_owned(vb.base_address + v_lo * stride,
+                                          (v_hi - v_lo) * stride + 2 * sizeof(float));
+                    if (!readable && v_hi < vb.num_records) {
+                        // GPU-copied vertices: read the bytes kept from the copy's source.
+                        const u64 bytes = (v_hi - v_lo) * stride + 2 * sizeof(float);
+                        const VAddr vertices = vb.base_address + v_lo * stride;
+                        if (const u8* source = tlg_ui_copies.Find(vertices, bytes)) {
+                            // index_at() counts from the buffer start.
+                            base = source - v_lo * stride;
+                            readable = true;
+                            tlg_ui_log.via = 1;
+                            if (tlg_ui_log.on) {
+                                ++tlg_ui_log.copy;
+                            }
+                        } else if (tlg_ui_log.on) {
+                            ++tlg_ui_log.copy_none;
+                        }
+                    }
+                }
+                if (tlg_ui_log.on) {
+                    auto* self = const_cast<Rasterizer*>(this);
+                    const VAddr va = vb.base_address + v_lo * stride;
+                    const u64 vs_size = (v_hi - v_lo) * stride + 2 * sizeof(float);
+                    const bool idx_owned = indices && gpu_owned(reinterpret_cast<VAddr>(indices),
+                                                                u64(count) * index_size);
+                    if (readable) {
+                        ++tlg_ui_log.read;
+                    } else if (idx_owned || v_hi >= vb.num_records) {
+                        ++tlg_ui_log.skip_shape;
+                    } else if (self->buffer_cache.IsRegionGpuModified(va, vs_size)) {
+                        ++tlg_ui_log.skip_modified;
+                    } else {
+                        ++tlg_ui_log.skip_pending;
+                    }
+                }
+                for (u32 i = 0; readable && i < count; ++i) {
                     float p[2];
-                    std::memcpy(p, base + u64(v) * stride, sizeof(p));
+                    std::memcpy(p, base + index_at(i) * stride, sizeof(p));
                     x0 = std::min(x0, p[0]), x1 = std::max(x1, p[0]);
                     y0 = std::min(y0, p[1]), y1 = std::max(y1, p[1]);
                 }
@@ -3981,11 +4129,25 @@ void Rasterizer::UpdateDynamicState(const GraphicsPipeline* pipeline, const bool
                     ui_cx = 0.f;
                     ui_clip = true;
                     ui_menu = false;
+                    tlg_ui_log.origin = tlg_ui_log.via;
                 } else if (x0 < x1) {
+                    tlg_ui_log.origin = tlg_ui_log.via;
                     ui_clip = x0 >= -1.5f && x1 <= 1.5f && y0 >= -1.5f && y1 <= 1.5f;
                     ui_cx = (x0 + x1) * 0.5f + (ui_clip ? off_x : 0.f);
                     ui_menu = ui_clip && off_x != 0.f;
-                } // unknown position: keep the last piece's
+                } else {
+                    // Unknown position: leave the piece where the game put it. Keeping the
+                    // last piece's position moved the pause menu pointer along with a hint
+                    // box whenever it was drawn right after one.
+                    ui_cx = 0.f;
+                    ui_clip = true;
+                    ui_menu = false;
+                    tlg_ui_log.origin = 2;
+                    if (tlg_ui_log.on) {
+                        ++tlg_ui_log.no_pos;
+                    }
+                }
+                tlg_ui_log.via = 0;
             }
         }
     }
@@ -4145,6 +4307,15 @@ void Rasterizer::UpdateViewportScissorState() const {
         // The game's own frame area (the target can be padded, e.g. 1088 lines for 1080).
         const float w = std::abs(viewports[0].width);
         const float h = std::abs(viewports[0].height);
+        if (tlg_ui_log.on) {
+            ++tlg_ui_log.rule;
+            tlg_ui_log.w = w, tlg_ui_log.h = h;
+            if (ui_fill_quad) {
+                ++tlg_ui_log.fill;
+            } else if (!(w > 0.f && h > 0.f && w * 9.f > h * 16.f + 16.f)) {
+                ++tlg_ui_log.not_wide;
+            }
+        }
         // 21:9: pieces in the left/right third of the layout follow that screen edge.
         if (w > 0.f && h > 0.f && w * 9.f > h * 16.f + 16.f && !ui_fill_quad) {
             // 21:9: the game lays its interface out on a canvas 1080 * frame aspect wide
@@ -4156,13 +4327,15 @@ void Rasterizer::UpdateViewportScissorState() const {
             // so do menu-model pieces (pause / skip dialog "[ ]" cursor): the menus are laid out
             // on the wide canvas, so moving them threw the cursor's "]" ~1000 px right.
             const bool move = lx > 1280.f && std::abs(lx - uiw * 0.5f) > 64.f && !ui_menu;
-            static const bool log_ui = std::getenv("TLG_UI_LOG") != nullptr;
-            if (log_ui && lx > 1280.f) {
-                static int logged = 0;
-                if (logged < 300) {
-                    ++logged;
-                    std::printf("UI piece lx %.0f clip %d menu %d move %d\n", lx, int(ui_clip),
-                                int(ui_menu), int(move));
+            if (tlg_ui_log.on) {
+                tlg_ui_log.Add(tlg_ui_log.origin, lx, move, ui_menu, ui_clip);
+                if (move) {
+                    ++tlg_ui_log.moved;
+                } else if (lx > 1280.f) {
+                    ++tlg_ui_log.right_kept;
+                    tlg_ui_log.lx_kept = lx;
+                } else {
+                    ++tlg_ui_log.left;
                 }
             }
             if (move) {
