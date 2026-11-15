@@ -1109,6 +1109,14 @@
     "Trico throws up": "Trico 呕吐",
     "The developers sealed Trico throwing up \"by order\" in 2016. As the developers designed: when his stomach is full of barrels, he throws up the way they planned. The Throw up button in Trico Tricks works either way.": "开发者在 2016 年“按指示”封印了 Trico 的呕吐。按开发者的设计：当他肚子里装满木桶时，会按原计划呕吐。无论哪种设置，Trico 技巧里的“呕吐”按钮都能用。",
     "Cut narrator hints": "被删减的旁白提示",
-    "The 23 narrator hints the developers cut in September 2016. On: when you seem stuck, the narrator helps again, where they first placed his lines. They give puzzle solutions away.": "开发者在 2016 年 9 月删减的 23 条旁白提示。开启：当你看起来卡住时，旁白会在最初安排的位置再次提供帮助。会透露谜题的解法。"
+    "The 23 narrator hints the developers cut in September 2016. On: when you seem stuck, the narrator helps again, where they first placed his lines. They give puzzle solutions away.": "开发者在 2016 年 9 月删减的 23 条旁白提示。开启：当你看起来卡住时，旁白会在最初安排的位置再次提供帮助。会透露谜题的解法。",
+    "Right-click: remove from favourites": "右键：从收藏中移除",
+    "Right-click: add to favourites": "右键：加入收藏",
+    "Favourites are full (16)": "收藏已满 (16)",
+    "Favourites": "收藏",
+    "No favourites yet. Right-click a move in another group to add it here.": "还没有收藏。在其他分组中右键点击一个动作即可加入这里。",
+    "Trico's moves (F12 hides). Right-click a move to add it to your favourites.": "Trico 的动作（F12 隐藏）。右键点击动作即可加入收藏。",
+    "Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites.": "点击一个动作（游戏中也有动作栏：F12）。右键点击动作即可加入收藏。",
+    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "像游戏本身那样请故事中的 Trico 去做。他会先摆出动作需要的姿势（站起、坐下或趴下）。如果动作没有开始，会把他重置为站立并再请求一次，但在剧情事件、跳跃或攀爬时绝不这样做。他自己的心思仍可能占上风，有些动作需要空间（打滚可能把少年推下边缘）。\"May not work\"：我们的测试中没有看到它生效。"
   }
 }

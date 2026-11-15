@@ -147,6 +147,11 @@ struct Values {
     /// tlg.ini trico_drool, env TLG_TRICO_DROOL wins): 0 = off as shipped, 1 = always,
     /// 2 = as the developers planned (only while he wants a smell pot or the boy's smell bottle).
     std::atomic<int> trico_drool{0};
+    /// Trico's moves bar (Trico Tricks tab and the F12 bar, in game only): the favourite moves
+    /// (tlg.ini trico_favourites, control command names, comma separated, at most 16; the menu
+    /// thread only) and the last group shown (trico_bar_group: 0 = favourites, then the groups).
+    std::string trico_favourites;
+    std::atomic<int> trico_bar_group{0};
     /// Mods > All treasures (tlg.ini mod_treasures, env TLG_MOD_TREASURES wins): owns every treasure
     /// and opens the Treasures menu. Written to the save: turning it off takes nothing back.
     std::atomic<bool> mod_treasures{false};

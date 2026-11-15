@@ -1122,6 +1122,14 @@
     "Trico throws up": "Trico wymiotuje",
     "The developers sealed Trico throwing up \"by order\" in 2016. As the developers designed: when his stomach is full of barrels, he throws up the way they planned. The Throw up button in Trico Tricks works either way.": "Twórcy zapieczętowali wymiotowanie Trico „na polecenie” w 2016 roku. Tak, jak zaprojektowali twórcy: gdy ma żołądek pełen beczek, wymiotuje tak, jak zaplanowano. Przycisk Wymiotuj w sztuczkach Trico działa w obu przypadkach.",
     "Cut narrator hints": "Wycięte podpowiedzi narratora",
-    "The 23 narrator hints the developers cut in September 2016. On: when you seem stuck, the narrator helps again, where they first placed his lines. They give puzzle solutions away.": "23 podpowiedzi narratora, które twórcy wycięli we wrześniu 2016. Włączone: gdy wygląda na to, że utknąłeś, narrator znów pomaga, tam gdzie pierwotnie umieszczono jego kwestie. Zdradzają rozwiązania zagadek."
+    "The 23 narrator hints the developers cut in September 2016. On: when you seem stuck, the narrator helps again, where they first placed his lines. They give puzzle solutions away.": "23 podpowiedzi narratora, które twórcy wycięli we wrześniu 2016. Włączone: gdy wygląda na to, że utknąłeś, narrator znów pomaga, tam gdzie pierwotnie umieszczono jego kwestie. Zdradzają rozwiązania zagadek.",
+    "Right-click: remove from favourites": "Prawy klik: usuń z ulubionych",
+    "Right-click: add to favourites": "Prawy klik: dodaj do ulubionych",
+    "Favourites are full (16)": "Ulubione są pełne (16)",
+    "Favourites": "Ulubione",
+    "No favourites yet. Right-click a move in another group to add it here.": "Brak ulubionych. Kliknij prawym przyciskiem ruch w innej grupie, aby dodać go tutaj.",
+    "Trico's moves (F12 hides). Right-click a move to add it to your favourites.": "Ruchy Trico (F12 ukrywa). Kliknij ruch prawym przyciskiem, aby dodać go do ulubionych.",
+    "Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites.": "Kliknij ruch (także jako pasek w grze: F12). Kliknij ruch prawym przyciskiem, aby dodać go do ulubionych.",
+    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "Prosi Trico z fabuły, aby to zrobił, tak jak robi to sama gra. Najpierw przyjmuje pozę potrzebną do ruchu (wstaje, siada lub kładzie się). Jeśli ruch się nie zacznie, zostaje przywrócony do stania i poproszony jeszcze raz, ale nigdy podczas wydarzenia fabularnego, skoku ani wspinaczki. Jego własna wola wciąż może wygrać, a niektóre ruchy potrzebują miejsca (przewrót może zepchnąć chłopca z krawędzi). \"May not work\": w naszych testach nie widzieliśmy, żeby działało."
   }
 }

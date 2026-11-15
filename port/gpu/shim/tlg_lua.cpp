@@ -1222,25 +1222,58 @@ void RemoveTricos() {
 }
 
 // One action at a time (_TLG_ACT, a coroutine on the game's tick; a new pick stops the last one).
-// Tested live 2026-11-04: "stand" does not get him up from sitting, sit_end does (then c_stand plays);
-// lying: sit first, then lie_down. Ticks run at the frame rate, so the waits count ticks (os.time
-// does not move inside a tick).
+// The way of the live check of 2026-11-15 (all 60 moves, s04 _110_WatersideGarden_001):
+//  - Poses: sit_end never gets him up from sitting, the reset does (c_boot, then c_stand the next
+//    frame). Sit: sit, then ext_c_sit_loop. Lie: from that sit loop lie_down, then ext_c_lie_down.
+//    Excited: stand_to_excite_stand. Photo: EX_photo, then its loop. Sitting and playing: sit_plays,
+//    then ext_c_sit_plays_loop.
+//  - His loops end about one frame after they start, so the next command goes out in the same frame
+//    (upto() returns in the frame it sees the loop, no yield before the send).
+//  - The move counts as started when its key shows in his animation or in his animation layers
+//    (playingAdditiveAnimList: the small moves, a sneeze or a wink, play there).
+//  - Some moves the game itself sends every frame (hold): Excited head shake, Sit and peck.
+//  - Not started within 2.5 s: reset him and try once more (11 of the 60 needed that), never in a
+//    story event, a jump or a climb (control mode EVENT, JUMP, COLUMN).
+// Waits are in game seconds (currentInfo.dt; os.time does not move inside a tick).
 constexpr std::string_view ActLua =
     "if _TLG_ACT then pcall(UnRegisterTick,_TLG_ACT) _TLG_ACT=nil end\n"
-    "local function anim() local ok,a=pcall(function() return tostring(Ai2.Utils.GetAIProps('Condor').currentInfo.mainPlayingAnim) end) "
-    "return ok and a:lower() or '?' end\n"
-    "local function cmd(c) pcall(function() Ai2.Utils.ReqCtrlCmd(Ai2.Utils.GetAIProps('Condor').currentInfo.ai2Ext,'ControlCommand_C_'..c) end) end\n"
-    "local function wait(n) for _=1,n do coroutine.yield() end end\n"
-    "local function waitfor(p,n) for _=1,n do if anim():find(p,1,true) then return true end coroutine.yield() end return false end\n"
+    "local function ci() return Ai2.Utils.GetAIProps('Condor').currentInfo end\n"
+    "local function dt() local ok,d=pcall(function() return ci().dt end) return (ok and type(d)=='number' and d>0 and d<1) and d or 1/60 end\n"
+    "local function anim() local ok,a=pcall(function() return tostring(ci().mainPlayingAnim) end) return ok and a:lower() or '?' end\n"
+    "local function adds() local ok,s=pcall(function() local t,o=ci().playingAdditiveAnimList,{} for i=1,#t do o[#o+1]=tostring(t[i]) end return table.concat(o,',') end) return ok and s:lower() or '' end\n"
+    "local function cmd(c) pcall(function() Ai2.Utils.ReqCtrlCmd(ci().ai2Ext,'ControlCommand_C_'..c) end) end\n"
+    "local function mode() local ok,m=pcall(function() return tostring(ci().controlMode) end) return ok and m or '?' end\n"
+    "local function canreset() local m=mode() return m~='EVENT' and m~='JUMP' and m~='COLUMN' and m~='?' end\n"
+    "local function upto(s,test) local t=0 while t<s do if test(anim()) then return true end t=t+dt() coroutine.yield() end return false end\n"
+    "local function has(p) return function(a) return a:find(p,1,true)~=nil end end\n"
+    "local function is(p) return function(a) return a==p end end\n"
+    "local function seen() return anim():find(key,1,true) or adds():find(key,1,true) end\n"
     "local function getpose(p) local a=anim()\n"
-    " if p=='stand' then if a:find('sit_',1,true) or a:find('lie',1,true) then cmd('sit_end') waitfor('c_stand',540) end cmd('stand') wait(90)\n"
-    " elseif p=='sit' then if not a:find('sit_loop',1,true) then cmd('sit') waitfor('sit_loop',540) end\n"
-    " elseif p=='lie' then if not a:find('lie',1,true) then getpose('sit') cmd('lie_down') waitfor('lie_down',540) wait(180) end end end\n"
+    " if p=='stand' then if a=='c_stand' then return true end\n"
+    "  if (a:find('sit',1,true) or a:find('lie',1,true)) and canreset() then cmd('Restart') if upto(1,is('c_stand')) then return true end end\n"
+    "  cmd('stand') return upto(4,is('c_stand'))\n"
+    " elseif p=='sit' then if a=='ext_c_sit_loop' then return true end\n"
+    "  if not getpose('stand') then return false end cmd('sit') return upto(6,is('ext_c_sit_loop'))\n"
+    " elseif p=='lie' then if a=='ext_c_lie_down' then return true end\n"
+    "  if not getpose('sit') then return false end cmd('lie_down') return upto(8,is('ext_c_lie_down'))\n"
+    " elseif p=='excite' then if not getpose('stand') then return false end\n"
+    "  cmd('stand_to_excite_stand') return upto(3,has('excite_stand'))\n"
+    " elseif p=='photo' then if a:find('photo_loop',1,true) then return true end\n"
+    "  if not getpose('stand') then return false end cmd('EX_photo') return upto(8,has('photo_loop'))\n"
+    " elseif p=='sitplay' then if a=='ext_c_sit_plays_loop' then return true end\n"
+    "  if not getpose('sit') then return false end cmd('sit_plays') return upto(6,is('ext_c_sit_plays_loop')) end\n"
+    " return true end\n"
+    "local function try(wait) if pose~='' and not getpose(pose) then return false end\n"
+    " cmd(act) local t,hit=0,false\n"
+    " if hold>0 then while t<hold do if seen() then hit=true end cmd(act) t=t+dt() coroutine.yield() end return hit end\n"
+    " while t<wait do if seen() then return true end t=t+dt() coroutine.yield() end return false end\n"
     "local co=coroutine.create(function()\n"
     " if not pose then cmd(act) L('fun act '..act..' sent') return end\n"
-    " for try=1,3 do if pose~='' then getpose(pose) end cmd(act)\n"
-    "  if waitfor(key,450) then L('fun act '..act..' ok, try '..try) return end end\n"
-    " L('fun act '..act..' did not play') end)\n"
+    " if try(2.5) then L('fun act '..act..' ok') return end\n"
+    " if not canreset() then L('fun act '..act..' did not play, no reset in mode '..mode()) return end\n"
+    " cmd('Restart') upto(1,is('c_stand'))\n"
+    " if try(6) then L('fun act '..act..' ok after reset') return end\n"
+    " L('fun act '..act..' did not play (now '..anim()..')') end)\n"
     "_TLG_ACT=function() local ok,e=coroutine.resume(co) if not ok then L('fun act error: '..tostring(e)) end\n"
     " if coroutine.status(co)=='dead' then UnRegisterTick(_TLG_ACT) _TLG_ACT=nil end end\n"
     "RegisterTick(_TLG_ACT)\n";
@@ -1277,8 +1310,10 @@ void Act(const char* command) {
     if (std::string_view(command) == "tlg_throw_up") return FunQueue(std::string(ThrowUpLua));
     std::string key(action->key ? action->key : command);
     for (auto& c : key) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    FunQueue(std::string("local act,key,pose='") + command + "','" + key + "'," +
-             (action->pose ? std::string("'") + action->pose + "'" : std::string("nil")) + "\n" +
+    char hold[32];
+    std::snprintf(hold, sizeof(hold), "%.2f", action->hold);
+    FunQueue(std::string("local act,key,pose,hold='") + command + "','" + key + "'," +
+             (action->pose ? std::string("'") + action->pose + "'" : std::string("nil")) + "," + hold + "\n" +
              std::string(ActLua));
 }
 
