@@ -141,6 +141,10 @@ until nothing moves). A jump to another place turns photo mode off.
 
 ![Photo mode: the camera hangs above the gorge, looking down on Trico](screenshots/fun/photo-mode.jpg)
 
+![Photo mode with the button hints on: Trico climbs down to the boy on a broken bridge](screenshots/fun/photo-mode-hints.jpg)
+
+![Photo mode with the button hints on: Trico rests his head in the grass next to the boy](screenshots/fun/photo-mode-rest.jpg)
+
 ## Free camera
 
 The developers' own camera: it lets go of the normal camera that follows the boy, so you can look

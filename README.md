@@ -176,6 +176,9 @@ the full screenshot. Most of the difference is in motion (less shimmer), which a
 
 ## Photo mode
 
+**Capture the moments that matter most.** Stop time, then circle the camera all the way around
+Trico and the boy to find your angle, and keep the shot forever.
+
 The original game has no photo mode. This port adds one. The world stops, and you fly a free camera
 anywhere you like: around Trico, high above the gorge, right up to the boy's face. Then you save
 the picture.
@@ -187,7 +190,7 @@ the picture.
 - **Save a picture:** **Cross** or **Print Screen**. It is saved as a lossless PNG at the full
   render resolution in `user/screenshots`. The button help on screen is not in the picture.
 
-<p align="center"><a href="docs/fun.md#photo-mode"><img src="docs/screenshots/fun/photo-mode.jpg" alt="Photo mode: the camera hangs above the gorge, looking down on Trico on a grassy cliff"></a></p>
+<p align="center"><a href="docs/fun.md#photo-mode"><img src="docs/screenshots/fun/photo-mode-bridge.jpg" alt="Photo mode: Trico reaches down to the boy on a broken bridge, with the button hints on screen"></a></p>
 
 ## Cut and hidden content
 
