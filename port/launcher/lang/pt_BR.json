@@ -59,6 +59,8 @@
     "launcher.flag_granule_hint": "Correção da issue #79: pega a memória de buffer do driver gráfico em pedaços maiores em vez de muitos pequenos. Sem ela, placas AMD mais antigas no Windows podem fechar com \"out of memory\". Ligado por padrão.",
     "launcher.flag_arena_page": "Blocos de buffer menores",
     "launcher.flag_arena_page_hint": "Chave de teste da issue #79: monta a memória de buffer com blocos da metade do tamanho, para que o maior bloco fique abaixo do limite de tamanho das placas AMD mais antigas no Windows. Para travamentos com \"out of memory\" logo após o carregamento. Desativado por padrão.",
+    "launcher.flag_detile_separate": "Descompactar texturas separadamente",
+    "launcher.flag_detile_separate_hint": "Chave de teste da issue #79: envia cada descompactação de textura à placa de vídeo como um lote próprio e espera terminar, para que o log mostre qual o driver recusa. Carregamento mais lento. Para travamentos com \"out of memory\" logo após o carregamento. Desativado por padrão.",
     "launcher.flag_sema_fast": "Sinais mais rápidos entre threads do jogo",
     "launcher.flag_sema_fast_hint": "Correção da issue #41: as threads do jogo esperam menos umas pelas outras, alguns por cento a mais de FPS, principalmente em CPUs mais lentas. Ligado por padrão.",
     "launcher.flag_vk_validation": "Validação Vulkan",

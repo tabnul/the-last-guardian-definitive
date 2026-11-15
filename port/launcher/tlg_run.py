@@ -225,6 +225,7 @@ DEBUG_FLAGS = (
     ('flag_arena_free', 'TLG_ARENA_FREE', '1', None, False),           # #79: out of memory, 8 GB AMD
     ('flag_granule', 'TLG_RESIDENCY_GRANULE_MB', None, '0', True),    # #79: AMD Windows submit OOM
     ('flag_arena_page', 'TLG_ARENA_PAGE_MB', '256', None, False),      # #79: no 2048 MiB block (RX 580)
+    ('flag_detile_separate', 'TLG_DETILE_SEPARATE', '1', None, False),  # #79: which submit fails (RX 580)
     ('flag_sema_fast', 'TLG_SEMA_FAST', None, '0', True),            # #41 (@thearturord)
     ('flag_vk_validation', 'TLG_VK_VALIDATION', '1', None, False),     # needs the Vulkan SDK layer
     ('game_tail_climb', 'TLG_TAIL_CLIMB_FIX', '1', None, True),       # PR #171, eboot patch, every GPU
