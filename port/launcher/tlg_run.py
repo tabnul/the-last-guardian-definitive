@@ -524,6 +524,7 @@ def update_ini(path, values):
             lines[i] = f'{key}={values[key]}'
             seen.add(key)
     lines += [f'{k}={v}' for k, v in values.items() if k not in seen]
+    path.parent.mkdir(parents=True, exist_ok=True)   # before the game's first run the folder is missing
     path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
