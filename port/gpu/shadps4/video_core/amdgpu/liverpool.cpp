@@ -9,6 +9,7 @@
 #include <time.h>
 #include "tlg_copy.h"
 #include "tlg_toggles.h"
+#include "tlg_command_diag.h"
 #include <cstdio>
 #include <boost/preprocessor/stringize.hpp>
 
@@ -91,22 +92,19 @@ void Liverpool::ProcessCommands() {
     // that late readback to change buffer ranges before the recorder was done hashing them.
     // Its first scheduler call then drained too late: stage B faulted on the same protected
     // page while stage A waited for it. Drain before *each* callback touches cache state.
-    bool skip_drain = false;
-    ProcessQueuedCommands(
-        [this] { return num_commands.load() != 0; },
-        [this, &skip_drain] {
+    while (num_commands.load() != 0) {
+        QueuedCommand command{};
+        {
             std::scoped_lock lk{submit_mutex};
-            auto callback = std::move(command_queue.front());
+            command = std::move(command_queue.front());
             command_queue.pop();
             --num_commands;
-            skip_drain = callback.no_drain;
-            return std::move(callback.func);
-        },
-        [this, &skip_drain] {
-            if (rasterizer && !skip_drain) {
-                rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCommands);
-            }
-        });
+        }
+        if (rasterizer && !command.no_drain) {
+            rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCommands);
+        }
+        command.func();
+    }
 }
 
 void Liverpool::Process(std::stop_token stoken) {
@@ -310,6 +308,12 @@ void SignalEop(const PM4CmdEventWriteEop& eop) {
 void RunEventWriteEop(Vulkan::Rasterizer& rasterizer, const u8* data) {
     const auto eop = *reinterpret_cast<const PM4CmdEventWriteEop*>(data);
     rasterizer.ProcessDownloadImages();
+    rasterizer.EagerCopyAtFence();
+    // tlg (#175): the label is written after the eager copies were taken so a cached page never
+    // contains a stale fence value.
+    if (eop.data_sel.Value() != DataSelect::None) {
+        rasterizer.GetBufferCache().MarkFenceWrite(reinterpret_cast<VAddr>(eop.Address<u32>()), 8);
+    }
     rasterizer.FlushForFence(TlgStats::FenceEop);
     // Guest memory copies on the copy threads precede the fence the guest sees.
     // TLG_ASYNC_FENCES=1 writes it once they are done instead of waiting for them; measured
@@ -394,6 +398,8 @@ void RunEventWriteEos(Vulkan::Rasterizer& rasterizer, const u8* data) {
     rasterizer.WaitHostCopies();
     rasterizer.WaitDeferredSignals();
     rasterizer.ProcessDownloadImages();
+    rasterizer.EagerCopyAtFence();
+    rasterizer.GetBufferCache().MarkFenceWrite(reinterpret_cast<VAddr>(event_eos.Address()), 8);
     rasterizer.FlushForFence(TlgStats::FenceEos);
     event_eos.SignalFence([](void* address, u64 value, u32 num_bytes) {
         auto* memory = Core::Memory::Instance();

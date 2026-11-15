@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <string>
@@ -107,9 +108,19 @@ public:
             CountWriteFaults(start_page, end_page);
         }
         if constexpr (enable) {
+            if constexpr (type == Type::CPU) {
+                NoteCpuBitsSet();
+            } else {
+                NoteGpuBitsSet();
+            }
             bits.SetRange(start_page, end_page);
         } else {
             bits.UnsetRange(start_page, end_page);
+            if constexpr (type == Type::CPU) {
+                NoteCpuBitsCleared();
+            } else {
+                NoteGpuBitsCleared();
+            }
         }
         if constexpr (type == Type::CPU) {
             UpdateProtection<!enable, false>();
@@ -132,6 +143,7 @@ public:
         if (add.None()) {
             return;
         }
+        NoteCpuBitsSet();
         cpu |= add;
         UpdateProtection<false, false>();
     }
@@ -159,8 +171,8 @@ public:
         // tlg: nothing modified in the range means nothing to clear or re-protect (CPU bits
         // always match `writeable` after a change); this runs for every buffer binding, so
         // it is checked before building the range mask.
-        if (type == Type::CPU && !bits.AnyInRange(start_page, end_page) &&
-            !TlgToggle::Disabled(TlgToggle::PageTrackingEarlyExit)) {
+        if (type == Type::CPU && !TlgToggle::Disabled(TlgToggle::PageTrackingEarlyExit) &&
+            (!cpu_any.load(std::memory_order_acquire) || !bits.AnyInRange(start_page, end_page))) {
             return;
         }
         RegionBits mask(bits, start_page, end_page);
@@ -169,9 +181,13 @@ public:
             bits.UnsetRange(start_page, end_page);
             if constexpr (type == Type::CPU) {
                 KeepHotPagesModified(start_page, end_page);
+                NoteCpuBitsCleared();
                 UpdateProtection<true, false>();
-            } else if (EmulatorSettings.GetReadbacksMode() != GpuReadbacksMode::Disabled) {
-                UpdateProtection<false, true>();
+            } else {
+                NoteGpuBitsCleared();
+                if (EmulatorSettings.GetReadbacksMode() != GpuReadbacksMode::Disabled) {
+                    UpdateProtection<false, true>();
+                }
             }
         }
 
@@ -196,6 +212,15 @@ public:
             return false;
         }
 
+        if constexpr (type == Type::CPU) {
+            if (!cpu_any.load(std::memory_order_acquire)) {
+                return false;
+            }
+        } else {
+            if (!gpu_any.load(std::memory_order_acquire)) {
+                return false;
+            }
+        }
         const RegionBits& bits = GetRegionBits<type>();
         return bits.AnyInRange(start_page, end_page);
     }
@@ -271,6 +296,23 @@ private:
         }
     }
 
+    void NoteCpuBitsSet() {
+        if (!cpu_any.load(std::memory_order_relaxed)) {
+            cpu_any.store(true, std::memory_order_seq_cst);
+        }
+    }
+    void NoteCpuBitsCleared() {
+        cpu_any.store(cpu.Any(), std::memory_order_release);
+    }
+    void NoteGpuBitsSet() {
+        if (!gpu_any.load(std::memory_order_relaxed)) {
+            gpu_any.store(true, std::memory_order_seq_cst);
+        }
+    }
+    void NoteGpuBitsCleared() {
+        gpu_any.store(gpu.Any(), std::memory_order_release);
+    }
+
     void KeepHotPagesModified(size_t start_page, size_t end_page) {
         if (num_hot == 0) {
             return;
@@ -284,6 +326,7 @@ private:
             num_hot = 0;
             return;
         }
+        NoteCpuBitsSet();
         cpu |= RegionBits(hot, start_page, end_page);
     }
 
@@ -294,6 +337,8 @@ private:
 
     PageManager* tracker;
     VAddr cpu_addr = 0;
+    std::atomic<bool> cpu_any{true};
+    std::atomic<bool> gpu_any{false};
     RegionBits cpu;
     RegionBits gpu;
     RegionBits writeable;

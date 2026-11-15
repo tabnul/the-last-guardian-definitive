@@ -5,6 +5,7 @@
 
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
+#include "common/unique_function.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/page_manager.h"
 #include "video_core/renderer_vulkan/vk_bind_helper.h"
@@ -54,6 +55,11 @@ public:
 
     [[nodiscard]] VideoCore::TextureCache& GetTextureCache() noexcept {
         return texture_cache;
+    }
+
+    /// tlg: see BufferCache::EagerCopyAtFence (fence packets, before the guest sees them).
+    void EagerCopyAtFence() {
+        buffer_cache.EagerCopyAtFence();
     }
 
     void Draw(bool is_indexed, u32 index_offset = 0, const PreparedDraw* prepared = nullptr);

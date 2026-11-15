@@ -1044,7 +1044,7 @@ void Rasterizer::RetireSubmission() {
 }
 
 bool Rasterizer::RunInOrder(OrderedTask task, const void* data, u32 size, u64 toggle) {
-    if (!UseDrawPipe() || TlgToggle::Disabled(toggle)) {
+    if (!UseDrawPipe() || (toggle && TlgToggle::Disabled(toggle))) {
         DrainDrawPipe(DrawPipe::ReasonRasterizer);
         task(*this, static_cast<const u8*>(data));
         return false;
