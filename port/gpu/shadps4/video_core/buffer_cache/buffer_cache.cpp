@@ -161,6 +161,20 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     if ((u64{2} << arena_page_bits) > max_buffer) {
         arena_page_bits = MIN_ARENA_PAGE_BITS;
     }
+    // tlg (issue #79): Debug > Flags "Smaller buffer blocks" (TLG_ARENA_PAGE_MB=256). The RX 580
+    // stops with ErrorOutOfHostMemory right after the first arena of 4 x 512 MiB, which is
+    // exactly its buffer limit (2048 MiB); with half-size pages the same joins give 1024 MiB.
+    if (const char* v = std::getenv("TLG_ARENA_PAGE_MB")) {
+        const u64 mb = std::strtoull(v, nullptr, 10);
+        if (mb && std::popcount(mb) == 1) {
+            const u64 bits = std::bit_width(mb) - 1 + 20;
+            if (bits >= TEST_ARENA_PAGE_BITS && bits < arena_page_bits) {
+                arena_page_bits = bits;
+                std::printf("GPU: buffer arena pages lowered to %llu MiB (TLG_ARENA_PAGE_MB)\n",
+                            static_cast<unsigned long long>(mb));
+            }
+        }
+    }
     arena_page_size = u64{1} << arena_page_bits;
     max_arena_pages = std::clamp<u64>(max_buffer >> arena_page_bits, 2, 16);
     num_arena_pages = u64{1} << (ADDRESS_SPACE_BITS - arena_page_bits);

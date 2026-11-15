@@ -57,6 +57,8 @@
     "launcher.flag_arena_free_hint": "Issue #79 のテスト用スイッチ：より大きなブロックに置き換えられたメモリブロックをグラフィックドライバーに返します。ロード直後の「out of memory」クラッシュ向け。既定ではオフ。",
     "launcher.flag_granule": "バッファメモリをまとめる",
     "launcher.flag_granule_hint": "Issue #79 の修正: バッファメモリを多数の小さな単位ではなく大きな単位でグラフィックドライバーから確保します。無効にすると、Windows の古い AMD カードで \"out of memory\" によりクラッシュすることがあります。既定でオン。",
+    "launcher.flag_arena_page": "バッファブロックを小さくする",
+    "launcher.flag_arena_page_hint": "Issue #79 のテスト用スイッチ：バッファメモリを半分のサイズのブロックで構成し、最大のブロックが Windows の古い AMD カードのサイズ上限を下回るようにします。ロード直後の「out of memory」クラッシュ向け。既定ではオフ。",
     "launcher.flag_sema_fast": "ゲームスレッド間の高速なシグナル",
     "launcher.flag_sema_fast_hint": "issue #41 の修正：ゲームのスレッド同士の待ち時間が減り、FPS が数パーセント向上します。遅い CPU ほど効果があります。デフォルトはオン。",
     "launcher.flag_vk_validation": "Vulkan 検証",

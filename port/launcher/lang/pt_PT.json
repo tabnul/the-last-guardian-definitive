@@ -57,6 +57,8 @@
     "launcher.flag_arena_free_hint": "Opção de teste do problema #79: devolve ao controlador gráfico os blocos de memória substituídos por um maior. Para falhas «out of memory» pouco depois do carregamento. Desativado por predefinição.",
     "launcher.flag_granule": "Agrupar memória de buffer",
     "launcher.flag_granule_hint": "Correção da issue #79: obtém a memória de buffer do controlador gráfico em pedaços maiores em vez de muitos pequenos. Sem ela, placas AMD mais antigas no Windows podem fechar com \"out of memory\". Ligado por predefinição.",
+    "launcher.flag_arena_page": "Blocos de buffer mais pequenos",
+    "launcher.flag_arena_page_hint": "Interruptor de teste da issue #79: constrói a memória de buffer com blocos de metade do tamanho, para que o maior bloco fique abaixo do limite de tamanho das placas AMD mais antigas no Windows. Para falhas com \"out of memory\" pouco depois do carregamento. Desativado por predefinição.",
     "launcher.flag_sema_fast": "Sinais mais rápidos entre threads do jogo",
     "launcher.flag_sema_fast_hint": "Correção da issue #41: as threads do jogo esperam menos umas pelas outras, alguns por cento a mais de FPS, sobretudo em CPUs mais lentos. Ligado por predefinição.",
     "launcher.flag_vk_validation": "Validação Vulkan",

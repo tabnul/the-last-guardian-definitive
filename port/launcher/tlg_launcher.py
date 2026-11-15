@@ -100,6 +100,8 @@ TEXT = {
     'flag_arena_free_hint': 'Test switch from issue #79: gives memory blocks that were replaced by a larger one back to the graphics driver. For "out of memory" crashes shortly after loading. Off by default.',
     'flag_granule': 'Group buffer memory',
     'flag_granule_hint': "Fix for issue #79: takes buffer memory from the graphics driver in larger pieces instead of many small ones. Older AMD cards on Windows can crash with \"out of memory\" without it. On by default.",
+    'flag_arena_page': 'Smaller buffer blocks',
+    'flag_arena_page_hint': 'Test switch from issue #79: builds buffer memory from blocks half the size, so the largest block stays under the size limit of older AMD cards on Windows. For "out of memory" crashes shortly after loading. Off by default.',
     'flags_game': 'Experimental game fixes',
     'game_tail_climb': "Trico's tail climbing fix",
     'game_tail_climb_hint': "Experimental: the boy should no longer climb in place on Trico's moving tail. Changes the game's climbing code, so it works on every graphics card. Not fully tested: letting go, shake-offs, ropes and chains may behave differently. By @YsraEstudos. On by default.",
