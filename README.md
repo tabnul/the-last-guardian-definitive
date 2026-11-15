@@ -48,8 +48,9 @@ No game files are included. You need your own copy, dumped from your own PS4.
   [generator](https://github.com/tabnul/ps4-texturepack-generator) builds a 4x texture pack from
   your own copy, with more detail in stone, moss, wood and cloth. Optional, and you can switch
   it on and off while you play.
-- **Your own launcher background:** the launcher shows a picture from your game files. Save your
-  own as `launcher_background.png` or `.jpg` in the `user/` folder to replace it.
+- **Your own launcher background:** the launcher shows a picture from your game files. To use
+  your own, open **Settings** and click **Background picture…** in the Launcher box, then pick a
+  PNG or JPG. **Default picture** brings the game's picture back.
 - **Benchmark tool:** the launcher's Debug > **Benchmark** tab runs a set of scenes and packs the
   results into one zip, so you can attach it when you report a performance problem.
 - **[Controllers](#controllers-and-languages):** remap buttons, dead zones and trigger points,
