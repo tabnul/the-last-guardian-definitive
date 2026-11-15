@@ -37,7 +37,9 @@ No game files are included. You need your own copy, dumped from your own PS4.
 - **[Soundtrack](#soundtrack):** a music player in the launcher with all 100 pieces of the game's
   music, from your own game files.
 - **[Controllers](#controllers-and-languages):** remap buttons, dead zones and trigger points,
-  a stick drift check, your own button combos and quit from anywhere.
+  a stick drift check and your own button combos.
+- **[Quit directly](#controllers-and-languages):** quit the game from anywhere with a controller
+  combo or the keyboard (**Alt+Q**), no menus. The game's pause menu shows the buttons.
 
 **Brought back from the game's files**, cut or hidden by the developers
 ([full guide](docs/fun.md)):
