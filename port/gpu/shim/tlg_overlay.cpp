@@ -1351,6 +1351,10 @@ void FunTab() {
     }
     Help(TR("How the world is frozen. Pause the game: the game's own pause, everything stops. Stop time: the game's own slow motion, turned down until nothing moves; try it if the camera does not move with the first one."));
     ImGui::EndDisabled();
+    bool photo_hdr = TlgSettings::Get().photo_hdr;
+    Store(TlgSettings::Get().photo_hdr, photo_hdr,
+          ImGui::Checkbox(TR("Also save an HDR picture##photohdr"), &photo_hdr));
+    Help(TR("With HDR on, every photo is saved twice: a normal picture that looks right everywhere, and an HDR picture (name ending in -hdr.png) for HDR screens; Chrome and Edge show it in HDR. Off: only the normal picture. With HDR off there is only the normal picture."));
 
     ImGui::SeparatorText("Tricopilot");
     const bool pilot = TlgFun::TricopilotOn();

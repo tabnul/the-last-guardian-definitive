@@ -420,6 +420,10 @@ TEXT = {
                       'F8              switch your upscaler / Built-in\n'
                       'F10             show / hide the FPS counter'),
     'hdr_hint': "The game's own HDR10 output, used when HDR is on in Windows display settings. Recommended: on.",
+    'photo_hdr': 'Photo mode: also save an HDR picture',
+    'photo_hdr_hint': ('With HDR on, every photo is saved twice: a normal picture that looks right everywhere, and an HDR picture '
+                       '(name ending in -hdr.png) for HDR screens; Chrome and Edge show it in HDR. Off: only the normal picture. '
+                       'With HDR off there is only the normal picture.'),
     'shadow_scale': 'Shadow resolution',
     'shadow_game': 'Game (2048)',
     'graphics_preset': 'Graphics preset',
@@ -1509,7 +1513,16 @@ class Launcher:
         ttk.Checkbutton(video, text='HDR', variable=self.hdr_var, command=hdr_toggled).grid(
             row=16, column=0, columnspan=2, sticky='w', pady=(6, 0))
         self.hint(video, 16, 2, 'hdr_hint')
-        self.build_aa_filters(video, 17)
+        self.photo_hdr_var = tk.BooleanVar(value=ini.get('photo_hdr', '1') != '0')
+
+        def photo_hdr_toggled():
+            tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
+            tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {'photo_hdr': int(self.photo_hdr_var.get())})
+            self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
+        ttk.Checkbutton(video, text=self.t('photo_hdr'), variable=self.photo_hdr_var,
+                        command=photo_hdr_toggled).grid(row=17, column=0, columnspan=2, sticky='w')
+        self.hint(video, 17, 2, 'photo_hdr_hint')
+        self.build_aa_filters(video, 18)
 
         memory = section(main, self.t('memory'))
         memory.grid(row=0, column=1, sticky='new', padx=6, pady=4)
@@ -2239,6 +2252,7 @@ class Launcher:
         self.update_fg(ini)
         self.update_aa_note(ini)
         self.hdr_var.set(ini.get('hdr', '1') != '0')
+        self.photo_hdr_var.set(ini.get('photo_hdr', '1') != '0')
         # Its sliders show the old values; rebuilt after, not from inside one of its own events.
         self.root.after_idle(self.rebuild_graphics)
 

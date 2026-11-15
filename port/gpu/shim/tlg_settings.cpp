@@ -251,6 +251,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.engine_fps = TlgGraphics::ParseEngineFps(i);
     } else if (key == "hdr") {
         v.hdr = i != 0;
+    } else if (key == "photo_hdr") {
+        v.photo_hdr = i != 0;
     } else if (key == "deferred_readback") {
         v.deferred_readback = i != 0;
     } else if (key == "stale_readback") {
@@ -743,6 +745,7 @@ void Save() {
                  int(v.color_adjust.load()), v.brightness.load(), v.contrast.load(),
                  v.saturation.load(), v.color_gamma.load());
     std::fprintf(file, "level_select=%d\n", int(v.level_select.load()));
+    std::fprintf(file, "photo_hdr=%d\n", int(v.photo_hdr.load()));
     std::fprintf(file, "pad_combo_quit=%s\npad_combo_menu=%s\npad_combo_qa=%s\npad_combo_photo=%s\n",
                  ComboText(v.combo_quit).c_str(), ComboText(v.combo_menu).c_str(), ComboText(v.combo_qa).c_str(),
                  ComboText(v.combo_photo).c_str());

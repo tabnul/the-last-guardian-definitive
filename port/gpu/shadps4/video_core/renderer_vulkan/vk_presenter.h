@@ -124,7 +124,7 @@ private:
     /// tlg: records the generated image for a finished frame, when frame generation is on.
     void RecordFrameGeneration(Frame* frame);
     void SaveScreenshot(vk::CommandBuffer cmdbuf, Scheduler& scheduler, vk::Image image, u32 w,
-                        u32 h, vk::Format format); // tlg: photo mode PNG
+                        u32 h, vk::Format format, bool hdr); // tlg: photo mode PNG
 
     /// tlg: blits source to the next swapchain image and presents it. Only the frame's last
     /// present signals present_done. False: skipped, the swapchain is being rebuilt.

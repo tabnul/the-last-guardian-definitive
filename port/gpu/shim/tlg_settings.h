@@ -172,6 +172,9 @@ struct Values {
     std::atomic<bool> stale_readback{true};
     /// The game's own HDR10 output (BT.2020 PQ) when Windows HDR is on (TLG_HDR overrides).
     std::atomic<bool> hdr{true};
+    /// Photo mode with HDR on: next to the normal PNG also <name>-hdr.png, the HDR10 signal
+    /// as it is (vk_presenter SaveScreenshot). Live.
+    std::atomic<bool> photo_hdr{true};
     /// Set before an "Apply and restart"; cleared once the new launch shows the game. tlg_run.py
     /// restores the previous startup options when a launch never cleared it.
     std::atomic<bool> restart_unconfirmed{false};

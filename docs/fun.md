@@ -134,7 +134,10 @@ shows the controls and is left out of the saved picture.
 | Hold R1 / L1 | Faster / slower |
 | Cross, or Print Screen | Save a screenshot |
 
-Screenshots are lossless PNG files at the full render resolution, in `user/screenshots`. You can
+Screenshots are lossless PNG files at the full render resolution, in `user/screenshots`. With HDR
+on, every photo is saved twice: a normal picture that looks right on any screen, and an HDR picture
+(name ending in `-hdr.png`) for HDR screens; **Also save an HDR picture** in the Fun tab switches
+the second one off. You can
 also turn photo mode on with **Photo mode** in the Fun tab. **Freeze** chooses how the world
 stops: **Pause the game** (everything stops) or **Stop time** (the game's slow motion turned down
 until nothing moves). A jump to another place turns photo mode off.
