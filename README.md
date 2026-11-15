@@ -34,19 +34,26 @@ No game files are included. You need your own copy, dumped from your own PS4.
   PNG screenshots at full render resolution.
 - **[ICO horns](#ico-horns-only-in-this-port):** the Horned Apparel outfit finally gives the boy
   Ico's horns. Optional, off by default.
+- **[Quit directly](#controllers-and-languages):** quit the game from anywhere with a controller
+  combo or the keyboard (**Alt+Q**), no menus. The game's pause menu shows the buttons.
 - **[Trico Tricks](docs/fun.md#trico-tricks-make-trico-move):** 30 of Trico's own moves on a bar (**F12**), including the throw-up animation
   the developers sealed.
 - **[Soundtrack](#soundtrack):** a music player in the launcher with all 100 pieces of the game's
   music, from your own game files.
+- **[Start at any point](#for-testers):** over 200 start points, from the first cave to the
+  credits. Pick one on the launcher's **Start at…** page, or in game under Fun >
+  *Jump to a place*. Your saves are copied first and put back afterwards.
 - **[Texture pack generator](docs/texture-pack.md):** the game started out on PS3, and many of its
   textures look rough up close on a modern screen. Our
   [generator](https://github.com/tabnul/ps4-texturepack-generator) builds a 4x texture pack from
   your own copy, with more detail in stone, moss, wood and cloth. Optional, and you can switch
   it on and off while you play.
+- **Your own launcher background:** the launcher shows a picture from your game files. Save your
+  own as `launcher_background.png` or `.jpg` in the `user/` folder to replace it.
+- **Benchmark tool:** the launcher's Debug > **Benchmark** tab runs a set of scenes and packs the
+  results into one zip, so you can attach it when you report a performance problem.
 - **[Controllers](#controllers-and-languages):** remap buttons, dead zones and trigger points,
   a stick drift check and your own button combos.
-- **[Quit directly](#controllers-and-languages):** quit the game from anywhere with a controller
-  combo or the keyboard (**Alt+Q**), no menus. The game's pause menu shows the buttons.
 
 **Brought back from the game's files**, cut or hidden by the developers
 ([full guide](docs/fun.md)):
@@ -58,6 +65,9 @@ No game files are included. You need your own copy, dumped from your own PS4.
 - **Trico's size:** from half to twice his size.
 - **Trico's eyes:** the hidden disco-eye effect, or any colour.
 - **Trico's toilet:** he goes right away, in front of you.
+- **All treasures:** unlocks every treasure (the boy's outfits, Trico's feathers) and the
+  Treasures entry in the options menu, with the developers' own unlock. Off by default. It is
+  stored in your save, so your saves are backed up before the first unlock.
 - **Cut narrator hints:** the 23 narrator hints the developers cut in September 2016. When you
   seem stuck, the narrator helps again, where they first placed his lines. Off by default: they
   give puzzle solutions away.
@@ -108,9 +118,6 @@ Control.
 | F10 | FPS counter |
 | F12 | Trico Tricks bar |
 | Esc | Release the mouse |
-
-The launcher background comes from your game files. To use your own picture, save it as
-`launcher_background.png` or `.jpg` in the `user/` folder.
 
 ## Graphics
 
