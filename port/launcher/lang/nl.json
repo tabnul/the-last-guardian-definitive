@@ -63,7 +63,7 @@
     "launcher.flag_vk_validation_hint": "Controleert elke grafische aanroep. Erg traag, en werkt alleen met de Vulkan SDK geïnstalleerd. Voor ontwikkelaars.",
     "launcher.flags_game": "Experimentele gamefixes",
     "launcher.game_tail_climb": "Fix voor klimmen op Trico's staart",
-    "launcher.game_tail_climb_hint": "Experimenteel: de jongen zou niet meer op de plek blijven klimmen op Trico's bewegende staart. Past de klimcode van de game aan, dus werkt op elke grafische kaart. Niet volledig getest: loslaten, afschudden, touwen en kettingen kunnen anders werken. Door @YsraEstudos. Standaard uit.",
+    "launcher.game_tail_climb_hint": "Experimenteel: de jongen zou niet meer op de plek blijven klimmen op Trico's bewegende staart. Past de klimcode van de game aan, dus werkt op elke grafische kaart. Niet volledig getest: loslaten, afschudden, touwen en kettingen kunnen anders werken. Door @YsraEstudos. Standaard aan.",
     "launcher.flags_rdna": "RDNA2: mogelijke verbeteringen",
     "launcher.rdna_memory_priority": "Geheugenprioriteit",
     "launcher.rdna_memory_priority_hint": "Vertelt de grafische driver welk geheugen het belangrijkst is, zodat het op de kaart blijft. Kan oudere AMD-kaarten helpen (RDNA2, zoals RX 6000). Op nieuwere kaarten geen winst gemeten. Door @YsraEstudos. Standaard uit.",

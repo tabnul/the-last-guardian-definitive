@@ -63,7 +63,7 @@
     "launcher.flag_vk_validation_hint": "Sprawdza każde wywołanie grafiki. Bardzo wolne i działa tylko z zainstalowanym Vulkan SDK. Dla programistów.",
     "launcher.flags_game": "Eksperymentalne poprawki gry",
     "launcher.game_tail_climb": "Wspinaczka po ogonie Trico",
-    "launcher.game_tail_climb_hint": "Eksperymentalne: chłopiec nie powinien już wspinać się w miejscu po ruchomym ogonie Trico. Zmienia kod wspinaczki w grze, więc działa na każdej karcie graficznej. Nie w pełni przetestowane: puszczanie, strząsanie, liny i łańcuchy mogą działać inaczej. Autor: @YsraEstudos. Domyślnie wyłączone.",
+    "launcher.game_tail_climb_hint": "Eksperymentalne: chłopiec nie powinien już wspinać się w miejscu po ruchomym ogonie Trico. Zmienia kod wspinaczki w grze, więc działa na każdej karcie graficznej. Nie w pełni przetestowane: puszczanie, strząsanie, liny i łańcuchy mogą działać inaczej. Autor: @YsraEstudos. Domyślnie włączone.",
     "launcher.flags_rdna": "RDNA2: możliwe ulepszenia",
     "launcher.rdna_memory_priority": "Priorytet pamięci",
     "launcher.rdna_memory_priority_hint": "Informuje sterownik grafiki, która pamięć jest najważniejsza, aby pozostała na karcie. Może pomóc starszym kartom AMD (RDNA2, np. RX 6000). Brak zmierzonego zysku na nowszych kartach. Autor: @YsraEstudos. Domyślnie wyłączone.",

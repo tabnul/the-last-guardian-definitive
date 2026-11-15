@@ -63,7 +63,7 @@
     "launcher.flag_vk_validation_hint": "Comprueba cada llamada gráfica. Muy lento y solo funciona con el Vulkan SDK instalado. Para desarrolladores.",
     "launcher.flags_game": "Correcciones experimentales del juego",
     "launcher.game_tail_climb": "Escalada en la cola de Trico",
-    "launcher.game_tail_climb_hint": "Experimental: el niño ya no debería quedarse escalando en el sitio en la cola en movimiento de Trico. Cambia el código de escalada del juego, así que funciona con cualquier tarjeta gráfica. No probado del todo: soltarse, sacudidas, cuerdas y cadenas pueden comportarse distinto. Por @YsraEstudos. Desactivado por defecto.",
+    "launcher.game_tail_climb_hint": "Experimental: el niño ya no debería quedarse escalando en el sitio en la cola en movimiento de Trico. Cambia el código de escalada del juego, así que funciona con cualquier tarjeta gráfica. No probado del todo: soltarse, sacudidas, cuerdas y cadenas pueden comportarse distinto. Por @YsraEstudos. Activado por defecto.",
     "launcher.flags_rdna": "RDNA2: posibles mejoras",
     "launcher.rdna_memory_priority": "Prioridad de memoria",
     "launcher.rdna_memory_priority_hint": "Indica al controlador gráfico qué memoria es la más importante, para que se quede en la tarjeta. Puede ayudar a tarjetas AMD antiguas (RDNA2, como RX 6000). Sin mejora medida en tarjetas nuevas. Por @YsraEstudos. Desactivado por defecto.",

@@ -102,7 +102,7 @@ TEXT = {
     'flag_granule_hint': "Fix for issue #79: takes buffer memory from the graphics driver in larger pieces instead of many small ones. Older AMD cards on Windows can crash with \"out of memory\" without it. On by default.",
     'flags_game': 'Experimental game fixes',
     'game_tail_climb': "Trico's tail climbing fix",
-    'game_tail_climb_hint': "Experimental: the boy should no longer climb in place on Trico's moving tail. Changes the game's climbing code, so it works on every graphics card. Not fully tested: letting go, shake-offs, ropes and chains may behave differently. By @YsraEstudos. Off by default.",
+    'game_tail_climb_hint': "Experimental: the boy should no longer climb in place on Trico's moving tail. Changes the game's climbing code, so it works on every graphics card. Not fully tested: letting go, shake-offs, ropes and chains may behave differently. By @YsraEstudos. On by default.",
     'flags_rdna': 'RDNA2: possible improvements',
     'rdna_memory_priority': 'Memory priority',
     'rdna_memory_priority_hint': 'Tells the graphics driver which memory matters most, so it stays on the card. May help older AMD cards (RDNA2, such as RX 6000). No gain measured on newer cards. By @YsraEstudos. Off by default.',

@@ -63,7 +63,7 @@
     "launcher.flag_vk_validation_hint": "Prüft jeden Grafikaufruf. Sehr langsam und funktioniert nur mit installiertem Vulkan SDK. Für Entwickler.",
     "launcher.flags_game": "Experimentelle Spielkorrekturen",
     "launcher.game_tail_climb": "Klettern an Tricos Schwanz",
-    "launcher.game_tail_climb_hint": "Experimentell: Der Junge sollte an Tricos beweglichem Schwanz nicht mehr auf der Stelle klettern. Ändert den Kletter-Code des Spiels und wirkt daher auf jeder Grafikkarte. Nicht vollständig getestet: Loslassen, Abschütteln, Seile und Ketten können sich anders verhalten. Von @YsraEstudos. Standardmäßig aus.",
+    "launcher.game_tail_climb_hint": "Experimentell: Der Junge sollte an Tricos beweglichem Schwanz nicht mehr auf der Stelle klettern. Ändert den Kletter-Code des Spiels und wirkt daher auf jeder Grafikkarte. Nicht vollständig getestet: Loslassen, Abschütteln, Seile und Ketten können sich anders verhalten. Von @YsraEstudos. Standardmäßig an.",
     "launcher.flags_rdna": "RDNA2: mögliche Verbesserungen",
     "launcher.rdna_memory_priority": "Speicherpriorität",
     "launcher.rdna_memory_priority_hint": "Teilt dem Grafiktreiber mit, welcher Speicher am wichtigsten ist, damit er auf der Karte bleibt. Kann älteren AMD-Karten helfen (RDNA2, z. B. RX 6000). Auf neueren Karten kein Gewinn gemessen. Von @YsraEstudos. Standardmäßig aus.",

@@ -63,7 +63,7 @@
     "launcher.flag_vk_validation_hint": "모든 그래픽 호출을 검사합니다. 매우 느리며 Vulkan SDK가 설치된 경우에만 작동합니다. 개발자용입니다.",
     "launcher.flags_game": "실험적 게임 수정",
     "launcher.game_tail_climb": "트리코 꼬리 오르기 수정",
-    "launcher.game_tail_climb_hint": "실험적: 움직이는 트리코의 꼬리에서 소년이 제자리에서 계속 오르는 현상이 사라져야 합니다. 게임의 오르기 코드를 바꾸므로 모든 그래픽 카드에서 작동합니다. 충분히 테스트되지 않음: 손 놓기, 떨쳐내기, 밧줄과 사슬이 다르게 동작할 수 있습니다. 제작: @YsraEstudos. 기본값 꺼짐.",
+    "launcher.game_tail_climb_hint": "실험적: 움직이는 트리코의 꼬리에서 소년이 제자리에서 계속 오르는 현상이 사라져야 합니다. 게임의 오르기 코드를 바꾸므로 모든 그래픽 카드에서 작동합니다. 충분히 테스트되지 않음: 손 놓기, 떨쳐내기, 밧줄과 사슬이 다르게 동작할 수 있습니다. 제작: @YsraEstudos. 기본값 켜짐.",
     "launcher.flags_rdna": "RDNA2: 개선 가능 항목",
     "launcher.rdna_memory_priority": "메모리 우선순위",
     "launcher.rdna_memory_priority_hint": "어떤 메모리가 가장 중요한지 그래픽 드라이버에 알려 카드에 유지되도록 합니다. 구형 AMD 카드(RX 6000 등 RDNA2)에 도움이 될 수 있습니다. 최신 카드에서는 향상이 측정되지 않았습니다. 제작: @YsraEstudos. 기본값 꺼짐.",

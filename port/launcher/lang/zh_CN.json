@@ -63,7 +63,7 @@
     "launcher.flag_vk_validation_hint": "检查每个图形调用。非常慢,且仅在安装了 Vulkan SDK 时可用。供开发者使用。",
     "launcher.flags_game": "实验性游戏修复",
     "launcher.game_tail_climb": "特里可尾巴攀爬修复",
-    "launcher.game_tail_climb_hint": "实验性：男孩在特里可摆动的尾巴上应不再原地攀爬。修改的是游戏的攀爬代码，因此适用于任何显卡。未充分测试：松手、甩落、绳索和锁链的表现可能不同。作者 @YsraEstudos。默认关闭。",
+    "launcher.game_tail_climb_hint": "实验性：男孩在特里可摆动的尾巴上应不再原地攀爬。修改的是游戏的攀爬代码，因此适用于任何显卡。未充分测试：松手、甩落、绳索和锁链的表现可能不同。作者 @YsraEstudos。默认开启。",
     "launcher.flags_rdna": "RDNA2：可能的改进",
     "launcher.rdna_memory_priority": "内存优先级",
     "launcher.rdna_memory_priority_hint": "告诉显卡驱动哪些内存最重要，使其保留在显卡上。可能对较旧的 AMD 显卡（RDNA2，如 RX 6000）有帮助。在较新的显卡上未测到提升。作者 @YsraEstudos。默认关闭。",

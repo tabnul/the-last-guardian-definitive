@@ -63,7 +63,7 @@
     "launcher.flag_vk_validation_hint": "Her grafik çağrısını denetler. Çok yavaştır ve yalnızca Vulkan SDK kuruluyken çalışır. Geliştiriciler için.",
     "launcher.flags_game": "Deneysel oyun düzeltmeleri",
     "launcher.game_tail_climb": "Trico'nun kuyruğunda tırmanma",
-    "launcher.game_tail_climb_hint": "Deneysel: çocuk artık Trico'nun hareket eden kuyruğunda yerinde tırmanmamalı. Oyunun tırmanma kodunu değiştirir, bu yüzden her grafik kartında çalışır. Tam test edilmedi: bırakma, silkeleme, halatlar ve zincirler farklı davranabilir. @YsraEstudos tarafından. Varsayılan olarak kapalı.",
+    "launcher.game_tail_climb_hint": "Deneysel: çocuk artık Trico'nun hareket eden kuyruğunda yerinde tırmanmamalı. Oyunun tırmanma kodunu değiştirir, bu yüzden her grafik kartında çalışır. Tam test edilmedi: bırakma, silkeleme, halatlar ve zincirler farklı davranabilir. @YsraEstudos tarafından. Varsayılan olarak açık.",
     "launcher.flags_rdna": "RDNA2: olası iyileştirmeler",
     "launcher.rdna_memory_priority": "Bellek önceliği",
     "launcher.rdna_memory_priority_hint": "Grafik sürücüsüne hangi belleğin en önemli olduğunu söyler, böylece kartta kalır. Eski AMD kartlarına (RDNA2, ör. RX 6000) yardımcı olabilir. Yeni kartlarda kazanç ölçülmedi. @YsraEstudos tarafından. Varsayılan olarak kapalı.",

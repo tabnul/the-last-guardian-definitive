@@ -226,7 +226,7 @@ DEBUG_FLAGS = (
     ('flag_granule', 'TLG_RESIDENCY_GRANULE_MB', None, '0', True),    # #79: AMD Windows submit OOM
     ('flag_sema_fast', 'TLG_SEMA_FAST', None, '0', True),            # #41 (@thearturord)
     ('flag_vk_validation', 'TLG_VK_VALIDATION', '1', None, False),     # needs the Vulkan SDK layer
-    ('game_tail_climb', 'TLG_TAIL_CLIMB_FIX', '1', None, False),      # PR #171, eboot patch, every GPU
+    ('game_tail_climb', 'TLG_TAIL_CLIMB_FIX', '1', None, True),       # PR #171, eboot patch, every GPU
     # Possible RDNA2 (older AMD) gains, ports of @YsraEstudos PRs #172-#174; no gain on RDNA4 / RTX.
     ('rdna_memory_priority', 'TLG_MEMORY_PRIORITY', '1', None, False),  # PR #172
     ('rdna_wave64', 'TLG_WAVE64_STAGES', '1', None, False),            # PR #173

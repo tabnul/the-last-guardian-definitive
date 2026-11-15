@@ -63,7 +63,7 @@
     "launcher.flag_vk_validation_hint": "すべてのグラフィック呼び出しを検査します。非常に遅く、Vulkan SDK がインストールされている場合のみ動作します。開発者向けです。",
     "launcher.flags_game": "実験的なゲーム修正",
     "launcher.game_tail_climb": "トリコの尻尾の登り修正",
-    "launcher.game_tail_climb_hint": "実験的：動いているトリコの尻尾で少年がその場で登り続けることがなくなるはずです。ゲームの登りのコードを変更するため、どのグラフィックカードでも動作します。十分にテストされていません：手を離す、振り落とし、ロープや鎖の挙動が変わる可能性があります。作者 @YsraEstudos。デフォルトはオフ。",
+    "launcher.game_tail_climb_hint": "実験的：動いているトリコの尻尾で少年がその場で登り続けることがなくなるはずです。ゲームの登りのコードを変更するため、どのグラフィックカードでも動作します。十分にテストされていません：手を離す、振り落とし、ロープや鎖の挙動が変わる可能性があります。作者 @YsraEstudos。デフォルトはオン。",
     "launcher.flags_rdna": "RDNA2: 改善の可能性",
     "launcher.rdna_memory_priority": "メモリ優先度",
     "launcher.rdna_memory_priority_hint": "どのメモリが最も重要かをグラフィックドライバーに伝え、カード上に保持させます。古いAMDカード（RX 6000などのRDNA2）で効果がある可能性があります。新しいカードでは効果は測定されていません。作者 @YsraEstudos。デフォルトはオフ。",
