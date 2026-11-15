@@ -667,11 +667,13 @@ std::string SetChunk() {
                   "Scale(pp,'sharp','sharpenScale',%d)\n"
                   "Scale(pp,'fogd','fogParam',%d,XY)\n"
                   "Scale(pp,'lvca','lightVolumeChromaticAberration',%d,X)\n"
+                  "Scale(cs,'shd','splitDistances',%d,ALL)\n"
                   "Feathers(%d) Fov(%d) Grass(%s) BoyWind(%d) TreeWind(%d)\n",
                   s.bloom.load(), s.bloom.load(), s.ssao.load(), s.ssao.load(), s.ssr.load(),
                   s.ssr.load(), s.motion_blur.load(), s.motion_blur.load(),
                   s.vignette.load() * 0.01, std::min(s.game_sharpen.load(), 100),
-                  s.fog_distance.load(), s.haze_fringe.load(), s.trico_feathers.load(), s.fov.load(),
+                  s.fog_distance.load(), s.haze_fringe.load(),
+                  std::clamp(s.shadow_distance.load(), 10, 100), s.trico_feathers.load(), s.fov.load(),
                   s.grass_smooth.load() ? "true" : "false", s.boy_wind.load(), s.tree_wind.load());
     code += line;
     code += "Drool(" + std::to_string(std::clamp(s.trico_drool.load(), 0, 2)) + ")\n";

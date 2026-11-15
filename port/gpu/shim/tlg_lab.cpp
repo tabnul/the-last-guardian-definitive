@@ -146,6 +146,11 @@ void Reload() {
                 row.game = old.game;
             }
         }
+        // A 9th field sets the row from the file (tests without the menu): "=50" or just "50".
+        if (fields.size() > 8 && !fields[8].empty()) {
+            row.value = std::strtof(fields[8].c_str() + (fields[8][0] == '=' ? 1 : 0), nullptr);
+            row.active = true;
+        }
         loaded.push_back(std::move(row));
     }
     std::printf("Lab: %zu rows from %s\n", loaded.size(), path);
@@ -222,6 +227,7 @@ void Report(std::string_view text) {
     if (index == -1) {
         wind_game = std::move(value);
     } else if (index >= 0 && size_t(index) < rows.size()) {
+        if (std::getenv("TLG_LAB_LOG")) std::printf("Lab: %s game value %s\n", rows[index].label.c_str(), value.c_str());
         rows[index].game = std::move(value);
     }
 }
