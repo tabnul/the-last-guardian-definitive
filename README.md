@@ -58,6 +58,9 @@ No game files are included. You need your own copy, dumped from your own PS4.
 - **Trico's size:** from half to twice his size.
 - **Trico's eyes:** the hidden disco-eye effect, or any colour.
 - **Trico's toilet:** he goes right away, in front of you.
+- **Cut narrator hints:** the 23 narrator hints the developers cut in September 2016. When you
+  seem stuck, the narrator helps again, where they first placed his lines. Off by default: they
+  give puzzle solutions away.
 - **Developer tools:** their free camera, Tricopilot (self-driving Trico) and their QA menu with
   level select.
 
