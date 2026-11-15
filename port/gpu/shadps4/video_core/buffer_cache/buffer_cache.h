@@ -5,12 +5,17 @@
 
 #include "tlg_copy.h"
 
+#include <atomic>
 #include <chrono>
 #include <deque>
 #include <functional>
+#include <list>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
+#include <tuple>
 #include <unordered_map>
 #include <boost/container/small_vector.hpp>
 
@@ -114,6 +119,16 @@ public:
     }
     /// tlg: the buffer tracking of one page, for the fault-loop report.
     std::string DescribeFaultState(VAddr device_addr);
+    /// tlg (HayatoG/tlg_pc#175, @YsraEstudos; always on in precise mode): pages the guest reads/writes after
+    /// GPU writes are learnt (NoteReadback), copied at fences (EagerCopyAtFence), and served on
+    /// the faulting thread (TryEagerRead) without waking the GPU command thread.
+    bool TryEagerRead(VAddr addr, u64 size);
+    void NoteReadback(VAddr addr, u64 size);
+    void EagerCopyAtFence();
+    /// tlg: a fence packet writes [addr, addr+size) after EagerCopyAtFence: older copies lack it.
+    void MarkFenceWrite(VAddr addr, u64 size) {
+        MarkEagerStale(addr, size);
+    }
 
     /// Finds a buffer for the specified region.
     [[nodiscard]] std::pair<const Buffer*, u64> ObtainBuffer(VAddr device_addr, u32 size,
@@ -142,6 +157,10 @@ public:
 
     /// Commits pending sparse buffer memory binds. Must be called before every scheduler submit.
     void SubmitPendingArenaBinds(Vulkan::SubmitInfo& info);
+
+    /// tlg (issue #79): destroys the arenas a migration replaced, once the GPU is done with
+    /// them (TLG_ARENA_FREE=1). GPU thread, between draws.
+    void FreeReplacedArenas();
 
     /// tlg (issue #38): releases the arena memory backing a range the guest unmapped. From the
     /// SotC port (@AjncSystem, @Oussama268, thanks). GPU thread only.
@@ -172,6 +191,60 @@ private:
 
     /// Opt-in telemetry for coherent buffer readback batching.
     void ReportReadbackStats();
+
+    struct EagerPage {
+        u64 offset;
+        u64 tick;
+        bool dirty;
+        bool valid;
+        u32 idle;
+        u8 backoff;
+        u8 skip;
+    };
+    static bool EagerEnabled();
+    void NoteGpuWriteForEager(VAddr addr, u64 size);
+    void MarkEagerStale(VAddr addr, u64 size);
+    void ApplyEagerSubtractsLocked();
+    std::mutex eager_mutex;
+    std::map<VAddr, EagerPage> eager_pages;
+    std::vector<VAddr> eager_free_offsets;
+    u64 eager_next_offset = 0;
+    std::atomic<u32> eager_count{0};
+    std::vector<VAddr> eager_subtracts;
+    std::unique_ptr<Buffer> eager_buffer;
+
+    struct DeferredReadback {
+        Vulkan::StagingBufferRef staging;
+        boost::container::small_vector<vk::BufferCopy, 8> copies;
+        VAddr arena_base{};
+        VAddr start{};
+        VAddr end{};
+        u64 tick{};
+        std::atomic<bool> stale{};
+        std::atomic<bool> applied{};
+        std::atomic<bool> recovered{};
+        std::mutex mutex;
+        bool Done() const noexcept {
+            return applied.load(std::memory_order_acquire) ||
+                   recovered.load(std::memory_order_acquire);
+        }
+    };
+    static bool DeferredReadbackEnabled();
+    static bool LocalReadbackJoin();
+    void WaitReadbackTick(u64 tick);
+    std::tuple<const Buffer*, VAddr, VAddr> GetReadbackWindow(VAddr device_addr, u64 size);
+    u64 CollectDownloads(const Buffer* arena, VAddr device_addr, u64 size,
+                         boost::container::small_vector<vk::BufferCopy, 8>& copies);
+    std::shared_ptr<DeferredReadback> StartDeferredReadback(VAddr device_addr, u64 size);
+    std::shared_ptr<DeferredReadback> PendingDeferredReadback(VAddr device_addr, u64 size);
+    bool FinishDeferredReadback(DeferredReadback& readback, bool wait);
+    void RecoverDeferredReadback(DeferredReadback& readback);
+    void SettleDeferredReadbacks(VAddr start, VAddr end);
+    void PruneDeferredReadbacks();
+    void MarkDeferredStale(VAddr addr, u64 size, bool cpu);
+    std::mutex deferred_mutex;
+    std::vector<std::shared_ptr<DeferredReadback>> deferred_readbacks;
+    std::atomic<u32> deferred_count{0};
 
     bool SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 size, bool is_written,
                            bool is_texel_buffer);
@@ -317,7 +390,22 @@ private:
     u64 max_arena_pages{2};
     u64 arena_page_size{u64{1} << MAX_ARENA_PAGE_BITS};
     u64 num_arena_pages{u64{1} << (ADDRESS_SPACE_BITS - MAX_ARENA_PAGE_BITS)};
-    std::deque<Buffer> arenas;
+    /// A list: FreeReplacedArenas erases from the middle and the others must not move.
+    std::list<Buffer> arenas;
+    /// tlg (issue #79): a migration builds a larger arena over the pages of the ones it joins
+    /// and the old ones stayed alive for good, each still reserving its sparse address range
+    /// (New Game on an 8 GB RX 580: 10 arenas, 7680 MiB reserved for 771 MiB of data, then the
+    /// driver's ErrorOutOfHostMemory). With TLG_ARENA_FREE=1 they are destroyed once the work
+    /// recorded against them has finished on the GPU.
+    struct RetiredArena {
+        const Buffer* arena;
+        u64 tick;
+        std::chrono::steady_clock::time_point since;
+    };
+    std::vector<RetiredArena> retired_arenas;
+    bool free_replaced_arenas{};
+    // tlg (issue #79): memory becomes resident in aligned granules of this size (0 = per block).
+    u64 residency_granule_bytes{16_MB};
     std::vector<ArenaBinds> pending_binds;
     Vulkan::Semaphore memory_semaphore;
 

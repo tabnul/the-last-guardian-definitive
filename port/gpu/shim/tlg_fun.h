@@ -88,6 +88,8 @@ inline constexpr Action Actions[] = {
     {"liedown_smell", "Sniff lying down", "lie", "smell"},
     {"touch_boy_right", "Touch the boy", "stand", "touch"},
     {"TC_reactionA_to_boy", "React to the boy", "stand", "reaction"},
+    {"A_smell", "Sniff", "stand", "smell"},              // first half of the sealed Play act (Mods > Trico plays)
+    {"touch_left_side_soft", "Paw", "stand", "touch"},   // second half (Common_touch_left)
 };
 void Act(const char* command);
 
@@ -115,6 +117,19 @@ void Size(float scale);
 float SizeNow();
 void FreeCamera(bool on);
 bool FreeCameraOn();
+// Photo mode: our own fly camera (on the developers' editor camera), with the world frozen so
+// the pad flies only the camera and the boy stays where he is. Two ways to freeze, because it is
+// not yet tested which one keeps the fly camera moving:
+//  Pause     - the game's own pause (luaCommand "trico pause", as the pause menu does).
+//  StopTime  - the game's slow-motion speed set to almost zero (MS.SetGameSpeed); not exactly 0,
+//              the game's scripts divide by the speed. The scene's own speed comes back after.
+// Leaving puts back the normal camera and the game's speed or pause. A jump turns it off.
+enum class PhotoFreeze { Pause = 0, StopTime = 1 };
+inline constexpr const char* PhotoFreezeNames[] = {"Pause the game", "Stop time"};
+void PhotoMode(bool on);
+bool PhotoModeOn();
+void PhotoModeFreeze(PhotoFreeze how); // takes effect at the next start of photo mode
+PhotoFreeze PhotoModeFreeze();
 // Tricopilot: the developers' self-driving Trico, left in the retail game
 // (game/scripts/ai2/condor/condordebugautotrico.lua). Trico walks the scene by himself and the
 // camera follows him. The launcher's benchmark can keep it on for a whole run (TLG_TRICOPILOT=1).
@@ -149,3 +164,16 @@ inline constexpr const char* TricopilotHelp =
     "into a load trigger, and the story keeps running around him.";
 bool EyeCustom();
 } // namespace TlgFun
+
+// tlg: quitting from the keyboard (Alt+Q, window close) and the controller (Controls tab combo, held
+// 2 s). Runs the game's own luaCommand("quit") once no load is running, so its exit callbacks save
+// the config and perpetual data; the game then ends in sceSystemServiceLoadExec (src/runtime_tlg.c),
+// which exits instead of restarting. Closes anyway when the game has not finished after a while.
+namespace TlgQuit {
+void Request(const char* why);
+bool Requested();
+}
+// tlg: the QA menu combo of Controls (when it is not the default L1+L3, which the game's pad check handles).
+namespace TlgFun {
+void ToggleQaMenu();
+}

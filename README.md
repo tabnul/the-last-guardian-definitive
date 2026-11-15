@@ -8,8 +8,11 @@
   <a href="port/LICENSE"><img src="https://img.shields.io/badge/license-GPL--2.0-555?style=for-the-badge" alt="GPL-2.0"></a>
 </p>
 
+<p align="center"><i>A fan project, by fans, for fans.</i></p>
+
 A native Windows and Linux port of The Last Guardian (PS4). It adds DLSS and FSR, frame generation,
-ultrawide support, an optional texture pack and an in-game graphics menu. It also brings back many
+ultrawide support, an optional texture pack, an in-game graphics menu and a [photo mode](#photo-mode).
+It also brings back many
 things the developers cut or hid in the game's files, which you can't find in any other version:
 see [Cut and hidden content](#cut-and-hidden-content) and the [full guide](docs/fun.md).
 
@@ -18,10 +21,57 @@ see [Cut and hidden content](#cut-and-hidden-content) and the [full guide](docs/
 
 No game files are included. You need your own copy, dumped from your own PS4.
 
-**Contents:** [Get started](#get-started) · [Graphics](#graphics) ·
+**Contents:** [Features](#features) · [Get started](#get-started) · [Graphics](#graphics) · [Photo mode](#photo-mode) ·
 [Cut and hidden content](#cut-and-hidden-content) · [Sound](#sound) · [Soundtrack](#soundtrack) ·
 [Controllers and languages](#controllers-and-languages) · [For testers](#for-testers) ·
 [Building](#building) · [Credits](#credits)
+
+## Features
+
+**Made by us, not in any version of the game:**
+
+- **[Photo mode](#photo-mode):** freeze the world, fly a free camera anywhere and save lossless
+  PNG screenshots at full render resolution.
+- **[ICO horns](#ico-horns-only-in-this-port):** the Horned Apparel outfit finally gives the boy
+  Ico's horns. Optional, off by default.
+- **[Trico Tricks](docs/fun.md#trico-tricks-make-trico-move):** 30 of Trico's own moves on a bar (**F12**), including the throw-up animation
+  the developers sealed.
+- **[Soundtrack](#soundtrack):** a music player in the launcher with all 100 pieces of the game's
+  music, from your own game files.
+- **[Texture pack generator](docs/texture-pack.md):** the game started out on PS3, and many of its
+  textures look rough up close on a modern screen. Our
+  [generator](https://github.com/tabnul/ps4-texturepack-generator) builds a 4x texture pack from
+  your own copy, with more detail in stone, moss, wood and cloth. Optional, and you can switch
+  it on and off while you play.
+- **[Controllers](#controllers-and-languages):** remap buttons, dead zones and trigger points,
+  a stick drift check and your own button combos.
+- **[Quit directly](#controllers-and-languages):** quit the game from anywhere with a controller
+  combo or the keyboard (**Alt+Q**), no menus. The game's pause menu shows the buttons.
+
+**Brought back from the game's files**, cut or hidden by the developers
+([full guide](docs/fun.md)):
+
+- **Trico's drool:** switched off just before release.
+- **Trico's play:** Trico sniffs and paws at the boy. A sealed feature that works as originally
+  intended, or on demand from Trico Tricks.
+- **Extra Tricos:** up to 8 more next to the boy, the armoured one too.
+- **Trico's size:** from half to twice his size.
+- **Trico's eyes:** the hidden disco-eye effect, or any colour.
+- **Trico's toilet:** he goes right away, in front of you.
+- **Developer tools:** their free camera, Tricopilot (self-driving Trico) and their QA menu with
+  level select.
+
+**Added by the port:**
+
+- Native Windows and Linux builds
+- DLSS, FSR 4 and FSR 3.1 anti-aliasing and upscaling, and DLSS or FSR frame generation
+- Any resolution including 21:9 ultrawide (32:9 experimental), and 30, 60 or unlocked FPS
+- An in-game settings menu (**Insert**) with presets, shadows, field of view, effects, colour and HDR10
+- Shader recipes against stutter and calmer wind
+- 7.1 surround, output device choice and headphone surround
+- Language packs for 14 languages
+- [Packed game files](#get-started): play straight from one ZArchive `.zar` file
+  and save about half the disk space (about 26 GB becomes about 12.5 GB)
 
 ## Get started
 
@@ -32,7 +82,7 @@ No game files are included. You need your own copy, dumped from your own PS4.
 3. For audio, copy `libSceNgs2.sprx` from your PS4 firmware into `system_lib/` next to the executable.
 4. Start the launcher, pick the game folder and press **Play**.
 
-**Save half the disk space (experimental):** the port can play the game straight from one packed file. In the
+**Save half the disk space:** the port can play the game straight from one packed file. In the
 launcher, under Game folder, press **Pack…** to turn the folder into a `.zar` file (about 26 GB
 becomes about 12.5 GB, a few minutes), or **.zar…** to pick one you made before. Only the parts the
 game asks for are unpacked, while it plays. Keep the folder until a first start works, then you can
@@ -50,6 +100,7 @@ Control.
 | Key | In game |
 |---|---|
 | Insert (R3 + L2) | The port's menu |
+| Alt+Q (hold Share + Options 2 s) | Quit the game (settings and progress saved) |
 | F8 | Switch between DLSS/FSR and the game's own anti-aliasing |
 | F10 | FPS counter |
 | F12 | Trico Tricks bar |
@@ -129,6 +180,30 @@ the full screenshot. Most of the difference is in motion (less shimmer), which a
 [<img src="docs/screenshots/crops/TEXTURE_ROCK_AFTER.jpg" alt="moss and rock, with the texture pack">](docs/screenshots/TEXTURE_AFTER.png)
 
 </details>
+
+## Photo mode
+
+**Capture the moments that matter most.** Stop time, then circle the camera all the way around
+Trico and the boy to find your angle, and keep the shot forever.
+
+The original game has no photo mode. This port adds one. The world stops, and you fly a free camera
+anywhere you like: around Trico, high above the gorge, right up to the boy's face. Then you save
+the picture.
+
+- **Start and stop:** **L3 + R3** on a controller, **F9** on the keyboard, or **Photo mode** in the
+  in-game menu (Fun tab). You can change the controller combo under Controls.
+- **Fly:** left stick to move, right stick to look around, **L2 / R2** down and up, hold **R1** to
+  go faster or **L1** to go slower.
+- **Save a picture:** **Cross** or **Print Screen**. It is saved as a lossless PNG at the full
+  render resolution in `user/screenshots`. The button help on screen is not in the picture.
+- **HDR and normal, both:** with HDR on, every photo is saved twice. A normal picture that looks
+  right on any screen and is easy to share, and an HDR picture (name ending in `-hdr.png`) that
+  keeps the full brightness for HDR screens. Chrome and Edge show it in HDR. You can switch the
+  HDR picture off in the in-game menu (Fun tab) or in the launcher.
+
+<p align="center"><a href="docs/fun.md#photo-mode"><img src="docs/screenshots/fun/photo-mode-bridge.jpg" alt="Photo mode: Trico reaches down to the boy on a broken bridge, with the button hints on screen"></a></p>
+
+<p align="center"><sub><i>Trico saving the day in the famous collapsing bridge scene. Normally only shown in first person, now it can be seen from all angles.</i></sub></p>
 
 ## Cut and hidden content
 
@@ -225,10 +300,20 @@ sensor. On the launcher's **Controls** page you can remap buttons, set stick dea
 trigger points, check for stick drift, and remap keyboard and mouse. See
 [port/packaging/README-player.md](port/packaging/README-player.md).
 
+- **Quit from anywhere:** **Alt+Q** on the keyboard, or hold **Share + Options** for 2 seconds
+  on a controller (a note shows while you hold; let go to cancel). The window's X and Alt+F4 work
+  the same way. It quits the way the game's own Quit does, so settings and progress are saved.
+  The game's pause menu (Options) shows your current buttons for quit, the port's menu and
+  the QA menu.
+- **Your own button combos:** the quit combo, the port's menu (R3 + L2) and the QA menu
+  (L1 + L3) can each be set to other buttons, on the launcher's **Controller** page (Combos) or
+  under Controls in the port's menu. The quit combo is always held for 2 seconds.
+
 <p align="center"><img src="docs/screenshots/fun/controller.png" width="80%" alt="The launcher's Controls page"></p>
 
 The launcher and in-game menu are in English, with language packs for German, French, Spanish,
-Brazilian Portuguese, Japanese and Simplified Chinese (**Settings > Language**). The Portuguese
+Italian, Dutch, Polish, Turkish, Ukrainian, Portuguese (Brazil and Portugal), Japanese, Korean and
+Chinese (Simplified and Traditional) (**Settings > Language**). The Portuguese
 pack is HayatoG's translation. The others are machine translations, and corrections from native
 speakers are welcome; see [port/docs/language-packs.md](port/docs/language-packs.md). The game's
 own text and voices are a separate setting.

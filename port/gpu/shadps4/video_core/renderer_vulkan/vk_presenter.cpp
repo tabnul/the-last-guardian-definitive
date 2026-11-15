@@ -39,6 +39,8 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <miniz.h>
+#include <fstream>
 #include <iomanip>
 #include <limits>
 #include <memory>
@@ -492,8 +494,8 @@ Frame* Presenter::PrepareLastFrame() {
         if (result == vk::Result::eTimeout) {
             continue;
         }
-        ASSERT_MSG(result != vk::Result::eErrorDeviceLost,
-                   "Device lost during waiting for a frame");
+        ASSERT_CODE_MSG(result != vk::Result::eErrorDeviceLost, 25,
+                    "Device lost during waiting for a frame");
     }
 
     auto& scheduler = flip_scheduler;
@@ -580,6 +582,195 @@ static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandB
             std::fclose(f);
         }
         vmaDestroyBuffer(allocator, buffer, allocation);
+    });
+}
+
+// tlg: a 16-bit RGB PNG that carries the HDR10 signal as it is (BT.2020, PQ), marked with a cICP
+// chunk so HDR-aware viewers (Chrome, Edge) show it in HDR. miniz only writes 8-bit PNGs.
+static bool WriteHdrPng(const std::filesystem::path& file, const std::vector<u16>& rgb, u32 w,
+                        u32 h) {
+    const size_t stride = size_t(w) * 6;
+    std::vector<u8> raw((stride + 1) * h);
+    for (u32 y = 0; y < h; ++y) {
+        u8* row = raw.data() + (stride + 1) * y;
+        const u16* src = rgb.data() + size_t(w) * 3 * y;
+        row[0] = 1; // filter: Sub (each byte minus the same byte of the pixel to the left)
+        for (size_t i = 0; i < size_t(w) * 3; ++i) {
+            row[1 + i * 2] = u8(src[i] >> 8); // big endian
+            row[2 + i * 2] = u8(src[i]);
+        }
+        for (size_t i = stride; i > 6; --i) {
+            row[i] = u8(row[i] - row[i - 6]);
+        }
+    }
+    mz_ulong packed_size = mz_compressBound(mz_ulong(raw.size()));
+    std::vector<u8> packed(packed_size);
+    if (mz_compress2(packed.data(), &packed_size, raw.data(), mz_ulong(raw.size()), 4) != MZ_OK) {
+        return false;
+    }
+    std::ofstream out(file, std::ios::binary);
+    const auto chunk = [&out](const char* type, const u8* data, size_t size) {
+        const u8 length[4] = {u8(size >> 24), u8(size >> 16), u8(size >> 8), u8(size)};
+        out.write(reinterpret_cast<const char*>(length), 4);
+        out.write(type, 4);
+        mz_ulong crc = mz_crc32(MZ_CRC32_INIT, reinterpret_cast<const u8*>(type), 4);
+        if (size) {
+            out.write(reinterpret_cast<const char*>(data), std::streamsize(size));
+            crc = mz_crc32(crc, data, size);
+        }
+        const u8 sum[4] = {u8(crc >> 24), u8(crc >> 16), u8(crc >> 8), u8(crc)};
+        out.write(reinterpret_cast<const char*>(sum), 4);
+    };
+    out.write("\x89PNG\r\n\x1a\n", 8);
+    const u8 header[13] = {u8(w >> 24), u8(w >> 16), u8(w >> 8), u8(w), u8(h >> 24), u8(h >> 16),
+                           u8(h >> 8),  u8(h),       16,         2,     0,           0,
+                           0}; // 16 bits per channel, RGB
+    chunk("IHDR", header, sizeof(header));
+    const u8 colour[4] = {9, 16, 0, 1}; // BT.2020 primaries, PQ transfer, RGB, full range
+    chunk("cICP", colour, sizeof(colour));
+    chunk("IDAT", packed.data(), packed_size);
+    chunk("IEND", nullptr, 0);
+    return bool(out);
+}
+
+// tlg: photo mode screenshot. The frame image (in TransferSrcOptimal) is copied to a host buffer;
+// once the GPU is done, a worker thread turns it into 8-bit RGB and writes a lossless PNG to
+// <user>/screenshots (TLG_GPU_USER_DIR, else "user"), so the frame itself never waits on the encode.
+// With HDR on the frame holds the HDR10 signal (BT.2020, PQ), which a normal viewer shows flat and
+// grey: the PNG then gets a translation to a normal picture (sRGB, highlights rolled off), and
+// with tlg.ini photo_hdr a second file, <name>-hdr.png, keeps the HDR signal as it is.
+void Presenter::SaveScreenshot(vk::CommandBuffer cmdbuf, Scheduler& scheduler, vk::Image image,
+                               u32 w, u32 h, vk::Format format, bool hdr) {
+    const bool ten_bit = format == vk::Format::eA2B10G10R10UnormPack32 ||
+                         format == vk::Format::eA2R10G10B10UnormPack32;
+    const bool bgr = format == vk::Format::eB8G8R8A8Unorm || format == vk::Format::eB8G8R8A8Srgb ||
+                     format == vk::Format::eA2R10G10B10UnormPack32;
+    if (!ten_bit && !bgr && format != vk::Format::eR8G8B8A8Unorm &&
+        format != vk::Format::eR8G8B8A8Srgb) {
+        std::printf("Screenshot: frame format %s not supported\n", vk::to_string(format).c_str());
+        TlgOverlay::Notice("Screenshot failed", 3.0f);
+        return;
+    }
+    const VkBufferCreateInfo buffer_ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                                       .size = VkDeviceSize(w) * h * 4,
+                                       .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+    const VmaAllocationCreateInfo alloc_ci{
+        .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
+        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST};
+    VkBuffer buffer{};
+    VmaAllocation allocation{};
+    VmaAllocationInfo info{};
+    if (vmaCreateBuffer(instance.GetAllocator(), &buffer_ci, &alloc_ci, &buffer, &allocation,
+                        &info) != VK_SUCCESS) {
+        TlgOverlay::Notice("Screenshot failed", 3.0f);
+        return;
+    }
+    cmdbuf.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal, buffer,
+                             vk::BufferImageCopy{.imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                                                 .imageExtent = {w, h, 1}});
+    const char* user = std::getenv("TLG_GPU_USER_DIR");
+    const std::filesystem::path dir =
+        std::filesystem::path(user && user[0] ? user : "user") / "screenshots";
+    const std::time_t now = std::time(nullptr);
+    char stamp[40];
+    std::strftime(stamp, sizeof(stamp), "TLG-%Y%m%d-%H%M%S", std::localtime(&now));
+    static int count = 0;
+    const std::string name = std::string(stamp) + "-" + std::to_string(++count);
+    const std::filesystem::path file = dir / (name + ".png");
+    const std::filesystem::path hdr_file =
+        hdr && TlgSettings::Get().photo_hdr ? dir / (name + "-hdr.png") : std::filesystem::path{};
+    // The brightness (nits) that becomes almost white in the normal picture. 203 is the HDR
+    // standard's "paper white"; TLG_PHOTO_WHITE_NITS overrides it for a brighter or darker PNG.
+    float white_nits = 203.0f;
+    if (const char* env = std::getenv("TLG_PHOTO_WHITE_NITS"); env && std::atof(env) >= 50.0) {
+        white_nits = float(std::atof(env));
+    }
+    scheduler.DeferPriorityOperation([allocator = instance.GetAllocator(), buffer, allocation, info,
+                                      w, h, ten_bit, bgr, hdr, white_nits, dir, file, hdr_file] {
+        vmaInvalidateAllocation(allocator, allocation, 0, VK_WHOLE_SIZE);
+        std::vector<u32> pixels(size_t(w) * h);
+        std::memcpy(pixels.data(), info.pMappedData, pixels.size() * 4);
+        vmaDestroyBuffer(allocator, buffer, allocation);
+        std::thread([pixels = std::move(pixels), w, h, ten_bit, bgr, hdr, white_nits, dir, file,
+                     hdr_file] {
+            const u32 mask = ten_bit ? 1023 : 255;
+            const u32 bits = ten_bit ? 10 : 8;
+            // HDR: PQ code value -> brightness as a multiple of white_nits (SMPTE ST 2084).
+            std::vector<float> pq(hdr ? mask + 1 : 0);
+            for (size_t i = 0; i < pq.size(); ++i) {
+                const double e = std::pow(double(i) / mask, 1.0 / 78.84375);
+                const double y = std::pow(std::max(e - 0.8359375, 0.0) / (18.8515625 - 18.6875 * e),
+                                          1.0 / 0.1593017578125);
+                pq[i] = float(y * 10000.0 / white_nits);
+            }
+            // Linear 0..1 -> sRGB 8-bit, 4096 steps.
+            std::array<u8, 4097> srgb{};
+            for (size_t i = 0; hdr && i < srgb.size(); ++i) {
+                const double v = double(i) / 4096.0;
+                const double s = v <= 0.0031308 ? 12.92 * v : 1.055 * std::pow(v, 1.0 / 2.4) - 0.055;
+                srgb[i] = u8(std::lround(std::clamp(s, 0.0, 1.0) * 255.0));
+            }
+            std::vector<u8> rgb(size_t(w) * h * 3);
+            std::vector<u16> deep(hdr_file.empty() ? 0 : size_t(w) * h * 3);
+            for (size_t i = 0; i < pixels.size(); ++i) {
+                const u32 p = pixels[i];
+                // Red in the low bits (B and R swapped for the BGR formats).
+                u32 r = p & mask;
+                u32 g = (p >> bits) & mask;
+                u32 b = (p >> (2 * bits)) & mask;
+                if (bgr) {
+                    std::swap(r, b);
+                }
+                if (!hdr) {
+                    rgb[i * 3 + 0] = u8(r >> (bits - 8));
+                    rgb[i * 3 + 1] = u8(g >> (bits - 8));
+                    rgb[i * 3 + 2] = u8(b >> (bits - 8));
+                    continue;
+                }
+                if (!deep.empty()) {
+                    deep[i * 3 + 0] = u16(r * 65535u / mask);
+                    deep[i * 3 + 1] = u16(g * 65535u / mask);
+                    deep[i * 3 + 2] = u16(b * 65535u / mask);
+                }
+                // BT.2020 -> BT.709 (sRGB) primaries; colours outside sRGB are clipped.
+                const float lr = pq[r], lg = pq[g], lb = pq[b];
+                const float c[3] = {std::max(1.6605f * lr - 0.5876f * lg - 0.0728f * lb, 0.0f),
+                                    std::max(-0.1246f * lr + 1.1329f * lg - 0.0083f * lb, 0.0f),
+                                    std::max(-0.0182f * lr - 0.1006f * lg + 1.1187f * lb, 0.0f)};
+                // Highlights: as is up to 0.75, above that rolled off towards 1 by the brightest
+                // channel, so the colour keeps its hue and nothing clips to flat white.
+                const float peak = std::max({c[0], c[1], c[2]});
+                const float scale = peak > 0.75f
+                                        ? (0.75f + 0.25f * (1.0f - std::exp(-(peak - 0.75f) / 0.25f))) / peak
+                                        : 1.0f;
+                for (int k = 0; k < 3; ++k) {
+                    const float v = std::min(c[k] * scale, 1.0f);
+                    rgb[i * 3 + k] = srgb[size_t(v * 4096.0f + 0.5f)];
+                }
+            }
+            size_t size = 0;
+            void* png = tdefl_write_image_to_png_file_in_memory_ex(rgb.data(), int(w), int(h), 3,
+                                                                   &size, 6, MZ_FALSE);
+            std::error_code ec;
+            std::filesystem::create_directories(dir, ec);
+            bool ok = false;
+            if (png) {
+                std::ofstream out(file, std::ios::binary);
+                out.write(static_cast<const char*>(png), std::streamsize(size));
+                ok = bool(out);
+                mz_free(png);
+            }
+            std::printf("Screenshot: %s %ux%u %s%s\n", ok ? "saved" : "FAILED", w, h,
+                        file.string().c_str(), hdr ? " (from HDR)" : "");
+            if (!hdr_file.empty()) {
+                const bool hdr_ok = WriteHdrPng(hdr_file, deep, w, h);
+                std::printf("Screenshot: %s HDR copy %s\n", hdr_ok ? "saved" : "FAILED",
+                            hdr_file.string().c_str());
+                ok = ok && hdr_ok;
+            }
+            std::fflush(stdout);
+            TlgOverlay::Notice(ok ? "Screenshot saved (user/screenshots)" : "Screenshot failed", 3.0f);
+        }).detach();
     });
 }
 
@@ -1044,6 +1235,12 @@ bool Presenter::PresentImage(Frame* frame, vk::Image source, bool last) {
                          MakeImageBlit(frame->width, frame->height, fit.extent.width,
                                        fit.extent.height, fit.offset.x, fit.offset.y),
                          one_to_one ? vk::Filter::eNearest : vk::Filter::eLinear);
+        // tlg: photo mode screenshot: the finished frame at render resolution, before our
+        // overlay (menu, FPS, notices) is drawn over it.
+        if (TlgOverlay::TakeScreenshotRequest()) {
+            SaveScreenshot(cmdbuf, scheduler, source, u32(frame->width), u32(frame->height),
+                           FrameFormat(swapchain), frame->is_hdr);
+        }
         // tlg: the settings menu / FPS counter over the frame, at display resolution.
         const bool overlay = TlgOverlay::Visible();
         const std::array post_barriers{
@@ -1204,8 +1401,8 @@ Frame* Presenter::GetRenderFrame() {
 
     // Wait for the presentation to be finished so all frame resources are free
     while (wait() != vk::Result::eSuccess) {
-        ASSERT_MSG(result != vk::Result::eErrorDeviceLost,
-                   "Device lost during waiting for a frame");
+        ASSERT_CODE_MSG(result != vk::Result::eErrorDeviceLost, 25,
+                    "Device lost during waiting for a frame");
         // Retry if the waiting times out
         if (result == vk::Result::eTimeout) {
             continue;

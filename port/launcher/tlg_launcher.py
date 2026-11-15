@@ -64,6 +64,58 @@ TEXT = {
     'home_logs': 'Debug',
     'tab_log': 'Log',
     'tab_bench': 'Benchmark',
+    'tab_flags': 'Flags',
+    'flags_warning': ('For bug reports only. Change these only when you are asked to in an issue on GitHub. '
+                      'A wrong setting can make the game slower or crash it. "Restore defaults" puts everything back. '
+                      'Changes apply the next time the game starts; the log lists every switch you changed.'),
+    'flags_restore': 'Restore defaults',
+    'flags_logging': 'Logging',
+    'flags_crash': 'Crash tests',
+    'flags_memory': 'Memory tests',
+    'log_gpu': 'GPU messages',
+    'log_gpu_hint': 'The graphics emulation also logs its info messages, not only warnings.',
+    'log_vk_fault': 'GPU crash report',
+    'log_vk_fault_hint': 'When the graphics card gives up (device lost), the log says which draw and which address faulted. Needs driver support.',
+    'log_writes': 'Game memory writes',
+    'log_writes_hint': 'Keeps the latest GPU writes to game memory, for a crash report.',
+    'log_page_history': 'Page history',
+    'log_page_history_hint': 'Keeps the latest memory page tracking changes, for a fault loop report.',
+    'log_perf_diag': 'GPU wait report',
+    'log_perf_diag_hint': 'Logs where the game waits for the graphics card.',
+    'log_stop_report': 'Slow frame report',
+    'log_stop_report_hint': 'When a frame takes longer than 250 ms, logs what every thread is doing.',
+    'flag_hdr_hint_rule': 'HDR hint box rule',
+    'flag_hdr_hint_rule_hint': 'Since v0.9.2: places the 21:9 HDR hint boxes. Test switch (issues #68, #78): turn it off to check whether a crash at start comes from it.',
+    'flag_bind_guard': 'Bind guard',
+    'flag_bind_guard_hint': 'Fix for a crash while loading. Test switch: off is the behaviour without the fix.',
+    'flag_reinit_lock': 'Re-init lock',
+    'flag_reinit_lock_hint': 'Fix for the load crash in issue #19. Test switch: off is the behaviour without the fix.',
+    'flag_fault_nodrain': 'Fault no-drain',
+    'flag_fault_nodrain_hint': 'Test switch from issue #38: handles some memory faults without waiting for the graphics card. Off by default.',
+    'flag_pipeline_binaries': 'Pipeline binaries',
+    'flag_pipeline_binaries_hint': 'Stores compiled shaders in the driver format. Off by default: it crashes on NVIDIA driver 595.',
+    'flag_object_motion': 'Object motion',
+    'flag_object_motion_hint': 'Experimental: per-object motion for DLSS and FSR, less smear on the boy and Trico. Costs about 10% FPS and may crash on AMD cards on Linux. Off by default.',
+    'flag_arena_free': 'Free replaced buffer blocks',
+    'flag_arena_free_hint': 'Test switch from issue #79: gives memory blocks that were replaced by a larger one back to the graphics driver. For "out of memory" crashes shortly after loading. Off by default.',
+    'flag_granule': 'Group buffer memory',
+    'flag_granule_hint': "Fix for issue #79: takes buffer memory from the graphics driver in larger pieces instead of many small ones. Older AMD cards on Windows can crash with \"out of memory\" without it. On by default.",
+    'flags_game': 'Experimental game fixes',
+    'game_tail_climb': "Trico's tail climbing fix",
+    'game_tail_climb_hint': "Experimental: the boy should no longer climb in place on Trico's moving tail. Changes the game's climbing code, so it works on every graphics card. Not fully tested: letting go, shake-offs, ropes and chains may behave differently. By @YsraEstudos. On by default.",
+    'flags_rdna': 'RDNA2: possible improvements',
+    'rdna_memory_priority': 'Memory priority',
+    'rdna_memory_priority_hint': 'Tells the graphics driver which memory matters most, so it stays on the card. May help older AMD cards (RDNA2, such as RX 6000). No gain measured on newer cards. By @YsraEstudos. Off by default.',
+    'rdna_wave64': 'Wave64 shader stages',
+    'rdna_wave64_hint': 'Runs more shader stages in the AMD wave64 mode. May help RDNA2 cards (RX 6000). On RX 9000 and RTX no gain, sometimes a few percent slower. By @YsraEstudos. Off by default.',
+    'rdna_sem_spin': 'Short spin-wait',
+    'rdna_sem_spin_hint': 'Waits a moment actively before the game thread sleeps, for faster wake-ups. May help RDNA2 systems. Within noise on our test PCs. By @YsraEstudos. Off by default.',
+    'rdna_submit_draws': 'Early draw submit',
+    'rdna_submit_draws_hint': 'Sends work to the graphics card after every 1024 draws instead of once per frame. AMD cards only. May help RDNA2 cards. By @YsraEstudos. Off by default.',
+    'flag_sema_fast': 'Faster game thread signals',
+    'flag_sema_fast_hint': "Fix for issue #41: the game's threads wait less for each other, a few percent more FPS, most on slower CPUs. On by default.",
+    'flag_vk_validation': 'Vulkan validation',
+    'flag_vk_validation_hint': 'Checks every graphics call. Very slow, and only works with the Vulkan SDK installed. For developers.',
     'home_soundtrack': 'Soundtrack',
     'soundtrack_hint': ("All the game's music, read from your own game folder. The game has no track titles: each piece is "
                         "named by the stage it plays in, with the game's own working name where it has one. The music is "
@@ -110,11 +162,11 @@ TEXT = {
     'system_lib_dir': 'Console system modules',
     'browse': 'Browse…',
     'browse_zar': '.zar…',
-    'browse_zar_tip': ('Experimental: pick a packed game file (.zar) instead of a folder. The game unpacks data while '
+    'browse_zar_tip': ('Pick a packed game file (.zar) instead of a folder. The game unpacks data while '
                        'it plays, which costs some CPU: loads can take a bit longer and streaming '
                        'may hitch on slower CPUs. A plain folder is fastest.'),
     'pack_zar': 'Pack…',
-    'pack_zar_tip': ('Experimental: packs the game folder into one compressed .zar file that the port reads directly '
+    'pack_zar_tip': ('Packs the game folder into one compressed .zar file that the port reads directly '
                      '(saves disk space). The folder is kept; delete it yourself after a test start. '
                      'Playing from a .zar uses some extra CPU (slightly longer loads, possible '
                      'hitches on slower CPUs).'),
@@ -368,6 +420,10 @@ TEXT = {
                       'F8              switch your upscaler / Built-in\n'
                       'F10             show / hide the FPS counter'),
     'hdr_hint': "The game's own HDR10 output, used when HDR is on in Windows display settings. Recommended: on.",
+    'photo_hdr': 'Photo mode: also save an HDR picture',
+    'photo_hdr_hint': ('With HDR on, every photo is saved twice: a normal picture that looks right everywhere, and an HDR picture '
+                       '(name ending in -hdr.png) for HDR screens; Chrome and Edge show it in HDR. Off: only the normal picture. '
+                       'With HDR off there is only the normal picture.'),
     'shadow_scale': 'Shadow resolution',
     'shadow_game': 'Game (2048)',
     'graphics_preset': 'Graphics preset',
@@ -435,6 +491,9 @@ TEXT = {
     'running': 'Playing — log:',
     'ended': 'Game closed (exit code {code}).',
     'crashed': 'The game closed with an error (code {code}). The log has the details.',
+    'crashed_memory': 'The game ran out of memory (code {code}). The log has the details.',
+    'crashed_device': 'The graphics driver stopped responding (code {code}). The log has the details.',
+    'crashed_game': 'The game stopped on an internal error (code {code}). The log has the details.',
     'already': 'The game is already running.',
     'error': 'Error',
 }
@@ -687,12 +746,14 @@ class BenchmarkWindow:
         self.custom = tk.Text(custom_box, width=56, height=10, background=FIELD,
                               foreground=TEXT_COLOR, insertbackground=TEXT_COLOR, relief='flat',
                               font=('TkDefaultFont', 9))
-        self.custom.insert('1.0', '\n'.join(benchmark.EXAMPLE_POINTS))
+        # #68: the pasted list survives closing the launcher (pasting is awkward in Steam's
+        # gaming mode). Empty setting = the examples.
+        self.custom.insert('1.0', app.settings.get('bench_custom_points') or '\n'.join(benchmark.EXAMPLE_POINTS))
         self.custom.grid(row=0, column=0, sticky='ew')
         custom_bar = ttk.Scrollbar(custom_box, orient='vertical', command=self.custom.yview)
         custom_bar.grid(row=0, column=1, sticky='ns')
         self.custom.configure(yscrollcommand=custom_bar.set)
-        self.custom.bind('<KeyRelease>', lambda _e: self.refresh())
+        self.custom.bind('<KeyRelease>', lambda _e: (self.remember_custom(), self.refresh()))
 
         line = ttk.Frame(win)
         line.grid(row=7, column=0, columnspan=3, sticky='w', pady=(8, 0))
@@ -752,6 +813,15 @@ class BenchmarkWindow:
             return [points[i] for i in self.pick.curselection()], []
         return self.bm.parse_points(self.custom.get('1.0', 'end'))
 
+    def remember_custom(self):
+        """Save the custom list when it changed (settings.json), so it is back next time."""
+        text = self.custom.get('1.0', 'end').strip()
+        if text == '\n'.join(self.bm.EXAMPLE_POINTS):
+            text = ''
+        if text != self.app.settings.get('bench_custom_points', ''):
+            self.app.settings['bench_custom_points'] = text
+            tlg_run.save_settings(self.app.settings)
+
     def chosen_seconds(self):
         try:
             return max(5, min(600, int(self.seconds.get())))
@@ -783,6 +853,7 @@ class BenchmarkWindow:
         if app.process or tlg_run.game_running():
             messagebox.showinfo(app.t('bench_title'), app.t('bench_game_running'), parent=self.win)
             return
+        self.remember_custom()
         points, bad = self.chosen()
         if bad:
             messagebox.showerror(app.t('bench_title'),
@@ -1330,7 +1401,7 @@ class Launcher:
         ttk.Label(box, text=drool.what, foreground=DIM, wraplength=420, justify='left').grid(
             row=1, column=0, sticky='w', pady=(6, 0))
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
-        for key in ('mod_treasures', 'mod_horns'):
+        for key in ('mod_treasures', 'mod_horns', 'mod_plays', 'mod_throw_up', 'mod_hints'):
             item = next(i for i in backports_table.MENU if i.key == key)
             mod = section(parent, item.name)
             mod.pack(fill='x', anchor='w', pady=(0, 8))
@@ -1442,7 +1513,16 @@ class Launcher:
         ttk.Checkbutton(video, text='HDR', variable=self.hdr_var, command=hdr_toggled).grid(
             row=16, column=0, columnspan=2, sticky='w', pady=(6, 0))
         self.hint(video, 16, 2, 'hdr_hint')
-        self.build_aa_filters(video, 17)
+        self.photo_hdr_var = tk.BooleanVar(value=ini.get('photo_hdr', '1') != '0')
+
+        def photo_hdr_toggled():
+            tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
+            tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {'photo_hdr': int(self.photo_hdr_var.get())})
+            self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
+        ttk.Checkbutton(video, text=self.t('photo_hdr'), variable=self.photo_hdr_var,
+                        command=photo_hdr_toggled).grid(row=17, column=0, columnspan=2, sticky='w')
+        self.hint(video, 17, 2, 'photo_hdr_hint')
+        self.build_aa_filters(video, 18)
 
         memory = section(main, self.t('memory'))
         memory.grid(row=0, column=1, sticky='new', padx=6, pady=4)
@@ -1455,20 +1535,92 @@ class Launcher:
         spin.bind('<FocusOut>', lambda _: self.changed())
         self.hint(memory, 0, 2, 'vram_hint')
 
-        def ini_check(row, key, default, hint_key):
-            # The in-game menu's switches (tlg.ini, apply at once).
-            var = tk.BooleanVar(value=ini.get(key, default) != '0')
+        # texture_cleanup moved to Debug > Flags (2026-11-12).
+
+    def build_debug_flags(self, frame):
+        """Debug > Flags: start-up switches for bug reports (tlg_run.DEBUG_FLAGS) and the memory test
+        switches (tlg.ini). Launcher only."""
+        ttk.Label(frame, text=self.t('flags_warning'), foreground=ACCENT, wraplength=640,
+                  justify='left').grid(row=0, column=0, columnspan=3, sticky='w', pady=(0, 8))
+        resets = []
+        ttk.Button(frame, text=self.t('flags_restore'), command=lambda: [reset() for reset in resets]).grid(
+            row=1, column=0, sticky='w')
+        row = 2
+
+        def heading(key):
+            nonlocal row
+            ttk.Label(frame, text=self.t(key), font=('TkDefaultFont', 10, 'bold')).grid(
+                row=row, column=0, columnspan=3, sticky='w', pady=(10, 2))
+            row += 1
+
+        self.flag_boxes = {}
+
+        def flag_box(name, default):
+            nonlocal row
+            var = tk.BooleanVar(value=tlg_run.debug_flag_on(self.settings, name))
+            self.flag_boxes[name] = (box_holder := [None, var])
 
             def toggled():
+                flags = dict(self.settings.get('debug_flags') or {})
+                if var.get() == default:
+                    flags.pop(name, None)
+                else:
+                    flags[name] = var.get()
+                self.settings['debug_flags'] = flags
+                tlg_run.save_settings(self.settings)
+            box = ttk.Checkbutton(frame, text=self.t(name), variable=var, command=toggled)
+            box_holder[0] = box
+            box.grid(row=row, column=0, columnspan=2, sticky='w', pady=2)
+            help_mark(frame, self.t(name + '_hint'), box).grid(row=row, column=2, sticky='w', padx=(4, 0))
+            resets.append(lambda: (var.set(default), toggled()))
+            row += 1
+
+        box = ttk.Checkbutton(frame, text=self.t('debug_logging'), variable=self.debug_logging_var,
+                              command=self.debug_logging_toggled)
+        box.grid(row=row, column=0, columnspan=2, sticky='w', pady=2)
+        help_mark(frame, self.t('debug_logging_hint'), box).grid(row=row, column=2, sticky='w', padx=(4, 0))
+        resets.append(lambda: (self.debug_logging_var.set(False), self.debug_logging_toggled()))
+        row += 1
+        heading('flags_logging')
+        for name, _, _, _, default in tlg_run.DEBUG_FLAGS:
+            if name.startswith('log_'):
+                flag_box(name, default)
+        heading('flags_crash')
+        for name, _, _, _, default in tlg_run.DEBUG_FLAGS:
+            if name.startswith('flag_'):
+                flag_box(name, default)
+        heading('flags_game')
+        for name, _, _, _, default in tlg_run.DEBUG_FLAGS:
+            if name.startswith('game_'):
+                flag_box(name, default)
+        heading('flags_rdna')
+        for name, _, _, _, default in tlg_run.DEBUG_FLAGS:
+            if name.startswith('rdna_'):
+                flag_box(name, default)
+        # Memory test switches (issue #38; tlg.ini, apply at once), moved from Advanced (2026-11-12).
+        heading('flags_memory')
+        ini_now = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
+        for key, default in (('keep_gpu_textures', '1'), ('arena_release', '1'),
+                             ('gc_live_budget', '1'), ('texture_cleanup', '0')):
+            var = tk.BooleanVar(value=ini_now.get(key, default) != '0')
+
+            def ini_toggled(key=key, var=var):
                 tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
                 tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {key: '1' if var.get() else '0'})
                 self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
+            box = ttk.Checkbutton(frame, text=self.t(key), variable=var, command=ini_toggled)
+            box.grid(row=row, column=0, columnspan=2, sticky='w', pady=2)
+            help_mark(frame, self.t(key + '_hint'), box).grid(row=row, column=2, sticky='w', padx=(4, 0))
+            resets.append(lambda var=var, ini_toggled=ini_toggled, on=default == '1': (var.set(on), ini_toggled()))
+            row += 1
+        self.sync_log_flags()
 
-            ttk.Checkbutton(memory, text=self.t(key), variable=var, command=toggled).grid(
-                row=row, column=0, columnspan=2, sticky='w', pady=(4, 0))
-            self.hint(memory, row, 2, hint_key)
-
-        ini_check(1, 'texture_cleanup', '0', 'texture_cleanup_hint')
+    def sync_log_flags(self):
+        """Advanced logging on: the logging boxes show ticked and greyed (it turns them all on)."""
+        for name, (box, var) in getattr(self, 'flag_boxes', {}).items():
+            if name in tlg_run.DEBUG_LOG_FLAGS:
+                var.set(tlg_run.debug_flag_on(self.settings, name))
+                box.state(['disabled'] if self.settings.get('debug_logging') else ['!disabled'])
 
     def build_logs(self):
         """Logs: the game log as it runs, and the logs folder."""
@@ -1478,7 +1630,7 @@ class Launcher:
             side='right', pady=(6, 0))
         ttk.Button(header, text=self.t('report_issue'), command=self.report_issue).pack(
             side='right', padx=(0, 6), pady=(6, 0))
-        # The same Advanced logging switch as Settings > Debug, next to the log it feeds.
+        # The same Advanced logging switch as Settings > Debug; shown on Debug > Flags.
         self.debug_logging_var = tk.BooleanVar(value=bool(self.settings.get('debug_logging')))
 
         def logging_toggled():
@@ -1486,14 +1638,15 @@ class Launcher:
             if 'debug_logging' in self.vars:
                 self.vars['debug_logging'].set(self.debug_logging_var.get())
             tlg_run.save_settings(self.settings)
-        box = ttk.Checkbutton(header, text=self.t('debug_logging'), variable=self.debug_logging_var,
-                              command=logging_toggled)
-        box.pack(side='right', padx=(0, 12), pady=(6, 0))
-        help_mark(header, self.t('debug_logging_hint'), box).pack(side='right', padx=(0, 4), pady=(6, 0))
+            self.sync_log_flags()
+        self.debug_logging_toggled = logging_toggled   # the box itself is on the Flags tab
         tabs = ttk.Notebook(win)
         tabs.pack(fill='both', expand=True, padx=12, pady=(8, 12))
         frame = ttk.Frame(tabs, padding=12)
         tabs.add(frame, text=self.t('tab_log'))
+        flags_tab = ttk.Frame(tabs)
+        tabs.add(flags_tab, text=self.t('tab_flags'))
+        self.build_debug_flags(scroll_area(flags_tab, padding=12))
         bench_tab = ttk.Frame(tabs)
         tabs.add(bench_tab, text=self.t('tab_bench'))
         # Taller than the window at 1080p (70% of the screen): scroll bars when it does not fit.
@@ -1876,8 +2029,10 @@ class Launcher:
             c.create_window(300, 40, window=self.panel, anchor='nw', width=width - 340, height=height - 80)
         self.home_items['status'] = c.create_text(left, status_y, text='', anchor='w', fill=MUTED,
                                                   font=(SERIF, 11 if home else 10, 'italic'), width=status_width)
-        c.create_text(left, cache_y, text=self.t('home_cache'), anchor='w', fill=DIM, font=(SERIF, 9),
-                      tags='cache')
+        cache = c.create_text(left, cache_y, text=self.t('home_cache'), anchor='w', fill=MUTED,
+                              font=(SERIF, 9), tags='cache')
+        c.tag_bind('cache', '<Enter>', lambda _: (c.itemconfig(cache, fill=ACCENT), c.configure(cursor='hand2')))
+        c.tag_bind('cache', '<Leave>', lambda _: (c.itemconfig(cache, fill=MUTED), c.configure(cursor='')))
         c.tag_bind('cache', '<Button-1>', lambda _: self.clear_cache())
         # Menu music on/off, next to the cache link (saved at once).
         music = c.create_text(left + 150, cache_y, anchor='w', fill=DIM, font=(SERIF, 9), tags='music',
@@ -2097,6 +2252,7 @@ class Launcher:
         self.update_fg(ini)
         self.update_aa_note(ini)
         self.hdr_var.set(ini.get('hdr', '1') != '0')
+        self.photo_hdr_var.set(ini.get('photo_hdr', '1') != '0')
         # Its sliders show the old values; rebuilt after, not from inside one of its own events.
         self.root.after_idle(self.rebuild_graphics)
 
@@ -2623,25 +2779,12 @@ class Launcher:
         slow_box.bind('<<ComboboxSelected>>', lambda _: slow_picked())
         help_mark(parent, slow.what).grid(row=row, column=2, sticky='w', padx=(4, 0), pady=3)
         resets.append(lambda: (slow_box.current(slow_values.index(slow.default)), slow_picked()))
-        # Memory test switches (issue #38; tlg.ini, apply at once), moved from Video (2026-11-10).
-        ini_now = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
-        for key in ('keep_gpu_textures', 'arena_release', 'gc_live_budget'):
-            parent, row = place(0)
-            var = tk.BooleanVar(value=ini_now.get(key, '1') != '0')
-
-            def ini_toggled(key=key, var=var):
-                tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
-                tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {key: '1' if var.get() else '0'})
-                self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
-
-            ttk.Checkbutton(parent, text=self.t(key), variable=var, command=ini_toggled).grid(
-                row=row, column=0, columnspan=2, sticky='w')
-            help_mark(parent, self.t(key + '_hint')).grid(row=row, column=2, sticky='w', padx=(4, 0), pady=3)
-            resets.append(lambda var=var, ini_toggled=ini_toggled: (var.set(True), ini_toggled()))
-
+        # The memory test switches moved to Debug > Flags (2026-11-12).
         bottom = ttk.Frame(frame)
         bottom.grid(row=2, column=0, columnspan=2, sticky='ew', pady=(10, 0))
         ttk.Button(bottom, text=self.t('reset'), command=lambda: [reset() for reset in resets]).pack(side='left')
+        # The home screen's cache link, also here where a stuck start is looked into.
+        ttk.Button(bottom, text=self.t('clear_cache'), command=self.clear_cache).pack(side='left', padx=(10, 0))
 
     def hint(self, parent, row, column, key):
         """A small question mark in that cell; the text shows on the mark and on the row's name."""
@@ -2666,6 +2809,7 @@ class Launcher:
         tlg_run.save_settings(self.settings)
         if hasattr(self, 'debug_logging_var'):
             self.debug_logging_var.set(bool(self.settings.get('debug_logging')))
+            self.sync_log_flags()
         self.refresh_language_choices()
         self.refresh_status()
 
@@ -2888,7 +3032,9 @@ class Launcher:
                     if kind == 'error':
                         messagebox.showerror(self.t('error'), value)
                     else:
-                        message = self.t('ended' if value in (0, -15) else 'crashed', code=value)
+                        message = self.t('ended' if value in (0, -15) else
+                                         {24: 'crashed_memory', 25: 'crashed_device',
+                                          26: 'crashed_game'}.get(value, 'crashed'), code=value)
                         self.append(message)
                         if value not in (0, -15):
                             messagebox.showwarning(TITLE, message)

@@ -98,6 +98,24 @@ TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler&
                      critical_gc_memory);
     }
     trigger_gc_memory = static_cast<u64>((device_local_memory - mem_threshold) / 2);
+    if (!instance.IsIntegrated() && device_local_memory <= SMALL_CARD_MEMORY) {
+        headroom_gc_memory = static_cast<u64>(
+            std::max<s64>(device_local_memory - RESIDENCY_HEADROOM, device_local_memory / 2));
+        ApplyResidencyHeadroom();
+        LOG_INFO(Render_Vulkan,
+                 "Texture cache: {} MB budget, collector critical at {} MB at most "
+                 "({} MB left for buffers)",
+                 device_local_memory >> 20, headroom_gc_memory >> 20, RESIDENCY_HEADROOM >> 20);
+    }
+}
+
+void TextureCache::ApplyResidencyHeadroom() {
+    if (headroom_gc_memory == 0) {
+        return;
+    }
+    critical_gc_memory = std::min(critical_gc_memory, headroom_gc_memory);
+    pressure_gc_memory = std::min(pressure_gc_memory, critical_gc_memory);
+    trigger_gc_memory = std::min(trigger_gc_memory, pressure_gc_memory);
 }
 
 TextureCache::~TextureCache() {
@@ -135,6 +153,9 @@ void TextureCache::RetireReadbacks() {
 bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
                                     ReadbackSource source) {
     if (!deferred_readbacks || !has_pending_readbacks.load(std::memory_order_acquire)) return false;
+    const bool exact = ExactReadbackWaits() &&
+        (source == ReadbackSource::ImageRefresh || source == ReadbackSource::BufferForImage ||
+         source == ReadbackSource::ImageFree);
     {
         std::scoped_lock lock{readback_mutex};
         // Stale mode, byte rule: a game can write every frame to the page that holds a
@@ -144,9 +165,12 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
             readbacks_released += pending_readbacks.ReleaseOutside(address, size, 64_KB,
                 [this](auto& entry) { WatchReadback<false>(entry.address, entry.size); });
         }
-        if (!pending_readbacks.RequiredTick(address, size)) return false;
+        if (!pending_readbacks.RequiredTick(address, size, exact)) {
+            if (exact && pending_readbacks.RequiredTick(address, size)) ++readbacks_neighbors;
+            return false;
+        }
     }
-    const auto resolve = [this, address, size, source] {
+    const auto resolve = [this, address, size, source, exact] {
         const bool diag = Vulkan::WaitDiagnostics::Enabled();
         std::scoped_lock lock{readback_mutex};
         bool waited = false;
@@ -160,7 +184,7 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
             }
         }
         TlgStats::Timer readback_timer{TlgStats::t_readback_wait};
-        if (const u64 tick = pending_readbacks.RequiredTick(address, size)) {
+        if (const u64 tick = pending_readbacks.RequiredTick(address, size, exact)) {
             ++readbacks_waited;
             waited = !scheduler.IsFree(tick);
             const auto start = diag ? std::chrono::steady_clock::now()
@@ -176,17 +200,24 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
     };
     TlgFreeze::SlowScope wait{"GPU readback", address}; // tlg
     if (assume_locks) resolve();
-    else liverpool->SendCommand<true>(resolve);
+    else {
+        if (TlgStats::perf_diag_enabled)
+            TlgStats::cmd_image_readback.fetch_add(1, std::memory_order_relaxed);
+        liverpool->SendCommand<true>(resolve);
+    }
     return true;
 }
 
-void TextureCache::CancelReadbacks(VAddr address, u64 size) {
+void TextureCache::CancelReadbacks(VAddr address, u64 size, bool exact) {
     if (!deferred_readbacks) return;
     std::scoped_lock lock{readback_mutex};
-    pending_readbacks.Cancel(address, size, [this](auto& entry) {
-        if (entry.watched) WatchReadback<false>(entry.address, entry.size);
-        ++readbacks_canceled;
-    });
+    pending_readbacks.Cancel(
+        address, size,
+        [this](auto& entry) {
+            if (entry.watched) WatchReadback<false>(entry.address, entry.size);
+            ++readbacks_canceled;
+        },
+        exact);
 }
 
 // tlg: every copy is recorded first and the GPU is waited for once. A wait per image (as
@@ -1576,6 +1607,7 @@ void TextureCache::GarbageCollectImages() {
                 trigger_gc_memory = budget / 10 * 7;
                 pressure_gc_memory = budget / 100 * 85;
                 critical_gc_memory = budget / 100 * 95;
+                ApplyResidencyHeadroom();
             }
         } else {
             // tlg (#38): on a desktop GPU the start-up limits (5100/5700 MiB on 8 GB) count buffer
@@ -2173,7 +2205,7 @@ void TextureCache::TouchImage(const Image& image) {
 
 void TextureCache::DeleteImage(ImageId image_id) {
     Image& image = slot_images[image_id];
-    CancelReadbacks(image.info.guest_address, image.info.guest_size);
+    CancelReadbacks(image.info.guest_address, image.info.guest_size, ExactReadbackWaits());
     ASSERT_MSG(!image.IsTracked(), "Image was not untracked");
     ASSERT_MSG(False(image.flags & ImageFlagBits::Registered), "Image was not unregistered");
 

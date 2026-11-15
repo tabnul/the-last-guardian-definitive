@@ -324,6 +324,8 @@ static void load_button_maps(void) {
  *   any SDL button name) or on L3+R3 together. While it is on, the left stick tilts the controller
  *   and the bottom face button (cross / A / Nintendo B) shakes it; both are hidden from the game,
  *   so the character neither walks nor jumps. A notice on screen tells the mode.
+ *   tlg_pc: sensor mode is off unless TLG_SENSOR_MODE=1; L3+R3 is the photo mode combo here and
+ *   no motion prompt is known in this game.
  * TLG_MOTION=off disables real sensors (simulation still works). */
 static int injected_motion; /* TLG_PAD_FILE tokens: 1 tilt_right (T), 2 tilt_left (G), 4 shake (Y) */
 typedef struct { float w, x, y, z; } Quat;
@@ -375,7 +377,9 @@ static void sample_motion(PadData *d, SDL_Gamepad *g, const bool *k) {
     if ((k && k[SDL_SCANCODE_Y]) || (injected_motion & 4)) { shake=1; simulated=1; }
     if (g) {
         const int sticks=SDL_GetGamepadButton(g,SDL_GAMEPAD_BUTTON_LEFT_STICK) && SDL_GetGamepadButton(g,SDL_GAMEPAD_BUTTON_RIGHT_STICK);
-        const int toggle=sticks || (motion_button()>=0 && SDL_GetGamepadButton(g,(SDL_GamepadButton)motion_button()));
+        static int sensor_mode=-1; /* tlg_pc: off by default, see above */
+        if (sensor_mode<0) { const char *e=getenv("TLG_SENSOR_MODE"); sensor_mode=e && *e=='1'; }
+        const int toggle=sensor_mode && (sticks || (motion_button()>=0 && SDL_GetGamepadButton(g,(SDL_GamepadButton)motion_button())));
         if (toggle && !motion.toggle_held) {
             motion.mode=!motion.mode;
             tlggpu_overlay_notice(motion.mode ? "Sensor mode ON: left stick tilts, cross/A shakes"

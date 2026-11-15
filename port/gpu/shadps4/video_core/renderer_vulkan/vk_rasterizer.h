@@ -5,6 +5,7 @@
 
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
+#include "common/unique_function.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/page_manager.h"
 #include "video_core/renderer_vulkan/vk_bind_helper.h"
@@ -54,6 +55,11 @@ public:
 
     [[nodiscard]] VideoCore::TextureCache& GetTextureCache() noexcept {
         return texture_cache;
+    }
+
+    /// tlg: see BufferCache::EagerCopyAtFence (fence packets, before the guest sees them).
+    void EagerCopyAtFence() {
+        buffer_cache.EagerCopyAtFence();
     }
 
     void Draw(bool is_indexed, u32 index_offset = 0, const PreparedDraw* prepared = nullptr);
@@ -312,6 +318,10 @@ private:
 
     /// Display pass: counts the frame (TlgStats::gpu_frames) and, with TLG_BUFFER_STATS, the lag.
     void NoteFrameStart();
+    /// tlg (PR #174, @YsraEstudos): TLG_SUBMIT_DRAWS=<n> submits at a render-pass boundary once
+    /// n draws/dispatches piled up (0 or unset = off, as before).
+    void SubmitIfWorkPiledUp(const RenderState& next_state);
+    u64 work_submits = 0;
     /// TLG_GPU_PROFILE: a timestamp where a render pass starts (vk_gpu_profiler.h).
     void MarkPass(const GraphicsPipeline* pipeline, const RenderState& state);
     void BindVertexBuffers(const GraphicsPipeline* pipeline,

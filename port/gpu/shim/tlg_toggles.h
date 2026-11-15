@@ -94,6 +94,7 @@ enum : std::uint64_t {
     ImageHashBacking = 32, ///< texture change hashes read through the backing view
     Frame10Bit = 64,       ///< the 10-bit frame image (bit set: 8-bit, as before; live A/B)
     GpuWriteSubresourceOff = 128, ///< #24: GPU writes into the middle of an image no longer dirty it
+    ExactReadbackWaits = 512, ///< #175: TextureCache resolve/cancel uses exact byte range
 };
 inline bool Disabled2(std::uint64_t bit) {
     return (__atomic_load_n(&runtime_disabled_optimizations2, __ATOMIC_RELAXED) & bit) != 0;
@@ -122,6 +123,12 @@ inline std::atomic<std::uint64_t> buffer_upload_bytes{0};
 inline std::atomic<int> gpu_thread_clock{-1}; ///< clockid_t of the GPU command thread
 inline std::atomic<unsigned long> gpu_thread_id{0}; ///< Windows thread id of the GPU command thread
 inline std::atomic<std::uint64_t> draws{0}, dispatches{0}, submissions{0};
+/// Requests that force the GPU command thread to drain the draw pipeline (TLG_PERF_DIAG).
+inline std::atomic<std::uint64_t> cmd_buffer_readback{0}, cmd_image_readback{0}, cmd_flip{0};
+inline const bool perf_diag_enabled = [] {
+    const char* env = std::getenv("TLG_PERF_DIAG");
+    return env && env[0] == '1';
+}();
 /// Frames the GPU command thread has started (display pass), for per-frame diagnostics.
 inline std::atomic<std::uint64_t> gpu_frames{0};
 /// Wall time spent in operations suspected of stalls (ns, all threads).
@@ -209,6 +216,11 @@ inline std::atomic<std::int64_t> image_bytes[ImageOwners]{}, image_count[ImageOw
 inline std::atomic<std::uint64_t> arena_resident_bytes{0};
 /// tlg (issue #38): arena memory given back on unmap.
 inline std::atomic<std::uint64_t> arena_released{0};
+/// tlg (issue #79): sparse arena bookkeeping for the memory lines at an out-of-memory stop:
+/// arenas alive and the address space they reserve, arenas freed after a migration, device
+/// memory allocations backing them, sparse binds handed to the driver since the start.
+inline std::atomic<std::uint64_t> arena_live_count{0}, arena_live_bytes{0}, arena_freed_count{0},
+    arena_backing_allocs{0}, arena_binds_total{0};
 /// Texture cache region lookups (ForEachImageInRegion) and the images they looked at, for the
 /// memory report: stale images in the page table make every lookup slower.
 inline std::atomic<std::uint64_t> region_lookups{0}, region_candidates{0};

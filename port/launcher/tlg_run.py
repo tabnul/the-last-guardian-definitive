@@ -192,7 +192,6 @@ DEFAULT_ENV = {
     'TLG_GC_BUDGET_MB': '7000',    # texture cache budget; higher only piles up old textures (#104)
     # The anti-aliasing comes from tlg.ini (dlaa, upscaler: DLAA, FSR 3.1 or FSR 4 native AA).
     'TLG_JITTER': '1',             # jitter only while DLAA or FSR native AA runs
-    'TLG_OBJECT_MOTION': '0',
     'TLG_FRAME_STATS': '1',        # FPS in the log every 5 s (read by bench and scene-check tools)
 }
 # The launcher's "Advanced logging", for bug reports. Off the write path only: no TLG_WRITE_LOG=1,
@@ -205,6 +204,52 @@ DEBUG_LOG_ENV = {
     'TLG_WRITE_LOG': '2',          # the latest GPU writes to game memory, for a crash report
     'TLG_VK_FAULT': '1',           # which GPU draw faulted on a device lost (VK_EXT_device_fault)
 }
+
+# Debug > Flags (launcher only: start-up switches, read once when the game starts). Players turn
+# these only when asked in a bug report, never by environment variables.
+# (name, variable, value when ticked, value when not ticked, ticked by default); None = not set.
+# The logging ones are DEBUG_LOG_ENV split up: Advanced logging ticks them all.
+DEBUG_FLAGS = (
+    ('log_gpu', 'TLG_GPU_LOG', 'info', None, False),
+    ('log_vk_fault', 'TLG_VK_FAULT', '1', None, False),
+    ('log_writes', 'TLG_WRITE_LOG', '2', None, False),
+    ('log_page_history', 'TLG_PAGE_HISTORY', '1', None, False),
+    ('log_perf_diag', 'TLG_PERF_DIAG', '1', None, False),
+    ('log_stop_report', 'TLG_STOP_REPORT_MS', '250', None, False),
+    ('flag_hdr_hint_rule', 'TLG_HDR_POST_VS', None, '0', True),        # #68, #78: 21:9 HDR hint boxes
+    ('flag_bind_guard', 'TLG_BIND_GUARD', None, '0', True),            # load crash family (10-28)
+    ('flag_reinit_lock', 'TLG_REINIT_LOCK', None, '0', True),          # #19
+    ('flag_fault_nodrain', 'TLG_FAULT_NODRAIN', '1', None, False),     # #38
+    ('flag_pipeline_binaries', 'TLG_PIPELINE_BINARIES', '1', '0', False),  # NVIDIA 595 crash
+    ('flag_object_motion', 'TLG_OBJECT_MOTION', '1', '0', False),      # ~10% FPS; unguarded reads
+    ('flag_arena_free', 'TLG_ARENA_FREE', '1', None, False),           # #79: out of memory, 8 GB AMD
+    ('flag_granule', 'TLG_RESIDENCY_GRANULE_MB', None, '0', True),    # #79: AMD Windows submit OOM
+    ('flag_sema_fast', 'TLG_SEMA_FAST', None, '0', True),            # #41 (@thearturord)
+    ('flag_vk_validation', 'TLG_VK_VALIDATION', '1', None, False),     # needs the Vulkan SDK layer
+    ('game_tail_climb', 'TLG_TAIL_CLIMB_FIX', '1', None, True),       # PR #171, eboot patch, every GPU
+    # Possible RDNA2 (older AMD) gains, ports of @YsraEstudos PRs #172-#174; no gain on RDNA4 / RTX.
+    ('rdna_memory_priority', 'TLG_MEMORY_PRIORITY', '1', None, False),  # PR #172
+    ('rdna_wave64', 'TLG_WAVE64_STAGES', '1', None, False),            # PR #173
+    ('rdna_sem_spin', 'TLG_SEM_SPIN', '1', None, False),               # PR #174
+    ('rdna_submit_draws', 'TLG_SUBMIT_DRAWS', '1024', None, False),    # PR #174, AMD cards only
+)
+DEBUG_LOG_FLAGS = tuple(flag[0] for flag in DEBUG_FLAGS if flag[0].startswith('log_'))
+
+
+def debug_flag_on(settings, name):
+    """The Flags tab tick of one switch (Advanced logging ticks every logging one)."""
+    if name in DEBUG_LOG_FLAGS and settings.get('debug_logging'):
+        return True
+    default = next(flag[4] for flag in DEBUG_FLAGS if flag[0] == name)
+    return bool((settings.get('debug_flags') or {}).get(name, default))
+
+
+def debug_flags_changed(settings):
+    """'name=value' of every switch away from its default, for the log header (empty: none)."""
+    return [f'{variable}={(on if debug_flag_on(settings, name) else off) or "unset"}'
+            for name, variable, on, off, default in DEBUG_FLAGS
+            if debug_flag_on(settings, name) != default]
+
 
 DEFAULT_SETTINGS = {
     # Source tree: the merged game view and the console modules of ~/decomp. Package: the player
@@ -222,6 +267,8 @@ DEFAULT_SETTINGS = {
     'vsync': True,
     'level_select': False,         # tlg.ini; tlg_lua.cpp
     'debug_logging': False,        # DEBUG_LOG_ENV
+    'debug_flags': {},             # Debug > Flags ticks that differ from DEBUG_FLAGS defaults
+    'bench_custom_points': '',     # Debug > Benchmark custom list, kept across launcher restarts (#68)
     'gpu_id': -1,                  # TLG_GPU_ID: index in gpu_list(); -1 = automatic (most video memory)
     'vram_budget_mb': 7000,
     'native_audio': True,
@@ -477,6 +524,7 @@ def update_ini(path, values):
             lines[i] = f'{key}={values[key]}'
             seen.add(key)
     lines += [f'{k}={v}' for k, v in values.items() if k not in seen]
+    path.parent.mkdir(parents=True, exist_ok=True)   # before the game's first run the folder is missing
     path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
@@ -673,9 +721,13 @@ def prepare(settings, log=print):
          *(['--skip-logos'] if settings.get('skip_logos') else []),
          '--menu-confirm', menu_confirm(settings)],
     ]
+    # Debug > Flags eboot patches (tail climb fix) are applied here, before the game starts.
+    step_env = dict(os.environ)
+    if debug_flag_on(settings, 'game_tail_climb'):
+        step_env.setdefault('TLG_TAIL_CLIMB_FIX', '1')
     for step in steps:
         result = subprocess.run(step, cwd=str(scripts), capture_output=True, text=True,
-                                creationflags=NO_WINDOW)
+                                creationflags=NO_WINDOW, env=step_env)
         if result.returncode:
             name = next(Path(arg).name for arg in step if arg.endswith('.py'))
             raise RuntimeError(f'{name}: {result.stderr.strip() or result.stdout.strip()}')
@@ -953,9 +1005,11 @@ def build_env(settings, extra=None):
     # 60 FPS and unlocked.
     if applied_frame_rate in ('60', 'unlocked'):
         env.setdefault('TLG_BUFFER_READBACK_STATS', '1')
-    if settings.get('debug_logging'):
-        for key, value in DEBUG_LOG_ENV.items():
-            env.setdefault(key, value)
+    # Debug > Flags; TLG_* set outside the launcher still win.
+    for name, variable, on, off, _ in DEBUG_FLAGS:
+        value = on if debug_flag_on(settings, name) else off
+        if value is not None and variable not in os.environ:
+            env[variable] = value
     if int(settings.get('gpu_id', -1)) >= 0:
         env.setdefault('TLG_GPU_ID', str(int(settings['gpu_id'])))
     if extra:
@@ -1063,6 +1117,32 @@ def game_running():
         return False
 
 
+def build_info():
+    """'Build: <commit> (<release>)' for the top of every game log, Advanced logging or not.
+    Package: the VERSION file (line 1 the release name, line 2 'commit <sha>'). Source tree: git.
+    report.current_version reads the commit back from this line."""
+    release, commit = '', ''
+    try:
+        lines = (PORT_DIR / 'VERSION').read_text(encoding='utf-8').splitlines()
+        release = lines[0].strip() if lines else ''
+        for line in lines[1:]:
+            if line.startswith('commit '):
+                commit = line[7:].strip()
+    except (OSError, UnicodeDecodeError):
+        pass
+    if not commit and not FROZEN:
+        try:
+            commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=str(REPO_DIR), capture_output=True,
+                                    text=True, timeout=5).stdout.strip()
+            dirty = subprocess.run(['git', 'status', '--porcelain', '--untracked-files=no'],
+                                   cwd=str(REPO_DIR), capture_output=True, text=True, timeout=5).stdout
+            if commit and dirty.strip():
+                release = (release + ' ' if release else '') + 'local changes'
+        except Exception:  # noqa: BLE001 - a missing build line must never stop a game start
+            pass
+    return f"Build: {commit or 'unknown'}" + (f' ({release})' if release else '')
+
+
 def launch(settings, seconds=0, extra_env=None, detached=False, header=()):
     """Writes the in-game settings, starts the game; returns (process, log path).
     The game always writes straight into the log file (after the header lines): a pipe that only
@@ -1100,9 +1180,13 @@ def launch(settings, seconds=0, extra_env=None, detached=False, header=()):
         cmd += ['--isa-rewrite', str(ISA_TABLE)]
     raise_open_file_limit()
     with open(log, 'wb') as out:   # the child keeps its own copy of the descriptor
+        out.write((build_info() + '\n').encode('utf-8'))   # always, Advanced logging or not
         out.write(''.join(line + '\n' for line in header).encode('utf-8'))
         if settings.get('debug_logging'):
             out.write(b'Advanced logging: on\n')
+        changed = debug_flags_changed(settings)
+        if changed:
+            out.write(('Debug flags: ' + ' '.join(changed) + '\n').encode('utf-8'))
         out.flush()
         process = subprocess.Popen(cmd, cwd=str(data), env=build_env(settings, extra_env),
                                    stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,

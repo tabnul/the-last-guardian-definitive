@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <filesystem>
@@ -1043,7 +1044,7 @@ void Rasterizer::RetireSubmission() {
 }
 
 bool Rasterizer::RunInOrder(OrderedTask task, const void* data, u32 size, u64 toggle) {
-    if (!UseDrawPipe() || TlgToggle::Disabled(toggle)) {
+    if (!UseDrawPipe() || (toggle && TlgToggle::Disabled(toggle))) {
         DrainDrawPipe(DrawPipe::ReasonRasterizer);
         task(*this, static_cast<const u8*>(data));
         return false;
@@ -1376,6 +1377,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         return;
     }
     auto state = BeginRendering(pipeline);
+    SubmitIfWorkPiledUp(state);
     if (draw_replaced) {
         // tlg engine upscale: DLSS output into the prepared target; the pass then loads it.
         if (upscaler->RunEngineUpscale(bound_images)) {
@@ -1612,6 +1614,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         }
     }
     DebugState.IncDrawCall();
+    scheduler.CountWork();
 
     ResetBindings(false);
     scheduler.KickRecording();
@@ -1680,6 +1683,7 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
         return;
     }
     const auto state = BeginRendering(pipeline);
+    SubmitIfWorkPiledUp(state);
 
     BindVertexBuffers(pipeline);
     if (is_indexed) {
@@ -1751,6 +1755,7 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
         }
     });
     DebugState.IncDrawCall();
+    scheduler.CountWork();
 
     ResetBindings(false);
     scheduler.KickRecording();
@@ -1836,6 +1841,7 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
         cmdbuf.dispatch(dim_x, dim_y, dim_z);
     });
     DebugState.IncDispatch();
+    scheduler.CountWork();
 
     ResetBindings(true);
     scheduler.KickRecording();
@@ -1887,6 +1893,7 @@ void Rasterizer::DispatchIndirectRecord(const ComputePipeline* pipeline, VAddr a
         cmdbuf.dispatchIndirect(args, args_offset);
     });
     DebugState.IncDispatch();
+    scheduler.CountWork();
 
     ResetBindings(true);
     scheduler.KickRecording();
@@ -1939,6 +1946,7 @@ void Rasterizer::FlushForFence(TlgStats::FenceSite site) {
 
 void Rasterizer::OnSubmit() {
     DrainDrawPipe();
+    buffer_cache.FreeReplacedArenas();
     if (fault_process_pending) {
         fault_process_pending = false;
         buffer_cache.ProcessFaultBuffer();
@@ -2581,8 +2589,12 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                                      reinterpret_cast<const void*>(ring->address), ring->size);
             }
             if (!desc.IsSpecial()) {
+                // Same rule as the direct path below: never look in a GPU-written buffer. This
+                // runs on the recording thread, where every earlier write is already recorded,
+                // so the pending-write list of the GPU command thread is not needed (nor safe).
                 if (ring->size == 864 && gbuffer_draw &&
-                    memory->IsValidGpuMapping(ring->address, 0)) {
+                    memory->IsValidGpuMapping(ring->address, 0) &&
+                    !buffer_cache.IsRegionGpuModified(ring->address, 864)) {
                     camera_motion->OnConstants(reinterpret_cast<const float*>(ring->address));
                 }
                 push_data.AddOffset(binding.buffer, 0);
@@ -3188,6 +3200,23 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
     }
     (void)first_image_idx;
     return true;
+}
+
+void Rasterizer::SubmitIfWorkPiledUp(const RenderState& next_state) {
+    static const u32 limit = [] {
+        const char* env = std::getenv("TLG_SUBMIT_DRAWS");
+        return env && *env ? static_cast<u32>(std::strtoul(env, nullptr, 10)) : 0u;
+    }();
+    if (limit == 0 || scheduler.WorkSinceSubmit() < limit ||
+        !scheduler.WillBeginRendering(next_state) || FrameCapture::Active()) {
+        return;
+    }
+    if ((++work_submits & 255) == 1) {
+        std::printf("GPU: %llu submissions of piled-up draws so far (TLG_SUBMIT_DRAWS=%u)\n",
+                    static_cast<unsigned long long>(work_submits), limit);
+    }
+    SubmitInfo info{};
+    scheduler.Flush(info);
 }
 
 RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {

@@ -34,6 +34,16 @@ inline constexpr int OutputHeights[] = {720, 1080, 1440, 2160};
 inline constexpr int OutputCount = 4;
 inline constexpr int OutputDefault = 1; ///< 1920x1080, the game's own size
 
+/// Controller buttons as bits: SDL_GamepadButton numbers, the triggers above them.
+enum PadCombo : uint32_t {
+    PadCross = 1u << 0, PadCircle = 1u << 1, PadSquare = 1u << 2, PadTriangle = 1u << 3,
+    PadShare = 1u << 4, PadPs = 1u << 5, PadOptions = 1u << 6, PadL3 = 1u << 7, PadR3 = 1u << 8,
+    PadL1 = 1u << 9, PadR1 = 1u << 10, PadUp = 1u << 11, PadDown = 1u << 12, PadLeft = 1u << 13,
+    PadRight = 1u << 14, PadTouchpad = 1u << 20, PadL2 = 1u << 24, PadR2 = 1u << 25,
+    PadComboQuit = PadShare | PadOptions, PadComboMenu = PadR3 | PadL2, PadComboQa = PadL1 | PadL3,
+    PadComboPhoto = PadL3 | PadR3,
+};
+
 struct Values {
     std::atomic<int> upscaler{UpscalerFsr3};
     std::atomic<int> preset{NativeAA};
@@ -43,7 +53,7 @@ struct Values {
     /// Debug (TLG_JITTER_DEBUG=1): F6 asks the rasterizer for a marked draw map of one frame.
     std::atomic<bool> jitter_mark{false};
     std::atomic<bool> reactive{false};
-    std::atomic<bool> object_motion{true};
+    std::atomic<bool> object_motion{false};
     std::atomic<float> reactive_scale{1.0f};
     std::atomic<float> reactive_threshold{0.2f};
     std::atomic<float> reactive_max{0.9f};
@@ -143,6 +153,16 @@ struct Values {
     /// Mods > ICO horns (tlg.ini mod_horns, env TLG_MOD_HORNS wins): the boy wears ICO-style horns
     /// (own models, tlg_lua.cpp Horns).
     std::atomic<bool> mod_horns{false};
+    /// Mods > Trico plays (tlg.ini mod_plays, env TLG_MOD_PLAYS wins): the developers' sealed act
+    /// where he sniffs the boy and paws at him (tlg_lua.cpp Plays). On by default (user 2026-11-14).
+    std::atomic<bool> mod_plays{true};
+    /// Mods > Trico throws up (tlg.ini mod_throw_up, env TLG_MOD_THROW_UP wins): 0 = sealed as
+    /// released, 1 = as the developers designed, after a stomach full of barrels (tlg_lua.cpp ThrowUp).
+    std::atomic<int> mod_throw_up{0};
+    /// Mods > Cut narrator hints (tlg.ini mod_hints, env TLG_MOD_HINTS wins): the 23 narrator
+    /// hints cut on 2016-09-20 play again where their triggers are (tlg_lua.cpp CutHints). Off by
+    /// default: they give puzzle solutions away.
+    std::atomic<bool> mod_hints{false};
     /// Set by tlg_lua.cpp when the game ends a stage load; the texture cache takes it.
     std::atomic<bool> stage_loaded{false};
     // Startup: tlg_run.py turns them into patches and environment variables; "Apply and restart".
@@ -152,6 +172,9 @@ struct Values {
     std::atomic<bool> stale_readback{true};
     /// The game's own HDR10 output (BT.2020 PQ) when Windows HDR is on (TLG_HDR overrides).
     std::atomic<bool> hdr{true};
+    /// Photo mode with HDR on: next to the normal PNG also <name>-hdr.png, the HDR10 signal
+    /// as it is (vk_presenter SaveScreenshot). Live.
+    std::atomic<bool> photo_hdr{true};
     /// Set before an "Apply and restart"; cleared once the new launch shows the game. tlg_run.py
     /// restores the previous startup options when a launch never cleared it.
     std::atomic<bool> restart_unconfirmed{false};
@@ -188,6 +211,11 @@ struct Values {
     /// the playback device's name (empty = system default) and "always send 7.1".
     std::string audio_device;
     std::atomic<bool> audio_surround{false};
+    /// Controller button combos (Controls tab + launcher Controller page, tlg.ini pad_combo_*):
+    /// PadCombo bits. Quit game (held 2 s, tlg_overlay.cpp), our menu (tlg_overlay.cpp) and the
+    /// QA menu of level_select (tlg_lua.cpp) and photo mode on/off (tlg_overlay.cpp). Defaults are the combos the port always used.
+    std::atomic<uint32_t> combo_quit{PadComboQuit}, combo_menu{PadComboMenu}, combo_qa{PadComboQa},
+        combo_photo{PadComboPhoto};
 
     /// Startup settings for the explicit TLG_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;
@@ -198,6 +226,12 @@ struct Values {
 };
 
 Values& Get();
+
+/// "share+options" (tlg.ini) <-> PadCombo bits; unknown names are skipped, an empty result keeps `fallback`.
+uint32_t ParseCombo(const std::string& text, uint32_t fallback);
+std::string ComboText(uint32_t bits);
+/// "Share + Options" for the menus.
+std::string ComboLabel(uint32_t bits);
 
 /// Pack folders with an index.txt under TLG_TEXPACK_DIR (default "texpack"), sorted; read once.
 const std::vector<std::string>& TexturePackNames();

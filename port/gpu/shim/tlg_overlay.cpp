@@ -61,6 +61,10 @@ extern "C" const unsigned char tlg_font_ttf_end[];
 
 namespace TlgOverlay {
 
+// Notice() for code that already holds imgui_mutex (HandleEvent, PadEvent): Notice() itself
+// takes the lock and would block forever there.
+void NoticeLocked(const std::string& text, float seconds);
+
 namespace {
 
 std::mutex imgui_mutex; // the ImGui context: window thread (input) and present thread
@@ -70,7 +74,20 @@ std::atomic<bool> menu_open{false};
 // tlg: the Fun move bar (F12): Trico's working moves as icons; the mouse goes to it while it is up.
 std::atomic<bool> move_bar_open{false};
 ImTextureData* move_icons = nullptr; // TlgFunIcons atlas, made on first use (present thread)
-bool r3_down = false, l2_down = false;
+// tlg: controller combos (tlg.ini pad_combo_*). pad_mask = buttons held now (PadCombo bits).
+u32 pad_mask = 0;
+int capture_slot = -1;  // Controls tab: the combo being set (0 quit, 1 menu, 2 QA menu, 3 photo mode), -1 = none
+u32 capture_mask = 0;   // buttons pressed during the capture
+u32 capture_ignore = 0; // buttons already held when the capture started (the click on "Set")
+std::atomic<bool> screenshot_requested{false}; // Cross in photo mode / Print Screen (TakeScreenshotRequest)
+std::atomic<bool> pause_menu_open{false}; // the game's own pause menu is open (PauseMenuUI.lua)
+std::atomic<int64_t> quit_hold_start{0}; // steady ms when the quit combo was complete, 0 = not held
+constexpr int64_t QuitHoldMs = 2000;     // fixed: the quit combo is always a 2 second hold
+std::atomic<u32>* ComboSlot(int slot) {
+    auto& s = TlgSettings::Get();
+    return slot == 0 ? &s.combo_quit : slot == 1 ? &s.combo_menu : slot == 2 ? &s.combo_qa : &s.combo_photo;
+}
+
 std::atomic<bool> loading{false};
 std::atomic<u32> loading_done{0}, loading_total{0};
 std::atomic<u32> background_done{0}, background_total{0};
@@ -1007,6 +1024,44 @@ void ControlsTab() {
         ImGui::EndDisabled();
         ImGui::EndTable();
     }
+    ImGui::SeparatorText(TR("Controller"));
+    if (BeginRows("##combos")) {
+        const char* labels[4] = {TR("Quit game (hold 2 seconds)"), TR("In-game menu"), TR("QA menu"),
+                                 TR("Photo mode on / off")};
+        const u32 defaults[4] = {TlgSettings::PadComboQuit, TlgSettings::PadComboMenu, TlgSettings::PadComboQa,
+                                 TlgSettings::PadComboPhoto};
+        for (int slot = 0; slot < 4; ++slot) {
+            Row(labels[slot]);
+            if (capture_slot == slot) {
+                ImGui::TextUnformatted(TR("Hold the buttons, then release..."));
+                ImGui::SameLine();
+                if (ImGui::SmallButton(TR("Cancel"))) {
+                    capture_slot = -1;
+                }
+            } else {
+                const u32 combo = ComboSlot(slot)->load();
+                ImGui::TextUnformatted(TlgSettings::ComboLabel(combo).c_str());
+                ImGui::SameLine();
+                if (ImGui::SmallButton(TR("Set"))) {
+                    capture_slot = slot;
+                    capture_mask = 0;
+                    capture_ignore = pad_mask;
+                }
+                if (combo != defaults[slot]) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton(TR("Default"))) {
+                        ComboSlot(slot)->store(defaults[slot]);
+                        dirty = true;
+                    }
+                }
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextDisabled("%s", TR("Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu."));
+    ImGui::PopTextWrapPos();
     ImGui::SeparatorText(TR("Keyboard and mouse layout"));
     if (BeginRows("##layout")) {
         InfoRow(TR("Move / camera"), TR("WASD / mouse or arrow keys"));
@@ -1273,10 +1328,33 @@ void FunTab() {
 
     ImGui::SeparatorText("Free camera");
     bool free_cam = TlgFun::FreeCameraOn();
+    ImGui::BeginDisabled(TlgFun::PhotoModeOn());
     if (ImGui::Checkbox("Free camera##freecam", &free_cam)) {
         TlgFun::FreeCamera(free_cam);
     }
+    ImGui::EndDisabled();
     Help("The developers' own camera: it lets go of the normal camera that follows the boy. Turn it off to get the normal camera back. A jump or a new stage turns it off.");
+
+    ImGui::SeparatorText(TR("Photo mode"));
+    bool photo = TlgFun::PhotoModeOn();
+    if (ImGui::Checkbox(TR("Photo mode##photo"), &photo)) {
+        TlgFun::PhotoMode(photo);
+        if (photo) SetOpen(false);
+    }
+    Help(TR("The world stands still and you fly the camera to take a picture. Left stick: fly. Right stick: look around. L2 / R2: down / up. Hold R1: fast, hold L1: slow. Cross or Print Screen: save a screenshot to user/screenshots. L3 + R3, F9 (or this menu) turns it on and off. A jump turns it off."));
+    ImGui::BeginDisabled(photo);
+    int freeze = int(TlgFun::PhotoModeFreeze());
+    const char* freeze_names[] = {TR(TlgFun::PhotoFreezeNames[0]), TR(TlgFun::PhotoFreezeNames[1])};
+    ImGui::SetNextItemWidth(200.0f);
+    if (ImGui::Combo(TR("Freeze##photofreeze"), &freeze, freeze_names, 2)) {
+        TlgFun::PhotoModeFreeze(TlgFun::PhotoFreeze(freeze));
+    }
+    Help(TR("How the world is frozen. Pause the game: the game's own pause, everything stops. Stop time: the game's own slow motion, turned down until nothing moves; try it if the camera does not move with the first one."));
+    ImGui::EndDisabled();
+    bool photo_hdr = TlgSettings::Get().photo_hdr;
+    Store(TlgSettings::Get().photo_hdr, photo_hdr,
+          ImGui::Checkbox(TR("Also save an HDR picture##photohdr"), &photo_hdr));
+    Help(TR("With HDR on, every photo is saved twice: a normal picture that looks right everywhere, and an HDR picture (name ending in -hdr.png) for HDR screens; Chrome and Edge show it in HDR. Off: only the normal picture. With HDR off there is only the normal picture."));
 
     ImGui::SeparatorText("Tricopilot");
     const bool pilot = TlgFun::TricopilotOn();
@@ -1365,6 +1443,14 @@ void FunTab() {
             ImGui::TextDisabled("%s", TR("Turn on ICO horns in the launcher (Mods page) once first."));
             ImGui::PopID();
         }
+        CheckRow(TR("Trico plays"), TlgSettings::Get().mod_plays,
+                 TR("A Trico behaviour the developers built and then sealed \"for now\": now and then he sniffs the boy and paws at him. It only happens where his cheek rubs can happen too, with the boy clear of ledges."), true);
+        static const char* const throw_labels[] = {TR("Off (as released)"), TR("As the developers designed")};
+        static const int throw_values[] = {0, 1};
+        ChoiceRow(TR("Trico throws up"), TlgSettings::Get().mod_throw_up, throw_labels, throw_values, 2,
+                  TR("The developers sealed Trico throwing up \"by order\" in 2016. As the developers designed: when his stomach is full of barrels, he throws up the way they planned. The Throw up button in Trico Tricks works either way."), 0);
+        CheckRow(TR("Cut narrator hints"), TlgSettings::Get().mod_hints,
+                 TR("The 23 narrator hints the developers cut in September 2016. On: when you seem stuck, the narrator helps again, where they first placed his lines. They give puzzle solutions away."), true);
         ImGui::EndTable();
     }
 }
@@ -2012,6 +2098,41 @@ void FpsCounter() {
 std::string notice_text;
 std::chrono::steady_clock::time_point notice_until;
 
+// tlg: photo mode button help, bottom left. Our overlay is drawn after the screenshot copy
+// (vk_presenter.cpp), so it never shows in the saved picture.
+void PhotoHelpBox() {
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 24.0f * base_scale,
+                                   viewport->WorkPos.y + viewport->WorkSize.y - 24.0f * base_scale),
+                            ImGuiCond_Always, ImVec2(0.0f, 1.0f));
+    ImGui::SetNextWindowBgAlpha(0.6f);
+    ImGui::Begin("##photohelp", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                     ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
+                     ImGuiWindowFlags_NoFocusOnAppearing);
+    ImGui::TextUnformatted(TR("Photo mode"));
+    ImGui::Separator();
+    // Key column as wide as its longest text (packs translate it) plus a clear gap.
+    const std::string exit_keys = TlgSettings::ComboLabel(TlgSettings::Get().combo_photo.load()) + " / F9";
+    const std::pair<const char*, const char*> rows[] = {
+        {TR("Cross / Print Screen"), TR("Screenshot")},
+        {TR("Left stick"), TR("Fly")},
+        {TR("Right stick"), TR("Look around")},
+        {"L2 / R2", TR("Down / up")},
+        {TR("Hold R1 / L1"), TR("Fast / slow")},
+        {exit_keys.c_str(), TR("Exit photo mode")},
+    };
+    float key_w = 0.0f;
+    for (const auto& r : rows) key_w = std::max(key_w, ImGui::CalcTextSize(r.first).x);
+    const float col = ImGui::GetCursorPosX() + key_w + 32.0f * base_scale;
+    for (const auto& r : rows) {
+        ImGui::TextUnformatted(r.first);
+        ImGui::SameLine(col);
+        ImGui::TextUnformatted(r.second);
+    }
+    ImGui::End();
+}
+
 void NoticeBox() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
@@ -2024,6 +2145,40 @@ void NoticeBox() {
                      ImGuiWindowFlags_NoFocusOnAppearing);
     ImGui::SetWindowFontScale(1.3f);
     ImGui::TextUnformatted(notice_text.c_str());
+    ImGui::End();
+}
+
+/// tlg: while the game's pause menu is open: how to quit and open the menus (the player's own combos).
+void QuitHintBox() {
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
+                                   viewport->WorkPos.y + viewport->WorkSize.y - 40.0f * base_scale),
+                            ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+    ImGui::SetNextWindowBgAlpha(0.6f);
+    ImGui::Begin("##quit_hint", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                     ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
+                     ImGuiWindowFlags_NoFocusOnAppearing);
+    ImGui::SetWindowFontScale(1.1f);
+    // One line per combo, with the player's own buttons.
+    const auto line = [](const char* with, const char* without, u32 combo) {
+        std::string text = combo ? with : without;
+        if (const size_t at = text.find("%s"); combo && at != std::string::npos) {
+            text.replace(at, 2, TlgSettings::ComboLabel(combo));
+        }
+        ImGui::TextUnformatted(text.c_str());
+    };
+    const auto& s = TlgSettings::Get();
+    line(TR("Quit game: hold %s for 2 seconds, or press Alt+Q"), TR("Quit game: press Alt+Q"), s.combo_quit);
+    line(TR("Port menu: %s, or press Insert"), TR("Port menu: press Insert"), s.combo_menu);
+    // The keyboard keys (1 + Z) reach the QA menu only through the default combo (game pad map).
+    // The launcher note shows always, so players learn the QA menu exists.
+    std::string qa_with = s.combo_qa == TlgSettings::PadComboQa ? TR("QA menu: %s, or press 1 + Z") : TR("QA menu: %s");
+    std::string qa_without = TR("QA menu: off");
+    const std::string note = std::string(" ") + TR("(turn on Level select and QA menu in the launcher first)");
+    qa_with += note;
+    qa_without += note;
+    line(qa_with.c_str(), qa_without.c_str(), s.combo_qa);
     ImGui::End();
 }
 
@@ -2275,10 +2430,116 @@ bool HandleSaveEvent(const SDL_Event& event) {
     return true;
 }
 
+int64_t SteadyMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+/// tlg: tracks the held controller buttons and runs the combos (quit hold, our menu, QA menu).
+/// Returns true when the event is used up. Caller holds imgui_mutex.
+bool PadEvent(const SDL_Event& event) {
+    u32 bit = 0;
+    bool down = false;
+    if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || event.type == SDL_EVENT_GAMEPAD_BUTTON_UP) {
+        if (event.gbutton.button >= 24) {
+            return false;
+        }
+        bit = 1u << event.gbutton.button;
+        down = event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+    } else if (event.type == SDL_EVENT_GAMEPAD_AXIS_MOTION) {
+        if (event.gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER) {
+            bit = TlgSettings::PadL2;
+        } else if (event.gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) {
+            bit = TlgSettings::PadR2;
+        } else {
+            return false;
+        }
+        down = event.gaxis.value > 16000;
+        if (down == ((pad_mask & bit) != 0)) {
+            return false; // trigger moved, but stayed on the same side of the threshold
+        }
+    } else {
+        return false;
+    }
+    const u32 before = pad_mask;
+    pad_mask = down ? pad_mask | bit : pad_mask & ~bit;
+    if (capture_slot >= 0) {
+        capture_ignore &= pad_mask;
+        capture_mask |= pad_mask & ~capture_ignore;
+        if (!pad_mask && capture_mask) {
+            // All released: two or more buttons make the new combo; a single button keeps waiting.
+            if (__builtin_popcount(capture_mask) >= 2) {
+                ComboSlot(capture_slot)->store(capture_mask);
+                std::printf("Settings: controller combo %d set to %s\n", capture_slot,
+                            TlgSettings::ComboText(capture_mask).c_str());
+                dirty = true;
+                capture_slot = -1;
+            }
+            capture_mask = 0;
+        }
+        return true;
+    }
+    auto& s = TlgSettings::Get();
+    const u32 quit = s.combo_quit;
+    if (quit && (pad_mask & quit) == quit) {
+        if (!quit_hold_start) {
+            quit_hold_start = SteadyMs();
+        }
+    } else {
+        quit_hold_start = 0;
+    }
+    if (!down) {
+        return false;
+    }
+    // A combo fires when the press completes it (not again while it stays held).
+    const auto completes = [&](u32 combo) {
+        return combo && (bit & combo) && (pad_mask & combo) == combo && (before & combo) != combo;
+    };
+    if (completes(s.combo_menu)) {
+        SetOpen(!menu_open);
+        return true;
+    }
+    // The default QA combo stays in the game's Lua (works with keyboard keys too).
+    if (s.combo_qa != TlgSettings::PadComboQa && completes(s.combo_qa)) {
+        TlgFun::ToggleQaMenu();
+        return true;
+    }
+    // Cross in photo mode: a screenshot (the menu is closed: photo mode closes it).
+    if (bit == TlgSettings::PadCross && !menu_open && TlgFun::PhotoModeOn()) {
+        screenshot_requested = true;
+        return true;
+    }
+    if (completes(s.combo_photo)) {
+        const bool on = !TlgFun::PhotoModeOn();
+        TlgFun::PhotoMode(on);
+        NoticeLocked(on ? TR("Photo mode on") : TR("Photo mode off"), 2.0f);
+        return true;
+    }
+    return false;
+}
+
+/// tlg: the quit hold, once per presented frame: the note while held, the quit after 2 s.
+void QuitHoldTick() {
+    const int64_t start = quit_hold_start;
+    if (!start || TlgQuit::Requested()) {
+        return;
+    }
+    if (SteadyMs() - start >= QuitHoldMs) {
+        quit_hold_start = 0;
+        Notice(TR("Quitting..."), 10.0f);
+        TlgQuit::Request("controller");
+    } else {
+        Notice(TR("Quitting... (release to cancel)"), 0.2f);
+    }
+}
+
 bool HandleEvent(const SDL_Event& event) {
     std::scoped_lock lock{imgui_mutex};
     if (!initialized) {
         return false;
+    }
+    if (PadEvent(event)) {
+        return true;
     }
     if ((choice_active || message_active) && !menu_open) {
         return HandleSaveEvent(event);
@@ -2346,6 +2607,26 @@ bool HandleEvent(const SDL_Event& event) {
             io.MouseDrawCursor = is_open || move_bar_open;
             return true;
         }
+        // tlg: F9 switches photo mode on and off (the keyboard twin of the photo combo).
+        if (down && !event.key.repeat && event.key.key == SDLK_F9) {
+            const bool on = !TlgFun::PhotoModeOn();
+            TlgFun::PhotoMode(on);
+            if (on) {
+                SetOpen(false);
+            }
+            NoticeLocked(on ? TR("Photo mode on") : TR("Photo mode off"), 2.0f);
+            return true;
+        }
+        // tlg: Print Screen saves a screenshot (user/screenshots, PNG at render resolution).
+        if (down && !event.key.repeat && event.key.key == SDLK_PRINTSCREEN) {
+            screenshot_requested = true;
+            return true;
+        }
+        // tlg: Alt+Q quits through the game's own quit (settings and progress saved).
+        if (down && !event.key.repeat && event.key.key == SDLK_Q && (event.key.mod & SDL_KMOD_ALT)) {
+            TlgQuit::Request("Alt+Q");
+            return true;
+        }
         // tlg: F10 shows or hides the performance overlay (FPS counter) at any time.
         if (down && !event.key.repeat && event.key.key == SDLK_F10) {
             auto& settings = TlgSettings::Get();
@@ -2372,14 +2653,7 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_GAMEPAD_BUTTON_UP: {
         const bool down = event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
         const u8 button = event.gbutton.button;
-        // R3+L2 opens the menu, not L3+R3, which games use as an action.
-        if (button == SDL_GAMEPAD_BUTTON_RIGHT_STICK) {
-            r3_down = down;
-            if (down && l2_down) {
-                SetOpen(!is_open);
-                return true;
-            }
-        }
+        // The menu combo (default R3+L2) is handled in PadEvent.
         if (!is_open) {
             return false;
         }
@@ -2389,16 +2663,7 @@ bool HandleEvent(const SDL_Event& event) {
         return true;
     }
     case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
-        if (event.gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER) {
-            const bool down = event.gaxis.value > 16000;
-            if (down && !l2_down && r3_down) {
-                l2_down = true;
-                SetOpen(!is_open);
-                return true;
-            }
-            l2_down = down;
-        }
-        return false;
+        return false; // triggers: PadEvent
     }
     case SDL_EVENT_TEXT_INPUT: {
         // Typed characters (Ctrl+click on a slider, a text field): key events alone erase but
@@ -2466,6 +2731,20 @@ void SetLoading(bool active, u32 done, u32 total) {
     loading = active;
 }
 
+void SetPauseMenu(bool open) {
+    pause_menu_open = open;
+}
+
+bool TakeScreenshotRequest() {
+    return screenshot_requested.exchange(false);
+}
+
+void NoticeLocked(const std::string& text, float seconds) {
+    notice_text = text;
+    notice_until = std::chrono::steady_clock::now() +
+                   std::chrono::milliseconds(static_cast<int>(seconds * 1000.0f));
+}
+
 void Notice(const std::string& text, float seconds) {
     std::scoped_lock lock{imgui_mutex};
     notice_text = text;
@@ -2489,8 +2768,9 @@ bool Visible() {
     const auto now = std::chrono::steady_clock::now();
     return initialized && (loading || background_total || menu_open || text_entry_active || choice_active ||
                            message_active || progress_on || now < progress_until || now < toast_until || AaLabelOn() ||
-                           NoticeActive() ||
-                           choice_retiring || s.show_fps || move_bar_open);
+                           NoticeActive() || quit_hold_start != 0 || pause_menu_open ||
+                           choice_retiring || s.show_fps || move_bar_open ||
+                           TlgFun::PhotoModeOn());
 }
 
 bool CapturesInput() {
@@ -2609,6 +2889,7 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
         frame_ms_avg = frame_ms_avg == 0.0f ? ms : frame_ms_avg * 0.95f + ms * 0.05f;
     }
     ConfirmRestart();
+    QuitHoldTick();
     if (!Visible()) {
         return;
     }
@@ -2649,6 +2930,12 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     }
     if (NoticeActive() && !menu_open) {
         NoticeBox();
+    }
+    if (TlgFun::PhotoModeOn() && !menu_open && !loading) {
+        PhotoHelpBox();
+    }
+    if (pause_menu_open && !menu_open && !quit_hold_start) {
+        QuitHintBox();
     }
     if (move_bar_open && !menu_open && !loading) {
         MoveBarWindow();

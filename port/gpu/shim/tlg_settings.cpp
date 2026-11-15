@@ -123,6 +123,14 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.audio_device = value;
         return;
     }
+    if (key == "pad_combo_quit" || key == "pad_combo_menu" || key == "pad_combo_qa" ||
+        key == "pad_combo_photo") {
+        auto& target = key == "pad_combo_quit" ? v.combo_quit : key == "pad_combo_menu" ? v.combo_menu
+                      : key == "pad_combo_qa"   ? v.combo_qa
+                                                : v.combo_photo;
+        target = ParseCombo(value, target.load());
+        return;
+    }
     if (key == "audio_surround") {
         v.audio_surround = std::atoi(value.c_str()) != 0;
         return;
@@ -225,6 +233,12 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.mod_treasures = i != 0;
     } else if (key == "mod_horns") {
         v.mod_horns = i != 0;
+    } else if (key == "mod_plays") {
+        v.mod_plays = i != 0;
+    } else if (key == "mod_throw_up") {
+        v.mod_throw_up = i == 1 ? 1 : 0;
+    } else if (key == "mod_hints") {
+        v.mod_hints = i != 0;
     } else if (key == "keep_gpu_textures") {
         v.keep_gpu_textures = value.empty() || i != 0;
     } else if (key == "arena_release") {
@@ -237,6 +251,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.engine_fps = TlgGraphics::ParseEngineFps(i);
     } else if (key == "hdr") {
         v.hdr = i != 0;
+    } else if (key == "photo_hdr") {
+        v.photo_hdr = i != 0;
     } else if (key == "deferred_readback") {
         v.deferred_readback = i != 0;
     } else if (key == "stale_readback") {
@@ -271,6 +287,44 @@ void Set(Values& v, const std::string& key, const std::string& value) {
 }
 
 } // namespace
+
+namespace {
+struct ComboName { uint32_t bit; const char* key; const char* label; };
+constexpr ComboName ComboNames[] = {
+    {PadCross, "cross", "Cross"}, {PadCircle, "circle", "Circle"}, {PadSquare, "square", "Square"},
+    {PadTriangle, "triangle", "Triangle"}, {PadL1, "l1", "L1"}, {PadR1, "r1", "R1"}, {PadL2, "l2", "L2"},
+    {PadR2, "r2", "R2"}, {PadL3, "l3", "L3"}, {PadR3, "r3", "R3"}, {PadShare, "share", "Share"},
+    {PadOptions, "options", "Options"}, {PadTouchpad, "touchpad", "Touchpad"}, {PadPs, "ps", "PS"},
+    {PadUp, "up", "Up"}, {PadDown, "down", "Down"}, {PadLeft, "left", "Left"}, {PadRight, "right", "Right"},
+};
+} // namespace
+
+uint32_t ParseCombo(const std::string& text, uint32_t fallback) {
+    uint32_t bits = 0;
+    size_t start = 0;
+    while (start <= text.size()) {
+        size_t end = text.find('+', start);
+        if (end == std::string::npos) end = text.size();
+        std::string part = text.substr(start, end - start);
+        for (char& c : part) c = char(std::tolower(static_cast<unsigned char>(c)));
+        for (const auto& n : ComboNames)
+            if (part == n.key) bits |= n.bit;
+        start = end + 1;
+    }
+    return bits ? bits : fallback;
+}
+
+static std::string ComboJoin(uint32_t bits, bool label) {
+    std::string out;
+    for (const auto& n : ComboNames) {
+        if (!(bits & n.bit)) continue;
+        if (!out.empty()) out += label ? " + " : "+";
+        out += label ? n.label : n.key;
+    }
+    return out;
+}
+std::string ComboText(uint32_t bits) { return ComboJoin(bits, false); }
+std::string ComboLabel(uint32_t bits) { return ComboJoin(bits, true); }
 
 Values& Get() {
     static Values values;
@@ -366,7 +420,7 @@ void Load() {
         {"TLG_FSR_SHARPNESS", "sharpness"},        {"TLG_JITTER", "jitter"},
         {"TLG_REACTIVE", "reactive"},              {"TLG_REACTIVE_SCALE", "reactive_scale"},
         {"TLG_REACTIVE_THRESHOLD", "reactive_threshold"}, {"TLG_REACTIVE_MAX", "reactive_max"},
-        {"TLG_UPSCALE_PRESET", "preset"},            {"TLG_OBJECT_MOTION", "object_motion"},
+        {"TLG_UPSCALE_PRESET", "preset"},
         {"TLG_DEFERRED_READBACK", "deferred_readback"},
         {"TLG_STALE_READBACK", "stale_readback"},     {"TLG_FSR1", "fsr1"},
         {"TLG_RCAS", "rcas"},                        {"TLG_FRAMES_AHEAD", "frames_queued"},
@@ -378,6 +432,8 @@ void Load() {
         {"TLG_SMAA", "smaa"},                        {"TLG_DLAA", "dlaa"},
         {"TLG_LEVEL_SELECT", "level_select"},       {"TLG_TRICO_DROOL", "trico_drool"},
         {"TLG_MOD_TREASURES", "mod_treasures"},     {"TLG_MOD_HORNS", "mod_horns"},
+        {"TLG_MOD_PLAYS", "mod_plays"},             {"TLG_MOD_THROW_UP", "mod_throw_up"},
+        {"TLG_MOD_HINTS", "mod_hints"},
         {"TLG_CAS", "cas"},                          {"TLG_COLOR_ADJUST", "color_adjust"},
         {"TLG_HDR", "hdr"},                          {"TLG_FG", "frame_generation"},
         {"TLG_ARENA_RELEASE", "arena_release"},      {"TLG_GC_LIVE_BUDGET", "gc_live_budget"},
@@ -390,6 +446,11 @@ void Load() {
     // Async shader compilation: environment only (tests), a stored async_shaders=1 is ignored.
     if (const char* value = std::getenv("TLG_ASYNC_SHADERS"); value && value[0]) {
         v.async_shaders = std::atoi(value) != 0;
+    }
+    // Object motion: environment only (launcher Debug > Flags); a stored object_motion=1 is ignored.
+    v.object_motion = false;
+    if (const char* value = std::getenv("TLG_OBJECT_MOTION"); value && value[0]) {
+        v.object_motion = std::atoi(value) != 0;
     }
     v.startup_preset = v.preset;
     v.startup_upscaler = v.upscaler;
@@ -684,9 +745,15 @@ void Save() {
                  int(v.color_adjust.load()), v.brightness.load(), v.contrast.load(),
                  v.saturation.load(), v.color_gamma.load());
     std::fprintf(file, "level_select=%d\n", int(v.level_select.load()));
+    std::fprintf(file, "photo_hdr=%d\n", int(v.photo_hdr.load()));
+    std::fprintf(file, "pad_combo_quit=%s\npad_combo_menu=%s\npad_combo_qa=%s\npad_combo_photo=%s\n",
+                 ComboText(v.combo_quit).c_str(), ComboText(v.combo_menu).c_str(), ComboText(v.combo_qa).c_str(),
+                 ComboText(v.combo_photo).c_str());
     std::fprintf(file, "trico_drool=%d\n", v.trico_drool.load());
     std::fprintf(file, "mod_treasures=%d\nmod_horns=%d\n", int(v.mod_treasures.load()),
                  int(v.mod_horns.load()));
+    std::fprintf(file, "mod_plays=%d\nmod_throw_up=%d\nmod_hints=%d\n", int(v.mod_plays.load()),
+                 v.mod_throw_up.load(), int(v.mod_hints.load()));
     for (const auto& [name, member] : EffectKeys)
         std::fprintf(file, "%s=%d\n", name, (v.*member).load());
     std::fprintf(file, "fov=%d\n", v.fov.load());

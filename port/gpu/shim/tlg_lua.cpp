@@ -1,4 +1,9 @@
 #include <thread>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
 // SPDX-License-Identifier: GPL-2.0-or-later
 // tlg: the game's Lua loadbuffer (HavokScript) is redirected here (src/probe.c,
 // install_lua_hook). utils.lua gets a tick that loads "--TLGSET" every 15 frames; that chunk
@@ -11,8 +16,10 @@
 #include "tlg_fun.h"
 #include "tlg_fun_points.h"
 #include "tlg_lab.h"
+#include "tlg_overlay.h"
 #include "tlg_settings.h"
 #include "tlg_toggles.h"
+#include "../tlggpu.h"
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -174,6 +181,53 @@ local function Drool(m)
     end
   end
 end
+-- Mods > Trico plays (tlg.ini mod_plays, default on): the game's own "Play" act in his boy-interest
+-- table (intactprobabilitycondor_player.lua Player_Play: sniff the boy, then paw him left, right or
+-- with the claws) has ValidCnd "return false -- sealed for now". On: it may run under the same check
+-- as his cheek rubs (ActHierarchy_CheekActCheck: boy clear of ledges, not on a ladder, within 4 m
+-- height). Re-applied every run (a stage load rebuilds
+-- the table); off puts the game's own condition back.
+local function Plays(on)
+  local P=Ai2 and Ai2.IntActProbability and Ai2.IntActProbability.Condor
+  P=P and P.Player_Play
+  if not P or type(P.tbl)~='table' or type(ActHierarchy_CheekActCheck)~='function' then return end
+  local D=_TLGPL or {} _TLGPL=D
+  for _,e in ipairs(P.tbl) do
+    if e.name=='Play' then
+      if e.ValidCnd~=ActHierarchy_CheekActCheck then D.orig=e.ValidCnd end
+      local want=on and ActHierarchy_CheekActCheck or D.orig
+      if want and e.ValidCnd~=want then e.ValidCnd=want end
+    end
+  end
+end
+-- Mods > Trico throws up (tlg.ini mod_throw_up): AddSpitOutIntr (condorcommonactioneatable.lua),
+-- called when his stomach is full of barrels, only skips the act ("sealed by order 20160704,
+-- briefly back, sealed again 20160726"). 1 = run the developers' commented-out block instead (the
+-- same one the Throw up trick runs); the act's own marker events then empty his stomach.
+-- 0 = the game's own (skip). Any error falls back to the game's own.
+local function ThrowUp(m)
+  local C=Ai2 and Ai2.CommonScript and Ai2.CommonScript.Condor
+  if not C or type(C.AddSpitOutIntr)~='function' then return end
+  local D=_TLGTU or {} _TLGTU=D D.m=m
+  if m==0 and not D.f then return end
+  if C.AddSpitOutIntr~=D.f then
+    D.orig=C.AddSpitOutIntr
+    D.f=function(props)
+      if _TLGTU.m==0 then return _TLGTU.orig(props) end
+      local ok,e=pcall(function()
+        local work=props.currentInfo.work
+        if not work.LoadSpitOutIntr then work.LoadSpitOutIntr=Load('game/ai/condor_interest/SpitOut_intr') end
+        local intr=work.LoadSpitOutIntr Connect('_world',intr)
+        SetWorldPosition(intr,tostring(FindObject('game/ai/condor_interest/Idling_locater').worldPosition))
+        Ai2.CommonScript.Condor.AddIntrList(props,intr._object_name)
+        Ai2.CommonScript.Condor.ControlGazeLevel(props,intr._object_name,'SubSpitOutIntr','subMax')
+        L('mod throw up: natural')
+      end)
+      if not ok then L('mod throw up error: '..tostring(e)) return _TLGTU.orig(props) end
+    end
+    C.AddSpitOutIntr=D.f
+  end
+end
 -- Mods > All treasures (tlg.ini mod_treasures): the developers' Treasure.DbgFullOpen() owns every
 -- treasure; the Treasures entry of the options menu only shows after a finished run (lap 2). Both
 -- are written to the save (SavePerpetual), so they stay after the setting is turned off.
@@ -310,6 +364,8 @@ std::string size_pending; // the latest Trico size, under fun_mutex: a slider dr
 std::atomic<float> trico_size{1.0f};
 std::string cam_pending; // the latest free camera wish, under fun_mutex
 std::atomic<bool> free_cam{false};
+std::atomic<bool> photo{false};
+std::atomic<TlgFun::PhotoFreeze> photo_freeze{TlgFun::PhotoFreeze::Pause};
 std::atomic<bool> pilot{false}; // Tricopilot (TlgFun::Tricopilot)
 // Which camera watches him (TlgFun::PilotCam). Middle is what autoTrico() picks itself, so that
 // stays our default; the launcher and the Fun tab can pick another one, also while he drives.
@@ -597,6 +653,10 @@ std::string SetChunk() {
     code += DevChunk();
     code += FunChunk();
     code += PerRun;
+    // Proof that the game's exit list ran (config and perpetual data are saved there, gameflag.lua).
+    code += "if not _TLGEXITCB and type(ExitCallback)=='table' then _TLGEXITCB=true "
+            "ExitCallback:Add(function() L('exit callbacks ran') end) end\n";
+    code += std::string("_TLGQA_PAD=") + (s.combo_qa.load() == TlgSettings::PadComboQa ? "true" : "false") + "\n";
     char line[1024];
     std::snprintf(line, sizeof(line),
                   "Scale(pp,'bloom','bloomAmount',%d) Feature(pp,'Bloom',%d)\n"
@@ -615,6 +675,9 @@ std::string SetChunk() {
                   s.grass_smooth.load() ? "true" : "false", s.boy_wind.load(), s.tree_wind.load());
     code += line;
     code += "Drool(" + std::to_string(std::clamp(s.trico_drool.load(), 0, 2)) + ")\n";
+    code += std::string("Plays(") + (s.mod_plays.load() ? "true" : "false") + ") ThrowUp(" +
+            std::to_string(s.mod_throw_up.load() ? 1 : 0) + ") _TLGHINTS=" +
+            (s.mod_hints.load() ? "true" : "false") + "\n";
     code += std::string("Treasures(") + (s.mod_treasures.load() ? "true" : "false") + ") Horns(" +
             (s.mod_horns.load() ? "true" : "false") +")\n";
     if (subtitle_shift) {
@@ -654,12 +717,15 @@ void Dump(const char* buffer, uint64_t size, const char* name) {
 constexpr std::string_view QaMenu = R"(
 if not _TLGQA then _TLGQA=true
 local function Registered(f) for _,v in ipairs(tick_funcs) do if v==f then return true end end return false end
+_TLGQA_TOGGLE=function()
+  if Registered(ControllerMenu.Tick) then
+    if ControllerMenu.Hide then ControllerMenu.Hide() end
+  else _TLGQA_UNLOAD=true DelayExec(function() RegisterTick(ControllerMenu.Tick) end) luaCommand("trico pause") end
+end
+-- _TLGQA_PAD (settings tick): the Controls combo is the default L1+L3, read here through the game's
+-- pad (keyboard keys too); another combo comes from the controller through TlgFun::ToggleQaMenu.
 RegisterTick(function()
-  if MS.PadGetHold(PadButton.L1) and MS.PadGetDown(PadButton.L3) then
-    if Registered(ControllerMenu.Tick) then
-      if ControllerMenu.Hide then ControllerMenu.Hide() end
-    else _TLGQA_UNLOAD=true DelayExec(function() RegisterTick(ControllerMenu.Tick) end) luaCommand("trico pause") end
-  end
+  if _TLGQA_PAD~=false and MS.PadGetHold(PadButton.L1) and MS.PadGetDown(PadButton.L3) then _TLGQA_TOGGLE() end
 end)
 Load("game/scripts/_editor/ControllerMenu")
 local hide = ControllerMenu.Hide
@@ -668,10 +734,87 @@ end
 )";
 
 /// Edits game chunk `name` for the debug menus and the bridge fix; true when it changed.
+// Mods > Cut narrator hints (tlg.ini mod_hints): the narrator lines cut on 2016-09-20 ("cut at
+// genDESIGN's request", common/hintlist.lua) whose triggers still run in the stage scripts; only
+// the play call is commented out. Each such call, and a commented SubTitleForcePlay() just above it,
+// becomes "if _TLGHINTS then ... end" in every load, so the switch works at once (the settings tick
+// sets _TLGHINTS); off, the scripts do what the game's own do. The hint table stays as it is (the
+// hints trophy counts its entries).
+bool CutHints(std::string& patched, std::string_view name) {
+    if (name.find("/stages/") == std::string_view::npos || !name.ends_with("missionScript.lua")) {
+        return false;
+    }
+    static constexpr std::string_view Ids[] = {
+        "s03/S03_CA_HNT_V_0021", "s03/S03_CA_HNT_V_0110", "s03/S03_CA_HNT_V_0120",
+        "s06/S06_FB_HNT_V_0040", "s06/S06_FB_HNT_V_0080", "s06/S06_FB_HNT_V_0092",
+        "s07/S07_AL_HNT_V_0050", "s08/S08_LT_HNT_V_0031", "s08/S08_LT_HNT_V_0040",
+        "s09/S09_FB2_HNT_V_0060", "s10/S10_PI_HNT_V_0030", "s10/S10_PI_MRY_V_0040",
+        "s10/S10_PI_MRY_V_0060", "s11/S11_CC_HNT_V_0020", "s11/S11_CC_HNT_V_0051",
+        "s11/S11_CC_HNT_V_0060", "s13/S13_FF_HNT_V_0001", "s13/S13_FF_HNT_V_0033",
+        "s14/S14_CH_HNT_V_0120", "s14/S14_CH_HNT_V_0130", "s14/S14_CH_HNT_V_0140",
+        "s15/S15_SF_HNT_V_0030", "s15/S15_SF_HNT_V_0040"};
+    static constexpr std::string_view On = "if _TLGHINTS then ";
+    // Wraps the commented call that starts on the line holding `at`: true if it was one.
+    const auto wrap = [&](size_t at, std::string_view call) {
+        const size_t line = patched.rfind('\n', at) + 1; // npos + 1 == 0
+        size_t c = patched.find_first_not_of(" \t", line);
+        if (c == std::string::npos || patched.compare(c, 2, "--") != 0) return false;
+        const size_t code = patched.find_first_not_of(" \t", c + 2);
+        if (code == std::string::npos || patched.compare(code, call.size(), call) != 0) return false;
+        const size_t close = patched.find(')', code);
+        const size_t eol = patched.find('\n', code);
+        if (close == std::string::npos || close > eol) return false;
+        patched.insert(close + 1, " end");
+        patched.replace(c, 2, On);
+        return true;
+    };
+    int done = 0;
+    for (const std::string_view id : Ids) {
+        size_t at = patched.find(id);
+        while (at != std::string::npos && (at == 0 || (patched[at - 1] != '"' && patched[at - 1] != '\''))) {
+            at = patched.find(id, at + 1);
+        }
+        if (at == std::string::npos) continue;
+        const size_t line = patched.rfind('\n', at) + 1;
+        if (!wrap(at, "MS.SubTitleStart(")) {
+            std::printf("Lua: cut hint %.*s not as expected, left out\n", int(id.size()), id.data());
+            continue;
+        }
+        ++done;
+        // The commented SubTitleForcePlay() of the same block (at most 4 lines up).
+        size_t up = line;
+        for (int n = 0; n < 4 && up > 1; ++n) {
+            up = patched.rfind('\n', up - 2) + 1;
+            const size_t f = patched.find("MS.SubTitleForcePlay()", up);
+            if (f != std::string::npos && f < patched.find('\n', up)) {
+                wrap(f, "MS.SubTitleForcePlay(");
+                break;
+            }
+            if (patched.find("SubTitleStart", up) < patched.find('\n', up)) break;
+        }
+    }
+    if (done) std::printf("Lua: cut narrator hints: %d in %.*s\n", done, int(name.size()), name.data());
+    return done > 0;
+}
+
 bool GameEdits(std::string& patched, std::string_view name) {
     const auto& s = TlgSettings::Get();
     if (s.level_select && name == "data_trico/game/scripts/startup.lua") {
         patched += QaMenu;
+        return true;
+    }
+    if (name == "data_trico/game/scripts/common/PauseMenuUI.lua") {
+        // The pause menu tells the overlay when it opens and closes: the quit hint shows meanwhile.
+        static constexpr std::string_view Open = "GameMenu_Start(\"PauseMenu\")";
+        static constexpr std::string_view Close = "isGameMenuView = false";
+        const size_t open = patched.find(Open);
+        if (open == std::string::npos) {
+            return false;
+        }
+        patched.insert(open + Open.size(), " do local f=(loadstring or load)('--TLGPAUSE1') if f then f() end end");
+        for (size_t at = patched.find(Close); at != std::string::npos; at = patched.find(Close, at + 1)) {
+            patched.insert(at + Close.size(), " do local f=(loadstring or load)('--TLGPAUSE0') if f then f() end end");
+        }
         return true;
     }
     if (name == "data_trico/game/scripts/common/GameSetupTbl.lua") {
@@ -968,6 +1111,10 @@ extern "C" __attribute__((sysv_abi)) int tlg_lua_load(void* L, void* options, co
         TlgLab::Report(std::string_view(buffer + 9, size - 9));
         return original(L, options, Empty.data(), Empty.size(), name);
     }
+    if (StartsWith(buffer, size, "--TLGPAUSE")) {
+        TlgOverlay::SetPauseMenu(size > 10 && buffer[10] == '1');
+        return original(L, options, Empty.data(), Empty.size(), name);
+    }
     if (StartsWith(buffer, size, "--TLGLOADED")) {
         TlgSettings::Get().stage_loaded = true;
         return original(L, options, Empty.data(), Empty.size(), name);
@@ -989,6 +1136,9 @@ extern "C" __attribute__((sysv_abi)) int tlg_lua_load(void* L, void* options, co
         std::printf("Lua: settings tick added to %s\n", name ? name : "?");
         changed = true;
     }
+    if (name && CutHints(patched, name)) {
+        changed = true;
+    }
     if (name && GameEdits(patched, name)) {
         std::printf("Lua: edited %s\n", name);
         changed = true;
@@ -1004,6 +1154,7 @@ void Jump(const char* stage, const char* area) {
     BackupSaves("jump"); // a jump moves the story; the game saves at its next checkpoint
     trico_size = 1.0f; // the new stage's Trico has his normal size
     free_cam = false;  // and the game's own camera
+    if (photo) PhotoMode(false); // unfreeze first, or the new stage would start paused
     // As the QA menu does: _TLGQA_UNLOAD makes StartStage unload the current stage first
     // (GameEdits, GameSetupTbl.lua).
     std::printf("Fun: jump to %s %s\n", stage, area);
@@ -1227,6 +1378,109 @@ bool FreeCameraOn() {
     return free_cam;
 }
 
+// Photo mode (tlg_fun.h). Our own fly camera: the developers' editor camera (_default_camera,
+// the one their PC editor flies with WASD), placed where the game camera was and moved by our tick
+// from the pad: left stick flies in the look direction, right stick looks around, L2/R2 down/up,
+// R1 fast, L1 slow. The engine's FixCamera (the Free camera above) could not turn and kept the boy
+// as its target (user test 2026-11-14). The editor camera does not read the pad itself.
+// Angles are degrees (the game's scripts compare ToEuler() values with 90 and 180), X = pitch,
+// Y = yaw. Moves set the camera position directly in world space (EntityMove went
+// through something tied to the boy: directions swapped with his facing, user 2026-11-14), on world axes, turned by our yaw (forward = -Z at yaw 0). Flipping the yaw turn made it worse (user 2026-11-14);
+// the tick logs yaw, the camera's own angles and the real move per tick to find the rule, as their
+// keyboard camera does (camera/camerasetup.lua DbgCamConfig).
+// The world is frozen as before. Ticks keep running during the game's pause (the developers' QA
+// menu relies on the same), so our camera and leaving both work while paused.
+// _TLG_PHOTO remembers what we changed, so leaving undoes only that: a pause we did not make
+// (the pause menu) stays, and the scene's own slow motion comes back at its own speed.
+// The first test (2026-11-14) logged paused=false right after "trico pause" and the boy kept
+// moving; the tick logs the pause state again 30 frames in, to see whether it took later.
+constexpr std::string_view PhotoOnLua =
+    "if not _TLG_PHOTO then local P={} _TLG_PHOTO=P\n"
+    " local w=FindObject('_world') local src=w.activeCamera\n"
+    " local pos=Vector(src.worldPosition) local rot=Vector(src.worldRotation:ToEuler())\n"
+    " P.from=tostring(src:GetName())\n"
+    " CameraManager:SetActiveCamera('default')\n"
+    " P.name='_default_camera' local cam=FindObject(P.name)\n"
+    " P.x,P.y,P.z=pos.X,pos.Y,pos.Z cam.position=pos P.pitch=rot.X P.yaw=rot.Y cam.rotation=Vector(P.pitch,P.yaw,0)\n"
+    " if %STOPTIME% then P.speed=MS.GetGameSpeed() MS.SetGameSpeed(0.001,0)\n"
+    " elseif not TricoGame_IsGamePause() then luaCommand('trico pause') P.paused=true end\n"
+    " P.n=0\n"
+    " P.tick=function(dt,edt)\n"
+    "  local p=_TLG_PHOTO if not p or p.dead then return end\n"
+    "  local ok,e=pcall(function()\n"
+    "   local t=edt if type(t)~='number' or t<=0 or t>0.25 then t=1/60 end\n"
+    "   p.n=p.n+1\n"
+    "   if p.n==30 then L('fun photo tick dt='..tostring(dt)..' edt='..tostring(edt)..' paused='"
+    "..tostring(TricoGame_IsGamePause())..' speed='..tostring(MS.GetGameSpeed())..' cam='"
+    "..tostring(w.activeCamera:GetName())) end\n"
+    "   local c=FindObject(p.name) if not c then return end\n"
+    "   local pd=Input.pad1\n"
+    "   local function dz(v) if math.abs(v)<0.15 then return 0 end return v end\n"
+    "   local lx,ly=dz(pd.LX*pd.LMag),dz(pd.LY*pd.LMag)\n"
+    "   local rx,ry=dz(pd.RX*pd.RMag),dz(pd.RY*pd.RMag)\n"
+    "   if not p.said and (math.abs(ly)>0.8 or math.abs(ry)>0.8) then p.said=true "
+    "L('fun photo stick ly='..tostring(ly)..' ry='..tostring(ry)) end\n"
+    "   local sp=3 if MS.PadGetHold(PadButton.R1) then sp=12 elseif MS.PadGetHold(PadButton.L1) then sp=0.6 end\n"
+    "   p.yaw=p.yaw-rx*100*t\n"
+    "   p.pitch=math.max(-85,math.min(85,p.pitch-ry*70*t))\n"
+    "   c.rotation=Vector(p.pitch,p.yaw,0)\n"
+    "   local d=sp*t\n"
+    "   if lx~=0 or ly~=0 then local y=math.rad(p.yaw) local cy,sy=math.cos(y),math.sin(y)\n"
+    "    p.x=p.x+(lx*cy-ly*sy)*d p.z=p.z+(-ly*cy-lx*sy)*d end\n"
+    "   local q=Vector(c.worldPosition) local e=Vector(c.worldRotation:ToEuler())\n"
+    "   if p.lq and (p.logs or 0)<40 and p.n%15==0 and (lx~=0 or ly~=0) then p.logs=(p.logs or 0)+1 "
+    "L('fun photo move yaw='..tostring(p.yaw)..' euler='..tostring(e.X)..','..tostring(e.Y)..','..tostring(e.Z)..' lx='..tostring(lx)..' ly='..tostring(ly)..' dx='..tostring(q.X-p.lq.X)..' dz='..tostring(q.Z-p.lq.Z)) end\n"
+    "   p.lq=q\n"
+    "   local function held(b) local ok,v=pcall(MS.PadGetHold,b) return ok and v and true or false end\n"
+    "   local function trig(k) local ok,v=pcall(function() return pd[k] end) if ok and type(v)=='number' then return v end return 0 end\n"
+    "   local r2,l2=held(PadButton.R2),held(PadButton.L2) local tr,tl=trig('R2'),trig('L2')\n"
+    "   if (r2 or l2 or tr>0.3 or tl>0.3 or held(PadButton.R1)) and (p.tlogs or 0)<5 and p.n%15==0 then p.tlogs=(p.tlogs or 0)+1 "
+    "L('fun photo trig R2='..tostring(r2)..' L2='..tostring(l2)..' aR2='..tostring(tr)..' aL2='..tostring(tl)) end\n"
+    "   local up=0 if r2 or tr>0.3 then up=up+1 end if l2 or tl>0.3 then up=up-1 end\n"
+    "   p.y=p.y+up*d c.position=Vector(p.x,p.y,p.z)\n"
+    "  end)\n"
+    "  if not ok then p.dead=true L('fun photo tick error: '..tostring(e)) end\n"
+    " end\n"
+    " RegisterTick(P.tick)\n"
+    " L('fun photo on from='..P.from..' cam='..tostring(w.activeCamera:GetName())..' paused='"
+    "..tostring(TricoGame_IsGamePause())..' speed='..tostring(MS.GetGameSpeed()))\n"
+    "end\n";
+constexpr std::string_view PhotoOffLua =
+    "if _TLG_PHOTO then local p=_TLG_PHOTO _TLG_PHOTO=nil\n"
+    " if p.tick then pcall(UnRegisterTick,p.tick) end\n"
+    " if p.paused then luaCommand('trico resume') end\n"
+    " if p.speed then MS.SetGameSpeed(p.speed,0) end\n"
+    " GameCamera:ToActive()\n"
+    " L('fun photo off')\n"
+    "end\n";
+
+void PhotoMode(bool on) {
+    photo = on;
+    std::printf("Fun: photo mode %s\n", on ? "on" : "off");
+    std::string code(on ? PhotoOnLua : PhotoOffLua);
+    if (on) {
+        auto put = [&](const std::string& mark, const std::string& with) {
+            code.replace(code.find(mark), mark.size(), with);
+        };
+        put("%STOPTIME%", photo_freeze == TlgFun::PhotoFreeze::StopTime ? "true" : "false");
+    }
+    if (!on) free_cam = false; // leaving gives the normal camera back, whatever was on before
+    FunQueue("\ndo local ok,e=pcall(function()\n" + code +
+             "end) if not ok then L('fun error: '..tostring(e)) end end\n");
+}
+
+bool PhotoModeOn() {
+    return photo;
+}
+
+void PhotoModeFreeze(TlgFun::PhotoFreeze how) {
+    photo_freeze = how;
+}
+
+TlgFun::PhotoFreeze PhotoModeFreeze() {
+    return photo_freeze.load();
+}
+
 // Tricopilot: the developers' own self-driving Trico (game/scripts/ai2/condor/
 // condordebugautotrico.lua, shipped as plain Lua in the retail data). autoTrico(true) attaches their
 // helper volumes, sets work.AutoTorico and hands the camera to their chase preset. Two things are
@@ -1317,3 +1571,54 @@ bool EyeCustom() {
     return eye_custom;
 }
 } // namespace TlgFun
+
+namespace TlgFun {
+void ToggleQaMenu() {
+    if (!TlgSettings::Get().level_select) return;
+    FunQueue("if _TLGQA_TOGGLE then _TLGQA_TOGGLE() end");
+}
+} // namespace TlgFun
+
+namespace TlgQuit {
+namespace {
+std::atomic<bool> requested{false};
+// Waits for a running load (a quit then would break it); the game's quit runs its exit callbacks.
+constexpr const char* QuitLua =
+    "L('quit requested')\n"
+    "if _TLGQUIT then pcall(UnRegisterTick,_TLGQUIT) end\n"
+    "_TLGQUIT=function() local ok,ld=pcall(Loading) if ok and ld then return end\n"
+    // What the game's exit list saves (gameflag.lua), done here so it does not depend on the
+    // engine reaching that list before the process ends.
+    "  pcall(UnRegisterTick,_TLGQUIT) local c=pcall(SaveConfig) local p=pcall(SavePerpetual)\n"
+    "  L('quit: config saved '..tostring(c)..', perpetual saved '..tostring(p)) luaCommand('quit') end\n"
+    "RegisterTick(_TLGQUIT)";
+// The settings tick runs every 15 frames and a load can take a while: after this the window closes anyway.
+constexpr auto Fallback = std::chrono::seconds(10);
+// std::_Exit hangs on Windows once the game is shutting down; end the process directly.
+[[noreturn]] void TlgQuitHard() {
+#ifdef _WIN32
+    TerminateProcess(GetCurrentProcess(), 0);
+#endif
+    std::_Exit(0);
+}
+} // namespace
+
+bool Requested() { return requested.load(); }
+
+void Request(const char* why) {
+    if (requested.exchange(true)) return;
+    std::printf("Quit: requested (%s)\n", why);
+    std::fflush(stdout);
+    FunQueue(QuitLua);
+    std::thread([] {
+        std::this_thread::sleep_for(Fallback);
+        std::printf("Quit: the game did not finish in %d s, closing\n", int(Fallback.count()));
+        std::fflush(stdout);
+        tlggpu_flush_cache();
+        std::fflush(NULL);
+        TlgQuitHard();
+    }).detach();
+}
+} // namespace TlgQuit
+
+extern "C" int tlggpu_quit_requested(void) { return TlgQuit::Requested() ? 1 : 0; }
