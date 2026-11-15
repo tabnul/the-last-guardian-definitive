@@ -229,6 +229,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.slow_motion = i == 1 ? 1 : 0;
     } else if (key == "trico_drool") {
         v.trico_drool = i == 1 || i == 2 ? i : 0;
+    } else if (key == "trico_favourites") {
+        v.trico_favourites = value;
+    } else if (key == "trico_bar_group") {
+        v.trico_bar_group = std::max(i, 0);
     } else if (key == "mod_treasures") {
         v.mod_treasures = i != 0;
     } else if (key == "mod_horns") {
@@ -750,6 +754,8 @@ void Save() {
                  ComboText(v.combo_quit).c_str(), ComboText(v.combo_menu).c_str(), ComboText(v.combo_qa).c_str(),
                  ComboText(v.combo_photo).c_str());
     std::fprintf(file, "trico_drool=%d\n", v.trico_drool.load());
+    std::fprintf(file, "trico_favourites=%s\ntrico_bar_group=%d\n", v.trico_favourites.c_str(),
+                 v.trico_bar_group.load());
     std::fprintf(file, "mod_treasures=%d\nmod_horns=%d\n", int(v.mod_treasures.load()),
                  int(v.mod_horns.load()));
     std::fprintf(file, "mod_plays=%d\nmod_throw_up=%d\nmod_hints=%d\n", int(v.mod_plays.load()),

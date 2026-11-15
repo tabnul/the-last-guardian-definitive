@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <sstream>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -1090,8 +1091,10 @@ void ControlsTab() {
 
 // tlg: Fun tab: jump to any start point of the story (as the game's QA menu does, without
 // turning it on) and extra Tricos. Commands run at the game's next settings tick.
-// The move bar: the working moves of TlgFun::Actions (before "May not work"), one row per group,
-// each an icon (TlgFunIcons, same order) with its name under it and as a tooltip. Fun tab and F12.
+// The move bar: all moves of TlgFun::Actions as icons (TlgFunIcons, same order) with the name under
+// each and as a tooltip, one group at a time behind coloured group buttons (user 2026-11-15).
+// Favourites come first: right-click a move to star it (at most 16, tlg.ini trico_favourites).
+// Fun tab and F12.
 void MakeMoveIcons() {
     static bool tried = false;
     if (tried) {
@@ -1109,75 +1112,199 @@ void MakeMoveIcons() {
     ImGui::RegisterUserTexture(move_icons);
 }
 
-// rows 0: one row per group (the menu tab); rows > 0: the moves spread evenly over that many rows (the
-// F12 bar, 2 rows: user 2026-11-05).
-void MoveBar(float slot, int rows = 0) {
-    const float label_h = ImGui::GetTextLineHeight() * 0.8f * 2.0f;
-    int per_row = 0;
-    if (rows > 0) {
-        int moves = 0;
-        for (const auto& a : TlgFun::Actions) {
-            if (!a.command && std::strcmp(a.name, "May not work") == 0) {
-                break;
-            }
-            moves += a.command ? 1 : 0;
-        }
-        per_row = (moves + rows - 1) / rows;
-    }
+struct MoveGroup {
+    const char* name;
+    std::vector<int> moves; // indexes into TlgFun::Actions
+    ImVec4 color;
+};
+
+constexpr int MaxFavourites = 16;
+
+// The icon of a move: its place among the moves (headers do not count).
+int MoveIcon(int action) {
     int icon = 0;
-    bool row_started = false;
-    for (const auto& a : TlgFun::Actions) {
+    for (int i = 0; i < action; ++i) {
+        icon += TlgFun::Actions[i].command ? 1 : 0;
+    }
+    return icon;
+}
+
+// The groups in TlgFun::Actions order, coloured like their icons (tools/fun-icons/make_icons.py GROUPS).
+const std::vector<MoveGroup>& MoveGroups() {
+    static std::vector<MoveGroup> groups;
+    if (!groups.empty()) {
+        return groups;
+    }
+    const ImVec4 colors[] = {
+        ImVec4(222 / 255.f, 168 / 255.f, 72 / 255.f, 1), // Sounds and moods
+        ImVec4(70 / 255.f, 190 / 255.f, 180 / 255.f, 1), // Body
+        ImVec4(235 / 255.f, 120 / 255.f, 110 / 255.f, 1), // Play
+        ImVec4(150 / 255.f, 200 / 255.f, 80 / 255.f, 1), // Tummy
+        ImVec4(120 / 255.f, 130 / 255.f, 235 / 255.f, 1), // Rest
+        ImVec4(214 / 255.f, 120 / 255.f, 230 / 255.f, 1), // Marketing / E3 poses
+        ImVec4(150 / 255.f, 150 / 255.f, 160 / 255.f, 1), // May not work
+    };
+    for (int i = 0; i < int(std::size(TlgFun::Actions)); ++i) {
+        const auto& a = TlgFun::Actions[i];
         if (!a.command) {
-            if (std::strcmp(a.name, "May not work") == 0) {
-                break;
-            }
-            if (per_row == 0) {
-                row_started = false;
-            }
-            continue;
+            const ImVec4 color = groups.size() < std::size(colors) ? colors[groups.size()] : colors[std::size(colors) - 1];
+            groups.push_back({a.name, {}, color});
+        } else if (!groups.empty()) {
+            groups.back().moves.push_back(i);
         }
-        if (per_row > 0 && icon > 0 && icon % per_row == 0) {
-            row_started = false;
+    }
+    return groups;
+}
+
+// The favourites (indexes into TlgFun::Actions) from tlg.ini trico_favourites, in the saved order.
+std::vector<int>& Favourites() {
+    static std::vector<int> list;
+    static bool loaded = false;
+    if (!loaded) {
+        loaded = true;
+        std::istringstream stream{TlgSettings::Get().trico_favourites};
+        std::string name;
+        while (std::getline(stream, name, ',') && int(list.size()) < MaxFavourites) {
+            for (int i = 0; i < int(std::size(TlgFun::Actions)); ++i) {
+                const char* command = TlgFun::Actions[i].command;
+                if (command && name == command && std::find(list.begin(), list.end(), i) == list.end()) {
+                    list.push_back(i);
+                }
+            }
         }
-        if (row_started) {
+    }
+    return list;
+}
+
+void ToggleFavourite(int action) {
+    auto& list = Favourites();
+    const auto found = std::find(list.begin(), list.end(), action);
+    if (found != list.end()) {
+        list.erase(found);
+    } else if (int(list.size()) < MaxFavourites) {
+        list.push_back(action);
+    } else {
+        return;
+    }
+    std::string text;
+    for (const int i : list) {
+        text += (text.empty() ? "" : ",") + std::string(TlgFun::Actions[i].command);
+    }
+    TlgSettings::Get().trico_favourites = text;
+    TlgSettings::Save();
+}
+
+// A small gold star in the top right corner of the last item.
+void DrawFavouriteStar() {
+    const ImVec2 corner = ImGui::GetItemRectMax();
+    const float r = ImGui::GetItemRectSize().x * 0.13f;
+    const ImVec2 c(corner.x - r * 1.1f, ImGui::GetItemRectMin().y + r * 1.1f);
+    ImVec2 points[10];
+    for (int i = 0; i < 10; ++i) {
+        const float angle = -IM_PI / 2 + float(i) * IM_PI / 5;
+        const float len = i % 2 ? r * 0.45f : r;
+        points[i] = ImVec2(c.x + std::cos(angle) * len, c.y + std::sin(angle) * len);
+    }
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    for (int i = 0; i < 10; i += 2) {
+        draw->AddTriangleFilled(points[(i + 9) % 10], points[i], points[i + 1], IM_COL32(255, 210, 80, 255));
+    }
+    ImVec2 inner[5];
+    for (int i = 0; i < 5; ++i) {
+        inner[i] = points[i * 2 + 1];
+    }
+    draw->AddConvexPolyFilled(inner, 5, IM_COL32(255, 210, 80, 255));
+    draw->AddPolyline(points, 10, IM_COL32(60, 35, 0, 220), ImDrawFlags_Closed, 1.0f);
+}
+
+void MoveButton(int action, float slot) {
+    const auto& a = TlgFun::Actions[action];
+    const int icon = MoveIcon(action);
+    const float label_h = ImGui::GetTextLineHeight() * 0.8f * 3.0f; // "Roll on the ground" needs 3 lines
+    ImGui::PushID(action);
+    ImGui::BeginGroup();
+    bool pressed;
+    if (move_icons && icon < TlgFunIcons::Count) {
+        const float u = float(TlgFunIcons::Size) / float(move_icons->Width);
+        const float v = float(TlgFunIcons::Size) / float(move_icons->Height);
+        const float x = float(icon % TlgFunIcons::Columns) * u, y = float(icon / TlgFunIcons::Columns) * v;
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+        pressed = ImGui::ImageButton("##move", move_icons->GetTexRef(), ImVec2(slot, slot), ImVec2(x, y),
+                                     ImVec2(x + u, y + v));
+        ImGui::PopStyleVar();
+    } else {
+        pressed = ImGui::Button("##move", ImVec2(slot + 4, slot + 4));
+    }
+    const bool hovered = ImGui::IsItemHovered();
+    const auto& favourites = Favourites();
+    const bool favourite = std::find(favourites.begin(), favourites.end(), action) != favourites.end();
+    // Right mouse button, or Square / X on a controller in the menu.
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right) ||
+        (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceLeft, false))) {
+        ToggleFavourite(action);
+    }
+    if (favourite) {
+        DrawFavouriteStar();
+    }
+    if (hovered) {
+        ImGui::SetTooltip("%s\n%s", a.name,
+                          favourite ? TR("Right-click: remove from favourites")
+                          : int(favourites.size()) < MaxFavourites ? TR("Right-click: add to favourites")
+                                                                   : TR("Favourites are full (16)"));
+    }
+    if (pressed) {
+        TlgFun::Act(a.command);
+    }
+    // The name under the icon, up to the bracket ("Roll on the ground (needs room)").
+    const char* end = std::strstr(a.name, " (");
+    const std::string label = end ? std::string(a.name, end) : std::string(a.name);
+    ImGui::BeginChild("##label", ImVec2(slot + 4, label_h), ImGuiChildFlags_None,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground);
+    ImGui::SetWindowFontScale(0.8f);
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextColored(hovered ? ImVec4(1.0f, 0.86f, 0.5f, 1.0f) : ImVec4(0.92f, 0.92f, 0.92f, 1.0f), "%s",
+                       label.c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::EndChild();
+    ImGui::EndGroup();
+    ImGui::PopID();
+}
+
+// Group buttons (Favourites first, then the groups in their icon colours), then the moves of the
+// picked group, per_row icons a row. The picked group is kept in tlg.ini trico_bar_group.
+void MoveBar(float slot, int per_row) {
+    const auto& groups = MoveGroups();
+    auto& setting = TlgSettings::Get().trico_bar_group;
+    const int current = std::clamp(setting.load(), 0, int(groups.size()));
+    for (int g = 0; g <= int(groups.size()); ++g) {
+        const bool picked = g == current;
+        const ImVec4 color = g == 0 ? ImVec4(1.0f, 0.82f, 0.3f, 1.0f) : groups[g - 1].color;
+        const auto shade = [&](float k, float alpha) { return ImVec4(color.x * k, color.y * k, color.z * k, alpha); };
+        ImGui::PushStyleColor(ImGuiCol_Button, picked ? shade(0.85f, 1.0f) : shade(0.45f, 0.75f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, shade(1.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, shade(1.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, picked ? ImVec4(0.08f, 0.06f, 0.04f, 1.0f) : ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
+        if (g > 0) {
             ImGui::SameLine();
         }
-        row_started = true;
-        ImGui::PushID(icon);
-        ImGui::BeginGroup();
-        bool pressed;
-        if (move_icons && icon < TlgFunIcons::Count) {
-            const float u = float(TlgFunIcons::Size) / float(move_icons->Width);
-            const float v = float(TlgFunIcons::Size) / float(move_icons->Height);
-            const float x = float(icon % TlgFunIcons::Columns) * u, y = float(icon / TlgFunIcons::Columns) * v;
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
-            pressed = ImGui::ImageButton("##move", move_icons->GetTexRef(), ImVec2(slot, slot), ImVec2(x, y),
-                                         ImVec2(x + u, y + v));
-            ImGui::PopStyleVar();
-        } else {
-            pressed = ImGui::Button("##move", ImVec2(slot + 4, slot + 4));
+        ImGui::PushID(g);
+        if (ImGui::Button(g == 0 ? TR("Favourites") : groups[g - 1].name)) {
+            setting = g;
+            TlgSettings::Save();
         }
-        const bool hovered = ImGui::IsItemHovered();
-        if (hovered) {
-            ImGui::SetTooltip("%s", a.name);
-        }
-        if (pressed) {
-            TlgFun::Act(a.command);
-        }
-        // The name under the icon, up to the bracket ("Roll on the ground (needs room)").
-        const char* end = std::strstr(a.name, " (");
-        const std::string label = end ? std::string(a.name, end) : std::string(a.name);
-        ImGui::BeginChild("##label", ImVec2(slot + 4, label_h), ImGuiChildFlags_None,
-                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground);
-        ImGui::SetWindowFontScale(0.8f);
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextColored(hovered ? ImVec4(1.0f, 0.86f, 0.5f, 1.0f) : ImVec4(0.92f, 0.92f, 0.92f, 1.0f), "%s",
-                           label.c_str());
-        ImGui::PopTextWrapPos();
-        ImGui::EndChild();
-        ImGui::EndGroup();
         ImGui::PopID();
-        ++icon;
+        ImGui::PopStyleColor(4);
+    }
+    const std::vector<int> moves = current == 0 ? Favourites() : groups[current - 1].moves;
+    if (moves.empty()) {
+        ImGui::TextDisabled("%s", TR("No favourites yet. Right-click a move in another group to add it here."));
+        return;
+    }
+    for (int i = 0; i < int(moves.size()); ++i) {
+        if (i % per_row != 0) {
+            ImGui::SameLine();
+        }
+        MoveButton(moves[i], slot);
     }
 }
 
@@ -1190,37 +1317,16 @@ void MoveBarWindow() {
     ImGui::Begin("##move_bar", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing);
-    ImGui::TextDisabled("Trico's moves (F12 hides)");
-    MoveBar(48.0f * base_scale, 2);
+    ImGui::TextDisabled("%s", TR("Trico's moves (F12 hides). Right-click a move to add it to your favourites."));
+    MoveBar(48.0f * base_scale, 12);
     ImGui::End();
 }
 
 // tlg: Trico Tricks, Trico's moves on their own tab (user 2026-11-05: moves out of the Fun tab).
 void TricksTab() {
-    ImGui::TextDisabled("Moves that work (also as a bar in the game: F12, click a move)");
-    MoveBar(44.0f * base_scale);
-    ImGui::TextDisabled("Every move, also the ones that may not work:");
-    static int action = 1;
-    const auto& picked = TlgFun::Actions[action];
-    ImGui::SetNextItemWidth(260);
-    if (ImGui::BeginCombo("##action", picked.name)) {
-        for (int i = 0; i < int(std::size(TlgFun::Actions)); ++i) {
-            const auto& a = TlgFun::Actions[i];
-            if (!a.command) {
-                ImGui::SeparatorText(a.name);
-                continue;
-            }
-            if (ImGui::Selectable(a.name, i == action)) {
-                action = i;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Do it")) {
-        TlgFun::Act(picked.command);
-    }
-    Help("Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down) and gets up to 3 tries. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": never seen in our tests, or not tested.");
+    ImGui::TextDisabled("%s", TR("Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites."));
+    MoveBar(44.0f * base_scale, 12);
+    Help(TR("Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests."));
 }
 
 void FunTab() {

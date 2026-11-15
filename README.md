@@ -36,8 +36,9 @@ No game files are included. You need your own copy, dumped from your own PS4.
   Ico's horns. Optional, off by default.
 - **[Quit directly](#controllers-and-languages):** quit the game from anywhere with a controller
   combo or the keyboard (**Alt+Q**), no menus. The game's pause menu shows the buttons.
-- **[Trico Tricks](docs/fun.md#trico-tricks-make-trico-move):** 30 of Trico's own moves on a bar (**F12**), including the throw-up animation
-  the developers sealed.
+- **[Trico Tricks](docs/fun.md#trico-tricks-make-trico-move):** 49 of Trico's own moves on a bar (**F12**) in coloured
+  groups, with your own favourites, the poses of the game's press shots and E3 demos, and the
+  throw-up animation the developers sealed.
 - **[Soundtrack](#soundtrack):** a music player in the launcher with all 100 pieces of the game's
   music, from your own game files.
 - **[Start at any point](#for-testers):** over 200 start points, from the first cave to the
@@ -259,9 +260,10 @@ that: he goes right away, in front of you.
 
 The rest:
 
-- **Trico Tricks** (**F12**): a bar with 30 of Trico's own moves, such as yawn, sneeze, roar, sit
-  and roll over, plus the throw-up animation the developers sealed in July 2016. More moves are
-  in the menu, but some of them may not work. Trico doesn't always listen.
+- **Trico Tricks** (**F12**): a bar with 49 of Trico's own moves in coloured groups, such as yawn,
+  sneeze, roar, sit and roll over, the photo pose and lion roar of the press shots and E3 demos,
+  plus the throw-up animation the developers sealed in July 2016. Right-click a move to add it to
+  your favourites. 10 of them are in their own "May not work" group. Trico doesn't always listen.
 - **Extra Tricos**: up to 8 more, including the armoured one.
 - **Size:** from half to twice his size.
 - **Eyes:** the hidden disco-eye effect, or any colour.
@@ -272,7 +274,7 @@ The rest:
 <table>
   <tr>
     <td><a href="docs/fun.md#extra-tricos"><img src="docs/screenshots/fun/free-camera.jpg" alt="A crowd of Tricos"></a></td>
-    <td><a href="docs/fun.md#trico-tricks-make-trico-move"><img src="docs/screenshots/fun/yawn.jpg" alt="Trico yawning, with the Trico Tricks bar"></a></td>
+    <td><a href="docs/fun.md#trico-tricks-make-trico-move"><img src="docs/screenshots/fun/trico-tricks-bar.jpg" alt="Trico doing a happy jump next to the boy, with the Trico Tricks bar and its group buttons"></a></td>
     <td><a href="docs/fun.md#tricos-size"><img src="docs/screenshots/fun/big.jpg" alt="A giant Trico"></a></td>
   </tr>
   <tr>

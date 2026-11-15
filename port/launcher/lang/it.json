@@ -1122,6 +1122,14 @@
     "Trico throws up": "Trico vomita",
     "The developers sealed Trico throwing up \"by order\" in 2016. As the developers designed: when his stomach is full of barrels, he throws up the way they planned. The Throw up button in Trico Tricks works either way.": "Gli sviluppatori hanno sigillato il vomito di Trico \"per ordine\" nel 2016. Come progettato dagli sviluppatori: quando ha lo stomaco pieno di barili, vomita come avevano previsto. Il pulsante Vomita nei trucchi di Trico funziona in entrambi i casi.",
     "Cut narrator hints": "Indizi del narratore tagliati",
-    "The 23 narrator hints the developers cut in September 2016. On: when you seem stuck, the narrator helps again, where they first placed his lines. They give puzzle solutions away.": "I 23 indizi del narratore che gli sviluppatori hanno tagliato a settembre 2016. Attivo: quando sembri bloccato, il narratore ti aiuta di nuovo, dove avevano collocato le sue frasi in origine. Svelano le soluzioni degli enigmi."
+    "The 23 narrator hints the developers cut in September 2016. On: when you seem stuck, the narrator helps again, where they first placed his lines. They give puzzle solutions away.": "I 23 indizi del narratore che gli sviluppatori hanno tagliato a settembre 2016. Attivo: quando sembri bloccato, il narratore ti aiuta di nuovo, dove avevano collocato le sue frasi in origine. Svelano le soluzioni degli enigmi.",
+    "Right-click: remove from favourites": "Clic destro: togli dai preferiti",
+    "Right-click: add to favourites": "Clic destro: aggiungi ai preferiti",
+    "Favourites are full (16)": "Preferiti pieni (16)",
+    "Favourites": "Preferiti",
+    "No favourites yet. Right-click a move in another group to add it here.": "Ancora nessun preferito. Fai clic destro su una mossa di un altro gruppo per aggiungerla qui.",
+    "Trico's moves (F12 hides). Right-click a move to add it to your favourites.": "Mosse di Trico (F12 nasconde). Fai clic destro su una mossa per aggiungerla ai preferiti.",
+    "Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites.": "Fai clic su una mossa (anche come barra nel gioco: F12). Fai clic destro su una mossa per aggiungerla ai preferiti.",
+    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "Chiede al Trico della storia di farlo, come fa il gioco stesso. Prima assume la posa che serve alla mossa (si alza, si siede o si sdraia). Se la mossa non parte, viene rimesso in piedi e gli viene chiesto un'altra volta, ma mai durante un evento della storia, un salto o una scalata. La sua volontà può comunque vincere, e alcune mosse richiedono spazio (una capriola può spingere il ragazzo giù da un bordo). \"May not work\": non visto funzionare nei nostri test."
   }
 }
