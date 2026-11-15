@@ -8,6 +8,8 @@
   <a href="port/LICENSE"><img src="https://img.shields.io/badge/license-GPL--2.0-555?style=for-the-badge" alt="GPL-2.0"></a>
 </p>
 
+<p align="center"><i>A fan project, by fans, for fans.</i></p>
+
 A native Windows and Linux port of The Last Guardian (PS4). It adds DLSS and FSR, frame generation,
 ultrawide support, an optional texture pack, an in-game graphics menu and a [photo mode](#photo-mode).
 It also brings back many
@@ -36,6 +38,11 @@ No game files are included. You need your own copy, dumped from your own PS4.
   the developers sealed.
 - **[Soundtrack](#soundtrack):** a music player in the launcher with all 100 pieces of the game's
   music, from your own game files.
+- **[Texture pack generator](docs/texture-pack.md):** the game started out on PS3, and many of its
+  textures look rough up close on a modern screen. Our
+  [generator](https://github.com/tabnul/ps4-texturepack-generator) builds a 4x texture pack from
+  your own copy, with more detail in stone, moss, wood and cloth. Optional, and you can switch
+  it on and off while you play.
 - **[Controllers](#controllers-and-languages):** remap buttons, dead zones and trigger points,
   a stick drift check and your own button combos.
 - **[Quit directly](#controllers-and-languages):** quit the game from anywhere with a controller
@@ -60,7 +67,7 @@ No game files are included. You need your own copy, dumped from your own PS4.
 - DLSS, FSR 4 and FSR 3.1 anti-aliasing and upscaling, and DLSS or FSR frame generation
 - Any resolution including 21:9 ultrawide (32:9 experimental), and 30, 60 or unlocked FPS
 - An in-game settings menu (**Insert**) with presets, shadows, field of view, effects, colour and HDR10
-- Shader recipes against stutter, calmer wind, and an optional 4x texture pack
+- Shader recipes against stutter and calmer wind
 - 7.1 surround, output device choice and headphone surround
 - Language packs for 14 languages
 - [Packed game files](#get-started): play straight from one ZArchive `.zar` file
@@ -189,8 +196,14 @@ the picture.
   go faster or **L1** to go slower.
 - **Save a picture:** **Cross** or **Print Screen**. It is saved as a lossless PNG at the full
   render resolution in `user/screenshots`. The button help on screen is not in the picture.
+- **HDR and normal, both:** with HDR on, every photo is saved twice. A normal picture that looks
+  right on any screen and is easy to share, and an HDR picture (name ending in `-hdr.png`) that
+  keeps the full brightness for HDR screens. Chrome and Edge show it in HDR. You can switch the
+  HDR picture off in the in-game menu (Fun tab) or in the launcher.
 
 <p align="center"><a href="docs/fun.md#photo-mode"><img src="docs/screenshots/fun/photo-mode-bridge.jpg" alt="Photo mode: Trico reaches down to the boy on a broken bridge, with the button hints on screen"></a></p>
+
+<p align="center"><sub><i>Trico saving the day in the famous collapsing bridge scene. Normally only shown in first person, now it can be seen from all angles.</i></sub></p>
 
 ## Cut and hidden content
 
