@@ -216,6 +216,7 @@ TEXT = {
     'fps_hint': ('60/unlocked patch eboot 1.03 in memory. Unlocked lowers the base frame rate by about '
                  '10 FPS against 60 at the same spot; pick 60 unless your PC runs well above 60'),
     'skip_logos': 'Skip the boot logos',
+    'auto_continue': 'Auto continue (skip the title screen, load the last save)',
     'horns_built': 'The horn models are built on this PC.',
     'horns_failed': 'Could not build the horn models: {error}',
     'update_check': 'Check for new releases at start',
@@ -1268,7 +1269,18 @@ class Launcher:
             note.grid()
 
     def renderer_changed(self):
-        """Renderer picked: their options greyed, or back under their own rules (the rows read tlg.ini again)."""
+        """Renderer picked: their options greyed, or back under their own rules (the rows read tlg.ini again).
+        Picking the backend also sets its defaults (tlg_run.BACKEND_DEFAULTS: 4K, uncapped up to 120, logos skipped)."""
+        if self.settings.get('renderer') == 'vulkan':
+            self.settings.update(tlg_run.BACKEND_DEFAULTS)
+            tlg_run.save_settings(self.settings)
+            for key, value in tlg_run.BACKEND_DEFAULTS.items():
+                box, values = getattr(self, 'combo_boxes', {}).get(key, (None, None))
+                if box is not None and value in values:
+                    box.current(values.index(value))
+                if key in self.vars:
+                    self.vars[key].set(value)
+            self.update_fg()
         if not tlg_run.backend_on(self.settings):
             for widget in getattr(self, 'their_widgets', []):
                 try:
@@ -1433,6 +1445,7 @@ class Launcher:
         self.build_game_language(lang)
         self.build_ui_language(lang, 1)
         self.check(lang, 2, 'skip_logos')
+        self.check(lang, 3, 'auto_continue')
         launcher = section(right, self.t('launcher_section'))
         launcher.grid(sticky='ew', pady=(0, 8))
         ttk.Button(launcher, text=self.t('home_picture'), command=self.pick_background).pack(side='left')

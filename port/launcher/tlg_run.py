@@ -275,6 +275,12 @@ def backend_on(settings):
     return settings.get('renderer', 'default') == 'vulkan'
 
 
+# Picking the engine-to-Vulkan backend in the launcher sets these (the owner's settings for it, 2026-11-16):
+# 4K, the uncapped frame rate (presented up to the display refresh, at most 120 FPS) and the boot logos skipped.
+# Each can be changed afterwards; picking the backend again sets them again.
+BACKEND_DEFAULTS = {'resolution': '3840x2160', 'frame_rate': 'unlocked', 'skip_logos': True}
+
+
 def their_renderer_flag(name):
     """A Debug > Flags switch of the default renderer only (greyed and not passed with the backend)."""
     return next((variable in THEIR_RENDERER_ENV for flag, variable, *_ in DEBUG_FLAGS if flag == name), False)
@@ -293,6 +299,7 @@ DEFAULT_SETTINGS = {
     'update_check': True,          # update_check.py: ask GitHub for a newer release at launcher start
     'ui_language': 'en',           # language pack for launcher + in-game menu: en | auto (system) | pack code
     'skip_logos': False,           # scripts/tlg_patches.py --skip-logos; TLG_SKIP_LOGOS=1 too
+    'auto_continue': False,        # TLG_AUTO_START=1 (src/runtime_pad.c): passes the title screen and picks Continue
     'display_mode': 'Windowed',    # Windowed | Borderless | Fullscreen (tlg.ini)
     'vsync': True,
     'level_select': False,         # tlg.ini; tlg_lua.cpp
@@ -1012,6 +1019,9 @@ def build_env(settings, extra=None):
         env.setdefault('TLG_DMEM_MB', str(5056 + applied_garlic_extra))
     restart = f'"{sys.executable}" --play' if FROZEN else f'"{sys.executable}" "{Path(__file__).resolve()}"'
     env.setdefault('TLG_RESTART_COMMAND', restart)
+    # Auto continue: past the title screen to Continue without a key press (TLG_AUTO_START set outside wins).
+    if settings.get('auto_continue'):
+        env.setdefault('TLG_AUTO_START', '1')
     # Headless test runs (TLG_HEADLESS, development) never restart: a game that asks for one
     # (sceSystemServiceLoadExec, e.g. after its engine gave up at start) just ends, instead of
     # relaunching in a loop.

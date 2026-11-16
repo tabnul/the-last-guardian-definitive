@@ -418,7 +418,11 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         // bridge; above 30 FPS the catch can be missed and the game waits forever) and the credits' rate. Their VideoOut obeys it first; so does ours.
         if (const u32 credits = s.credits_fps_lock) return credits;
         const u32 limit = u32(TlgGraphics::PresentLimit(s.fps_limit, s.applied_engine_fps));
-        return limit || !fast_vblank ? limit : EmulatorSettings.GetFrameLimit();
+        if (limit) return limit;
+        if (fast_vblank) return EmulatorSettings.GetFrameLimit();
+        // the launcher's 30 / 60 FPS modes run a 240 Hz vblank: the limit is the engine rate (as their VideoOut does)
+        const u32 engine_fps = u32(s.applied_engine_fps.load());
+        return EmulatorSettings.GetVblankFrequency() > engine_fps ? engine_fps : 0u;
     };
     // E6.2d: the queue of flips, the frame limit's slots and what is on screen belong to the presenter object (native/native_presenter.h); this thread is its timer.
     Core::NativePresenter::SetFrameLimit(current_limit(), std::chrono::steady_clock::now());

@@ -463,6 +463,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                      BlitFit(frame->width, frame->height, extent.width, extent.height), vk::Filter::eLinear);
     // F12 / Shift+F12, the glitch marker and the frame walk: a copy of the game frame, before the overlay (native/native_capture.h)
     if (!is_reusing_frame) {
+        // photo mode's Cross and the menu's Print Screen ask the overlay for a picture; under ours it is our capture (user/screenshots)
+        if (TlgOverlay::TakeScreenshotRequest()) {
+            TlgCapture::RequestScreenshot();
+        }
         TlgCapture::Record(instance, cmdbuf, frame->image, frame->width, frame->height, swapchain.GetSurfaceFormat().format, present_scheduler.CurrentTick());
     }
     // the overlay (menu, save dialogs, frame counter) over the frame, at the window's resolution

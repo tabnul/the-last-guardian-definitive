@@ -441,6 +441,8 @@ void NoteFrameTime(std::chrono::steady_clock::time_point now, float ms) {
     low1_fps = sum > 0.0 ? float(1000.0 * double(slowest) / sum) : -1.0f;
 }
 
+bool BackendRuns(); // VKB: below, with the greying helpers
+
 float Low1Fps() {
     std::scoped_lock lock{low1_mutex};
     return low1_fps;
@@ -465,7 +467,7 @@ std::string OverlayText() {
     sample.fps = frame_ms_avg > 0.0f ? 1000.0f / frame_ms_avg : 0.0f;
     sample.low1_fps = Low1Fps();
     sample.frame_ms = frame_ms_avg;
-    sample.upscaler = UpscalerLabel(s.upscaler);
+    sample.upscaler = BackendRuns() ? std::string{} : UpscalerLabel(s.upscaler); // VKB: ours has no upscaler (yet)
     return P::Format(sample, items, s.overlay_layout == 0);
 }
 
@@ -855,7 +857,7 @@ void ImageTab() {
         InfoRow(TR("Game image"), text);
         std::snprintf(text, sizeof(text), "%d x %d", ww, wh);
         InfoRow(TR("Windowed"), text);
-        InfoRow(TR("Sharpening"), !s.sharpen ? TR("off") : s.rcas_applied ? TR("applied (CAS)") : TlgSettings::AaSharpenedRecently() ? TR("applied (RCAS, in the AA step)") : TR("not applied"));
+        InfoRow(TR("Sharpening"), !s.sharpen || BackendRuns() ? TR("off") : s.rcas_applied ? TR("applied (CAS)") : TlgSettings::AaSharpenedRecently() ? TR("applied (RCAS, in the AA step)") : TR("not applied"));
         ImGui::EndTable();
     }
 }
@@ -1439,8 +1441,10 @@ void FunTab() {
     Help(TR("How the world is frozen. Pause the game: the game's own pause, everything stops. Stop time: the game's own slow motion, turned down until nothing moves; try it if the camera does not move with the first one."));
     ImGui::EndDisabled();
     bool photo_hdr = TlgSettings::Get().photo_hdr;
+    BeginTheirs(); // VKB: the HDR photo comes from their presenter's HDR output
     Store(TlgSettings::Get().photo_hdr, photo_hdr,
           ImGui::Checkbox(TR("Also save an HDR picture##photohdr"), &photo_hdr));
+    EndTheirs();
     Help(TR("With HDR on, every photo is saved twice: a normal picture that looks right everywhere, and an HDR picture (name ending in -hdr.png) for HDR screens; Chrome and Edge show it in HDR. Off: only the normal picture. With HDR off there is only the normal picture."));
 
     ImGui::SeparatorText("Tricopilot");
