@@ -5,6 +5,7 @@
 #include "tlg_settings.h"
 #include "tlg_copy.h"
 #ifndef _WIN32
+#include <utility>
 #include <sys/resource.h>
 #endif
 #include "tlg_toggles.h"
@@ -28,6 +29,7 @@
 #include "common/rdtsc.h"
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/libs.h"
+#include "native/native_timeline.h" // VKB
 #include "native/native_vkb.h" // VKB
 #include "native/native_hooks.h" // VKB
 #include "native/native_debug_server.h" // VKB
@@ -289,7 +291,56 @@ extern "C" void tlggpu_flush_cache(void) {
                 static_cast<long long>(ms));
 }
 
+// VKB: guest waits and signals of the runtime for the frame timeline capture (F9 frame profiler, F8 stall profiler), from the old port; the runtime
+// calls these through runtime_set_timeline_hooks (src/runtime.h), set in tlggpu_init.
+extern "C" {
+typedef struct RuntimeTimelineHooks {
+    void (*wait_begin)(void);
+    void (*wait_end)(const char* kind, const void* object, const char* name, uintptr_t caller);
+    void (*signal)(int kind, const void* object);
+} RuntimeTimelineHooks;
+void runtime_set_timeline_hooks(const RuntimeTimelineHooks* hooks);
+}
+namespace {
+thread_local u64 timeline_wait_start = 0;
+u32 TimelineWaitKind(const char* kind) {
+    if (!kind) return 6;
+    if (!std::strncmp(kind, "condition", 9)) return 1;
+    if (!std::strncmp(kind, "semaphore", 9)) return 2;
+    if (!std::strncmp(kind, "sleep", 5)) return 3;
+    if (!std::strncmp(kind, "event", 5)) return 4;
+    if (!std::strncmp(kind, "mutex", 5)) return 5;
+    return 6;
+}
+void TimelineWaitBegin() {
+    timeline_wait_start = Core::FrameTimeline::capture_active.load(std::memory_order_relaxed) ? Core::FrameTimeline::Now() : 0;
+}
+void TimelineWaitEnd(const char* kind, const void* object, const char* name, uintptr_t caller) {
+    const u64 start = std::exchange(timeline_wait_start, 0);
+    if (start == 0 || !Core::FrameTimeline::capture_active.load(std::memory_order_relaxed)) {
+        return;
+    }
+    const u64 end = Core::FrameTimeline::Now();
+    if (end - start < 50'000) {
+        return;
+    }
+    const u64 id = reinterpret_cast<u64>(object);
+    Core::FrameTimeline::Record(Core::FrameTimeline::GameWait, (end - start) | (u64(TimelineWaitKind(kind)) << 56), end, id);
+    Core::FrameTimeline::Record(Core::FrameTimeline::GameWaitSite, static_cast<u64>(caller), end, id); // the stall profiler pairs this with the wait above
+    Core::FrameTimeline::CaptureNote(id, name && name[0] ? name : (kind ? kind : ""));
+}
+void TimelineSignal(int kind, const void* object) {
+    if (Core::FrameTimeline::capture_active.load(std::memory_order_relaxed)) {
+        Core::FrameTimeline::Signal(static_cast<u64>(kind), object);
+    }
+}
+} // namespace
+
 extern "C" int tlggpu_init(const TlgGpuConfig* config) {
+    {
+        const RuntimeTimelineHooks hooks{&TimelineWaitBegin, &TimelineWaitEnd, &TimelineSignal};
+        runtime_set_timeline_hooks(&hooks);
+    }
     TlgSettings::Load();
 #ifdef TLG_PGO_GENERATE
     StartProfileWriter();

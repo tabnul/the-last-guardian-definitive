@@ -225,11 +225,13 @@ static ABI int32_t cond_timedwait(GuestCond **cond, GuestMutex **mutex, uint32_t
 static ABI int32_t cond_signal(GuestCond **cond) {
     int32_t e = ensure_cond(cond);
     if (e) return e;
+    if (runtime_timeline.signal) runtime_timeline.signal(5,*cond); /* VKB: the frame timeline's guest signals */
     ++wakeups; return orbis_error(pthread_cond_signal(&(*cond)->native));
 }
 static ABI int32_t cond_broadcast(GuestCond **cond) {
     int32_t e = ensure_cond(cond);
     if (e) return e;
+    if (runtime_timeline.signal) runtime_timeline.signal(6,*cond);
     ++wakeups; return orbis_error(pthread_cond_broadcast(&(*cond)->native));
 }
 /* PS4 struct timespec is {int64 sec, int64 nsec}, identical to Linux x86-64. */

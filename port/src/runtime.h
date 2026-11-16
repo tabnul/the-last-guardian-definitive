@@ -39,6 +39,16 @@ void runtime_mutex_report(void);
 uintptr_t runtime_memory_resolve(const char *name);
 void runtime_memory_report(void);
 int runtime_memory_is_mapped(uintptr_t address, uint64_t size);
+/* VKB: the frame timeline capture's guest waits and signals (F9 frame profiler, F8 stall profiler; from the old port). The GPU library sets
+ * them at start (tlggpu_init); unset, nothing is recorded. wait_end: kind/object/name of the outermost wait, caller = the guest call site.
+ * signal kind: 5 condition variable signal, 6 broadcast, 7 semaphore post. */
+typedef struct RuntimeTimelineHooks {
+    void (*wait_begin)(void);
+    void (*wait_end)(const char *kind, const void *object, const char *name, uintptr_t caller);
+    void (*signal)(int kind, const void *object);
+} RuntimeTimelineHooks;
+void runtime_set_timeline_hooks(const RuntimeTimelineHooks *hooks);
+extern RuntimeTimelineHooks runtime_timeline;
 /* VKB: the game image, for TLG_AUTO_START (the pad reads the title menu state) */
 void runtime_pad_set_image(uintptr_t image, uint64_t size);
 /* VKB: the backing view's window of a guest range (the engine-to-Vulkan backend's host import) */

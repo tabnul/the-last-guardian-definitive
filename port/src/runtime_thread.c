@@ -304,10 +304,14 @@ static void copy_wait_name(char *out,size_t size,const char *name) {
     memcpy(out+3,name+n-(size-4),size-4);
     out[size-1]=0;
 }
+/* VKB: the frame timeline's guest waits (runtime.h RuntimeTimelineHooks): the outermost blocking call of a thread is one wait. */
+RuntimeTimelineHooks runtime_timeline;
+void runtime_set_timeline_hooks(const RuntimeTimelineHooks *hooks) { runtime_timeline=*hooks; }
 void runtime_wait_slot_begin(RuntimeWait *w,const char *kind,const void *object,const char *name,
                              const void *const *owner,uintptr_t frame,uint64_t now_ms) {
     if (!w) return;
     unsigned depth=w->depth++;
+    if (!depth && runtime_timeline.wait_begin) runtime_timeline.wait_begin();
     /* The outermost wait is the time the thread is blocked (nested waits happen inside it). */
     if (!depth && wait_stats()) { w->wait_start_ns=wait_now_ns(); ++w->wait_count; }
     if (depth>=RUNTIME_WAIT_LEVELS) return;
@@ -321,6 +325,11 @@ void runtime_wait_slot_begin(RuntimeWait *w,const char *kind,const void *object,
 void runtime_wait_slot_end(RuntimeWait *w) {
     if (!w || !w->depth) return;
     unsigned depth=--w->depth;
+    if (!depth && w->level[0].kind && runtime_timeline.wait_end) {
+        /* the guest call site of the blocking import ([frame+8], see RuntimeWaitLevel); 0 for waits without a guest frame */
+        uintptr_t frame=w->level[0].frame;
+        runtime_timeline.wait_end(w->level[0].kind,w->level[0].object,w->level[0].name,frame ? ((const uintptr_t *)frame)[1] : 0);
+    }
     if (!depth && w->wait_start_ns) { /* wait_start_ns is set only for a counted begin */
         uint64_t spent=wait_now_ns()-w->wait_start_ns;
         w->wait_start_ns=0;

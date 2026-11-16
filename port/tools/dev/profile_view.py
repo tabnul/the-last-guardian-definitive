@@ -73,7 +73,9 @@ def main():
     steps = max(int((t1 - t0) // STEP_NS), 1)
     xs = (np.arange(steps) + 0.5) * STEP_NS / 1e9
     cpu = ev[ev['type'] == tr.T_CPU]
-    groups = {'raster thread': ['shadPS4:GpuRaster'], 'command processor': ['shadPS4:GpuCommandProcessor'], 'encoder thread': ['shadPS4:GpuEncoder'],
+    # the PS4 path's stage threads, or the Vulkan backend's (recorder = resolver + recording threads; presenter): whichever ran
+    groups = {'raster thread': ['shadPS4:GpuRaster', 'vkb:Recorder'], 'command processor': ['shadPS4:GpuCommandProcessor', 'vkb:Record1', 'vkb:Record2'],
+              'encoder thread': ['shadPS4:GpuEncoder', 'shadPS4:PresentThread', 'tlg:Present'],
               'game render thread': ['ps4render']}
     cpu_lines = []
     idx = np.clip(((cpu['ns'].astype(np.int64) - t0) // STEP_NS).astype(np.int64), 0, steps - 1)

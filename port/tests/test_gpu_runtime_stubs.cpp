@@ -20,6 +20,7 @@ void runtime_thread_attach_host(const char*) {}
 void runtime_memory_gpu_protect(uintptr_t, uint64_t, int, int) { std::abort(); }
 void runtime_memory_describe(uintptr_t, char*, size_t) { std::abort(); }
 void runtime_restart() { std::abort(); }
+void runtime_set_timeline_hooks(const void*) {} // the frame timeline's guest waits (src/runtime.h): no guest threads here
 uint64_t runtime_process_time_counter() { return runtime_process_time_us() * 1000; }
 int32_t* runtime_errno() { std::abort(); }
 int runtime_memory_write_backing(uintptr_t, const void*, uint64_t) { std::abort(); }

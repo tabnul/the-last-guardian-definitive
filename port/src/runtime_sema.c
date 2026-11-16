@@ -260,6 +260,7 @@ static int32_t signal_fast(uint32_t id,int32_t count) {
     return result;
 }
 static ABI int32_t sem_signal(uint32_t id,int32_t count) {
+    if (runtime_timeline.signal) runtime_timeline.signal(7,(const void *)(uintptr_t)id); /* VKB: the frame timeline's guest signals */
     if (fast_mode()) return signal_fast(id,count);
     pthread_mutex_lock(&lock);
     Sema *s=find(id);
