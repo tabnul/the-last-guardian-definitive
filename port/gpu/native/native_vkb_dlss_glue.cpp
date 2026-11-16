@@ -3,11 +3,22 @@
 
 #include "native/native_vkb_dlss_glue.h"
 
+#include <mutex>
 #include <cstdlib>
 #include <cstring>
 
+#include "native/shadps4/video_core/renderer_vulkan/vk_scheduler.h"
 #include "common/logging/log.h"
 #include "../shadps4/video_core/renderer_vulkan/vk_dlss.h"
+
+namespace {
+/// a device-wide wait: every queue must be left alone meanwhile (Vulkan), so the backend's recording and upload threads wait at the queue lock, as the
+/// presenter's swapchain recreate does (a wait without it lost the device, owner play 2026-11-16)
+void IdleDevice(vk::Device device) {
+    std::scoped_lock queue_lock{VkbVulkan::Scheduler::submit_mutex};
+    (void)device.waitIdle();
+}
+} // namespace
 
 namespace Core::Vkb::DlssGlue {
 namespace {
@@ -44,7 +55,7 @@ bool FgCreate(vk::Device device, vk::CommandBuffer cmd, u32 width, u32 height, v
     if (dlss == nullptr) {
         return false;
     }
-    (void)device.waitIdle();
+    IdleDevice(device);
     dlss->FgRelease();
     return dlss->FgCreate(cmd, width, height, format);
 }
@@ -80,7 +91,7 @@ bool Run(vk::Device device, vk::CommandBuffer cmd, const Image& color, const Ima
     }
     const Vulkan::Dlss::FeatureDesc desc{color.width, color.height, color.width, color.height, Vulkan::Dlss::QualityForScale(1.0f), true, 0, true};
     if (!dlss->HasFeature(desc)) {
-        (void)device.waitIdle(); // the previous feature may still be in use by submitted work
+        IdleDevice(device); // the previous feature may still be in use by submitted work
         dlss->ReleaseFeature();
         if (!dlss->CreateFeature(cmd, desc)) {
             LOG_ERROR(Render_Vulkan, "vkb aa: DLSS feature creation failed");

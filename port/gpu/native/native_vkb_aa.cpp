@@ -18,12 +18,22 @@
 #include <nlohmann/json.hpp>
 #include <vk_mem_alloc.h>
 
+#include "native/shadps4/video_core/renderer_vulkan/vk_scheduler.h"
 #include "common/logging/log.h"
 #include "ffx_vk_portable.h"
 #include "native/native_vkb_dlss_glue.h"
 #include "native/native_vkb_objects.h"
 #include "native/shadps4/video_core/host_shaders/vkb_aa_motion_comp.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_instance.h"
+
+namespace {
+/// a device-wide wait: every queue must be left alone meanwhile (Vulkan), so the backend's recording and upload threads wait at the queue lock, as the
+/// presenter's swapchain recreate does (a wait without it lost the device, owner play 2026-11-16)
+void IdleDevice(vk::Device device) {
+    std::scoped_lock queue_lock{VkbVulkan::Scheduler::submit_mutex};
+    (void)device.waitIdle();
+}
+} // namespace
 
 namespace Core::Vkb::Aa {
 namespace {
@@ -153,7 +163,7 @@ bool EnsureDlaa(u32 w, u32 h) {
         return true;
     }
     if (motion_pxs[0] != VK_NULL_HANDLE) {
-        (void)device.waitIdle();
+        IdleDevice(device);
         for (u32 i = 0; i < 2; ++i) {
             device.destroyImageView(motion_px_views[i]);
             vmaDestroyImage(instance->GetAllocator(), motion_pxs[i], motion_px_allocs[i]);
@@ -187,7 +197,7 @@ bool EnsureDlaa(u32 w, u32 h) {
 
 void DestroyContext() {
     if (context != nullptr) {
-        (void)instance->GetDevice().waitIdle();
+        IdleDevice(instance->GetDevice());
         ffxVkPortableUpscaleContextDestroy(context);
         context = nullptr;
     }
