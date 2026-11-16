@@ -221,6 +221,13 @@ struct Values {
     /// QA menu of level_select (tlg_lua.cpp) and photo mode on/off (tlg_overlay.cpp). Defaults are the combos the port always used.
     std::atomic<uint32_t> combo_quit{PadComboQuit}, combo_menu{PadComboMenu}, combo_qa{PadComboQa},
         combo_photo{PadComboPhoto};
+    /// Photo mode buttons (Controls tab + launcher Controller page, tlg.ini pad_photo_*): one
+    /// button each (PadCombo bit). Read by tlg_overlay.cpp, which hands the held state to the
+    /// photo camera tick (TlgFun::PhotoPad). photo_invert_y: pushing the right stick forward
+    /// looks down (default on, user 2026-11-16).
+    std::atomic<uint32_t> photo_shot{PadCross}, photo_up{PadR2}, photo_down{PadL2}, photo_fast{PadR1},
+        photo_slow{PadL1}, photo_help{PadOptions};
+    std::atomic<bool> photo_invert_y{true};
 
     /// Startup settings for the explicit TLG_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;

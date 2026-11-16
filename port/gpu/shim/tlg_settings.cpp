@@ -131,6 +131,18 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         target = ParseCombo(value, target.load());
         return;
     }
+    if (key.rfind("pad_photo_", 0) == 0) {
+        auto* target = key == "pad_photo_shot" ? &v.photo_shot : key == "pad_photo_up" ? &v.photo_up
+                     : key == "pad_photo_down" ? &v.photo_down : key == "pad_photo_fast" ? &v.photo_fast
+                     : key == "pad_photo_slow" ? &v.photo_slow : key == "pad_photo_help" ? &v.photo_help
+                                               : nullptr;
+        if (target) target->store(ParseCombo(value, target->load()));
+        return;
+    }
+    if (key == "photo_invert_y") {
+        v.photo_invert_y = std::atoi(value.c_str()) != 0;
+        return;
+    }
     if (key == "audio_surround") {
         v.audio_surround = std::atoi(value.c_str()) != 0;
         return;
@@ -753,6 +765,12 @@ void Save() {
     std::fprintf(file, "pad_combo_quit=%s\npad_combo_menu=%s\npad_combo_qa=%s\npad_combo_photo=%s\n",
                  ComboText(v.combo_quit).c_str(), ComboText(v.combo_menu).c_str(), ComboText(v.combo_qa).c_str(),
                  ComboText(v.combo_photo).c_str());
+    std::fprintf(file,
+                 "pad_photo_shot=%s\npad_photo_up=%s\npad_photo_down=%s\npad_photo_fast=%s\npad_photo_slow=%s\n"
+                 "pad_photo_help=%s\nphoto_invert_y=%d\n",
+                 ComboText(v.photo_shot).c_str(), ComboText(v.photo_up).c_str(), ComboText(v.photo_down).c_str(),
+                 ComboText(v.photo_fast).c_str(), ComboText(v.photo_slow).c_str(), ComboText(v.photo_help).c_str(),
+                 int(v.photo_invert_y.load()));
     std::fprintf(file, "trico_drool=%d\n", v.trico_drool.load());
     std::fprintf(file, "trico_favourites=%s\ntrico_bar_group=%d\n", v.trico_favourites.c_str(),
                  v.trico_bar_group.load());

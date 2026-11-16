@@ -431,6 +431,10 @@ extern "C" void tlggpu_overlay_notice(const char* text, float seconds) {
     TlgOverlay::Notice(text ? text : "", seconds);
 }
 
+extern "C" void tlggpu_pad_game_buttons(uint32_t buttons) {
+    TlgOverlay::SetGameButtons(buttons);
+}
+
 extern "C" int tlggpu_overlay_captures_input(void) {
     return TlgOverlay::CapturesInput() ? 1 : 0;
 }

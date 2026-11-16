@@ -134,8 +134,14 @@ bool FreeCameraOn();
 // Leaving puts back the normal camera and the game's speed or pause. A jump turns it off.
 enum class PhotoFreeze { Pause = 0, StopTime = 1 };
 inline constexpr const char* PhotoFreezeNames[] = {"Pause the game", "Stop time"};
+// Photo mode button rows (Controls tab), in tlg_overlay.cpp PhotoSlots order.
+inline constexpr const char* PhotoButtonNames[] = {"Screenshot", "Fly up", "Fly down", "Fast (hold)", "Slow (hold)",
+                                                   "Hide / show the button help"};
 void PhotoMode(bool on);
 bool PhotoModeOn();
+/// The photo buttons held now and the invert setting, for the camera tick (the overlay sends
+/// them when they change; does nothing outside photo mode).
+void PhotoPad(bool up, bool down, bool fast, bool slow, bool invert_y);
 void PhotoModeFreeze(PhotoFreeze how); // takes effect at the next start of photo mode
 PhotoFreeze PhotoModeFreeze();
 // Tricopilot: the developers' self-driving Trico, left in the retail game
