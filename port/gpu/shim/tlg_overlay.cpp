@@ -403,6 +403,8 @@ const char* UpscalerLabel(int upscaler) {
 
 const Vulkan::Instance* overlay_instance = nullptr; // for the overlay's measurements
 std::mutex stats_device_mutex;
+// VKB: the graphics queue's lock (SetQueueMutex); their renderer's unless the backend's presenter set its own
+std::atomic<std::mutex*> queue_mutex{&Vulkan::Scheduler::submit_mutex};
 std::optional<TlgPerfStats::Device> stats_device; // VKB: the same without a Vulkan::Instance
 
 // 1% low: the present intervals of the last 10 s; the slowest 1% of them, averaged, as a frame rate (recomputed twice a second)
@@ -2303,6 +2305,10 @@ void Init(const Device& device, vk::Format format, u32 image_count) { // VKB
     InitImGui(device, format, image_count);
 }
 
+void SetQueueMutex(std::mutex* mutex) { // VKB
+    queue_mutex.store(mutex, std::memory_order_release);
+}
+
 void SetStatsDevice(TlgPerfStats::Device device) { // VKB
     std::scoped_lock lock{stats_device_mutex};
     stats_device = std::move(device);
@@ -3078,8 +3084,10 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
         .pColorAttachments = &attachment,
     });
     {
-        // Font atlas uploads submit to the graphics queue themselves.
-        std::scoped_lock submit_lock{Vulkan::Scheduler::submit_mutex};
+        // Font atlas uploads submit to the graphics queue themselves (and wait for it): under the lock of whoever else submits to it.
+        // VKB: with the engine-to-Vulkan backend that is its lock, not their renderer's: under the wrong one these uploads raced the backend's
+        // submissions (the queue must not be used by two threads at once; device losses at 120 fps / 4K, merge notes 2026-11-16).
+        std::scoped_lock submit_lock{*queue_mutex.load(std::memory_order_acquire)};
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
     }
     cmdbuf.endRendering();

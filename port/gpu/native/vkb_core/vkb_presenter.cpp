@@ -87,6 +87,8 @@ Presenter::Presenter(Frontend::WindowSDL& window_)
         free_queue.push(&frame);
     }
     pp_pass.Create(device, swapchain.GetSurfaceFormat().format);
+    // the overlay's own font atlas uploads go to the graphics queue under our queue lock (not their renderer's)
+    TlgOverlay::SetQueueMutex(&Scheduler::submit_mutex);
     TlgOverlay::Init(TlgOverlay::Device{.api_version = instance.ApiVersion(),
                                         .instance = instance.GetInstance(),
                                         .physical_device = instance.GetPhysicalDevice(),
@@ -403,12 +405,20 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         free_frame();
         return;
     }
-    swapchain.UpdateVsync();
-    if (u32(window.GetWidth()) != swapchain.GetWidth() || u32(window.GetHeight()) != swapchain.GetHeight()) {
-        swapchain.Recreate(window.GetWidth(), window.GetHeight());
+    // a VSync change and a swapchain recreate wait for the device to go idle (vkDeviceWaitIdle): every queue must be left alone meanwhile, so the
+    // backend's recording and upload threads wait at the queue lock
+    {
+        std::scoped_lock queue_lock{Scheduler::submit_mutex};
+        swapchain.UpdateVsync();
+        if (u32(window.GetWidth()) != swapchain.GetWidth() || u32(window.GetHeight()) != swapchain.GetHeight()) {
+            swapchain.Recreate(window.GetWidth(), window.GetHeight());
+        }
     }
     if (!swapchain.AcquireNextImage()) {
-        swapchain.Recreate(window.GetWidth(), window.GetHeight());
+        {
+            std::scoped_lock queue_lock{Scheduler::submit_mutex};
+            swapchain.Recreate(window.GetWidth(), window.GetHeight());
+        }
         if (!swapchain.AcquireNextImage()) {
             LOG_WARNING(Render_Vulkan, "Skipping frame!");
             free_frame();

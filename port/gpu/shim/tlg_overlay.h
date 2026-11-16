@@ -18,6 +18,7 @@ namespace Vulkan {
 class Instance;
 }
 
+#include <mutex>
 #include "tlg_perf_stats.h"
 
 namespace TlgOverlay {
@@ -38,6 +39,9 @@ struct Device {
 void Init(const Device& device, vk::Format format, u32 image_count);
 /// VKB: the GPU name and video memory figures of the performance overlay under such a presenter
 void SetStatsDevice(TlgPerfStats::Device device);
+/// VKB: the lock every submission to the graphics queue holds, for the overlay's own font atlas uploads (ImGui submits and waits on the queue
+/// itself). Default: their renderer's (Vulkan::Scheduler::submit_mutex); the engine-to-Vulkan backend's presenter sets its own.
+void SetQueueMutex(std::mutex* mutex);
 
 /// Window thread, for every SDL event: true when the menu consumed it.
 bool HandleEvent(const SDL_Event& event);
