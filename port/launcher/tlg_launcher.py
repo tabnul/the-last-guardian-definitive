@@ -112,8 +112,6 @@ TEXT = {
     'rdna_submit_draws_hint': 'Sends work to the graphics card after every 1024 draws instead of once per frame. AMD cards only. May help RDNA2 cards. By @YsraEstudos. Off by default.',
     'flag_sema_fast': 'Faster game thread signals',
     'flag_sema_fast_hint': "Fix for issue #41: the game's threads wait less for each other, a few percent more FPS, most on slower CPUs. On by default.",
-    'flag_quad_helpers': 'No draw helpers on 4-core CPUs',
-    'flag_quad_helpers_hint': "Issues #85 and #75: on CPUs with 4 cores or fewer (Steam Deck, older quad-cores) the extra draw helper threads only take turns with the game's own threads. Without them about 6% more FPS. Has no effect on CPUs with more cores. On by default.",
     'flag_vk_validation': 'Vulkan validation',
     'flag_vk_validation_hint': 'Checks every graphics call. Very slow, and only works with the Vulkan SDK installed. For developers.',
     'home_soundtrack': 'Soundtrack',

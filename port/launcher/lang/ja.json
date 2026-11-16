@@ -57,8 +57,6 @@
     "launcher.flag_granule_hint": "Issue #79 の修正: バッファメモリを多数の小さな単位ではなく大きな単位でグラフィックドライバーから確保します。無効にすると、Windows の古い AMD カードで \"out of memory\" によりクラッシュすることがあります。既定でオン。",
     "launcher.flag_sema_fast": "ゲームスレッド間の高速なシグナル",
     "launcher.flag_sema_fast_hint": "issue #41 の修正：ゲームのスレッド同士の待ち時間が減り、FPS が数パーセント向上します。遅い CPU ほど効果があります。デフォルトはオン。",
-    "launcher.flag_quad_helpers": "4コアCPUで描画ヘルパーを使わない",
-    "launcher.flag_quad_helpers_hint": "Issue #85と#75: 4コア以下のCPU(Steam Deck、古いクアッドコア)では、追加の描画ヘルパースレッドはゲーム自身のスレッドと交代で動くだけです。使わないとFPSが約6%上がります。コアの多いCPUでは効果はありません。既定でオン。",
     "launcher.flag_vk_validation": "Vulkan 検証",
     "launcher.flag_vk_validation_hint": "すべてのグラフィック呼び出しを検査します。非常に遅く、Vulkan SDK がインストールされている場合のみ動作します。開発者向けです。",
     "launcher.flags_game": "実験的なゲーム修正",

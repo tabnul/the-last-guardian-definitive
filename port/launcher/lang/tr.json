@@ -57,8 +57,6 @@
     "launcher.flag_granule_hint": "Issue #79 düzeltmesi: arabellek belleğini grafik sürücüsünden çok sayıda küçük parça yerine büyük parçalar halinde alır. Bu olmadan Windows'taki eski AMD kartlar \"out of memory\" ile çökebilir. Varsayılan olarak açık.",
     "launcher.flag_sema_fast": "Oyun iş parçacıkları arasında daha hızlı sinyaller",
     "launcher.flag_sema_fast_hint": "Issue #41 düzeltmesi: oyunun iş parçacıkları birbirini daha az bekler, yüzde birkaç daha fazla FPS, en çok yavaş işlemcilerde. Varsayılan olarak açık.",
-    "launcher.flag_quad_helpers": "4 çekirdekli işlemcilerde çizim yardımcıları yok",
-    "launcher.flag_quad_helpers_hint": "Sorun #85 ve #75: 4 veya daha az çekirdekli işlemcilerde (Steam Deck, eski dört çekirdekliler) ek çizim yardımcı iş parçacıkları yalnızca oyunun kendi iş parçacıklarıyla sırayla çalışır. Onlarsız yaklaşık %6 daha fazla FPS. Daha çok çekirdekli işlemcilerde etkisi yoktur. Varsayılan olarak açık.",
     "launcher.flag_vk_validation": "Vulkan doğrulaması",
     "launcher.flag_vk_validation_hint": "Her grafik çağrısını denetler. Çok yavaştır ve yalnızca Vulkan SDK kuruluyken çalışır. Geliştiriciler için.",
     "launcher.flags_game": "Deneysel oyun düzeltmeleri",

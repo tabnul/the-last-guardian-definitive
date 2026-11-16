@@ -57,8 +57,6 @@
     "launcher.flag_granule_hint": "Fix für Issue #79: holt Puffer-Speicher in größeren Stücken statt in vielen kleinen vom Grafiktreiber. Ältere AMD-Karten unter Windows können ohne ihn mit „out of memory“ abstürzen. Standardmäßig an.",
     "launcher.flag_sema_fast": "Schnellere Signale zwischen Spiel-Threads",
     "launcher.flag_sema_fast_hint": "Fix für Issue #41: Die Threads des Spiels warten weniger aufeinander, ein paar Prozent mehr FPS, am meisten auf langsameren CPUs. Standardmäßig an.",
-    "launcher.flag_quad_helpers": "Keine Zeichenhelfer auf 4-Kern-CPUs",
-    "launcher.flag_quad_helpers_hint": "Issues #85 und #75: Auf CPUs mit 4 Kernen oder weniger (Steam Deck, ältere Vierkerner) wechseln sich die zusätzlichen Zeichenhelfer-Threads nur mit den eigenen Threads des Spiels ab. Ohne sie etwa 6% mehr FPS. Keine Wirkung auf CPUs mit mehr Kernen. Standardmäßig an.",
     "launcher.flag_vk_validation": "Vulkan-Validierung",
     "launcher.flag_vk_validation_hint": "Prüft jeden Grafikaufruf. Sehr langsam und funktioniert nur mit installiertem Vulkan SDK. Für Entwickler.",
     "launcher.flags_game": "Experimentelle Spielkorrekturen",

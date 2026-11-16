@@ -51,18 +51,6 @@ u32 DefaultWorkerCount() {
     if (const char* env = std::getenv("TLG_PREP_WORKERS")) {
         return static_cast<u32>(std::clamp(std::atoi(env), 0, 16));
     }
-    // tlg: 4 physical cores or fewer (Steam Deck, older quad-core desktops): no helpers. There
-    // they take turns with the game's own threads instead of using idle cores: +6% FPS without
-    // them on a 4-core stand-in (issue #85). TLG_QUAD_HELPERS=1 (launcher Debug > Flags) keeps them.
-    const unsigned cores = TlgThreads::PhysicalCores();
-    if (cores <= 4) {
-        const char* keep = std::getenv("TLG_QUAD_HELPERS");
-        if (!keep || keep[0] != '1') {
-            std::printf("GPU: no draw helpers on %u physical cores (TLG_QUAD_HELPERS=1 keeps them)\n",
-                        cores);
-            return 0;
-        }
-    }
     // Workers are SCHED_IDLE and claim whole buffers, so more of them only use more idle
     // cores: half the cores (Steam Deck 4, 16-thread desktop 8), physical cores with
     // TLG_PHYS_CORES=1.

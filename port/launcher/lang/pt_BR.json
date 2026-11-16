@@ -57,8 +57,6 @@
     "launcher.flag_granule_hint": "Correção da issue #79: pega a memória de buffer do driver gráfico em pedaços maiores em vez de muitos pequenos. Sem ela, placas AMD mais antigas no Windows podem fechar com \"out of memory\". Ligado por padrão.",
     "launcher.flag_sema_fast": "Sinais mais rápidos entre threads do jogo",
     "launcher.flag_sema_fast_hint": "Correção da issue #41: as threads do jogo esperam menos umas pelas outras, alguns por cento a mais de FPS, principalmente em CPUs mais lentas. Ligado por padrão.",
-    "launcher.flag_quad_helpers": "Sem ajudantes de desenho em CPUs de 4 núcleos",
-    "launcher.flag_quad_helpers_hint": "Issues #85 e #75: em CPUs com 4 núcleos ou menos (Steam Deck, quad-cores antigos) as threads ajudantes de desenho extras só se revezam com as threads do próprio jogo. Sem elas, cerca de 6% mais FPS. Sem efeito em CPUs com mais núcleos. Ativado por padrão.",
     "launcher.flag_vk_validation": "Validação Vulkan",
     "launcher.flag_vk_validation_hint": "Verifica cada chamada gráfica. Muito lento, e só funciona com o Vulkan SDK instalado. Para desenvolvedores.",
     "launcher.flags_game": "Correções experimentais do jogo",

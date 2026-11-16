@@ -57,8 +57,6 @@
     "launcher.flag_granule_hint": "Fix voor issue #79: haalt buffergeheugen in grotere stukken bij de grafische driver in plaats van in veel kleine. Oudere AMD-kaarten op Windows kunnen zonder deze fix crashen met \"out of memory\". Standaard aan.",
     "launcher.flag_sema_fast": "Snellere signalen tussen gamethreads",
     "launcher.flag_sema_fast_hint": "Fix voor issue #41: de threads van de game wachten minder op elkaar, een paar procent meer FPS, het meest op tragere CPU's. Standaard aan.",
-    "launcher.flag_quad_helpers": "Geen tekenhelpers op CPU's met 4 kernen",
-    "launcher.flag_quad_helpers_hint": "Issues #85 en #75: op CPU's met 4 kernen of minder (Steam Deck, oudere quadcores) wisselen de extra tekenhelper-threads alleen af met de eigen threads van de game. Zonder ze ongeveer 6% meer FPS. Geen effect op CPU's met meer kernen. Standaard aan.",
     "launcher.flag_vk_validation": "Vulkan-validatie",
     "launcher.flag_vk_validation_hint": "Controleert elke grafische aanroep. Erg traag, en werkt alleen met de Vulkan SDK geïnstalleerd. Voor ontwikkelaars.",
     "launcher.flags_game": "Experimentele gamefixes",

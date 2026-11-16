@@ -57,8 +57,6 @@
     "launcher.flag_granule_hint": "Poprawka issue #79: pobiera pamięć buforów od sterownika grafiki w większych kawałkach zamiast w wielu małych. Bez niej starsze karty AMD w Windows mogą się zawieszać z błędem „out of memory”. Domyślnie włączone.",
     "launcher.flag_sema_fast": "Szybsze sygnały między wątkami gry",
     "launcher.flag_sema_fast_hint": "Poprawka dla issue #41: wątki gry mniej na siebie czekają, kilka procent więcej FPS, najwięcej na wolniejszych procesorach. Domyślnie włączone.",
-    "launcher.flag_quad_helpers": "Bez pomocników rysowania na 4-rdzeniowych CPU",
-    "launcher.flag_quad_helpers_hint": "Zgłoszenia #85 i #75: na procesorach z 4 rdzeniami lub mniej (Steam Deck, starsze czterordzeniowe) dodatkowe wątki pomocnicze rysowania tylko wymieniają się z własnymi wątkami gry. Bez nich około 6% więcej FPS. Bez wpływu na procesory z większą liczbą rdzeni. Domyślnie włączone.",
     "launcher.flag_vk_validation": "Walidacja Vulkan",
     "launcher.flag_vk_validation_hint": "Sprawdza każde wywołanie grafiki. Bardzo wolne i działa tylko z zainstalowanym Vulkan SDK. Dla programistów.",
     "launcher.flags_game": "Eksperymentalne poprawki gry",
