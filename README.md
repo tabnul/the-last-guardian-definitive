@@ -32,6 +32,9 @@ No game files are included. You need your own copy, dumped from your own PS4.
 
 - **[Photo mode](#photo-mode):** freeze the world, fly a free camera anywhere and save lossless
   PNG screenshots at full render resolution.
+- **[Free camera, live world](#photo-mode):** unfreeze the world and keep the free camera. Watch
+  events unfold from any angle you like, or play the game itself from that angle while the camera
+  stays where you put it (D-pad down: world on / off, D-pad left: sticks camera / boy).
 - **[ICO horns](#ico-horns-only-in-this-port):** the Horned Apparel outfit finally gives the boy
   Ico's horns. Optional, off by default.
 - **[Quit directly](#controllers-and-languages):** quit the game from anywhere with a controller
