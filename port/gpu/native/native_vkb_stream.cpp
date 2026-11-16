@@ -4,6 +4,7 @@
 #include "native/native_flight.h"
 #include "native/native_timeline.h"
 #include "native/native_vkb_stream.h"
+#include "native/native_vkb_upload.h"
 #include "native/native_vkb.h"
 
 #include <algorithm>
@@ -866,6 +867,10 @@ u64 SubmitLocked() {
     if (t_rec->current) {
         cmd_infos[cmd_count++] = {.commandBuffer = t_rec->current};
     }
+    // D5 (validation 09600): the upload batch goes to the queue in front of every stream submission, not once a frame: a texture made mid-frame (its layout and its
+    // contents are in the batch) was drawn by a submission that reached the queue before its batch (no layout, no contents for that frame); this submission's first
+    // barrier orders the batch before its work
+    Upload::Submit();
     const vk::SemaphoreSubmitInfo signal{.semaphore = timeline, .value = value, .stageMask = vk::PipelineStageFlagBits2::eAllCommands};
     const vk::SubmitInfo2 submit{.commandBufferInfoCount = cmd_count, .pCommandBufferInfos = cmd_infos.data(), .signalSemaphoreInfoCount = 1, .pSignalSemaphoreInfos = &signal};
     {

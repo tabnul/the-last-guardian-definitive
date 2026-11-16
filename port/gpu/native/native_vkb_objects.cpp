@@ -9,6 +9,7 @@
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
 #include "native/shadps4/video_core/host_shaders/fill_pattern_comp.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_shader_util.h"
+#include "native/shadps4/video_core/renderer_vulkan/vk_platform.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -400,6 +401,13 @@ Image* MakeImage(const Object& texture) {
     c_image_ns.fetch_add(NowNs() - t0, std::memory_order_relaxed);
     // note 66: GENERAL from here on (the job is queued by the caller after the lock; an upload of its contents takes its place)
     img.layout = vk::ImageLayout::eGeneral;
+    // debug: under the validation layer (TLG_VK_VALIDATION=1) each image carries its texture id, size, format and how its layout is set, so a message names it
+    static const bool name_images = [] { const char* e = std::getenv("TLG_VK_VALIDATION"); return e != nullptr && e[0] == '1'; }();
+    if (name_images) {
+        const char* path = img.is_depth ? "depth" : (texture.bind & BindRenderTarget) != 0 ? "target" : "texture (batch layout)";
+        VkbVulkan::SetObjectName(instance->GetDevice(), img.image, "vkb tex {} {}x{}x{} mips {} layers {} {} {} usage {} bind {:#x}", texture.id, img.width, img.height, img.depth,
+                                 img.mips, img.layers, vk::to_string(img.format), path, texture.usage, texture.bind);
+    }
     t_new_images.push_back({img.image, !img.is_depth ? vk::ImageAspectFlags{vk::ImageAspectFlagBits::eColor}
                                       : HasStencil(img.format) ? (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil)
                                                                : vk::ImageAspectFlags{vk::ImageAspectFlagBits::eDepth},
@@ -2684,7 +2692,7 @@ void TextureCpuWritten(u64 texture_id) {
     }
 }
 
-std::atomic<u64> c_loaded_reads{0}, c_loaded_textures{0};
+std::atomic<u64> c_loaded_reads{0}, c_loaded_textures{0}, c_loaded_buffers{0};
 u32 MemoryLoaded(u64 address, u64 bytes) {
     // the engine read a file straight into this memory (Fios, on its I/O thread): a texture there was copied before its data arrived (the probe volumes of the
     // lighting pass 0x775d0654 are streamed in after they are first bound: magenta / green / red ambient light, note 81); its image gets the contents again
@@ -2705,7 +2713,49 @@ u32 MemoryLoaded(u64 address, u64 bytes) {
         TextureCpuWritten(id);
     }
     c_loaded_textures.fetch_add(ids.size(), std::memory_order_relaxed);
-    return static_cast<u32>(ids.size());
+    // buffers (plan D4): a static buffer's device copy made at its first bind (R3d) and a GPU-written buffer's device buffer (V2f) over the range get the read's bytes,
+    // copied in the stream at this point (the read is complete: its completion called us)
+    struct Copy {
+        u64 guest, bytes;
+        VkBuffer device;
+        u64 offset;
+    };
+    std::vector<Copy> copies;
+    {
+        std::scoped_lock lock{mutex};
+        const auto add = [&](u64 start, u64 end, VkBuffer device) {
+            const u64 lo = std::max(address, start), hi = std::min(address + bytes, end);
+            if (device != VK_NULL_HANDLE && lo < hi) {
+                copies.push_back({lo, hi - lo, device, lo - start});
+            }
+        };
+        if (auto it = watched.upper_bound(address); it != watched.begin()) {
+            for (--it; it != watched.end() && it->first < address + bytes; ++it) {
+                if (it->second.state == Watched::State::Device) {
+                    add(it->first, it->second.end, it->second.device);
+                }
+            }
+        }
+        if (auto it = device_buffers.upper_bound(address); it != device_buffers.begin()) {
+            for (--it; it != device_buffers.end() && it->first < address + bytes; ++it) {
+                add(it->first, it->second.end, it->second.buffer);
+            }
+        }
+    }
+    for (const Copy& c : copies) {
+        const BufferWindow src = SourceWindow(c.guest, c.bytes);
+        if (!src.buffer) {
+            c_copy_unresolved.fetch_add(1, std::memory_order_relaxed);
+            continue;
+        }
+        Stream::NoteBytes(Stream::Work::UploadCpuWritten, c.bytes);
+        Stream::Defer(Stream::Work::UploadCpuWritten, [src, c](vk::CommandBuffer cmd) {
+            Stream::Hazard(cmd, {Stream::BufferUse(src.buffer, src.offset, c.bytes, false), Stream::BufferUse(vk::Buffer{c.device}, c.offset, c.bytes, true)});
+            cmd.copyBuffer(src.buffer, vk::Buffer{c.device}, vk::BufferCopy{src.offset, c.offset, c.bytes});
+        });
+    }
+    c_loaded_buffers.fetch_add(copies.size(), std::memory_order_relaxed);
+    return static_cast<u32>(ids.size() + copies.size());
 }
 
 u32 ReuploadVolumes() {
@@ -3069,7 +3119,7 @@ nlohmann::json ObjectsReport() {
                           {"our_samplers", {{"made", c_samplers_made.load()}, {"invalid_description", c_samplers_invalid.load()}, {"min_max_reduction", c_sampler_minmax.load()},
                                             {"border_rounded", c_sampler_border_rounded.load()}, {"mirror_once", c_sampler_mirror_once.load()}}},
                           {"texture_updates", {{"wanted", c_reupload_wanted.load()}, {"uploaded", c_reupload_done.load()}, {"no_image", c_reupload_no_image.load()}}},
-                          {"file_reads_into_textures", {{"reads", c_loaded_reads.load()}, {"textures", c_loaded_textures.load()}}},
+                          {"file_reads_into_textures", {{"reads", c_loaded_reads.load()}, {"textures", c_loaded_textures.load()}, {"buffers", c_loaded_buffers.load()}}},
                           {"texture_copies", {{"copies", c_tex_copies.load()}, {"no_image", c_tex_copy_no_image.load()}, {"mismatch", c_tex_copy_mismatch.load()}}},
                           {"buffer_lookups", {{"range_leaves_a_device_buffer", c_find_straddle.load()}, {"not_in_place", c_find_none.load()}}},
                           {"r7_census", R7CensusReport()},
