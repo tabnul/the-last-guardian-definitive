@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <immintrin.h>
 #include <cstdlib>
 #include <chrono>
 #include <condition_variable>
@@ -181,6 +182,7 @@ thread_local bool on_recorder = false;
 std::atomic<u64> c_jobs{0}, c_job_waits_full{0}, c_drains{0}, c_drain_us{0}, c_jobs_most{0};
 /// note 45: the recording thread's time: running jobs by kind (unlocked jobs = submits under "submit"), asleep on an empty queue, and the producers' enqueue
 std::atomic<u64> c_rec_run_ns[static_cast<u32>(Work::Count) + 1]{}, c_rec_run_n[static_cast<u32>(Work::Count) + 1]{}, c_rec_sleep_ns{0}, c_rec_sleeps{0}, c_enqueue_ns{0};
+std::atomic<u64> c_rec_spin_hits{0}; ///< note 82: jobs that arrived while the resolver spun (no sleep, no wake-up)
 bool RecTimesOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_TIMES"); return e != nullptr && e[0] == '1'; }(); return on; } ///< TLG_VKB_TIMES=1 only
 u64 RecNs() { return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()); }
 constexpr size_t MaxJobs = 16384;
@@ -1136,6 +1138,22 @@ void RecorderThread() {
             job_running.store(false, std::memory_order_seq_cst);
             recorder_idle_gen.fetch_add(1, std::memory_order_seq_cst);
             recorder_idle_gen.notify_all();
+            // note 82: a short spin on the queue (pause instructions, no clock reads) before sleeping. The render thread is the slower side, so the queue runs
+            // empty between draws; a sleeping resolver costs the render thread a wake-up system call at its next hand-over (ZwAlertThreadByThreadIdEx, 2.4 % of
+            // it). TLG_VKB_RESOLVER_SPIN=<pause iterations> (default 2000, 0 off)
+            static const u32 spin = [] { const char* e = std::getenv("TLG_VKB_RESOLVER_SPIN"); return e != nullptr ? static_cast<u32>(std::strtoul(e, nullptr, 10)) : 2000u; }();
+            bool arrived = false;
+            for (u32 i = 0; i < spin; ++i) {
+                if (queue_size.load(std::memory_order_relaxed) != 0) {
+                    arrived = true;
+                    break;
+                }
+                _mm_pause();
+            }
+            if (arrived) {
+                c_rec_spin_hits.fetch_add(1, std::memory_order_relaxed);
+                continue;
+            }
             recorder_sleeping.store(true, std::memory_order_seq_cst);
             if (queue_size.load(std::memory_order_seq_cst) == 0) {
                 const u64 s0 = RecNs();
@@ -1752,6 +1770,7 @@ nlohmann::json Report() {
                                    t[names[i]] = {c_rec_run_ns[i].load() / 1000000, c_rec_run_n[i].load()};
                                }
                                t["asleep"] = {c_rec_sleep_ns.load() / 1000000, c_rec_sleeps.load()};
+                               t["spin_hits"] = c_rec_spin_hits.load();
                                t["enqueue_on_producers"] = c_enqueue_ns.load() / 1000000;
                                return t;
                            }()}, {"most_queued", c_jobs_most.load()}, {"producer_waits_queue_full", c_job_waits_full.load()},

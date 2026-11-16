@@ -6697,8 +6697,13 @@ std::array<std::array<u64, 32>, 4> census_types{};       ///< shaders whose tabl
 std::array<std::array<u64, 32>, 4> census_type_uses{};   ///< draws / dispatches of shaders whose table has the type
 std::unordered_map<u64, u32> census_mask_of;             ///< shader -> its types (bit per type)
 std::array<u64, 4> census_too_long{};
+/// note 8 census of the shaders' input types (debug, TLG_VKB_SHADER_CENSUS=1; note 82: a mutex and a hash map twice per draw on the render thread otherwise)
+bool ShaderCensusOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_SHADER_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
 void NoteShader(u32 cls, u64 shader, u32 inputs_offset) {
-    if (shader == 0 || !IsHeapPointer(shader)) {
+    if (!ShaderCensusOn() || shader == 0 || !IsHeapPointer(shader)) {
         return;
     }
     std::scoped_lock lock{census_mutex};
@@ -6743,8 +6748,18 @@ nlohmann::json CensusReport() {
     return out;
 }
 void Publish() {
-    static std::atomic<u64> calls{0};
-    if ((calls.fetch_add(1, std::memory_order_relaxed) & 4095) == 0) {
+    // note 82: at most once a second (every 4,096th call was about 70 times a second, each building this whole report on the render thread)
+    thread_local u64 calls = 0; // per thread: one shared counter bounced between the render and the async threads
+    static std::atomic<u64> last_ns{0};
+    if ((calls++ & 4095) != 0) {
+        return;
+    }
+    const u64 now_ns = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    if (now_ns - last_ns.load(std::memory_order_relaxed) < 1'000'000'000ull) {
+        return;
+    }
+    last_ns.store(now_ns, std::memory_order_relaxed);
+    {
         Core::DebugServer::Publish("vkb", {{"draws", draws.load()}, {"inline_draws", inline_draws.load()}, {"draws_instance_count_set_to_1", instance_resets.load()}, {"dispatches", dispatches.load()},
                                            {"indirect_dispatches", indirect_dispatches.load()}, {"async_dispatches", async_dispatches.load()},
                                            {"shader_census", CensusReport()},
