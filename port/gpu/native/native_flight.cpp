@@ -39,6 +39,38 @@ u32 CurrentThreadId() {
 #endif
 }
 
+/// The thread's Windows name (SetThreadDescription; shadPS4's Common::SetCurrentThreadName sets it). In the old port that function also called NameThisThread;
+/// in the fork it is tabnul's unchanged copy, so the recorder asks Windows instead. False when the thread has no name.
+bool OsThreadName(u32 thread_id, char* out, size_t size) {
+#ifdef _WIN32
+    using GetThreadDescriptionFn = HRESULT(WINAPI*)(HANDLE, PWSTR*);
+    static const auto get_description = reinterpret_cast<GetThreadDescriptionFn>(GetProcAddress(GetModuleHandleW(L"kernelbase.dll"), "GetThreadDescription"));
+    if (get_description == nullptr) {
+        return false;
+    }
+    const bool self = thread_id == GetCurrentThreadId();
+    HANDLE thread = self ? GetCurrentThread() : OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, thread_id);
+    if (thread == nullptr) {
+        return false;
+    }
+    PWSTR wide = nullptr;
+    bool named = false;
+    if (SUCCEEDED(get_description(thread, &wide)) && wide != nullptr) {
+        named = wide[0] != 0 && WideCharToMultiByte(CP_UTF8, 0, wide, -1, out, static_cast<int>(size), nullptr, nullptr) > 1;
+        LocalFree(wide);
+    }
+    if (!self) {
+        CloseHandle(thread);
+    }
+    return named;
+#else
+    (void)thread_id;
+    (void)out;
+    (void)size;
+    return false;
+#endif
+}
+
 u64 SteadyNs() {
     return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
 }
@@ -79,7 +111,9 @@ Ring* RegisterThisThread() {
     auto* ring = new Ring();
     ring->slot = slot;
     ring->thread_id = CurrentThreadId();
-    std::snprintf(ring->name, sizeof(ring->name), "thread %u", ring->thread_id);
+    if (!OsThreadName(ring->thread_id, ring->name, sizeof(ring->name))) {
+        std::snprintf(ring->name, sizeof(ring->name), "thread %u", ring->thread_id);
+    }
     g_rings[slot] = ring;
     g_ring_count.store(slot + 1, std::memory_order_release);
     t_ring = ring;
@@ -153,6 +187,13 @@ std::string Report(u32 per_thread, bool bench, double max_age_ms) {
     out += "\"thread_list\": [";
     const u32 count = g_ring_count.load(std::memory_order_acquire);
     for (u32 i = 0; i < count; ++i) {
+        // a thread named after its first event still reads "thread <id>": ask Windows again (only for those)
+        if (std::strncmp(g_rings[i]->name, "thread ", 7) == 0) {
+            char name[sizeof(g_rings[i]->name)];
+            if (OsThreadName(g_rings[i]->thread_id, name, sizeof(name))) {
+                std::snprintf(g_rings[i]->name, sizeof(g_rings[i]->name), "%s", name);
+            }
+        }
         const Ring& ring = *g_rings[i];
         const u64 head = ring.head.load(std::memory_order_acquire);
         const char* scope = ring.scope.load(std::memory_order_relaxed);

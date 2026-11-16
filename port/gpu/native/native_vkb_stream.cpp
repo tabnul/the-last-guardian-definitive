@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "native/native_flight.h"
 #include "native/native_vkb_stream.h"
 #include "native/native_vkb.h"
 
@@ -865,6 +866,7 @@ u64 SubmitLocked() {
     const vk::SubmitInfo2 submit{.commandBufferInfoCount = cmd_count, .pCommandBufferInfos = cmd_infos.data(), .signalSemaphoreInfoCount = 1, .pSignalSemaphoreInfos = &signal};
     {
         std::scoped_lock queue_lock{VkbVulkan::Scheduler::submit_mutex};
+        Core::Flight::Add(Core::Flight::Kind::QueueSubmit, 0, value, 0); // flight recorder: the frame stream's submission (timeline value)
         if (const vk::Result result = instance->GetGraphicsQueue().submit2(submit); result != vk::Result::eSuccess) {
             LOG_ERROR(Render_Vulkan, "vkb: frame stream submit failed: {}", vk::to_string(result));
         }

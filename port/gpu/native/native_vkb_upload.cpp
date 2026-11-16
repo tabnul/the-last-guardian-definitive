@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "native/native_flight.h"
 #include "native/native_vkb_upload.h"
 
 #include <algorithm>
@@ -356,6 +357,7 @@ void Submit() {
     const vk::SubmitInfo2 submit{.commandBufferInfoCount = 1, .pCommandBufferInfos = &cmd_info, .signalSemaphoreInfoCount = 1, .pSignalSemaphoreInfos = &signal};
     {
         std::scoped_lock queue_lock{VkbVulkan::Scheduler::submit_mutex};
+        Core::Flight::Add(Core::Flight::Kind::QueueSubmit, 0, current.value, 2); // flight recorder: an upload batch (b = 2: the upload stream)
         const vk::Result result = instance->GetGraphicsQueue().submit2(submit);
         if (result != vk::Result::eSuccess) {
             LOG_ERROR(Render_Vulkan, "vkb: upload batch submit failed: {}", vk::to_string(result));

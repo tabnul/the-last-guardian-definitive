@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "native/native_debug_server.h"
+#include "native/native_marker.h"
 #include "native/native_vkb_compute.h"
 
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
@@ -706,6 +708,16 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
         c_async_recorded.fetch_add(1, std::memory_order_relaxed);
     }
     Core::Vkb::Census::Work(v.async ? 2 : 1, v.info ? v.info->pgm_hash : 0, x, y, z);
+    // the glitch marker's and the frame walk's draw table: one row per dispatch (count / instances = groups x / y; draw class 3 compute)
+    if (Core::Marker::Enabled()) {
+        Core::Marker::NoteRow({.vs_hash = v.info ? v.info->pgm_hash : 0ull,
+                               .frame = static_cast<u32>(Core::DebugServer::PresentCount()),
+                               .count = x,
+                               .instances = y,
+                               .kind = static_cast<u8>(indirect_address != 0 ? 3 : 2),
+                               .draw_class = 3,
+                               .flags = static_cast<u8>(2 | (v.async ? 4 : 0))});
+    }
     if (DispatchTimesOn()) {
         c_record_ns.fetch_add(NowNs() - t0, std::memory_order_relaxed);
     }

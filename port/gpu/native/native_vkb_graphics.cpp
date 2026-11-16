@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "native/native_debug_server.h"
+#include "native/native_marker.h"
 #include "native/native_vkb_graphics.h"
 
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
@@ -1621,6 +1623,22 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         }
     }
     Core::Vkb::Census::Work(0);
+    // the glitch marker's and the frame walk's draw table (draws.json): one row per draw, as the PS4 path wrote (F6 / F5; TLG_MARKER=0 off)
+    if (Core::Marker::Enabled()) {
+        Core::Marker::NoteRow({.vs_hash = v.vs.info ? v.vs.info->pgm_hash : 0ull,
+                               .ps_hash = v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0ull,
+                               .color0 = Rd<u64>(ctx, 0x4488), // engine render target view of slot 0 (Ctx::RenderTargets)
+                               .depth = Rd<u64>(ctx, 0x44d0),  // engine depth stencil view (Ctx::DepthStencilView)
+                               .frame = static_cast<u32>(Core::DebugServer::PresentCount()),
+                               .count = static_cast<u32>(a1),
+                               .instances = instances,
+                               .kind = static_cast<u8>(kind == 2 ? 1 : 0),
+                               .draw_class = 15,
+                               .flags = 2,
+                               .colors = static_cast<u8>(pass.color_count),
+                               .width = static_cast<u16>(pass.extent.width),
+                               .height = static_cast<u16>(pass.extent.height)});
+    }
     job->pipeline = v.pipeline->Handle();
     job->layout = v.pipeline->GetLayout();
     job->push_descriptors = v.pipeline->UsesPushDescriptors();
