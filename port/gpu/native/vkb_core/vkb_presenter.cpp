@@ -11,6 +11,7 @@
 #include "common/logging/log.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
+#include "native/native_capture.h"
 #include "native/native_debug_server.h"
 #include "native/native_frame_gate.h"
 #include "native/native_hooks.h"
@@ -450,6 +451,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion, clear_done, {}, {});
     cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image, vk::ImageLayout::eTransferDstOptimal,
                      BlitFit(frame->width, frame->height, extent.width, extent.height), vk::Filter::eLinear);
+    // F12 / Shift+F12, the glitch marker and the frame walk: a copy of the game frame, before the overlay (native/native_capture.h)
+    if (!is_reusing_frame) {
+        TlgCapture::Record(instance, cmdbuf, frame->image, frame->width, frame->height, swapchain.GetSurfaceFormat().format, present_scheduler.CurrentTick());
+    }
     // the overlay (menu, save dialogs, frame counter) over the frame, at the window's resolution
     const bool overlay = TlgOverlay::Visible();
     const std::array post_barriers{
@@ -504,6 +509,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         }
     }
     Core::FrameTimeline::Mark(Core::FrameTimeline::PresentEnd, is_reusing_frame ? 1 : 0);
+    TlgCapture::Poll(present_scheduler); // copies of earlier frames the GPU finished go to the writer
     free_frame();
     if (!is_reusing_frame && is_game_frame) {
         DebugState.IncFlipFrameNum();

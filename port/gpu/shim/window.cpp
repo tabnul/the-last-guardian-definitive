@@ -7,6 +7,8 @@
 #include <mutex>
 #include <utility>
 #include <SDL3/SDL.h>
+#include "native/native_dev_keys.h" // VKB
+#include "native/native_vkb.h" // VKB
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "sdl_window.h"
@@ -367,6 +369,12 @@ bool WindowSDL::PollEvents() {
             const char* env = std::getenv("TLG_FRAME_CAPTURE_KEY");
             return env && *env == '1';
         }();
+        // VKB: our dev keys while the engine-to-Vulkan backend runs (F5-F9, F12, Print Screen; native/native_dev_keys.h). Before the menu's own handler,
+        // so their F8 / F9 / F12 do not run then; with their renderer nothing changes.
+        static const bool backend = Core::Vkb::On();
+        if (backend && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && Core::DevKeys::Handle(event.key.key, event.key.mod)) {
+            continue;
+        }
         if (!capture_key && event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F11 && !event.key.repeat) {
             static int full_mode = TlgGraphics::Borderless;
             auto& mode = TlgSettings::Get().display_mode;

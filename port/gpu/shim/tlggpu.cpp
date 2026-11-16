@@ -31,6 +31,7 @@
 #include "native/native_vkb.h" // VKB
 #include "native/native_hooks.h" // VKB
 #include "native/native_debug_server.h" // VKB
+#include "native/native_dev_keys.h" // VKB
 #include "native/shadps4/core/guest_heap.h" // VKB
 #include "native/shadps4/core/libraries/gnmdriver/gnmdriver.h" // VKB
 #include "native/shadps4/core/libraries/videoout/video_out.h" // VKB
@@ -303,6 +304,7 @@ extern "C" int tlggpu_init(const TlgGpuConfig* config) {
     if (Core::Vkb::On()) {
         // VKB: the runtime maps the game's memory from 64 GiB (runtime_memory.c USER_MIN); the backend's heap checks (native/shadps4/core/guest_heap.h) use it
         Core::g_guest_heap = {0x1000000000ull, 0x10000000000ull, 0x1000000000ull, 0x10000000000ull};
+        Core::DevKeys::InstallHooks(); // the glitch marker's and the frame walk's screenshots, toasts and thumbnails
     }
     // VKB: the debug server (development; TLG_DEBUG_SERVER_PORT, JSON endpoints, native/native_debug_server.cpp)
     if (const char* port = std::getenv("TLG_DEBUG_SERVER_PORT"); port && std::atoi(port) > 0) {
