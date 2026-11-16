@@ -455,6 +455,8 @@
     "pad.photo_fast": "Hızlı (basılı tut)",
     "pad.photo_slow": "Yavaş (basılı tut)",
     "pad.photo_help_key": "Tuş yardımını gizle / göster",
+    "pad.photo_world_key": "Dünyayı dondur açık / kapalı",
+    "pad.photo_sticks_key": "Çubuklar: kamera / çocuk",
     "pad.remap_touchpad_left": "Dokunmatik yüzey (sol): fotoğraf modu",
     "pad.remap_touchpad_right": "Dokunmatik yüzey (sağ): duraklat",
     "pad.photo_press": "bir tuşa bas…",
@@ -1152,6 +1154,14 @@
     "Game photo mode": "Oyunun fotoğraf modu",
     "Touchpad (left)": "Dokunmatik yüzey (sol)",
     "(hold 2 s)": "(2 sn basılı tut)",
-    "QA menu: turn on Level select and QA menu in the launcher first": "QA menüsü: önce başlatıcıda Bölüm seçimi ve QA menüsünü açın"
+    "QA menu: turn on Level select and QA menu in the launcher first": "QA menüsü: önce başlatıcıda Bölüm seçimi ve QA menüsünü açın",
+    "Freeze world on / off": "Dünyayı dondur açık / kapalı",
+    "Let the world run": "Dünyanın akmasına izin ver",
+    "Freeze the world": "Dünyayı dondur",
+    "Sticks: camera / boy": "Çubuklar: kamera / çocuk",
+    "Control the boy": "Çocuğu kontrol et",
+    "Control the camera": "Kamerayı kontrol et",
+    "Photo mode: freeze world on / off": "Fotoğraf modu: dünyayı dondur açık / kapalı",
+    "Photo mode: sticks camera / boy": "Fotoğraf modu: çubuklar kamera / çocuk"
   }
 }

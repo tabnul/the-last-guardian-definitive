@@ -133,6 +133,9 @@ shows the controls and is left out of the saved picture.
 | L2 / R2 | Down / up |
 | Hold R1 / L1 | Faster / slower |
 | Cross, or Print Screen | Save a screenshot |
+| D-pad down | Freeze world on / off: let the world run on under your camera, or freeze it again |
+| D-pad left | Sticks: camera / boy: control the boy while the photo camera stays put, or fly the camera again |
+| D-pad up | Hide / show the button help |
 
 Screenshots are lossless PNG files at the full render resolution, in `user/screenshots`. With HDR
 on, every photo is saved twice: a normal picture that looks right on any screen, and an HDR picture
@@ -140,7 +143,14 @@ on, every photo is saved twice: a normal picture that looks right on any screen,
 the second one off. You can
 also turn photo mode on with **Photo mode** in the Fun tab. **Freeze** chooses how the world
 stops: **Pause the game** (everything stops) or **Stop time** (the game's slow motion turned down
-until nothing moves). A jump to another place turns photo mode off.
+until nothing moves). With **Freeze world on / off** (D-pad down) the world runs on while you keep
+the photo camera, so you can watch events play out from any angle. The game's pause menu does not undo
+the freeze: closing it freezes the world again. **Sticks: camera / boy** (D-pad left) gives the
+controller to the boy while the camera stays put, so you can play a moment and film it from your own
+angle; then only Print Screen takes a picture. While the sticks are on the camera, the boy stands
+still. All
+photo buttons can be changed in the menu (Controls) and in the launcher. A jump to another place
+turns photo mode off.
 
 ![Photo mode: the camera hangs above the gorge, looking down on Trico](screenshots/fun/photo-mode.jpg)
 

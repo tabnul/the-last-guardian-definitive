@@ -448,6 +448,8 @@
     "pad.photo_fast": "Schnell (halten)",
     "pad.photo_slow": "Langsam (halten)",
     "pad.photo_help_key": "Tastenhilfe aus- / einblenden",
+    "pad.photo_world_key": "Welt einfrieren an / aus",
+    "pad.photo_sticks_key": "Sticks: Kamera / Junge",
     "pad.remap_touchpad_left": "Touchpad (links): Fotomodus",
     "pad.remap_touchpad_right": "Touchpad (rechts): Pause",
     "pad.photo_press": "Taste drücken…",
@@ -1139,6 +1141,14 @@
     "Game photo mode": "Fotomodus des Spiels",
     "Touchpad (left)": "Touchpad (links)",
     "(hold 2 s)": "(2 s halten)",
-    "QA menu: turn on Level select and QA menu in the launcher first": "QA-Menü: zuerst Levelauswahl und QA-Menü im Launcher einschalten"
+    "QA menu: turn on Level select and QA menu in the launcher first": "QA-Menü: zuerst Levelauswahl und QA-Menü im Launcher einschalten",
+    "Freeze world on / off": "Welt einfrieren an / aus",
+    "Let the world run": "Welt weiterlaufen lassen",
+    "Freeze the world": "Welt einfrieren",
+    "Sticks: camera / boy": "Sticks: Kamera / Junge",
+    "Control the boy": "Junge steuern",
+    "Control the camera": "Kamera steuern",
+    "Photo mode: freeze world on / off": "Fotomodus: Welt einfrieren an / aus",
+    "Photo mode: sticks camera / boy": "Fotomodus: Sticks Kamera / Junge"
   }
 }

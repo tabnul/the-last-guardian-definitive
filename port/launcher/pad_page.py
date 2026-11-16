@@ -61,6 +61,8 @@ TEXT = {
     'photo_fast': 'Fast (hold)',
     'photo_slow': 'Slow (hold)',
     'photo_help_key': 'Hide / show the button help',
+    'photo_world_key': 'Freeze world on / off',
+    'photo_sticks_key': 'Sticks: camera / boy',
     'remap_touchpad_left': 'Touchpad (left): photo mode',
     'remap_touchpad_right': 'Touchpad (right): pause',
     'photo_press': 'press a button…',
@@ -106,7 +108,8 @@ COMBOS = (('pad_combo_quit', 'combo_quit', 'share+options'), ('pad_combo_menu', 
 # Photo mode buttons (tlg.ini pad_photo_*, tlg_settings.h photo_*): one button each.
 PHOTO_BUTTONS = (('pad_photo_shot', 'photo_shot', 'cross'), ('pad_photo_up', 'photo_up', 'r2'),
                  ('pad_photo_down', 'photo_down', 'l2'), ('pad_photo_fast', 'photo_fast', 'r1'),
-                 ('pad_photo_slow', 'photo_slow', 'l1'), ('pad_photo_help', 'photo_help_key', 'up'))
+                 ('pad_photo_slow', 'photo_slow', 'l1'), ('pad_photo_help', 'photo_help_key', 'up'),
+                 ('pad_photo_world', 'photo_world_key', 'down'), ('pad_photo_sticks', 'photo_sticks_key', 'left'))
 
 
 def parse_combo(text, fallback):

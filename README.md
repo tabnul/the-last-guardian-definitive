@@ -219,6 +219,11 @@ the picture.
   in-game menu (Fun tab). You can change the controller combo under Controls.
 - **Fly:** left stick to move, right stick to look around, **L2 / R2** down and up, hold **R1** to
   go faster or **L1** to go slower.
+- **Watch the world move:** ever wanted to see events happen from a completely different angle?
+  Press **D-pad down** and the world runs on while you keep flying the camera. Follow a chase from
+  above, or watch Trico from the far side of the room. Press it again to freeze the world.
+- **Play under the photo camera:** with the world running, press **D-pad left** and the sticks
+  control the boy again while the camera stays where you put it. Press it again to fly the camera.
 - **Save a picture:** **Cross** or **Print Screen**. It is saved as a lossless PNG at the full
   render resolution in `user/screenshots`. The button help on screen is not in the picture.
 - **HDR and normal, both:** with HDR on, every photo is saved twice. A normal picture that looks

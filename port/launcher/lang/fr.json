@@ -448,6 +448,8 @@
     "pad.photo_fast": "Rapide (maintenir)",
     "pad.photo_slow": "Lent (maintenir)",
     "pad.photo_help_key": "Masquer / afficher l'aide des boutons",
+    "pad.photo_world_key": "Figer le monde oui / non",
+    "pad.photo_sticks_key": "Sticks : caméra / garçon",
     "pad.remap_touchpad_left": "Pavé tactile (gauche) : mode photo",
     "pad.remap_touchpad_right": "Pavé tactile (droite) : pause",
     "pad.photo_press": "appuyez sur un bouton…",
@@ -1139,6 +1141,14 @@
     "Game photo mode": "Mode photo du jeu",
     "Touchpad (left)": "Pavé tactile (gauche)",
     "(hold 2 s)": "(maintenir 2 s)",
-    "QA menu: turn on Level select and QA menu in the launcher first": "Menu QA : activez d'abord Sélection de niveau et Menu QA dans le lanceur"
+    "QA menu: turn on Level select and QA menu in the launcher first": "Menu QA : activez d'abord Sélection de niveau et Menu QA dans le lanceur",
+    "Freeze world on / off": "Figer le monde oui / non",
+    "Let the world run": "Laisser le monde tourner",
+    "Freeze the world": "Figer le monde",
+    "Sticks: camera / boy": "Sticks : caméra / garçon",
+    "Control the boy": "Contrôler le garçon",
+    "Control the camera": "Contrôler la caméra",
+    "Photo mode: freeze world on / off": "Mode photo : figer le monde oui / non",
+    "Photo mode: sticks camera / boy": "Mode photo : sticks caméra / garçon"
   }
 }

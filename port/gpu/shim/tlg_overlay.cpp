@@ -95,6 +95,8 @@ const PhotoSlot PhotoSlots[] = {
     {&TlgSettings::Values::photo_fast, TlgSettings::PadR1},
     {&TlgSettings::Values::photo_slow, TlgSettings::PadL1},
     {&TlgSettings::Values::photo_help, TlgSettings::PadUp},
+    {&TlgSettings::Values::photo_world, TlgSettings::PadDown},
+    {&TlgSettings::Values::photo_sticks, TlgSettings::PadLeft},
 };
 constexpr int PhotoSlotCount = int(std::size(PhotoSlots));
 static_assert(std::size(PhotoSlots) == std::size(TlgFun::PhotoButtonNames));
@@ -2287,16 +2289,28 @@ void PhotoHelpBox() {
     const std::string up_down = key(st.photo_down) + " / " + key(st.photo_up);
     const std::string fast_slow = std::string(TR("Hold")) + " " + key(st.photo_fast) + " / " + key(st.photo_slow);
     const std::string help_key = key(st.photo_help);
+    const std::string world_key = key(st.photo_world);
+    const std::string sticks_key = key(st.photo_sticks);
     const std::string exit_keys = key(st.combo_photo) + " / F9";
-    const std::pair<const char*, const char*> rows[] = {
-        {shot_keys.c_str(), TR("Screenshot")},
-        {TR("Left stick"), TR("Fly")},
-        {TR("Right stick"), TR("Look around")},
-        {up_down.c_str(), TR("Down / up")},
-        {fast_slow.c_str(), TR("Fast / slow")},
-        {help_key.c_str(), TR("Hide this help")},
-        {exit_keys.c_str(), TR("Exit photo mode")},
-    };
+    // Sticks on the boy: the controller plays the game, so only the buttons that still act show.
+    const bool boy = TlgFun::PhotoSticksBoy();
+    const char* world_text = TlgFun::PhotoWorldFrozen() ? TR("Let the world run") : TR("Freeze the world");
+    std::vector<std::pair<const char*, const char*>> rows;
+    if (boy) {
+        rows = {{TR("Print Screen"), TR("Screenshot")},
+                {sticks_key.c_str(), TR("Control the camera")},
+                {world_key.c_str(), world_text}};
+    } else {
+        rows = {{shot_keys.c_str(), TR("Screenshot")},
+                {TR("Left stick"), TR("Fly")},
+                {TR("Right stick"), TR("Look around")},
+                {up_down.c_str(), TR("Down / up")},
+                {fast_slow.c_str(), TR("Fast / slow")},
+                {sticks_key.c_str(), TR("Control the boy")},
+                {world_key.c_str(), world_text}};
+    }
+    rows.push_back({help_key.c_str(), TR("Hide this help")});
+    rows.push_back({exit_keys.c_str(), TR("Exit photo mode")});
     float key_w = 0.0f;
     for (const auto& r : rows) key_w = std::max(key_w, ImGui::CalcTextSize(r.first).x);
     const float col = ImGui::GetCursorPosX() + key_w + 32.0f * base_scale;
@@ -2340,13 +2354,21 @@ void PhotoPadSync() {
         return g ? (game & g) != 0 : (pad_mask & bit) != 0;
     };
     // The press that turned photo mode on is not a screenshot: wait until both are let go.
-    const u32 actions = (held(s.photo_shot) ? 1u : 0u) | (held(s.photo_help) ? 2u : 0u);
+    // Sticks on the boy: the controller plays the game, so the camera buttons rest (Cross would
+    // jump and take a picture); Print Screen still takes one.
+    const bool boy = TlgFun::PhotoSticksBoy();
+    const u32 actions = (!boy && held(s.photo_shot) ? 1u : 0u) | (held(s.photo_help) ? 2u : 0u) |
+                        (held(s.photo_world) ? 4u : 0u) | (held(s.photo_sticks) ? 8u : 0u);
     const u32 pressed = last_actions == ~0u ? 0 : actions & ~last_actions;
     last_actions = last_actions == ~0u && actions ? ~0u : actions;
     if (pressed & 1) screenshot_requested = true;
     if (pressed & 2) photo_help_hidden = !photo_help_hidden;
-    const bool up = held(s.photo_up), down = held(s.photo_down), fast = held(s.photo_fast),
-               slow = held(s.photo_slow), inv = s.photo_invert_y;
+    // Not under the game's pause menu: there the button belongs to the menu, and the world
+    // would run behind it.
+    if ((pressed & 4) && !pause_menu_open) TlgFun::PhotoWorldToggle();
+    if ((pressed & 8) && !pause_menu_open) TlgFun::PhotoSticksToggle();
+    const bool up = !boy && held(s.photo_up), down = !boy && held(s.photo_down),
+               fast = !boy && held(s.photo_fast), slow = !boy && held(s.photo_slow), inv = s.photo_invert_y;
     const int now = up | down << 1 | fast << 2 | slow << 3 | inv << 4;
     if (now != sent) {
         sent = now;
@@ -2435,6 +2457,8 @@ void QuitHintBox() {
         {quit, TR("Quit game")},
         {keys(s.combo_menu, "Insert"), TR("Port menu")},
         {keys(s.combo_photo, "F9"), TR("Photo mode on / off")},
+        {keys(s.photo_world, ""), TR("Photo mode: freeze world on / off")},
+        {keys(s.photo_sticks, ""), TR("Photo mode: sticks camera / boy")},
         {GamePhotoButtons(TlgSettings::Get().XboxIcons()), TR("Game photo mode")},
         {keys(s.combo_qa, qa_keys ? "1 + Z" : ""), TR("QA menu")},
     };
@@ -3000,6 +3024,10 @@ void SetLoading(bool active, u32 done, u32 total) {
 
 void SetPauseMenu(bool open) {
     pause_menu_open = open;
+}
+
+bool PauseMenuOpen() {
+    return pause_menu_open;
 }
 
 bool TakeScreenshotRequest() {

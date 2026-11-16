@@ -9,6 +9,7 @@
 #endif
 #include "tlg_toggles.h"
 #include "tlg_freeze.h"
+#include "tlg_fun.h"
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
@@ -439,6 +440,10 @@ extern "C" void tlggpu_pad_kind(int xbox) {
 
 extern "C" void tlggpu_pad_game_buttons(uint32_t buttons) {
     TlgOverlay::SetGameButtons(buttons);
+}
+
+extern "C" int tlggpu_photo_takes_pad(uint8_t lx, uint8_t ly, uint8_t rx, uint8_t ry) {
+    return TlgFun::PhotoTakesPad(lx, ly, rx, ry) ? 1 : 0;
 }
 
 extern "C" int tlggpu_overlay_captures_input(void) {

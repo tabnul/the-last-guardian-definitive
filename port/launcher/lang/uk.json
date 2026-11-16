@@ -455,6 +455,8 @@
     "pad.photo_fast": "Швидко (утримувати)",
     "pad.photo_slow": "Повільно (утримувати)",
     "pad.photo_help_key": "Сховати / показати довідку кнопок",
+    "pad.photo_world_key": "Заморозити світ увімк. / вимк.",
+    "pad.photo_sticks_key": "Стіки: камера / хлопчик",
     "pad.remap_touchpad_left": "Сенсорна панель (ліворуч): фоторежим",
     "pad.remap_touchpad_right": "Сенсорна панель (праворуч): пауза",
     "pad.photo_press": "натисніть кнопку…",
@@ -1152,6 +1154,14 @@
     "Game photo mode": "Фоторежим гри",
     "Touchpad (left)": "Сенсорна панель (ліворуч)",
     "(hold 2 s)": "(утримуйте 2 с)",
-    "QA menu: turn on Level select and QA menu in the launcher first": "Меню QA: спершу увімкніть Вибір рівня та Меню QA в лаунчері"
+    "QA menu: turn on Level select and QA menu in the launcher first": "Меню QA: спершу увімкніть Вибір рівня та Меню QA в лаунчері",
+    "Freeze world on / off": "Заморозити світ увімк. / вимк.",
+    "Let the world run": "Нехай світ живе далі",
+    "Freeze the world": "Заморозити світ",
+    "Sticks: camera / boy": "Стіки: камера / хлопчик",
+    "Control the boy": "Керувати хлопчиком",
+    "Control the camera": "Керувати камерою",
+    "Photo mode: freeze world on / off": "Фоторежим: заморозити світ увімк. / вимк.",
+    "Photo mode: sticks camera / boy": "Фоторежим: стіки камера / хлопчик"
   }
 }

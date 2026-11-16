@@ -455,6 +455,8 @@
     "pad.photo_fast": "快速（按住）",
     "pad.photo_slow": "慢速（按住）",
     "pad.photo_help_key": "隱藏 / 顯示按鍵說明",
+    "pad.photo_world_key": "凍結世界 開 / 關",
+    "pad.photo_sticks_key": "搖桿：鏡頭 / 男孩",
     "pad.remap_touchpad_left": "觸控板（左）：拍照模式",
     "pad.remap_touchpad_right": "觸控板（右）：暫停",
     "pad.photo_press": "請按一個按鍵…",
@@ -1152,6 +1154,14 @@
     "Game photo mode": "遊戲拍照模式",
     "Touchpad (left)": "觸控板(左側)",
     "(hold 2 s)": "(按住 2 秒)",
-    "QA menu: turn on Level select and QA menu in the launcher first": "QA 選單:請先在啟動器中開啟關卡選擇和 QA 選單"
+    "QA menu: turn on Level select and QA menu in the launcher first": "QA 選單:請先在啟動器中開啟關卡選擇和 QA 選單",
+    "Freeze world on / off": "凍結世界 開 / 關",
+    "Let the world run": "讓世界繼續運行",
+    "Freeze the world": "凍結世界",
+    "Sticks: camera / boy": "搖桿：鏡頭 / 男孩",
+    "Control the boy": "控制男孩",
+    "Control the camera": "控制鏡頭",
+    "Photo mode: freeze world on / off": "拍照模式：凍結世界 開 / 關",
+    "Photo mode: sticks camera / boy": "拍照模式：搖桿 鏡頭 / 男孩"
   }
 }

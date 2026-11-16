@@ -2,6 +2,8 @@
 // tlg: the in-game menu's Fun tab (tlg_overlay.cpp): jump to a start point and extra Tricos.
 // The commands are Lua, run once by the settings tick (tlg_lua.cpp, within 15 frames).
 #pragma once
+#include <cstdint>
+#include <string>
 
 namespace TlgFun {
 // Extra Tricos at most: the physics engine (Havok) runs out of constraint room at 10 Tricos
@@ -136,9 +138,24 @@ enum class PhotoFreeze { Pause = 0, StopTime = 1 };
 inline constexpr const char* PhotoFreezeNames[] = {"Pause the game", "Stop time"};
 // Photo mode button rows (Controls tab), in tlg_overlay.cpp PhotoSlots order.
 inline constexpr const char* PhotoButtonNames[] = {"Screenshot", "Fly up", "Fly down", "Fast (hold)", "Slow (hold)",
-                                                   "Hide / show the button help"};
+                                                   "Hide / show the button help", "Freeze world on / off",
+                                                   "Sticks: camera / boy"};
 void PhotoMode(bool on);
 bool PhotoModeOn();
+/// Freeze world on / off: lets the world run under the photo camera, or freezes it again.
+void PhotoWorldToggle();
+bool PhotoWorldFrozen();
+/// Sticks: camera or boy (the switch button, camera first). On the camera, the pad thread keeps
+/// the sticks for the camera (PhotoTakesPad) and the game gets a still controller, so the boy
+/// stands still; the camera tick reads them every frame through the "--TLGPAD" chunk. On the boy,
+/// the game gets the controller and the camera holds still.
+void PhotoSticksToggle();
+bool PhotoSticksBoy();
+/// Pad thread, every read: keeps the raw sticks (0..255, 128 = centre); true = hide the
+/// controller from the game (photo mode, sticks on the camera, game pause menu closed).
+bool PhotoTakesPad(uint8_t lx, uint8_t ly, uint8_t rx, uint8_t ry);
+/// The "--TLGPAD" chunk: "return lx,ly,rx,ry" (-1..1, up = +), zeros when the camera may not move.
+std::string PhotoPadChunk();
 /// The photo buttons held now and the invert setting, for the camera tick (the overlay sends
 /// them when they change; does nothing outside photo mode).
 void PhotoPad(bool up, bool down, bool fast, bool slow, bool invert_y);

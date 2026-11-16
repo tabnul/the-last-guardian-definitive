@@ -448,6 +448,8 @@
     "pad.photo_fast": "高速（長押し）",
     "pad.photo_slow": "低速（長押し）",
     "pad.photo_help_key": "ボタンヘルプの表示 / 非表示",
+    "pad.photo_world_key": "世界の停止 オン / オフ",
+    "pad.photo_sticks_key": "スティック: カメラ / 少年",
     "pad.remap_touchpad_left": "タッチパッド（左）：フォトモード",
     "pad.remap_touchpad_right": "タッチパッド（右）：ポーズ",
     "pad.photo_press": "ボタンを押してください…",
@@ -1139,6 +1141,14 @@
     "Game photo mode": "ゲームのフォトモード",
     "Touchpad (left)": "タッチパッド(左)",
     "(hold 2 s)": "(2秒長押し)",
-    "QA menu: turn on Level select and QA menu in the launcher first": "QAメニュー:先にランチャーでレベル選択とQAメニューをオンにしてください"
+    "QA menu: turn on Level select and QA menu in the launcher first": "QAメニュー:先にランチャーでレベル選択とQAメニューをオンにしてください",
+    "Freeze world on / off": "世界の停止 オン / オフ",
+    "Let the world run": "世界を動かす",
+    "Freeze the world": "世界を止める",
+    "Sticks: camera / boy": "スティック: カメラ / 少年",
+    "Control the boy": "少年を操作",
+    "Control the camera": "カメラを操作",
+    "Photo mode: freeze world on / off": "フォトモード: 世界の停止 オン / オフ",
+    "Photo mode: sticks camera / boy": "フォトモード: スティック カメラ / 少年"
   }
 }
