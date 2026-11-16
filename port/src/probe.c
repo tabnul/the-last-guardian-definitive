@@ -1141,7 +1141,8 @@ void runtime_restart(void) {
                           .hStdInput=GetStdHandle(STD_INPUT_HANDLE),.hStdOutput=GetStdHandle(STD_OUTPUT_HANDLE),
                           .hStdError=GetStdHandle(STD_ERROR_HANDLE)};
     PROCESS_INFORMATION process;
-    if (!line || !CreateProcessA(NULL,line,NULL,NULL,TRUE,0,NULL,NULL,&startup,&process)) {
+    /* CREATE_NO_WINDOW: the relaunched runner (python) opens no console window of its own; its output still goes to the handles above. */
+    if (!line || !CreateProcessA(NULL,line,NULL,NULL,TRUE,CREATE_NO_WINDOW,NULL,NULL,&startup,&process)) {
         fprintf(stderr,"runtime_restart: CreateProcess failed (%lu)\n",GetLastError()); _exit(1);
     }
     CloseHandle(process.hThread); CloseHandle(process.hProcess);

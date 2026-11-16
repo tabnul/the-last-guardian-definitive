@@ -1012,6 +1012,11 @@ def build_env(settings, extra=None):
         env.setdefault('TLG_DMEM_MB', str(5056 + applied_garlic_extra))
     restart = f'"{sys.executable}" --play' if FROZEN else f'"{sys.executable}" "{Path(__file__).resolve()}"'
     env.setdefault('TLG_RESTART_COMMAND', restart)
+    # Headless test runs (TLG_HEADLESS, development) never restart: a game that asks for one
+    # (sceSystemServiceLoadExec, e.g. after its engine gave up at start) just ends, instead of
+    # relaunching in a loop.
+    if env.get('TLG_HEADLESS', '0') not in ('', '0'):
+        env['TLG_RESTART_COMMAND'] = ''
     # Linux package: the libraries built with the port (SDL3, FFmpeg, ...) are in out/lib, never the
     # frozen launcher's own (PyInstaller's _internal).
     if os.name != 'nt':
