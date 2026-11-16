@@ -230,7 +230,7 @@ vk::ImageViewType ViewTypeOf(VkbAmdGpu::ImageType type) {
     case VkbAmdGpu::ImageType::Color2DArray:
     case VkbAmdGpu::ImageType::Color2DMsaaArray: return vk::ImageViewType::e2DArray;
     case VkbAmdGpu::ImageType::Color3D: return vk::ImageViewType::e3D;
-    case VkbAmdGpu::ImageType::Cube: return vk::ImageViewType::e2DArray; // the module declares a cube as a 2D array of its six faces (spirv_emit_context.cpp; validation 07752)
+    case VkbAmdGpu::ImageType::Cube: return vk::ImageViewType::eCube;
     default: return vk::ImageViewType::e2D;
     }
 }
