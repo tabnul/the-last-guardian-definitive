@@ -1019,6 +1019,10 @@ def build_env(settings, extra=None):
         env.setdefault('TLG_DMEM_MB', str(5056 + applied_garlic_extra))
     restart = f'"{sys.executable}" --play' if FROZEN else f'"{sys.executable}" "{Path(__file__).resolve()}"'
     env.setdefault('TLG_RESTART_COMMAND', restart)
+    # The debug server (gpu/native/native_debug_server: /status, /marker, /stats ... on 127.0.0.1) runs with the
+    # Vulkan backend, as in the old port; TLG_DEBUG_SERVER_PORT set outside wins, 0 turns it off.
+    if backend_on(settings):
+        env.setdefault('TLG_DEBUG_SERVER_PORT', '7777')
     # Auto continue: past the title screen to Continue without a key press (TLG_AUTO_START set outside wins).
     if settings.get('auto_continue'):
         env.setdefault('TLG_AUTO_START', '1')
