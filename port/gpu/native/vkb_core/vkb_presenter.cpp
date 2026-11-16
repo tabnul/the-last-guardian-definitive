@@ -463,7 +463,15 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
 }
 
 bool Presenter::PresentImage(Frame* frame, vk::Image source, bool real, bool is_reusing_frame) {
+    const auto wait_acquire_slot = [&] {
+        const u32 slot = swapchain.GetFrameIndex();
+        if (slot < acquire_slot_ticks.size() && acquire_slot_ticks[slot] != 0) {
+            present_scheduler.Wait(acquire_slot_ticks[slot]);
+        }
+    };
+    wait_acquire_slot();
     if (!swapchain.AcquireNextImage()) {
+        wait_acquire_slot();
         {
             std::scoped_lock queue_lock{Scheduler::submit_mutex};
             swapchain.Recreate(window.GetWidth(), window.GetHeight());
@@ -560,6 +568,13 @@ bool Presenter::PresentImage(Frame* frame, vk::Image source, bool real, bool is_
                                to_present);
     }
 
+    {
+        const u32 slot = swapchain.GetFrameIndex();
+        if (slot >= acquire_slot_ticks.size()) {
+            acquire_slot_ticks.resize(slot + 1, 0);
+        }
+        acquire_slot_ticks[slot] = present_scheduler.CurrentTick(); // the submit below waits on this slot's semaphore
+    }
     Scheduler::SubmitInfo info{};
     info.AddWait(swapchain.GetImageAcquiredSemaphore());
     info.AddWait(frame->ready_semaphore, frame->ready_tick);

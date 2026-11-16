@@ -109,6 +109,10 @@ private:
     float fg_interval_ms{16.6f};
     std::chrono::steady_clock::time_point fg_last_flip{};
     u64 fg_presented{};
+    /// The present_scheduler tick of the submit that last waited on each swapchain acquire semaphore (by Swapchain::GetFrameIndex): waited before the semaphore is
+    /// acquired with again. With frame generation two presents per frame turn the rotation over twice as fast, and the generated present has no fence of its own
+    /// (VUID-vkAcquireNextImageKHR-semaphore-01779, then device lost: owner play 2026-11-16)
+    std::vector<u64> acquire_slot_ticks;
 };
 
 extern std::unique_ptr<Presenter> g_presenter;
