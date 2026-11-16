@@ -10,6 +10,12 @@ if (NOT CMAKE_BUILD_TYPE)
 endif()
 # Frame pointers keep the loader's thread dumps (watchdog, SIGUSR2 sampling) walkable.
 add_compile_options(-fno-omit-frame-pointer)
+# Windows debugging (TLG_PDB, default on): CodeView next to the DWARF (our profilers and llvm-symbolizer read the DWARF), and lld writes
+# tlg-probe.pdb next to the executable, so WinDbg / the windbg-ttd MCP name our functions (without it a stack shows only tlg_probe+offset).
+option(TLG_PDB "Windows: CodeView debug info and tlg-probe.pdb for WinDbg" ON)
+if (WIN32 AND TLG_PDB)
+    add_compile_options(-gcodeview -gdwarf)
+endif()
 
 # tlg: link-time optimization (TLG_LTO, default on) and profile-guided optimization
 # (TLG_PGO: off, generate = instrumented build writing into TLG_PGO_DIR, use = build with that
@@ -302,6 +308,9 @@ if (WIN32)
     # The PS4 range (64 GiB - 1 TiB) must stay free: no high-entropy ASLR for heaps and stacks.
     # The guest main thread runs on the process stack: 16 MiB, committed (no stack probes).
     target_link_options(tlg-probe PRIVATE -Wl,--disable-high-entropy-va "SHELL:-Xlinker --stack -Xlinker 16777216,16777216")
+    if (TLG_PDB)
+        target_link_options(tlg-probe PRIVATE -Wl,--pdb=) # tlg-probe.pdb next to the executable
+    endif()
     # tlg: runtime unit tests (ninja -C out/gpu mp3-test videodec-test services-test).
     add_executable(mp3-test EXCLUDE_FROM_ALL ../tests/test_mp3.c ../src/runtime_mp3.c ../src/compat_win.c)
     add_executable(videodec-test EXCLUDE_FROM_ALL ../tests/test_videodec.c ../src/compat_win.c)
