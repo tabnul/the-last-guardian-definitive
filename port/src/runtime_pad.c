@@ -188,6 +188,11 @@ static SDL_Gamepad *current_gamepad(void) {
         if (gamepads[i] && gamepads[i]!=gamepad && gamepad_allowed(gamepads[i]) && (!gamepad || gamepad_active(gamepads[i]))) {
             if (gamepad) printf("Runtime: gamepad in use: %s\n",SDL_GetGamepadName(gamepads[i]));
             gamepad=gamepads[i];
+            /* Button icons: Automatic (issue #61). Xbox pads and unknown ones (Xbox layout on a
+             * PC, as on the launcher's Controller page) get the Xbox hint picture. */
+            const SDL_GamepadType type=SDL_GetGamepadType(gamepad);
+            tlggpu_pad_kind(type==SDL_GAMEPAD_TYPE_XBOX360 || type==SDL_GAMEPAD_TYPE_XBOXONE ||
+                            type==SDL_GAMEPAD_TYPE_STANDARD || type==SDL_GAMEPAD_TYPE_UNKNOWN);
             break;
         }
     return gamepad;

@@ -84,6 +84,7 @@ No game files are included. You need your own copy, dumped from your own PS4.
 - An in-game settings menu (**Insert**) with presets, shadows, field of view, effects, colour and HDR10
 - Shader recipes against stutter and calmer wind
 - 7.1 surround, output device choice and headphone surround
+- [Xbox button icons](#controllers-and-languages) in the game's button hints and Controls screen
 - Language packs for 14 languages
 - [Packed game files](#get-started): play straight from one ZArchive `.zar` file
   and save about half the disk space (about 26 GB becomes about 12.5 GB)
@@ -325,6 +326,11 @@ sensor. On the launcher's **Controls** page you can remap buttons, set stick dea
 trigger points, check for stick drift, and remap keyboard and mouse. See
 [port/packaging/README-player.md](port/packaging/README-player.md).
 
+- **Xbox button icons:** with an Xbox controller the game's button hints and its Controls screen
+  (Options > Controls) show an Xbox pad, with the glow on the right button, and the launcher's
+  Controller page draws one too. **Button icons**
+  (Controller page, or Controls in the port's menu) picks Automatic, PlayStation or Xbox;
+  Automatic follows the controller you used last.
 - **Quit from anywhere:** **Alt+Q** on the keyboard, or hold **Share + Options** for 2 seconds
   on a controller (a note shows while you hold; let go to cancel). The window's X and Alt+F4 work
   the same way. It quits the way the game's own Quit does, so settings and progress are saved.
@@ -334,7 +340,9 @@ trigger points, check for stick drift, and remap keyboard and mouse. See
   (L1 + L3) can each be set to other buttons, on the launcher's **Controller** page (Combos) or
   under Controls in the port's menu. The quit combo is always held for 2 seconds.
 
-<p align="center"><img src="docs/screenshots/fun/controller.png" width="80%" alt="The launcher's Controls page"></p>
+<p align="center"><img src="docs/screenshots/fun/xbox-icons.jpg" width="100%" alt="The game's Controls screen and two button hints with an Xbox pad"></p>
+
+<p align="center"><img src="docs/screenshots/fun/controller.png" width="49%" alt="The launcher's Controls page with a PlayStation controller"> <img src="docs/screenshots/fun/controller-xbox.png" width="49%" alt="The launcher's Controls page with an Xbox controller"></p>
 
 The launcher and in-game menu are in English, with language packs for German, French, Spanish,
 Italian, Dutch, Polish, Turkish, Ukrainian, Portuguese (Brazil and Portugal), Japanese, Korean and
@@ -395,6 +403,9 @@ Thanks to everyone whose work this builds on.
   [gow3_pc](https://github.com/R-V-L/gow3_pc). Thanks to @dwaynevn-git for asking for it (#72).
 - The controller drawing: the [RPCS3](https://github.com/RPCS3/rpcs3) DualShock 3 drawing by
   HerrHulaHoop (GPL-2.0), redrawn as a DualShock 4.
+- Xbox button icons: the method (swap the game's pad pictures, move the glow) comes from
+  [@SulphurS16](https://github.com/SulphurS16)'s [TLG-Port](https://github.com/SulphurS16/TLG-Port).
+  Thank you! The Xbox pad drawing and the code are our own.
 
 ## License
 

@@ -221,6 +221,11 @@ target_compile_definitions(tlggpu PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
     TLG_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf")
 set_source_files_properties(shim/tlg_overlay.cpp PROPERTIES
     OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf)
+# The Xbox pad of the button hints (scripts/make_xbox_pad.py), embedded like the font.
+target_compile_definitions(tlggpu PRIVATE TLG_PAD_XBOX_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/pad_xbox.dds"
+    TLG_PAD_XBOX_CONTROLS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/pad_xbox_controls.dds")
+set_source_files_properties(shadps4/video_core/renderer_vulkan/vk_texture_pack.cpp PROPERTIES
+    OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/pad_xbox.dds;${CMAKE_CURRENT_SOURCE_DIR}/assets/pad_xbox_controls.dds")
 target_include_directories(tlggpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include)
 target_compile_definitions(tlggpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
 target_compile_options(tlggpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)

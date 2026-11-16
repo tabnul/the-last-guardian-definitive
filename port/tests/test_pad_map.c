@@ -4,6 +4,7 @@
 #include "../src/runtime_pad.c"
 
 void tlggpu_pad_game_buttons(uint32_t buttons) { (void)buttons; }
+void tlggpu_pad_kind(int xbox) { (void)xbox; }
 int tlggpu_overlay_captures_input(void) { return 0; }
 void tlggpu_mouse_take(TlgGpuMouse *m) { memset(m,0,sizeof(*m)); }
 void tlggpu_input_settings(TlgGpuInputSettings *s) { memset(s,0,sizeof(*s)); }

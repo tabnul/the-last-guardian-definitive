@@ -241,6 +241,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.slow_motion = i == 1 ? 1 : 0;
     } else if (key == "trico_drool") {
         v.trico_drool = i == 1 || i == 2 ? i : 0;
+    } else if (key == "button_icons") {
+        v.button_icons = value == "playstation" ? 1 : value == "xbox" ? 2 : i == 1 || i == 2 ? i : 0;
     } else if (key == "trico_favourites") {
         v.trico_favourites = value;
     } else if (key == "trico_bar_group") {
@@ -447,6 +449,7 @@ void Load() {
         {"TLG_MOUSE_ACCEL", "mouse_accel"},          {"TLG_MOUSE_DEADZONE", "mouse_deadzone"},
         {"TLG_SMAA", "smaa"},                        {"TLG_DLAA", "dlaa"},
         {"TLG_LEVEL_SELECT", "level_select"},       {"TLG_TRICO_DROOL", "trico_drool"},
+        {"TLG_BUTTON_ICONS", "button_icons"},
         {"TLG_MOD_TREASURES", "mod_treasures"},     {"TLG_MOD_HORNS", "mod_horns"},
         {"TLG_MOD_PLAYS", "mod_plays"},             {"TLG_MOD_THROW_UP", "mod_throw_up"},
         {"TLG_MOD_HINTS", "mod_hints"},
@@ -772,6 +775,7 @@ void Save() {
                  ComboText(v.photo_fast).c_str(), ComboText(v.photo_slow).c_str(), ComboText(v.photo_help).c_str(),
                  int(v.photo_invert_y.load()));
     std::fprintf(file, "trico_drool=%d\n", v.trico_drool.load());
+    std::fprintf(file, "button_icons=%d\n", v.button_icons.load());
     std::fprintf(file, "trico_favourites=%s\ntrico_bar_group=%d\n", v.trico_favourites.c_str(),
                  v.trico_bar_group.load());
     std::fprintf(file, "mod_treasures=%d\nmod_horns=%d\n", int(v.mod_treasures.load()),

@@ -2105,8 +2105,8 @@ bool Rasterizer::HelperEligible(const Pipeline* pipeline) const {
 
 bool Rasterizer::TexturesBindableOnHelper(const Shader::Info& stage,
                                           const PreparedStage* prepared) {
-    // tlg: the texture pack is applied on the render thread only.
-    if (TlgSettings::Get().texture_pack.load() != 0) {
+    // tlg: the texture pack (and the Xbox pad picture, same swap) is applied on the render thread only.
+    if (TlgSettings::Get().texture_pack.load() != 0 || TlgSettings::Get().XboxIcons()) {
         return false;
     }
     const u64 generation = texture_cache.RegistryGeneration();

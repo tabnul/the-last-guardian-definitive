@@ -431,6 +431,12 @@ extern "C" void tlggpu_overlay_notice(const char* text, float seconds) {
     TlgOverlay::Notice(text ? text : "", seconds);
 }
 
+// The controller the game reads changed (runtime_pad.c): Xbox-style or not, for Button icons: Automatic.
+extern "C" void tlggpu_pad_kind(int xbox) {
+    TlgSettings::Get().pad_is_xbox = xbox != 0;
+    std::printf("Button icons: controller in use is %s\n", xbox ? "Xbox" : "PlayStation");
+}
+
 extern "C" void tlggpu_pad_game_buttons(uint32_t buttons) {
     TlgOverlay::SetGameButtons(buttons);
 }

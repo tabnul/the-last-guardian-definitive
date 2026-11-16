@@ -8,6 +8,7 @@
 
 static int capture;
 void tlggpu_pad_game_buttons(uint32_t buttons) { (void)buttons; }
+void tlggpu_pad_kind(int xbox) { (void)xbox; }
 int tlggpu_overlay_captures_input(void) { return capture; }
 /* The GPU library (not linked here): on-screen notices. */
 void tlggpu_overlay_notice(const char *text, float seconds) { (void)text; (void)seconds; }
