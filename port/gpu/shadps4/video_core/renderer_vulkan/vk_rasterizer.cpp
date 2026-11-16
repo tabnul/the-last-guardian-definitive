@@ -4639,7 +4639,11 @@ namespace Vulkan {
 
 void Rasterizer::MarkPass(const GraphicsPipeline* pipeline, const RenderState& state) {
     auto* profiler = GpuProfiler::Get();
-    if (!profiler || !scheduler.WillBeginRendering(state)) {
+    if (!profiler) {
+        return;
+    }
+    if (!scheduler.WillBeginRendering(state)) {
+        profiler->CountDraw();
         return;
     }
     const auto& vs = pipeline->GetStage(Shader::SwStage::Vertex);
@@ -4670,6 +4674,7 @@ void Rasterizer::MarkPass(const GraphicsPipeline* pipeline, const RenderState& s
                                          : std::string{"-"},
                            vs.pgm_hash, ps ? ps->pgm_hash : 0);
     });
+    profiler->CountDraw();
 }
 
 void Rasterizer::NoteFrameStart() {
