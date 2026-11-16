@@ -21,6 +21,7 @@
 #include "native/native_dispatch_inputs.h"
 #include "native/native_target_inputs.h"
 #include "native/native_debug_server.h"
+#include "native/native_vkb.h"
 #include "native/native_log.h"
 #include "native/native_wait_registers.h"
 #include "native/native_config.h"
@@ -433,7 +434,7 @@ nlohmann::json Faults(const Params& params) {
 }
 
 nlohmann::json Profile(const Params& params) {
-    std::string thread = "GpuRaster";
+    std::string thread = Core::Vkb::On() ? "ps4render" : "GpuRaster"; // the backend: the game's render thread, where its capture runs (no raster thread)
     if (const auto it = params.find("thread"); it != params.end() && !it->second.empty()) {
         thread = it->second;
     }
@@ -596,7 +597,7 @@ void RegisterBuiltins() {
                  return nlohmann::json{{"recording", Core::Stall::Recording()}, {"report_age_s", Core::Stall::ReportAgeSeconds()}};
              });
     Register("/prof", "?seconds=10&level=2&groups=raster,buffer&threads=GpuRaster&open=1 starts the profiler (the same as Shift+F9, which uses TLG_PROF_* or the defaults); without arguments it shows whether it runs and the last report. "
-                      "level: 1 coarse, 2 normal, 3 fine; groups: the part of a probe's name before the first '.' (empty: all); threads: parts of thread names, or all",
+                      "level: 1 coarse, 2 normal, 3 fine; groups: the part of a probe's name before the first '.' (empty: all); threads: parts of thread names, or all (default: GpuRaster, under TLG_VKB=1 ps4render,present,vkb:)",
              [](const Params& params) {
                  if (params.contains("seconds") || params.contains("level") || params.contains("groups") || params.contains("threads")) {
                      Core::Prof::Config config = Core::Prof::DefaultConfig();
@@ -665,7 +666,7 @@ void RegisterBuiltins() {
     Register("/memory", "?addr=0x..&size=N (max 65536): guest memory as hex", Memory);
     Register("/log", "?lines=N&filter=text&file=shad_log.txt: tail of a log file", Log);
     Register("/profile",
-             "?thread=GpuRaster&seconds=5&hz=500&top=25: stack sampling of one thread (functions as "
+             "?thread=GpuRaster&seconds=5&hz=500&top=25: stack sampling of one thread (default: GpuRaster, under TLG_VKB=1 ps4render; functions as "
              "offsets, resolve with the linker map)",
              Profile);
     Register("/set", "?inject_fault=cpu|device_lost|assert (development only)",

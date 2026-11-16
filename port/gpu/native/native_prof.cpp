@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "native/native_prof.h"
+#include "native/native_vkb.h"
 
 #include <algorithm>
 #include <array>
@@ -512,6 +513,12 @@ void TagSlow(const TagKind& kind, u64 value, const char* label) noexcept {
 // control
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+/// The default thread selection: the PS4 path's raster thread, or under the Vulkan backend (TLG_VKB=1, no raster thread) the threads its probes run on:
+/// the game's render and submit threads (submits, the frame gate), the present thread (presenter, VideoOut) and the backend's own threads.
+std::string DefaultThreads() {
+    return Core::Vkb::On() ? "ps4render,present,vkb:" : "GpuRaster";
+}
+
 Config DefaultConfig() {
     Config c;
     if (const char* e = std::getenv("TLG_PROF_SECONDS")) {
@@ -550,7 +557,7 @@ bool Start(const Config& config) {
     g_select_all = names.empty();
     std::vector<std::string> wanted = Split(config.threads);
     if (wanted.empty()) {
-        wanted.push_back("gpuraster");
+        wanted = Split(DefaultThreads());
     }
     for (const auto& w : wanted) {
         if (w == "all") {
@@ -885,7 +892,7 @@ void Analyze(const FrameTimeline::CapEvent* events, u64 count, u64 start_ns, u64
     }
     if (frames < 5 || threads.empty()) {
         const std::string text = fmt::format("Profiler: {} frames and {} threads with data in {:.1f} s: nothing to report (is the game in a scene, and does the selection '{}' / groups '{}' name a thread and probes that ran?).\n", frames,
-                                             threads.size(), seconds, g_config.threads.empty() ? "GpuRaster" : g_config.threads, g_config.groups.empty() ? "all" : g_config.groups);
+                                             threads.size(), seconds, g_config.threads.empty() ? DefaultThreads() : g_config.threads, g_config.groups.empty() ? "all" : g_config.groups);
         std::scoped_lock lock{g_report_mutex};
         g_full = text;
         g_json = "{}";
@@ -1209,7 +1216,7 @@ void Analyze(const FrameTimeline::CapEvent* events, u64 count, u64 start_ns, u64
     // compose
     const auto stamp = static_cast<long long>(std::time(nullptr));
     const std::string groups_text = g_config.groups.empty() ? "all groups" : g_config.groups;
-    const std::string threads_text = g_config.threads.empty() ? "GpuRaster" : g_config.threads;
+    const std::string threads_text = g_config.threads.empty() ? DefaultThreads() : g_config.threads;
     std::string text = fmt::format("PROFILE  {:.1f} s, {} frames from {} ({:.1f} fps, {:.2f} ms per frame); level {}, {}, threads: {}{}\n\n", seconds, frames, frame_source, nframes / seconds, frame_ms, g_config.level, groups_text,
                                    threads_text, have_baseline ? "; compared with prof_baseline.json" : "");
     std::string html =

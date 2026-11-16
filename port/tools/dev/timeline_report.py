@@ -239,7 +239,48 @@ def main():
         print('   %-26s %-30s %-6s %8.2f ms/frame %6d x   <- %s' % (tname(t), objs.get(o, hex(o)), WAIT_KIND.get(kind, kind), ns / 1e6 / nframes, n, sig))
 
     # ---- per frame
-    if len(ps) > 2:
+    backend = any(str(n).startswith('vkb:') for n in names.values())
+    if len(ps) > 2 and backend:
+        # the Vulkan backend has no stage spans: each pipeline thread's CPU time inside the frame (1 kHz samples), next to the GPU's busy time
+        cols = collections.OrderedDict([('render', ['ps4render']), ('recorder', ['vkb:Recorder']), ('record', ['vkb:Record1', 'vkb:Record2']),
+                                        ('present', ['tlg:Present', 'shadPS4:PresentThread'])])
+        # A sample holds the cycles since the thread's previous sample (a thread that did not run has none, and the sampler itself can stall), so its
+        # cycles are spread evenly over [previous sample, sample] of that thread instead of landing in the frame of the sample.
+        col_spans = {}
+        for k, v in cols.items():
+            starts, ends, cyc = [], [], []
+            for t in [t for t, n in names.items() if n in v]:
+                sel = cpu[cpu['thread'] == t]
+                if not len(sel):
+                    continue
+                e = np.sort(sel['ns'].astype(np.int64))
+                c = sel['arg'][np.argsort(sel['ns'])].astype(np.float64)
+                s = np.concatenate(([e[0] - 1_000_000], e[:-1]))
+                starts.append(s), ends.append(e), cyc.append(c)
+            col_spans[k] = (np.concatenate(starts), np.concatenate(ends), np.concatenate(cyc)) if starts else (np.zeros(0, np.int64),) * 2 + (np.zeros(0),)
+
+        def cpu_in(k, a, b):
+            s, e, c = col_spans[k]
+            if not len(s):
+                return 0.0
+            inside = np.clip(np.minimum(e, b) - np.maximum(s, a), 0, None)
+            return float(np.sum(c * inside / np.maximum(e - s, 1))) / cyc_ns
+
+        print('\n== frames with the longest time (ms; gpu = busy time inside the frame, the threads = their CPU time inside it)')
+        print('   %9s %7s %7s %s   %s' % ('at ms', 'frame', 'gpu', ' '.join('%8s' % k for k in cols), 'most busy'))
+        picks = np.argsort(-frame_ms)[:args.worst]
+        for i in sorted(picks):
+            a, b = int(ps[i]), int(ps[i + 1])
+            vals = collections.OrderedDict([('gpu', overlap_sum(w_start, w_end, a, b))])
+            for k in cols:
+                vals[k] = cpu_in(k, a, b)
+            top = max(vals, key=vals.get)
+            print('   %9.1f %7.2f %s   %s (%.0f%%)' % ((a - t0) / 1e6, (b - a) / 1e6, ' '.join('%7.2f ' % (v / 1e6) for v in vals.values()), top, vals[top] / (b - a) * 100))
+        a, b = int(ps[0]), int(ps[-1])
+        tot = collections.OrderedDict([('gpu', overlap_sum(w_start, w_end, a, b))] + [(k, cpu_in(k, a, b)) for k in cols])
+        print('\n== busy share over all frames: ' + ', '.join('%s %.0f%%' % (k, v / float(b - a) * 100) for k, v in tot.items()))
+    elif len(ps) > 2:
+        sp = ev[ev['type'] == T_STAGE]  # the stage spans (sp held the guest spans since the engine task section)
         r_end = sp[(sp['arg'] >> 56) == 4]
         r_start = r_end['ns'].astype(np.int64) - (r_end['arg'] & ((1 << 56) - 1)).astype(np.int64)
         r_end_ns = r_end['ns'].astype(np.int64)
