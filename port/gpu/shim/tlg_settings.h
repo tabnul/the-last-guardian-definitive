@@ -262,8 +262,10 @@ const std::vector<std::string>& TexturePackNames();
 std::string TexturePackDir(int index);
 
 /// Graphics presets: the look settings (Image tab, texture rows of the Lab tab) as one set.
-/// 0 = Stock (the game as shipped), 1 = Recommended (the defaults), then the files
-/// presets/<name>.ini next to tlg.ini, sorted. The launcher uses the same files.
+/// 0 = Stock (the game as shipped), 1 = Recommended (the defaults), 2 = Low-end PC (Stock with
+/// shadows at 50% distance), then the files presets/<name>.ini next to tlg.ini, sorted. The
+/// launcher uses the same files.
+constexpr int BuiltInPresets = 3;
 std::vector<std::string> GraphicsPresetNames();
 /// Sets the preset's values (live; the caller saves tlg.ini).
 void ApplyGraphicsPreset(int index);
@@ -271,7 +273,7 @@ void ApplyGraphicsPreset(int index);
 int MatchingGraphicsPreset();
 /// Writes presets/<name>.ini from the current values; returns its index, or -1.
 int SaveGraphicsPreset(const std::string& name);
-/// Removes a saved preset (index 2 and up).
+/// Removes a saved preset (index BuiltInPresets and up).
 void DeleteGraphicsPreset(int index);
 
 /// Reads the file, then the environment overrides. Called once at start.

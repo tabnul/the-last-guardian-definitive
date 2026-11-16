@@ -461,6 +461,7 @@ void Load() {
         {"TLG_CAS", "cas"},                          {"TLG_COLOR_ADJUST", "color_adjust"},
         {"TLG_HDR", "hdr"},                          {"TLG_FG", "frame_generation"},
         {"TLG_ARENA_RELEASE", "arena_release"},      {"TLG_GC_LIVE_BUDGET", "gc_live_budget"},
+        {"TLG_SHADOW_DISTANCE", "shadow_distance"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -873,7 +874,10 @@ struct GraphicsPreset {
 };
 
 std::vector<GraphicsPreset> ReadPresets() {
-    std::vector<GraphicsPreset> list{{"Stock", Normalized(StockLines)}, {"Recommended", Normalized("")}};
+    // Low-end PC (#85, #75): Stock with shadows at 50% distance (launcher preset_share GAME_LOWEND).
+    std::vector<GraphicsPreset> list{{"Stock", Normalized(StockLines)},
+                                     {"Recommended", Normalized("")},
+                                     {"Low-end PC", Normalized(std::string(StockLines) + "shadow_distance=50\n")}};
     std::vector<std::filesystem::path> files;
     std::error_code error;
     for (const auto& entry : std::filesystem::directory_iterator(PresetDir(), error)) {
@@ -926,7 +930,9 @@ int SaveGraphicsPreset(const std::string& name) {
     }
     clean.erase(0, clean.find_first_not_of(' '));
     clean.erase(clean.find_last_not_of(' ') + 1);
-    if (clean.empty() || clean == "Stock" || clean == "Recommended") return -1;
+    if (clean.empty() || clean == "Stock" || clean == "Recommended" || clean == "Low-end PC" ||
+        clean == "Steam Deck")
+        return -1;
     std::error_code error;
     std::filesystem::create_directories(PresetDir(), error);
     std::ofstream out{PresetDir() / (clean + ".ini")};
@@ -939,7 +945,7 @@ int SaveGraphicsPreset(const std::string& name) {
 }
 
 void DeleteGraphicsPreset(int index) {
-    if (index < 2 || index >= int(Presets().size())) return;
+    if (index < BuiltInPresets || index >= int(Presets().size())) return;
     std::error_code error;
     std::filesystem::remove(PresetDir() / (Presets()[index].name + ".ini"), error);
     Presets() = ReadPresets();

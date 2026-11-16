@@ -224,6 +224,7 @@ DEBUG_FLAGS = (
     ('flag_object_motion', 'TLG_OBJECT_MOTION', '1', '0', False),      # ~10% FPS; unguarded reads
     ('flag_granule', 'TLG_RESIDENCY_GRANULE_MB', None, '0', True),    # #79: AMD Windows submit OOM
     ('flag_sema_fast', 'TLG_SEMA_FAST', None, '0', True),            # #41 (@thearturord)
+    ('flag_quad_helpers', 'TLG_QUAD_HELPERS', None, '1', True),      # #85, #75: 4-core CPUs
     ('flag_vk_validation', 'TLG_VK_VALIDATION', '1', None, False),     # needs the Vulkan SDK layer
     ('game_tail_climb', 'TLG_TAIL_CLIMB_FIX', '1', None, True),       # PR #171, eboot patch, every GPU
     # Possible RDNA2 (older AMD) gains, ports of @YsraEstudos PRs #172-#174; no gain on RDNA4 / RTX.
