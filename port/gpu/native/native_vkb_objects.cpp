@@ -147,6 +147,7 @@ struct Image {
     bool cube_compatible{}; ///< square 2D with a multiple of six layers: a module may read it as a cube even when the engine did not flag it one
     u64 address{};          ///< the engine texture's memory (V4c: the display buffers)
     u64 bytes{};
+    u64 guest_bytes{}; ///< the engine texture's memory size (+0x38): a file read into it gives the image new contents (MemoryLoaded)
     vk::ImageLayout layout{vk::ImageLayout::eUndefined}; ///< after its upload (V2b); render targets stay undefined until V4 writes them
     bool mutable_format{true}; ///< R5 test TLG_VKB_TARGETS_FIXED=1: false for color render targets made without MUTABLE_FORMAT (views in its own format only)
 };
@@ -326,6 +327,7 @@ Image* MakeImage(const Object& texture) {
     img.layers = img.type == vk::ImageType::e3D ? 1 : std::max(texture.layers, 1u);
     img.cube_compatible = img.type == vk::ImageType::e2D && img.layers % 6 == 0 && img.width == img.height;
     img.address = texture.address;
+    img.guest_bytes = texture.bytes;
     img.cube = (texture.misc & MiscTextureCube) != 0 && img.cube_compatible;
     // debug (tint hunt, 2026-11-16): TLG_VKB_WATCH_VOLUMES=1 arms a hardware write watch near the end of the first probe volumes' memory (36 x 36 x N 3D textures), to find the
     // engine code that fills them after we copied them (the hits go to the log: "write watch")
@@ -2682,6 +2684,30 @@ void TextureCpuWritten(u64 texture_id) {
     }
 }
 
+std::atomic<u64> c_loaded_reads{0}, c_loaded_textures{0};
+u32 MemoryLoaded(u64 address, u64 bytes) {
+    // the engine read a file straight into this memory (Fios, on its I/O thread): a texture there was copied before its data arrived (the probe volumes of the
+    // lighting pass 0x775d0654 are streamed in after they are first bound: magenta / green / red ambient light, note 81); its image gets the contents again
+    if (!On() || !device_ready || bytes == 0) {
+        return 0;
+    }
+    c_loaded_reads.fetch_add(1, std::memory_order_relaxed);
+    boost::container::small_vector<u64, 4> ids;
+    {
+        std::scoped_lock lock{mutex};
+        for (const auto& [id, img] : images) {
+            if (img.address != 0 && !img.is_depth && img.address < address + bytes && address < img.address + std::max(img.guest_bytes, img.bytes)) {
+                ids.push_back(id);
+            }
+        }
+    }
+    for (const u64 id : ids) {
+        TextureCpuWritten(id);
+    }
+    c_loaded_textures.fetch_add(ids.size(), std::memory_order_relaxed);
+    return static_cast<u32>(ids.size());
+}
+
 u32 ReuploadVolumes() {
     // debug (tint hunt, 2026-11-16): every 3D texture gets its contents again from the engine's memory (the probe volumes are filled by a CPU path no hook sees)
     std::vector<u64> ids;
@@ -3043,6 +3069,7 @@ nlohmann::json ObjectsReport() {
                           {"our_samplers", {{"made", c_samplers_made.load()}, {"invalid_description", c_samplers_invalid.load()}, {"min_max_reduction", c_sampler_minmax.load()},
                                             {"border_rounded", c_sampler_border_rounded.load()}, {"mirror_once", c_sampler_mirror_once.load()}}},
                           {"texture_updates", {{"wanted", c_reupload_wanted.load()}, {"uploaded", c_reupload_done.load()}, {"no_image", c_reupload_no_image.load()}}},
+                          {"file_reads_into_textures", {{"reads", c_loaded_reads.load()}, {"textures", c_loaded_textures.load()}}},
                           {"texture_copies", {{"copies", c_tex_copies.load()}, {"no_image", c_tex_copy_no_image.load()}, {"mismatch", c_tex_copy_mismatch.load()}}},
                           {"buffer_lookups", {{"range_leaves_a_device_buffer", c_find_straddle.load()}, {"not_in_place", c_find_none.load()}}},
                           {"r7_census", R7CensusReport()},

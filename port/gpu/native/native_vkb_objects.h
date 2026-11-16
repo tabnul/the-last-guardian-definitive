@@ -93,6 +93,8 @@ void BufferCpuWritten(u64 address, u64 size);
 /// V2e: the CPU wrote a texture's memory after its creation (UpdateSubresource, the dynamic texture fill): our image gets the contents again (the upload batch, which the
 /// queue runs before the frame stream: a dispatch earlier in the same frame sees the new contents too)
 void TextureCpuWritten(u64 texture_id);
+/// The engine read a file into [address, address + bytes) (its file layer, note 81): every texture there gets its contents again; returns how many
+u32 MemoryLoaded(u64 address, u64 bytes);
 /// debug (tint hunt): every 3D texture uploaded again from the engine's memory; returns how many
 u32 ReuploadVolumes();
 /// V3c for buffers: the engine's buffer copies and fills (the compute copy, the SDK fill, DMA copies) as copies and fills in the frame stream. False: a range not found (counted).

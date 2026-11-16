@@ -10659,6 +10659,140 @@ u64 PS4_SYSV_ABI SceneSlotWritesMatrices(u64 frame, u64 kind, u64 a1, u64 a2, u6
     return 0;
 }
 
+/// Note 81 (the tint bug): the engine streams level data straight into resource memory through its file layer (a class over libSceFios2; Ghidra 2026-11-16):
+///   `FUN_01f45db0(fs, fh, buf, len)`            synchronous read: `sceFiosFHReadSync(0, fh, buf, len)`, the bytes are there when it returns
+///   `FUN_01f45e20(fs, fh, offset, buf, len)`    asynchronous read: `sceFiosFHPread(attr, fh, buf, len, offset)`, attr = {callback FUN_01f461f0, context fs,
+///                                               user tag (+0x1c) fh}; Fios copies the bytes in later on its own thread
+///   `FUN_01f461f0(fs, op, event, error)`        the completion callback (event 1: done; it deletes the op)
+/// A texture copied before its read finished keeps the old bytes (the probe volumes of the lighting pass: magenta / green / red ambient light). When a read ends,
+/// every texture over its range gets its contents again (Core::Vkb::MemoryLoaded): one event per read, no memory tracking.
+namespace FileLoads {
+struct Pending {
+    u32 fh;
+    u64 buf, len, ns;
+};
+std::mutex mutex;
+std::vector<Pending> pending;
+std::atomic<u64> c_sync{0}, c_async{0}, c_done{0}, c_done_single{0}, c_done_scanned{0}, c_done_unmatched{0}, c_done_error{0}, c_textures{0}, c_dropped{0};
+std::atomic<s32> scan_offset{-1}; ///< where the op keeps its buffer, relative to its attributes (found at run time, logged once)
+void Loaded(u64 buf, u64 len) {
+    c_textures.fetch_add(Core::Vkb::MemoryLoaded(buf, len), std::memory_order_relaxed);
+    static std::atomic<u32> n{0};
+    if (n.fetch_add(1, std::memory_order_relaxed) % 32 == 0) { // /stats key file_loads
+        Core::DebugServer::Publish("file_loads", nlohmann::json{{"sync_reads", c_sync.load()}, {"async_reads", c_async.load()}, {"async_done", c_done.load()},
+                                                                {"done_single", c_done_single.load()}, {"done_scanned", c_done_scanned.load()},
+                                                                {"done_unmatched", c_done_unmatched.load()}, {"done_with_error", c_done_error.load()},
+                                                                {"pending_dropped", c_dropped.load()}, {"texture_uploads", c_textures.load()},
+                                                                {"buffer_at_attr_offset", scan_offset.load()}});
+    }
+}
+} // namespace FileLoads
+
+u64 PS4_SYSV_ABI FileReadSync(u64 fs, u64 fh, u64 buf, u64 len, u64 a4, u64 a5, u64 ret) {
+    (void)ret;
+    const u64 original = Core::GuestHooks::OriginalEntry("FileReadSync");
+    if (!Core::Vkb::On() || original == 0) {
+        return 0;
+    }
+    const u64 result = reinterpret_cast<GuestFunction6>(original)(fs, fh, buf, len, a4, a5);
+    FileLoads::c_sync.fetch_add(1, std::memory_order_relaxed);
+    if (buf != 0 && result != 0) {
+        FileLoads::Loaded(buf, std::min(result, len));
+    }
+    return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
+}
+
+u64 PS4_SYSV_ABI FileReadAsync(u64 fs, u64 fh, u64 offset, u64 buf, u64 len, u64 a5, u64 ret) {
+    (void)fs, (void)offset, (void)a5, (void)ret;
+    if (!Core::Vkb::On() || buf == 0 || len == 0) {
+        return 0; // the original runs
+    }
+    FileLoads::c_async.fetch_add(1, std::memory_order_relaxed);
+    const u64 now = Core::FrameTimeline::Now();
+    std::scoped_lock lock{FileLoads::mutex};
+    auto& p = FileLoads::pending;
+    // a read that never reported back (an error path) leaves after 30 s
+    std::erase_if(p, [&](const FileLoads::Pending& e) {
+        const bool old = now - e.ns > 30'000'000'000ull;
+        if (old) {
+            FileLoads::c_dropped.fetch_add(1, std::memory_order_relaxed);
+        }
+        return old;
+    });
+    p.push_back({static_cast<u32>(fh), buf, len, now});
+    return 0; // recorded before the read starts: its completion can come before the original returns
+}
+
+u64 PS4_SYSV_ABI FileReadDone(u64 fs, u64 op, u64 event, u64 error, u64 a4, u64 a5, u64 ret) {
+    (void)fs, (void)a4, (void)a5, (void)ret;
+    if (!Core::Vkb::On() || static_cast<u32>(event) != 1) {
+        return 0; // the original runs
+    }
+    using GetAttr = u64(PS4_SYSV_ABI*)(u64);
+    static const GetAttr get_attr = reinterpret_cast<GetAttr>(ImageBase() + 0x24bebe8 - 0x1000000); // sceFiosOpGetAttr (import stub)
+    const u64 attr = get_attr(static_cast<u32>(op));
+    if (attr == 0) {
+        return 0;
+    }
+    const u32 fh = Rd<u32>(attr, 0x1c);
+    FileLoads::c_done.fetch_add(1, std::memory_order_relaxed);
+    if (static_cast<s32>(error) != 0) {
+        FileLoads::c_done_error.fetch_add(1, std::memory_order_relaxed);
+    }
+    std::vector<std::pair<u64, u64>> ranges;
+    {
+        std::scoped_lock lock{FileLoads::mutex};
+        auto& p = FileLoads::pending;
+        std::vector<size_t> same;
+        for (size_t i = 0; i < p.size(); ++i) {
+            if (p[i].fh == fh) {
+                same.push_back(i);
+            }
+        }
+        size_t hit = ~size_t{0};
+        if (same.size() == 1) {
+            hit = same[0];
+            FileLoads::c_done_single.fetch_add(1, std::memory_order_relaxed);
+        } else if (same.size() > 1) {
+            // several reads in flight on this file: the op keeps its buffer pointer next to its attributes; find which pending buffer it is
+            const s32 known = FileLoads::scan_offset.load(std::memory_order_relaxed);
+            for (s32 off = known >= 0 ? known : 0; off < 0x200 && hit == ~size_t{0}; off += 8) {
+                const u64 v = Rd<u64>(attr, static_cast<u64>(off));
+                for (const size_t i : same) {
+                    if (p[i].buf == v) {
+                        hit = i;
+                        if (known < 0) {
+                            FileLoads::scan_offset.store(off, std::memory_order_relaxed);
+                            LOG_INFO(Core, "note 81: a Fios op keeps its read buffer at its attributes + {:#x}", off);
+                        }
+                        break;
+                    }
+                }
+                if (known >= 0) {
+                    break;
+                }
+            }
+            if (hit != ~size_t{0}) {
+                FileLoads::c_done_scanned.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+        if (hit != ~size_t{0}) {
+            ranges.push_back({p[hit].buf, p[hit].len});
+            p.erase(p.begin() + static_cast<std::ptrdiff_t>(hit));
+        } else {
+            // not identified: every read in flight on the file counts as loaded (an extra upload at most); they stay pending for their own completion
+            FileLoads::c_done_unmatched.fetch_add(1, std::memory_order_relaxed);
+            for (const size_t i : same) {
+                ranges.push_back({p[i].buf, p[i].len});
+            }
+        }
+    }
+    for (const auto& [buf, len] : ranges) {
+        FileLoads::Loaded(buf, len);
+    }
+    return 0; // the original runs (it deletes the op)
+}
+
 /// L3: `FUN_02480f90(context, resource, subresource, box, data)` is JsDeviceContext::UpdateSubresource. A buffer is rewritten through the frame ring (class R); a texture (`[resource + 0x124]`
 /// not 1) is tiled and copied into its own memory (`[resource + 0x30]`, `[resource + 0x38]` bytes) with no Map and no other announcement. The whole texture memory is announced (writer 6)
 /// and the calls are counted (`/stats` key `texture_updates`: calls, bytes, the call sites by return address, the sizes).
@@ -11414,6 +11548,15 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "draw_probe_indirect") {
         return reinterpret_cast<u64>(&ProbeIndirect);
+    }
+    if (name == "file_read_sync") {
+        return reinterpret_cast<u64>(&FileReadSync);
+    }
+    if (name == "file_read_async") {
+        return reinterpret_cast<u64>(&FileReadAsync);
+    }
+    if (name == "file_read_done") {
+        return reinterpret_cast<u64>(&FileReadDone);
     }
     if (name == "dyn_texture_fill") {
         return reinterpret_cast<u64>(&DynTextureFill);

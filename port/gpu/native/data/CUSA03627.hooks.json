@@ -1150,6 +1150,27 @@
       "mode": "call",
       "expect": "554889e54157415653504889fb4989f7",
       "handler": "vkb_occlusion_end"
+    },
+    {
+      "name": "FileReadSync",
+      "ghidra": "0x1f45db0",
+      "mode": "call",
+      "handler": "file_read_sync",
+      "expect": "554889e541565348"
+    },
+    {
+      "name": "FileReadAsync",
+      "ghidra": "0x1f45e20",
+      "mode": "call",
+      "handler": "file_read_async",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "FileReadDone",
+      "ghidra": "0x1f461f0",
+      "mode": "call",
+      "handler": "file_read_done",
+      "expect": "554889e541574156"
     }
   ]
 }
