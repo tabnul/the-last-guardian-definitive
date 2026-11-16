@@ -2277,6 +2277,17 @@ void DumpImageCore(vk::CommandBuffer cmd, vk::Image image, vk::Format format, u3
     });
 }
 
+bool ImageFacts(vk::Image handle, vk::Format& format, u32& width, u32& height, bool& depth) {
+    std::scoped_lock lock{mutex};
+    for (const auto& [id, img] : images) {
+        if (img.image == handle) {
+            format = img.format, width = img.width, height = img.height, depth = img.is_depth;
+            return true;
+        }
+    }
+    return false;
+}
+
 void DumpImageHandle(vk::CommandBuffer cmd, vk::Image handle, const std::string& name) {
     vk::Format format{};
     u32 width = 0, height = 0;

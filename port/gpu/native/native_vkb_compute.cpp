@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "native/native_vkb_aa.h"
 #include "native/native_vkb_shader_dump.h"
 #include "native/native_framewalk.h"
 #include "native/native_debug_server.h"
@@ -222,6 +223,7 @@ bool Ready() {
     profile = Core::Vkb::Device::Profile();
     pools = std::make_unique<VkbShader::Pools>();
     Stream::Init(*instance);
+    Core::Vkb::Aa::Init(*instance);
     return true;
 }
 
@@ -784,7 +786,8 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
     }
     const bool dump_buffers = !dump_views.empty(); // the TLG_VKB_IMAGE_DUMP_CS dump only (the frame dump takes images alone)
     FrameDumpDispatch(ctx, v, dump_views);
-    Stream::Defer(Stream::Work::Dispatch, [dump_views = std::move(dump_views), dump_buffers, uses = std::move(uses), gds_inits = std::move(gds_inits), buffer_infos = std::move(buffer_infos), image_infos = std::move(image_infos),
+    const std::array<float, 2> aa_jitter = v.info->pgm_hash == Core::Vkb::Aa::CombineCs && Core::Vkb::Aa::On() ? Core::Vkb::Aa::OnCombineQueued() : std::array<float, 2>{};
+    Stream::Defer(Stream::Work::Dispatch, [aa_jitter, dump_views = std::move(dump_views), dump_buffers, uses = std::move(uses), gds_inits = std::move(gds_inits), buffer_infos = std::move(buffer_infos), image_infos = std::move(image_infos),
                                            sampler_infos = std::move(sampler_infos), image_types = std::move(image_types), pipeline = v.pipeline, layout = v.pipeline_layout, push,
                                            args_buffer, args_offset, x, y, z, sid = Rd<u64>(shader, 0x10), hash = v.info->pgm_hash,
                                            stageable = std::move(stageable)](vk::CommandBuffer cmd) mutable {
@@ -792,6 +795,9 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
         for (const auto& [offset, init] : gds_inits) {
             Stream::Hazard(cmd, {Stream::BufferUse(Stream::GdsBuffer(), offset, 4, true)}, Stream::Agent::Transfer);
             cmd.fillBuffer(Stream::GdsBuffer(), offset, 4, init);
+        }
+        if (hash == Core::Vkb::Aa::CombineCs && Core::Vkb::Aa::On()) [[unlikely]] { // F1: native AA writes the scene colour the combine reads
+            Core::Vkb::Aa::BeforeCombine(cmd, aa_jitter);
         }
         // V4d: a barrier only when the dispatch touches what earlier work since the last barrier wrote (or writes what it read)
         if (!no_barrier) {

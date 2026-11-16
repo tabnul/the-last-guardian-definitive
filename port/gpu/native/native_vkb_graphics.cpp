@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "native/native_vkb_aa.h"
 #include "native/native_vkb_shader_dump.h"
 #include "native/native_framewalk.h"
 #include "native/native_debug_server.h"
@@ -911,6 +912,8 @@ struct DrawJob final : Stream::Job {
     u64 debug_id{};          ///< note 91: debugger mode: the draw's id (per-draw GPU time, capture row); 0 otherwise
     u64 vs_hash{};
     bool capture{};          ///< note 91: the draw belongs to the frame capture
+    bool jittered{};         ///< F1c: the scene geometry's sub-pixel offset applies (viewport)
+    std::array<float, 2> jitter{};
     boost::container::small_vector<Stream::Use, 64> uses;
     boost::container::small_vector<Stream::Use, 9> attachment_uses;
     Stream::Pass pass{};
@@ -1659,13 +1662,27 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     job->fixed_state = &fixed; // interned by FixedStateOf, never freed
     job->masks = v.key.write_masks;
     job->kind = kind, job->a1 = a1, job->a2 = a2, job->a3 = a3;
+    job->jittered = false;
+    if (Core::Vkb::Aa::On()) [[unlikely]] { // F1c: decided here, in game order (two recording threads must not see different offsets within a frame)
+        const u64 dsv = Rd<u64>(ctx, CtxDepthStencilView);
+        // the depth texture's id (+0x30 resource, +0x10 id): the motion pass and the G-buffer bind the same depth through different view objects
+        const u64 dsv_resource = dsv != 0 && IsHeapPointer(dsv) ? Rd<u64>(dsv, 0x30) : 0;
+        const u64 dsv_id = dsv_resource != 0 && IsHeapPointer(dsv_resource) ? Rd<u64>(dsv_resource, 0x10) : 0;
+        const u64 ps = v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0ull;
+        if (ps == Core::Vkb::Aa::MotionPassPs) {
+            Core::Vkb::Aa::NoteSceneDepth(dsv_id);
+        }
+        const bool geometry = (kind == 2) || a1 > 6 || instances > 1;
+        const u64 mesh = Mix(Mix(Mix(a1, a2), a3), v.vs.info ? v.vs.info->pgm_hash : 0ull);
+        job->jittered = Core::Vkb::Aa::DrawJitter(dsv_id, fixed.depth_write, geometry, mesh, job->jitter);
+    }
     job->ps_hash = v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0ull;
     job->color_format0 = static_cast<u32>(v.color_formats[0]);
     job->debug_id = 0, job->capture = false;
+    job->vs_hash = v.vs.info ? v.vs.info->pgm_hash : 0ull;
     if (Core::FrameWalk::DebuggerMode()) [[unlikely]] { // note 91
         static std::atomic<u64> ids{0};
         job->debug_id = ids.fetch_add(1, std::memory_order_relaxed) + 1;
-        job->vs_hash = v.vs.info ? v.vs.info->pgm_hash : 0ull;
         if (Stream::FrameCaptureOn()) {
             job->capture = true;
             Stream::CaptureDrawQueued();
@@ -1834,6 +1851,13 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
         Stream::SetHazardTag(ps_hash);
         (void)Stream::Hazard(cmd, std::span<const Stream::Use>{uses.data(), uses.size()});
     }
+    if (Core::Vkb::Aa::On() && ps_hash == Core::Vkb::Aa::MotionPassPs) [[unlikely]] { // F1: the scene colour, the game's motion and the depth of this frame
+        boost::container::small_vector<vk::Image, 9> images;
+        for (const Stream::Use& u : attachment_uses) {
+            images.push_back(vk::Image{reinterpret_cast<VkImage>(u.handle)});
+        }
+        Core::Vkb::Aa::NoteMotionPass(std::span<const vk::Image>{images.data(), images.size()}, pass.color_count, pass.depth ? true : false);
+    }
     if (Stream::UsePass(cmd, pass, std::span<const Stream::Use>{attachment_uses.data(), attachment_uses.size()})) {
         c_new_passes.fetch_add(1, std::memory_order_relaxed);
     }
@@ -1843,6 +1867,8 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
         u64 generation{~0ull};
         VkCommandBuffer cmd{};
         VkPipeline pipeline{};
+        bool jittered{};
+        std::array<float, 2> jitter{};
         const VkbVulkan::FixedState* fixed{};
         u64 pass_key{~0ull};
         std::array<vk::ColorComponentFlags, VkbAmdGpu::NUM_COLOR_BUFFERS> masks{};
@@ -1906,9 +1932,9 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
     // note 60: the dynamic state comes from the interned fixed state, the pass's depth / stencil / colour count and the write masks (the two note 41 test switches
     // aside): when all of them equal the previous draw's in this recording, nothing is sent
     const u64 pass_key = (pass.depth ? 1ull : 0ull) | (pass.depth_has_stencil ? 2ull : 0ull) | static_cast<u64>(pass.color_count) << 2; // (the note 41 test switches need TLG_VKB_ALL_STATE=1)
-    const bool same_state = state.fixed == fixed_state && state.pass_key == pass_key && state.masks == masks;
+    const bool same_state = state.fixed == fixed_state && state.pass_key == pass_key && state.masks == masks && state.jittered == jittered && state.jitter == jitter;
     const bool send_state = state_once ? first_in_cmd : (!same_state || !Stream::StampsLean());
-    state.fixed = fixed_state, state.pass_key = pass_key, state.masks = masks;
+    state.fixed = fixed_state, state.pass_key = pass_key, state.masks = masks, state.jittered = jittered, state.jitter = jitter;
     (same_state ? c_state_skipped : c_state_sent).fetch_add(1, std::memory_order_relaxed);
     if (send_state) {
     // the dynamic state the pipeline declares, all of it, every draw
@@ -1925,6 +1951,9 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
             viewport.y = 0.f;
             viewport.width = float(std::min<u32>(instance->GetMaxViewportWidth(), 16384));
             viewport.height = float(std::min<u32>(instance->GetMaxViewportHeight(), 16384));
+        } else if (jittered) { // F1c: the frame's sub-pixel offset, in pixels (their viewport jitter)
+            viewport.x += jitter[0];
+            viewport.y += jitter[1];
         }
         viewports.push_back(viewport);
         scissors.push_back(fixed.scissors[i]);
@@ -2005,6 +2034,10 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
     }
     static const bool no_draw = [] { const char* e = std::getenv("TLG_VKB_NO_DRAW"); return e != nullptr && *e == '1'; }(); // kill experiment: everything but the draw
     if (no_draw) {
+    } else if (vs_hash == Core::Vkb::Aa::SmaaVs && Core::Vkb::Aa::Running()) [[unlikely]] {
+        // F1: the native AA replaces the game's SMAA: its edge weights are cleared instead of drawn (their SkipGameSmaa)
+        const vk::ClearAttachment clear{vk::ImageAspectFlagBits::eColor, 0, vk::ClearColorValue{std::array{0.0f, 0.0f, 0.0f, 0.0f}}};
+        cmd.clearAttachments(clear, vk::ClearRect{vk::Rect2D{{0, 0}, pass.extent}, 0, 1});
     } else if (kind == 0) {
         if (state.index_buffer != static_cast<VkBuffer>(index_buffer) || state.index_offset != index_offset || state.index_type != index_type) {
             cmd.bindIndexBuffer(index_buffer, index_offset, index_type);
@@ -2203,6 +2236,7 @@ nlohmann::json Report() {
                                                                                {c_stage_same[1].load(), c_stage_changed[1].load(), c_stage_buffers_same[1].load(), c_stage_images_same[1].load(), c_stage_samplers_same[1].load()}}},
             {"variant_find_us_mean", draws ? static_cast<double>(c_variant_find_ns.load()) / 1e3 / static_cast<double>(draws) : 0.0},
             {"lookups", Core::Vkb::LookupReport()},
+            {"aa", Core::Vkb::Aa::Report()},
             {"recorder_job_us_mean", c_job_n.load() ? static_cast<double>(c_job_ns.load()) / 1e3 / static_cast<double>(c_job_n.load()) : 0.0},
             {"new_passes", c_new_passes.load()},
             {"indirect_recorded", c_indirect_recorded.load()},
