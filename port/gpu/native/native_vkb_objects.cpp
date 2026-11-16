@@ -277,6 +277,23 @@ void InitNewImages() {
                                 .subresourceRange = {n.aspect, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}});
         }
         cmd.pipelineBarrier2({.imageMemoryBarrierCount = static_cast<u32>(barriers.size()), .pImageMemoryBarriers = barriers.data()});
+        // Tint hunt kill experiment (2026-11-16, TLG_VKB_CLEAR_NEW_IMAGES=1): an image with no contents starts as zeros (on the console its memory holds what
+        // the engine left there; a Vulkan image starts undefined), in case something reads it before the first write.
+        static const bool clear_new = [] { const char* e = std::getenv("TLG_VKB_CLEAR_NEW_IMAGES"); return e != nullptr && e[0] == '1'; }();
+        if (clear_new) {
+            for (const NewImage& n : list) {
+                const vk::ImageSubresourceRange range{n.aspect, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
+                if (n.aspect & vk::ImageAspectFlagBits::eColor) {
+                    cmd.clearColorImage(n.image, vk::ImageLayout::eGeneral, vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}}, range);
+                } else {
+                    cmd.clearDepthStencilImage(n.image, vk::ImageLayout::eGeneral, vk::ClearDepthStencilValue{0.0f, 0}, range);
+                }
+            }
+            const vk::MemoryBarrier2 cleared{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands, .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+                                             .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                                             .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite};
+            cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &cleared});
+        }
     });
 }
 
@@ -884,6 +901,28 @@ void TextureCreated(const Object& texture) {
     InitNewImages();
 }
 
+/// Tint hunt census (2026-11-16): the engine's own T# of each texture view (its PS4 data format, number format and channel selects) next to the
+/// Vulkan format our view reads, grouped. Our views use the identity channel mapping; a T# whose channel selects differ from what that format gives
+/// is read with the wrong channels. Under the view lock.
+struct ChannelGroup {
+    u64 views = 0;
+    u64 example_view = 0, example_texture = 0;
+    u32 width = 0, height = 0;
+};
+std::map<std::string, ChannelGroup> channel_groups;
+void NoteViewChannels(const Object& view, const Object& resource, vk::Format format) {
+    static constexpr char Sel[8] = {'0', '1', '?', '?', 'R', 'G', 'B', 'A'};
+    const u32 w1 = view.tsharp[1], w3 = view.tsharp[3];
+    const u32 dfmt = (w1 >> 20) & 0x3f, nfmt = (w1 >> 26) & 0xf;
+    const std::string sel{Sel[w3 & 7], Sel[(w3 >> 3) & 7], Sel[(w3 >> 6) & 7], Sel[(w3 >> 9) & 7]};
+    const std::string key = fmt::format("{} dxgi {} -> {} | T# dfmt {} nfmt {} sel {}", view.kind == Kind::UnorderedAccessView ? "uav" : "srv",
+                                        view.has_desc ? view.desc[0] : resource.format, vk::to_string(format), dfmt, nfmt, sel);
+    ChannelGroup& g = channel_groups[key];
+    if (g.views++ == 0) {
+        g.example_view = view.id, g.example_texture = resource.id, g.width = resource.width, g.height = resource.height;
+    }
+}
+
 void ViewCreated(const Object& view, const Object& resource) {
     if (!On() || !Ready()) {
         return;
@@ -950,6 +989,9 @@ void ViewCreated(const Object& view, const Object& resource) {
     }
     views.emplace(view.id, View{handle, resource.id, r.type, format, ci.subresourceRange, {}});
     c_views_created.fetch_add(1, std::memory_order_relaxed);
+    if (view.has_tsharp && !img->is_depth) {
+        NoteViewChannels(view, resource, format);
+    }
 }
 
 bool DynamicDeviceOn() {
@@ -2071,7 +2113,7 @@ std::string DescribeView(u64 view_id) {
 void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
     vk::Image image{};
     vk::Format format{};
-    u32 width = 0, height = 0, mip = 0, layer = 0;
+    u32 width = 0, height = 0, slices = 1, mip = 0, layer = 0;
     bool depth = false;
     {
         std::scoped_lock lock{mutex};
@@ -2087,6 +2129,9 @@ void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
         image = i->second.image, format = i->second.format, depth = i->second.is_depth;
         mip = v->second.range.baseMipLevel, layer = v->second.range.baseArrayLayer;
         width = std::max(1u, i->second.width >> mip), height = std::max(1u, i->second.height >> mip);
+        if (i->second.type == vk::ImageType::e3D) {
+            slices = std::max(1u, i->second.depth >> mip); // the whole volume (slices one after another)
+        }
     }
     u32 texel = 0;
     switch (format) {
@@ -2113,7 +2158,7 @@ void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
         LOG_WARNING(Render_Vulkan, "vkb image dump {}: format {} not handled", name, vk::to_string(format));
         return;
     }
-    const u64 bytes = block != 0 ? u64{(width + 3) / 4} * ((height + 3) / 4) * block : u64{width} * height * texel;
+    const u64 bytes = (block != 0 ? u64{(width + 3) / 4} * ((height + 3) / 4) * block : u64{width} * height * texel) * slices;
     const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = bytes, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT, .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
     VmaAllocationCreateInfo alloc{};
     alloc.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
@@ -2129,12 +2174,13 @@ void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
     cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &before});
     const vk::BufferImageCopy region{.bufferOffset = 0, .bufferRowLength = 0, .bufferImageHeight = 0,
                                      .imageSubresource = {depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor, mip, layer, 1},
-                                     .imageOffset = {0, 0, 0}, .imageExtent = {width, height, 1}};
+                                     .imageOffset = {0, 0, 0}, .imageExtent = {width, height, slices}};
     cmd.copyImageToBuffer(image, vk::ImageLayout::eGeneral, vk::Buffer{buffer}, region);
     cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &before});
     const u64 after = Stream::RecordingValue(); // this command buffer goes out with that submission
     const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump";
-    const std::string file = (dir / fmt::format("{}_{}x{}_{}.bin", name, width, height, vk::to_string(format))).string();
+    const std::string file = (dir / (slices > 1 ? fmt::format("{}_{}x{}x{}_{}.bin", name, width, height, slices, vk::to_string(format))
+                                                 : fmt::format("{}_{}x{}_{}.bin", name, width, height, vk::to_string(format)))).string();
     std::thread([buffer, allocation, mapped = info.pMappedData, bytes, after, dir, file] {
         Stream::Wait(after);
         std::error_code ec;
@@ -2474,6 +2520,26 @@ vk::Format ViewFormat(u64 view_id) {
     std::scoped_lock lock{mutex};
     const auto v = views.find(view_id);
     return v != views.end() ? v->second.format : vk::Format::eUndefined;
+}
+
+bool ViewExtent(u64 view_id, u32& width, u32& height, u32* depth, u64* texture_id) {
+    std::scoped_lock lock{mutex};
+    const auto v = views.find(view_id);
+    if (v == views.end()) {
+        return false;
+    }
+    const auto i = images.find(v->second.texture_id);
+    if (i == images.end()) {
+        return false;
+    }
+    width = std::max(1u, i->second.width >> v->second.range.baseMipLevel), height = std::max(1u, i->second.height >> v->second.range.baseMipLevel);
+    if (depth != nullptr) {
+        *depth = i->second.type == vk::ImageType::e3D ? std::max(1u, i->second.depth >> v->second.range.baseMipLevel) : 1u;
+    }
+    if (texture_id != nullptr) {
+        *texture_id = v->second.texture_id;
+    }
+    return true;
 }
 
 bool AttachmentFor(u64 view_id, vk::Format format, vk::CommandBuffer cmd, Attachment& out) {
@@ -2853,6 +2919,7 @@ void PublishObjects() {
 nlohmann::json ObjectsReport() {
     u64 live_images, live_views, pending;
     nlohmann::json refused = nlohmann::json::object();
+    nlohmann::json channel_census = nlohmann::json::object();
     {
         std::scoped_lock lock{mutex};
         live_images = images.size(), live_views = views.size(), pending = doomed.size();
@@ -2870,10 +2937,14 @@ nlohmann::json ObjectsReport() {
         for (const auto& [pair, n] : refused_pairs) {
             refused[pair] = n;
         }
+        for (const auto& [key, g] : channel_groups) {
+            channel_census[key] = fmt::format("{} views, e.g. view {} of texture {} ({}x{})", g.views, g.example_view, g.example_texture, g.width, g.height);
+        }
     }
     const u64 made = c_images_created.load();
     return nlohmann::json(
-                         {{"display_texture", g_display_texture.load(std::memory_order_relaxed)},
+                         {{"view_channel_census", channel_census},
+                          {"display_texture", g_display_texture.load(std::memory_order_relaxed)},
                           {"images_live", live_images},
                           {"images_created", made},
                           {"images_failed", c_images_failed.load()},

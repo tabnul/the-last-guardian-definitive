@@ -4,6 +4,7 @@
 #include "native/native_debug_server.h"
 #include "native/native_marker.h"
 #include "native/native_vkb_compute.h"
+#include "native/native_device.h"
 
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
 
@@ -15,7 +16,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <filesystem>
 #include <mutex>
+#include <unordered_set>
 #include <unordered_map>
 #include <vector>
 #include <boost/container/small_vector.hpp>
@@ -155,6 +158,36 @@ u64 VariantKey(u64 ctx, u64 shader) {
         default:
             h = Mix(h, type); // constant buffers and samplers do not change a module
             break;
+        }
+    }
+    // Tint hunt kill experiment (2026-11-16, TLG_VKB_FULL_COMPUTE_KEY=1): the key also takes every descriptor word the compile reads (each used resource slot's
+    // T# / V# without its address, every sampler slot's S#), so a module is never reused with descriptors it was not specialized with.
+    static const bool full = [] { const char* e = std::getenv("TLG_VKB_FULL_COMPUTE_KEY"); return e != nullptr && e[0] == '1'; }();
+    if (full) {
+        for (u32 half = 0; half < 2; ++half) {
+            for (u64 bits = Rd<u64>(shader, 0xf0 + half * 8); bits != 0; bits &= bits - 1) {
+                const u32 s = half * 64 + static_cast<u32>(std::countr_zero(bits));
+                const u64 o = Rd<u64>(ctx, 0x580 + Stage * 0x400 + s * 8);
+                if (o == 0 || !IsHeapPointer(o)) {
+                    continue;
+                }
+                const u32 kind = Rd<u32>(o, 0x44);
+                const bool buffer = kind == 1 || kind == 0xb;
+                const u64 src = o + (buffer ? 0x78 : 0x58);
+                h = Mix(h, 0x5100 + s);
+                h = Mix(h, Rd<u32>(src, 4) & ~0xffu); // word 1 without the address's high bits
+                for (u32 w = 2; w < (buffer ? 4u : 8u); ++w) {
+                    h = Mix(h, Rd<u32>(src, w * 4));
+                }
+            }
+        }
+        for (u32 s = 0; s < 16; ++s) {
+            if (const u64 o = Rd<u64>(ctx, 0x2000 + s * 8); o != 0 && IsHeapPointer(o)) {
+                h = Mix(h, 0x5200 + s);
+                for (u32 w = 0; w < 4; ++w) {
+                    h = Mix(h, Rd<u32>(o, 0x64 + w * 4));
+                }
+            }
         }
     }
     return h;
@@ -371,6 +404,78 @@ u64 SlotObject(u64 ctx, u32 kind, u32 slot, bool async) {
 }
 
 /// Binds and records one dispatch of a compiled variant into the frame stream (mutex held)
+// Debug frame dump (ArmFrameDump, /vkb_dump_frame): the images of the dispatches of a window of graphics submissions, once each
+struct FrameDumpState {
+    std::mutex mutex;
+    std::atomic<bool> armed{false};
+    u64 from = 0, to = 0; ///< graphics submissions [from, to)
+    u32 min_width = 0, max_images = 0, images = 0, dispatches = 0;
+    std::unordered_set<u64> seen; ///< engine view ids already dumped
+    std::string log;              ///< one line per dumped image, in order (written as log/vkb_image_dump/frame_dump.txt at the end)
+};
+FrameDumpState frame_dump;
+void FrameDumpDispatch(u64 ctx, const Variant& v, std::vector<std::pair<u64, std::string>>& dump_views) {
+    if (!frame_dump.armed.load(std::memory_order_relaxed)) [[likely]] {
+        return;
+    }
+    std::scoped_lock lock{frame_dump.mutex};
+    const u64 submit = Core::Vkb::GraphicsSubmits();
+    if (submit < frame_dump.from) {
+        return;
+    }
+    if (submit >= frame_dump.to || frame_dump.images >= frame_dump.max_images) {
+        frame_dump.armed.store(false, std::memory_order_relaxed);
+        const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump";
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        if (FILE* f = std::fopen((dir / "frame_dump.txt").string().c_str(), "w")) {
+            std::fputs(frame_dump.log.c_str(), f);
+            std::fclose(f);
+        }
+        LOG_INFO(Render_Vulkan, "vkb frame dump: {} images from {} dispatches written", frame_dump.images, frame_dump.dispatches);
+        return;
+    }
+    const u32 index = frame_dump.dispatches++;
+    for (u32 i = 0; i < v.images.size() && frame_dump.images < frame_dump.max_images; ++i) {
+        const Source& src = v.images[i];
+        const u64 object = src.cls == Source::Class::Slot ? SlotObject(ctx, src.kind, src.slot, v.async) : 0;
+        if (object == 0) {
+            continue;
+        }
+        const u64 view_id = Rd<u64>(object, 0x10);
+        u32 w = 0, h = 0, d = 1;
+        u64 texture_id = 0;
+        const bool written = v.info->images[i].is_written;
+        // screen-sized images and every volume; a written one each time it is written (later writes into the lit image), a read one once
+        if (!Core::Vkb::ViewExtent(view_id, w, h, &d, &texture_id) || (w < frame_dump.min_width && d <= 1) || (!frame_dump.seen.insert(view_id).second && !written)) {
+            continue;
+        }
+        const std::string name = fmt::format("fd{:03}_d{:04}_cs{:08x}_i{}{}_v{}", frame_dump.images, index, v.info->pgm_hash, i, written ? "W" : "R", view_id);
+        dump_views.push_back({view_id, name});
+        std::string extra;
+        if (d > 1 || h < 2160) { // a volume or a table (not a screen target): the engine's own copy (guest memory, in its PS4 layout) and its T#, to compare with ours
+            Core::NativeDevice::Object view_object, texture;
+            const bool view_known = Core::NativeDevice::Lookup(view_id, view_object), texture_known = Core::NativeDevice::Lookup(texture_id, texture);
+            extra = fmt::format("  lookup view {} texture {} (id {}) address {:#x} bytes {} kind {} T# {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x}", view_known,
+                                texture_known, texture_id, texture.address, texture.bytes, static_cast<u32>(texture.kind), view_object.tsharp[0], view_object.tsharp[1],
+                                view_object.tsharp[2], view_object.tsharp[3], view_object.tsharp[4], view_object.tsharp[5], view_object.tsharp[6], view_object.tsharp[7]);
+            if (texture_known && texture.address != 0 && texture.bytes != 0 && texture.bytes <= (256ull << 20)) {
+                const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump";
+                std::error_code ec;
+                std::filesystem::create_directories(dir, ec);
+                if (FILE* f = std::fopen((dir / fmt::format("{}_guest_{:#x}_{}B.raw", name, texture.address, texture.bytes)).string().c_str(), "wb")) {
+                    std::fwrite(reinterpret_cast<const void*>(texture.address), 1, texture.bytes, f);
+                    std::fclose(f);
+                }
+                extra += "  guest copy written";
+            }
+        }
+        frame_dump.log += fmt::format("{}  submit {}  dispatch {}  shader {:#010x}  image {} {}  {}{}\n", name, submit, index, v.info->pgm_hash, i, written ? "written" : "read",
+                                      Core::Vkb::DescribeView(view_id), extra);
+        ++frame_dump.images;
+    }
+}
+
 void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_address) {
     if (Core::Vkb::FillReadersOn()) {
         Core::Vkb::CensusTag((1ull << 63) | shader); // note 49 census: compute, the engine's shader id
@@ -647,7 +752,9 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
             }
         }
     }
-    Stream::Defer(Stream::Work::Dispatch, [dump_views = std::move(dump_views), uses = std::move(uses), gds_inits = std::move(gds_inits), buffer_infos = std::move(buffer_infos), image_infos = std::move(image_infos),
+    const bool dump_buffers = !dump_views.empty(); // the TLG_VKB_IMAGE_DUMP_CS dump only (the frame dump takes images alone)
+    FrameDumpDispatch(ctx, v, dump_views);
+    Stream::Defer(Stream::Work::Dispatch, [dump_views = std::move(dump_views), dump_buffers, uses = std::move(uses), gds_inits = std::move(gds_inits), buffer_infos = std::move(buffer_infos), image_infos = std::move(image_infos),
                                            sampler_infos = std::move(sampler_infos), image_types = std::move(image_types), pipeline = v.pipeline, layout = v.pipeline_layout, push,
                                            args_buffer, args_offset, x, y, z, sid = Rd<u64>(shader, 0x10), hash = v.info->pgm_hash,
                                            stageable = std::move(stageable)](vk::CommandBuffer cmd) mutable {
@@ -693,7 +800,7 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
         for (const auto& [id, name] : dump_views) {
             Core::Vkb::DumpView(cmd, id, name);
         }
-        if (!dump_views.empty()) {
+        if (dump_buffers) {
             for (u32 i = 0; i < buffer_infos.size(); ++i) {
                 Core::Vkb::DumpBuffer(cmd, buffer_infos[i].buffer, buffer_infos[i].offset, buffer_infos[i].range == VK_WHOLE_SIZE ? 0 : buffer_infos[i].range, fmt::format("cs_b{}", i));
             }
@@ -849,6 +956,19 @@ nlohmann::json GpuTimeReport() {
     }
     return {{"frames", Core::Vkb::GraphicsSubmits()}, {"timed_submissions", timed_submits}, {"dispatch_ms_per_frame", static_cast<double>(timed_ns) / 1e6 / frames},
             {"worst_submission_ms", static_cast<double>(timed_submit_max_ns) / 1e6}, {"top_shaders", top}};
+}
+
+nlohmann::json ArmFrameDump(u32 submits, u32 min_width, u32 max_images) {
+    std::scoped_lock lock{frame_dump.mutex};
+    frame_dump.from = Core::Vkb::GraphicsSubmits() + 1;
+    frame_dump.to = frame_dump.from + std::max(submits, 1u);
+    frame_dump.min_width = min_width, frame_dump.max_images = std::max(max_images, 1u);
+    frame_dump.images = 0, frame_dump.dispatches = 0;
+    frame_dump.seen.clear();
+    frame_dump.log.clear();
+    frame_dump.armed.store(true, std::memory_order_relaxed);
+    return {{"armed_from_submit", frame_dump.from}, {"to_submit", frame_dump.to}, {"min_width", min_width}, {"max_images", frame_dump.max_images},
+            {"folder", (Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump").string()}};
 }
 
 void FrameDone() {

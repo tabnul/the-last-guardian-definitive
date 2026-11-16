@@ -53,6 +53,8 @@ struct Attachment {
 bool AttachmentFor(u64 view_id, vk::Format format, vk::CommandBuffer cmd, Attachment& out);
 /// The format of our view of engine view `view_id` (eUndefined: none)
 [[nodiscard]] vk::Format ViewFormat(u64 view_id);
+/// Debug: the size of the first subresource of our view of engine view `view_id` (false: none)
+bool ViewExtent(u64 view_id, u32& width, u32& height, u32* depth = nullptr, u64* texture_id = nullptr);
 /// note 41, debug only: the first subresource of our view of engine view `view_id` to log/vkb_image_dump/<name>_<w>x<h>_<format>.bin once the GPU has it (recording thread, outside a pass)
 void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name);
 /// note 41, debug only: `size` bytes of `buffer` at `offset` (the GPU's copy) to log/vkb_image_dump/<name>_<size>B.gpu once the GPU has it

@@ -20,6 +20,10 @@ void DispatchAsync(u64 jcc, u32 x, u32 y, u32 z);
 /// After the frame's submission has finished (SubmitGraphics): the GPU time of its dispatches, by shader
 void FrameDone();
 
+/// Debug (tint hunt, 2026-11-16; /vkb_dump_frame): over the next `submits` graphics submissions, every dispatch dumps each image of at least `min_width` wide
+/// it reads or writes, once per image, right after the dispatch, at most `max_images` (log/vkb_image_dump, names in dispatch order). Returns what was armed.
+[[nodiscard]] nlohmann::json ArmFrameDump(u32 submits, u32 min_width, u32 max_images);
+
 [[nodiscard]] nlohmann::json Report();
 
 } // namespace Core::Vkb::Compute

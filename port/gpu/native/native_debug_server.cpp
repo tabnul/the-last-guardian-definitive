@@ -22,6 +22,7 @@
 #include "native/native_target_inputs.h"
 #include "native/native_debug_server.h"
 #include "native/native_vkb.h"
+#include "native/native_vkb_compute.h"
 #include "native/native_log.h"
 #include "native/native_wait_registers.h"
 #include "native/native_config.h"
@@ -678,6 +679,12 @@ void RegisterBuiltins() {
              [](const Params& params) {
                  const u64 mode = ParseNumber(params, "mode", 1);
                  return nlohmann::json{{"folder", Core::Marker::RequestForTest(mode == 2 ? 2 : 1)}, {"markers_written", Core::Marker::Written()}};
+             });
+    Register("/vkb_dump_frame", "(debug, TLG_VKB=1) ?submits=8&min_width=960&max=48: over the next graphics submissions every dispatch dumps each image at least min_width wide "
+                                "it reads or writes, once per image, right after the dispatch (log/vkb_image_dump: fdNNN_*.bin, frame_dump.txt lists them in order)",
+             [](const Params& params) {
+                 return Core::Vkb::Compute::ArmFrameDump(static_cast<u32>(ParseNumber(params, "submits", 8)), static_cast<u32>(ParseNumber(params, "min_width", 960)),
+                                                         static_cast<u32>(ParseNumber(params, "max", 48)));
              });
     Register("/framewalk", "(frame walk, Shift+F5 / F5) the state, the folder and timeline file of the last freeze; ?action=record|freeze|resume does what the keys do",
              [](const Params& params) {
