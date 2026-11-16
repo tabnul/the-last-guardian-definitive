@@ -16,6 +16,7 @@
  "name",
  "Saves the current settings under this name (an existing preset with the name is replaced).",
  "Deletes the selected preset file. The settings stay as they are.",
+ "Greyed: not available with the Vulkan backend yet.",
  "Preset",
  "Display",
  "Windowed",

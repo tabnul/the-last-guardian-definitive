@@ -251,7 +251,37 @@ def debug_flags_changed(settings):
             if debug_flag_on(settings, name) != default]
 
 
+# The renderer (merge plan M3 (7)): 'default' is this port's renderer; 'vulkan' the engine-to-Vulkan backend
+# (TLG_VKB=1, experimental), which draws from the engine's own render calls. Read at start (restart to switch).
+RENDERERS = ('default', 'vulkan')
+
+# Start-up variables of the default renderer only (read by gpu/shadps4/video_core and its settings, never by the backend):
+# not passed while the backend is picked. An explicit TLG_* in the environment still wins.
+THEIR_RENDERER_ENV = frozenset((
+    'TLG_PIPELINE_BINARIES', 'TLG_GC_BUDGET_MB', 'TLG_JITTER', 'TLG_READBACK_LINEAR', 'TLG_FSR4_DIR',
+    'TLG_TEXPACK_DIR', 'TLG_BUFFER_READBACK_STATS', 'TLG_RENDER_RESOLUTION', 'TLG_BACKGROUND_WARMUP',
+    'TLG_ARENA_FREE', 'TLG_FAULT_NODRAIN', 'TLG_HDR_POST_VS', 'TLG_MEMORY_PRIORITY', 'TLG_PAGE_HISTORY',
+    'TLG_RESIDENCY_GRANULE_MB', 'TLG_SEM_SPIN', 'TLG_SUBMIT_DRAWS', 'TLG_VK_FAULT', 'TLG_WAVE64_STAGES',
+    'TLG_OBJECT_MOTION', 'TLG_RB_HOT', 'TLG_FAST_READ_FAULT', 'TLG_GC_BATCH_DOWNLOAD', 'TLG_DEFERRED_READBACK',
+    'TLG_STALE_READBACK', 'TLG_PERF_DIAG', 'TLG_WRITE_LOG',
+))
+
+
+def backend_on(settings):
+    """The engine-to-Vulkan backend is the renderer: picked in the launcher, or TLG_VKB=1 set outside it."""
+    explicit = os.environ.get('TLG_VKB')
+    if explicit is not None and explicit != '':
+        return explicit != '0'
+    return settings.get('renderer', 'default') == 'vulkan'
+
+
+def their_renderer_flag(name):
+    """A Debug > Flags switch of the default renderer only (greyed and not passed with the backend)."""
+    return next((variable in THEIR_RENDERER_ENV for flag, variable, *_ in DEBUG_FLAGS if flag == name), False)
+
+
 DEFAULT_SETTINGS = {
+    'renderer': 'default',         # RENDERERS: the default renderer or the engine-to-Vulkan backend (experimental)
     # Source tree: the merged game view and the console modules of ~/decomp. Package: the player
     # picks the game folder; libSceNgs2.sprx goes in system_lib/ next to the executable.
     'game_dir': '' if FROZEN else str(REPO_DIR / 'game' / 'CUSA03627'),
@@ -706,6 +736,8 @@ def prepare(settings, log=print):
     # The Quality row (tlg.ini): the render size below (DLSS / FSR upscale) or above (supersampling,
     # experimental, with the GPU heap above 4 GiB) the output size.
     render = render_resolution(resolution(settings), quality_preset(read_ini(user_dir() / 'tlg.ini')))
+    if backend_on(settings):
+        render = None   # the backend has no upscaler yet: the game renders at the output size (M3 (7))
     scripts = PORT_DIR / 'scripts'
     modules = ['libc.prx', 'libSceFios2.prx']
     ngs2 = ngs2_module(settings)
@@ -1012,6 +1044,12 @@ def build_env(settings, extra=None):
             env[variable] = value
     if int(settings.get('gpu_id', -1)) >= 0:
         env.setdefault('TLG_GPU_ID', str(int(settings['gpu_id'])))
+    # The renderer (M3 (7)): with the backend, the default renderer's own variables are left out.
+    if backend_on(settings):
+        env.setdefault('TLG_VKB', '1')
+        for key in THEIR_RENDERER_ENV:
+            if key not in os.environ:
+                env.pop(key, None)
     if extra:
         env.update(extra)
     return env
@@ -1181,6 +1219,8 @@ def launch(settings, seconds=0, extra_env=None, detached=False, header=()):
     raise_open_file_limit()
     with open(log, 'wb') as out:   # the child keeps its own copy of the descriptor
         out.write((build_info() + '\n').encode('utf-8'))   # always, Advanced logging or not
+        if backend_on(settings):
+            out.write(b'Renderer: engine-to-Vulkan backend (TLG_VKB=1, experimental)\n')
         out.write(''.join(line + '\n' for line in header).encode('utf-8'))
         if settings.get('debug_logging'):
             out.write(b'Advanced logging: on\n')

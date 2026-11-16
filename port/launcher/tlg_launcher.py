@@ -194,6 +194,14 @@ TEXT = {
     'Fullscreen': 'Fullscreen',
     'vsync': 'VSync',
     'gpu': 'Graphics card',
+    'renderer': 'Renderer',
+    'renderer_default': 'Default',
+    'renderer_vulkan': 'Vulkan backend (experimental)',
+    'renderer_hint': ('Default: the renderer with every graphics option. Vulkan backend: draws straight from the game\'s own '
+                      'render calls (experimental, restart to switch); the options it does not have yet are greyed out '
+                      'and left out at start: upscaling, anti-aliasing, frame generation, HDR, sharpening, presets, '
+                      'texture packs, shadow resolution, LOD bias, anisotropic filtering and the memory switches.'),
+    'renderer_note': 'Greyed options are not available with the Vulkan backend yet.',
     'gpu_auto': 'Automatic (most video memory)',
     'gpu_hint': ('Which graphics card runs the game. On a PC with two cards, '
                  'pick the integrated one to test a weak-GPU problem. Automatic takes the card with the most video memory.'),
@@ -1176,6 +1184,7 @@ class Launcher:
         self.sharpen_strength.set(value)
         self.sharpen_value = value
         self.sharpen_shown.configure(text=f'{value}%')
+        self.apply_renderer()
 
     def strength_moved(self, raw):
         if self.sharpen_value is None:
@@ -1188,6 +1197,47 @@ class Launcher:
             tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {'sharpness': f'{step / 100:.2f}'})
             self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
             self.refresh_preset()
+
+    def theirs(self, *widgets):
+        """Widgets of the default renderer's own options: greyed while the Vulkan backend is the renderer
+        (merge plan M3 (7)); they come back as the backend gets each feature."""
+        self.__dict__.setdefault('their_widgets', []).extend(w for w in widgets if w is not None)
+
+    def apply_renderer(self):
+        """Greys the default renderer's options while the backend is picked (the rows' own rules apply otherwise)."""
+        if not tlg_run.backend_on(self.settings):
+            note = getattr(self, 'renderer_note', None)
+            if note is not None and note.winfo_exists():
+                note.grid_remove()
+            return
+        alive = []
+        for widget in getattr(self, 'their_widgets', []):
+            try:
+                if not widget.winfo_exists():
+                    continue
+                widget.state(['disabled'])
+            except (tk.TclError, AttributeError):
+                continue
+            alive.append(widget)
+        self.their_widgets = alive
+        note = getattr(self, 'renderer_note', None)
+        if note is not None and note.winfo_exists():
+            note.grid()
+
+    def renderer_changed(self):
+        """Renderer picked: their options greyed, or back under their own rules (the rows read tlg.ini again)."""
+        if not tlg_run.backend_on(self.settings):
+            for widget in getattr(self, 'their_widgets', []):
+                try:
+                    if widget.winfo_exists():
+                        widget.state(['!disabled'])
+                except (tk.TclError, AttributeError):
+                    pass
+            self.reload_ini()
+            self.update_strength({**INI_DEFAULTS, **tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')})
+            self.sync_log_flags()
+        self.apply_renderer()
+        self.refresh_status()
 
     def update_fg(self, ini=None):
         """The Frame generation row: greyed out and Off at a 30 FPS game rate, with the reason
@@ -1202,6 +1252,7 @@ class Launcher:
             self.fg_note.grid()
         else:
             self.fg_note.grid_remove()
+        self.apply_renderer()
 
     def update_aa_note(self, ini):
         # DLSS or FSR 4 stays the choice in tlg.ini; the game runs FSR 3.1 while the card lacks it.
@@ -1234,6 +1285,7 @@ class Launcher:
         self.aa_box.current(values.index(upscaler) if free and upscaler in values else 0)
         if not free:
             self.aa_box.configure(state='disabled')
+        self.apply_renderer()
 
     # -- window -----------------------------------------------------------------------------
     def build(self):
@@ -1324,6 +1376,8 @@ class Launcher:
                 pack.grid(row=1, column=3, padx=(6, 0), pady=(0, 6))
                 add_tooltip(pack, self.t('pack_zar_tip'))
         self.vars['texpack_dir'].trace_add('write', lambda *_: self.refresh_texture_pack())
+        self.theirs(*game.grid_slaves(row=5))  # the texture packs folder row
+        self.apply_renderer()
         audio = section(left, self.t('audio'))
         audio.grid(sticky='ew')
         self.check(audio, 0, 'native_audio')
@@ -1467,6 +1521,11 @@ class Launcher:
         self.check(video, 1, 'vsync')
         self.check(video, 2, 'show_fps')
         self.build_gpu_choice(video, 3)
+        self.combo(video, 4, 'renderer', tlg_run.RENDERERS, lambda k: self.t('renderer_' + k),
+                   on_change=self.renderer_changed)
+        self.hint(video, 4, 2, 'renderer_hint')
+        self.renderer_note = ttk.Label(video, text=self.t('renderer_note'), foreground=MUTED, wraplength=320)
+        self.renderer_note.grid(row=6, column=0, columnspan=2, sticky='w')
         self.combo(video, 5, 'frame_rate', tlg_run.FRAME_RATES, lambda k: self.t(f'fps_{k}'),
                    on_change=lambda: (self.update_fg(), self.refresh_status()))
         self.hint(video, 5, 2, 'fps_hint')
@@ -1513,6 +1572,7 @@ class Launcher:
         ttk.Checkbutton(video, text='HDR', variable=self.hdr_var, command=hdr_toggled).grid(
             row=16, column=0, columnspan=2, sticky='w', pady=(6, 0))
         self.hint(video, 16, 2, 'hdr_hint')
+        self.theirs(*video.grid_slaves(row=16, column=0))  # HDR
         self.photo_hdr_var = tk.BooleanVar(value=ini.get('photo_hdr', '1') != '0')
 
         def photo_hdr_toggled():
@@ -1522,6 +1582,7 @@ class Launcher:
         ttk.Checkbutton(video, text=self.t('photo_hdr'), variable=self.photo_hdr_var,
                         command=photo_hdr_toggled).grid(row=17, column=0, columnspan=2, sticky='w')
         self.hint(video, 17, 2, 'photo_hdr_hint')
+        self.theirs(*video.grid_slaves(row=17, column=0), self.method_box, self.quality_box, self.aa_box, self.fg_box)
         self.build_aa_filters(video, 18)
 
         memory = section(main, self.t('memory'))
@@ -1534,6 +1595,8 @@ class Launcher:
         spin.grid(row=0, column=1, sticky='w', padx=6)
         spin.bind('<FocusOut>', lambda _: self.changed())
         self.hint(memory, 0, 2, 'vram_hint')
+        self.theirs(spin)  # their texture cache budget
+        self.apply_renderer()
 
         # texture_cleanup moved to Debug > Flags (2026-11-12).
 
@@ -1570,6 +1633,8 @@ class Launcher:
                 tlg_run.save_settings(self.settings)
             box = ttk.Checkbutton(frame, text=self.t(name), variable=var, command=toggled)
             box_holder[0] = box
+            if tlg_run.their_renderer_flag(name):
+                self.theirs(box)
             box.grid(row=row, column=0, columnspan=2, sticky='w', pady=2)
             help_mark(frame, self.t(name + '_hint'), box).grid(row=row, column=2, sticky='w', padx=(4, 0))
             resets.append(lambda: (var.set(default), toggled()))
@@ -1610,6 +1675,7 @@ class Launcher:
                 self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
             box = ttk.Checkbutton(frame, text=self.t(key), variable=var, command=ini_toggled)
             box.grid(row=row, column=0, columnspan=2, sticky='w', pady=2)
+            self.theirs(box)  # their texture cache and buffer memory
             help_mark(frame, self.t(key + '_hint'), box).grid(row=row, column=2, sticky='w', padx=(4, 0))
             resets.append(lambda var=var, ini_toggled=ini_toggled, on=default == '1': (var.set(on), ini_toggled()))
             row += 1
@@ -1621,6 +1687,7 @@ class Launcher:
             if name in tlg_run.DEBUG_LOG_FLAGS:
                 var.set(tlg_run.debug_flag_on(self.settings, name))
                 box.state(['disabled'] if self.settings.get('debug_logging') else ['!disabled'])
+        self.apply_renderer()
 
     def build_logs(self):
         """Logs: the game log as it runs, and the logs folder."""
@@ -2170,6 +2237,7 @@ class Launcher:
         self.sharpen_strength = ttk.Scale(cell, from_=0, to=400, length=110, command=self.strength_moved)
         self.sharpen_strength.pack(side='left', padx=(8, 4))
         self.sharpen_shown.pack(side='left')
+        self.theirs(box, self.sharpen_strength)
         self.update_strength(ini)
 
     def build_filters(self, parent, row):
@@ -2225,6 +2293,7 @@ class Launcher:
         self.pack_box.grid(row=row + 4, column=1, sticky='w', padx=6, pady=(6, 2))
         self.pack_box.bind('<<ComboboxSelected>>', lambda _: self.texture_pack_picked())
         self.hint(parent, row + 4, 2, 'texture_pack_hint')
+        self.theirs(self.preset_box, self.pack_box, *save.winfo_children())
         self.refresh_preset()
         self.refresh_texture_pack()
         self.ini_stamp = self.ini_files_stamp()
@@ -2624,6 +2693,8 @@ class Launcher:
         aniso.grid(row=row + 4, column=1, sticky='w', padx=6, pady=2)
         aniso.bind('<<ComboboxSelected>>', lambda _: write({'aniso': ANISO_LEVELS[aniso.current()]}))
         hint(scene, row + 5, 'aniso_hint', '16x', aniso_labels[0])
+        self.theirs(shadow, bias_slider, aniso, *buttons.winfo_children())
+        self.apply_renderer()
 
         # The game's effects, in two columns below.
         effects = section(frame, self.t('effects'))
@@ -2719,6 +2790,7 @@ class Launcher:
         current = str(self.settings.get('gpu_readbacks', '2'))
         mode.current(modes.index(current) if current in modes else 0)
         mode.grid(row=row, column=1, sticky='w', padx=6)
+        self.theirs(mode)
 
         def mode_picked():
             self.settings['gpu_readbacks'] = modes[mode.current()]
@@ -2736,8 +2808,9 @@ class Launcher:
             def toggled(item=item, var=var, default=default):
                 save(item.key, var.get(), default)
 
-            ttk.Checkbutton(parent, text=item.name, variable=var, command=toggled).grid(
-                row=row, column=0, columnspan=2, sticky='w')
+            readback_box = ttk.Checkbutton(parent, text=item.name, variable=var, command=toggled)
+            readback_box.grid(row=row, column=0, columnspan=2, sticky='w')
+            self.theirs(readback_box)
             note(parent, row, item.what, self.t('mark_on' if default else 'mark_off'),
                  backports_table.READBACK_WHY[item.id])
             resets.append(lambda var=var, default=default, toggled=toggled: (var.set(default), toggled()))
@@ -2750,6 +2823,8 @@ class Launcher:
         chosen = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini').get('readback_batch', batch.default)
         size.current(sizes.index(chosen) if chosen in sizes else sizes.index(batch.default))
         size.grid(row=row, column=1, sticky='w', padx=6)
+        self.theirs(size)
+        self.apply_renderer()
 
         def size_picked():
             tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)

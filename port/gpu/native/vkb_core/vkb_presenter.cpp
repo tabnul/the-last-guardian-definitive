@@ -249,7 +249,16 @@ Frame* Presenter::PrepareFrame(const Libraries::VkbVideoOut::BufferAttributeGrou
 
     // Vulkan has no sRGB variant of the 10-bit format, so an A2R10G10B10Srgb buffer is decoded in the pass
     pp_settings.srgb_input = pixel_format == Libraries::VkbVideoOut::PixelFormat::A2R10G10B10Srgb;
-    pp_settings.color_adjust = 0; // their renderer's colour settings (greyed out under ours)
+    // the menu's colour adjustments (SDR), in the post process pass
+    {
+        TlgSettings::ReloadIfRequested(); // the in-game menu and the launcher change tlg.ini live
+        const auto& graphics = TlgSettings::Get();
+        pp_settings.color_adjust = graphics.color_adjust ? 1u : 0u;
+        pp_settings.brightness = graphics.brightness;
+        pp_settings.contrast = graphics.contrast;
+        pp_settings.saturation = graphics.saturation;
+        pp_settings.user_gamma = graphics.color_gamma;
+    }
     pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings);
 
     // our image goes back to the general layout (the backend keeps every image there)

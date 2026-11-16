@@ -18,6 +18,7 @@
 
 #include <SDL3/SDL.h>
 #include "tlg_settings.h"
+#include "native/native_vkb.h" // VKB: Core::Vkb::On (their settings greyed under the backend)
 #include "tlg_lab.h"
 #include "tlg_fun.h"
 #include "tlg_lang.h"
@@ -469,21 +470,43 @@ void PresetRows() {
     ImGui::PopID();
 }
 
+// VKB: settings of their renderer that the engine-to-Vulkan backend (TLG_VKB=1) does not have yet are greyed while it runs (merge plan M3 (7));
+// each comes back when the backend has it (M7). The ones the game's Lua scripts apply (field of view, game effects, wind) work with both.
+bool BackendRuns() {
+    static const bool on = Core::Vkb::On();
+    return on;
+}
+void BeginTheirs() {
+    ImGui::BeginDisabled(BackendRuns());
+}
+void EndTheirs() {
+    ImGui::EndDisabled();
+}
+void TheirsNote() {
+    if (BackendRuns()) {
+        ImGui::TextDisabled("%s", TR("Greyed: not available with the Vulkan backend yet."));
+    }
+}
+
 void ImageTab() {
     namespace G = TlgGraphics;
     auto& s = TlgSettings::Get();
     const auto& d = Defaults();
+    TheirsNote();
     ImGui::SeparatorText(TR("Preset"));
+    BeginTheirs();
     if (BeginRows("##preset")) {
         PresetRows();
         ImGui::EndTable();
     }
+    EndTheirs();
     ImGui::SeparatorText(TR("Display"));
     if (BeginRows("##display")) {
         static const char* const modes[] = {TR("Windowed"), TR("Borderless window"), TR("Fullscreen")};
         ChoiceRow(TR("Display mode"), s.display_mode, G::DisplayModeCount == 3 ? modes : G::DisplayModeNames.data(),
                   nullptr, G::DisplayModeCount, TR("Windowed, borderless window or exclusive fullscreen."), d.display_mode);
         CheckRow("VSync", s.vsync, TR("Waits for the monitor: no tearing, a little more input delay."), d.vsync);
+        BeginTheirs(); // VKB: HDR and frame generation through the end of the display rows
         CheckRow("HDR", s.hdr,
                  TR("The game's own HDR10 output, used when HDR is on in Windows display settings. Applies after a restart."), d.hdr);
         static const char* const fg_labels[] = {TR("Off"), "DLSS", "FSR 3.1"};
@@ -518,12 +541,14 @@ void ImageTab() {
             Help(fg_help.c_str(), {ChoiceLabel(fg_labels, fg_values, 3, d.frame_generation), ""});
             ImGui::PopID();
         }
+        EndTheirs();
         ImGui::EndTable();
     }
     const int iw = s.image_width, ih = s.image_height, ww = s.window_width, wh = s.window_height;
     // tlg: only spatial filters on the final image. The temporal upscalers (FSR 3/4, DLSS) work on
     // the scene color (vk_temporal_upscaler), so they are not offered here.
     ImGui::SeparatorText(TR("Sharpening"));
+    BeginTheirs(); // VKB: sharpening, upscaling and anti-aliasing
     if (BeginRows("##scaling")) {
         // tlg: one Sharpening setting (2026-11-07): with DLSS / FSR / TAA it is their own RCAS in
         // the AA step (scene only, the UI stays crisp), with Built-in AMD CAS on the final picture.
@@ -670,12 +695,15 @@ void ImageTab() {
                  TR("Smooths jagged edges (feathers, grass, railings) on the final image. The game draws its HUD and subtitles into the same image, so text edges are smoothed too. About 0.2 to 0.4 ms per frame at 1080p (RTX 2060)."), d.smaa, false);
         ImGui::EndTable();
     }
+    EndTheirs();
     ImGui::SeparatorText(TR("Enhancements"));
     if (BeginRows("##enhancements")) {
         static const char* const shadow_labels[] = {TR("Game (2048)"), "4096", "8192"};
         static const int shadow_values[] = {1, 2, 4};
+        BeginTheirs(); // VKB
         ChoiceRow(TR("Shadow resolution"), s.shadow_scale, shadow_labels, shadow_values, 3,
                   TR("Draws the shadow maps at 2x or 4x the game's 2048x2048 (default: Game). The main gain is much less shimmer of tree and leaf shadows, with any anti-aliasing. 8192 costs about 8 FPS and up to about 2 GB of video memory (4096 about a quarter of that). With 8 GB of video memory or less keep Game: running out causes stutter and crashes."), d.shadow_scale, 1);
+        EndTheirs();
         SliderRow(TR("Field of view"), s.fov, 50, 110, "%d°",
                   TR("Camera field of view. Default 70° is as shipped; higher shows more around the boy. Applies while the game runs (not in the paused menu)."), d.fov, 70);
         ImGui::EndTable();
@@ -716,6 +744,7 @@ void ImageTab() {
         ImGui::EndTable();
     }
     ImGui::SeparatorText(TR("Textures"));
+    BeginTheirs(); // VKB: LOD bias, anisotropy, texture packs
     if (BeginRows("##textures")) {
         Row(TR("Texture LOD bias (DLAA)"));
         int bias = s.lod_bias;
@@ -754,6 +783,7 @@ void ImageTab() {
                   TR("AI-upscaled versions of the game's textures, made from your own copy of the game (ps4-texturepack-generator, docs/texture-pack.md); the game files are not changed. Switches live; textures appear as they load (a second or two)."), d.texture_pack, 0);
         ImGui::EndTable();
     }
+    EndTheirs();
     ImGui::SeparatorText(TR("Color"));
     if (BeginRows("##color")) {
         CheckRow(TR("Color adjustments"), s.color_adjust,
@@ -861,6 +891,7 @@ void PerformanceTab() {
         static const char* const queued_labels[] = {TR("1 (lowest latency)"), "2", TR("Unlimited")};
         ChoiceRow(TR("Frames queued"), s.frames_queued, queued_labels, G::FramesQueued.data(),
                   int(G::FramesQueued.size()), TR("More frames queued: steadier FPS, slower response to input."), d.frames_queued);
+        BeginTheirs(); // VKB: the readback batch
         static const char* const batch_labels[] = {TR("Off (recommended)"), "16 MB",
                                                    TR("64 MB (not recommended)")};
         ChoiceRow(TR("GPU readback batch"), s.readback_batch, batch_labels,
@@ -868,6 +899,7 @@ void PerformanceTab() {
                   TR("When the game reads GPU-written memory, also copy back the other GPU-written data around it. "
                      "Off is fastest (2-5 FPS more in tests); 64 MB is not recommended."),
                   d.readback_batch);
+        EndTheirs();
         static const char* const slow_labels[] = {TR("30 FPS during slow motion (advised)"),
                                                   TR("Skip the slow motion")};
         static const int slow_values[] = {0, 1};
@@ -878,6 +910,7 @@ void PerformanceTab() {
                      "Trico's tail (s06_FallingBridge, cutscene fb_110) and the collapsing bridge (s10_Pit). "
                      "Issues #39 and #40. At 30 FPS nothing changes. Applies when the scene starts."),
                   d.slow_motion);
+        BeginTheirs(); // VKB: their texture cache and buffer memory
         CheckRow(TR("Texture cleanup after loads"), s.texture_cleanup,
                  TR("After each stage or checkpoint load, frees the textures of earlier stages that the new one does "
                     "not use. Without it they stay in video memory until it runs short. In one test it kept 69 FPS "
@@ -899,6 +932,7 @@ void PerformanceTab() {
                     "start-up limits. Test switch (issue #38): off uses only the start-up limits (the behaviour before "
                     "v0.5.2), so textures are cleaned up sooner."),
                  d.gc_live_budget);
+        EndTheirs();
         ImGui::EndTable();
     }
 }
