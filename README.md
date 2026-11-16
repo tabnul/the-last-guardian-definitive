@@ -34,11 +34,11 @@ No game files are included. You need your own copy, dumped from your own PS4.
   PNG screenshots at full render resolution.
 - **[Free camera, live world](#photo-mode):** unfreeze the world and keep the free camera. Watch
   events unfold from any angle you like, or play the game itself from that angle while the camera
-  stays where you put it (D-pad down: world on / off, D-pad left: sticks camera / boy).
+  stays where you put it.
 - **[ICO horns](#ico-horns-only-in-this-port):** the Horned Apparel outfit finally gives the boy
   Ico's horns. Optional, off by default.
 - **[Quit directly](#controllers-and-languages):** quit the game from anywhere with a controller
-  combo or the keyboard (**Alt+Q**), no menus. The game's pause menu shows the buttons.
+  combo or the keyboard, no menus. The game's pause menu shows the buttons.
 - **[Trico Tricks](docs/fun.md#trico-tricks-make-trico-move):** 49 of Trico's own moves on a bar (**F12**) in coloured
   groups, with your own favourites, the poses of the game's press shots and E3 demos, and the
   throw-up animation the developers sealed.
@@ -116,10 +116,15 @@ card and FSR 4 a recent card; FSR 3.1 runs on any card.
 this port is not signed. Turn it off under Windows Security > App & browser control > Smart App
 Control.
 
+These are the keys and buttons as they come. The game's pause menu (Options) and the help panel in
+photo mode show the buttons you have set; change them under Controls in the port's menu or on the
+launcher's Controller page.
+
 | Key | In game |
 |---|---|
 | Insert (R3 + L2) | The port's menu |
 | Alt+Q (hold Share + Options 2 s) | Quit the game (settings and progress saved) |
+| F9 (L3 + R3) | Photo mode |
 | F8 | Switch between DLSS/FSR and the game's own anti-aliasing |
 | F10 | FPS counter |
 | F12 | Trico Tricks bar |
@@ -218,17 +223,18 @@ The original game has no photo mode. This port adds one. The world stops, and yo
 anywhere you like: around Trico, high above the gorge, right up to the boy's face. Then you save
 the picture.
 
-- **Start and stop:** **L3 + R3** on a controller, **F9** on the keyboard, or **Photo mode** in the
-  in-game menu (Fun tab). You can change the controller combo under Controls.
-- **Fly:** left stick to move, right stick to look around, **L2 / R2** down and up, hold **R1** to
-  go faster or **L1** to go slower.
+- **Start and stop:** with the photo mode buttons (see the table under [Get started](#get-started)),
+  or **Photo mode** in the in-game menu (Fun tab).
+- **The buttons are on screen:** a help panel lists every photo mode button as you have it set.
+  All of them can be changed under Controls in the port's menu or in the launcher.
+- **Fly:** move, look around, go up and down, faster or slower.
 - **Watch the world move:** ever wanted to see events happen from a completely different angle?
-  Press **D-pad down** and the world runs on while you keep flying the camera. Follow a chase from
-  above, or watch Trico from the far side of the room. Press it again to freeze the world.
-- **Play under the photo camera:** with the world running, press **D-pad left** and the sticks
-  control the boy again while the camera stays where you put it. Press it again to fly the camera.
-- **Save a picture:** **Cross** or **Print Screen**. It is saved as a lossless PNG at the full
-  render resolution in `user/screenshots`. The button help on screen is not in the picture.
+  Unfreeze the world and it runs on while you keep flying the camera. Follow a chase from above,
+  or watch Trico from the far side of the room. Freeze it again whenever you like.
+- **Play under the photo camera:** with the world running, hand the sticks back to the boy and
+  play on while the camera stays where you put it. Switch back to fly the camera.
+- **Save a picture:** with the save button or **Print Screen**. It is saved as a lossless PNG at
+  the full render resolution in `user/screenshots`. The button help on screen is not in the picture.
 - **HDR and normal, both:** with HDR on, every photo is saved twice. A normal picture that looks
   right on any screen and is easy to share, and an HDR picture (name ending in `-hdr.png`) that
   keeps the full brightness for HDR screens. Chrome and Edge show it in HDR. You can switch the
@@ -339,13 +345,13 @@ trigger points, check for stick drift, and remap keyboard and mouse. See
   Controller page draws one too. **Button icons**
   (Controller page, or Controls in the port's menu) picks Automatic, PlayStation or Xbox;
   Automatic follows the controller you used last.
-- **Quit from anywhere:** **Alt+Q** on the keyboard, or hold **Share + Options** for 2 seconds
+- **Quit from anywhere:** with the quit key on the keyboard, or hold the quit combo for 2 seconds
   on a controller (a note shows while you hold; let go to cancel). The window's X and Alt+F4 work
   the same way. It quits the way the game's own Quit does, so settings and progress are saved.
   The game's pause menu (Options) shows your current buttons for quit, the port's menu and
   the QA menu.
-- **Your own button combos:** the quit combo, the port's menu (R3 + L2) and the QA menu
-  (L1 + L3) can each be set to other buttons, on the launcher's **Controller** page (Combos) or
+- **Your own button combos:** the quit combo, the port's menu and the QA menu
+  can each be set to other buttons, on the launcher's **Controller** page (Combos) or
   under Controls in the port's menu. The quit combo is always held for 2 seconds.
 
 <p align="center"><img src="docs/screenshots/fun/xbox-icons.jpg" width="100%" alt="The game's Controls screen and two button hints with an Xbox pad"></p>
