@@ -277,25 +277,26 @@ GARLIC_PRO_CMOVES = [(0x1dd3aad, bytes.fromhex('490f44d7')), (0x1dd3b21, bytes.f
 GARLIC_ABOVE_4G_MB = 1056  # 4064 + 1056 = 5120 MB
 
 
-# Boot logos: the game init (0x1231d62) fills a table of four 0x1c-byte entries at rsp+0x6f0
-# (black lead-in, China health warning, SIE logo, Japan Studio logo), each starting with an
-# enabled int, and shows the enabled ones in turn. These writes clear the three set to 1.
-LOGO_ENABLES = [
-    (0x1231d79, 'lead-in'),
-    (0x1231df4, 'SIE logo'),
-    (0x1231e45, 'Japan Studio logo'),
+# Boot logos (owner's Skip Intro patch, kept over the logo-table patch, 2026-11-16): the boot
+# wait (22 s) and the SIE, Japan Studio and genDESIGN logo times go to zero or 0.1 s, about 10 s
+# to the title instead of about 41 s. Ghidra addresses (the shadPS4 XML ones + 0xc00000), with
+# the 01.03 bytes each write replaces.
+LOGO_WRITES = [
+    (0x2507900, '0000b041', '00000000', 'boot wait 22 s -> 0'),
+    (0x2507920, '0000004000004040000000400000803f', 'cdcccc3dcdcccc3dcdcccc3dcdcccc3d',
+     'logo times 2, 3, 2, 1 s -> 0.1 s'),
+    (0x2507930, '00000000000000400000404000000040', '00000000cdcccc3dcdcccc3dcdcccc3d',
+     'logo times 2, 3, 2 s -> 0.1 s'),
+    (0x24efa90, '00000040000000c0', '0000000000000000', 'logo fade 2, -2 s -> 0'),
+    (0x24efa9c, '00004040000040c03333b33f3333b3bf', '00000000000000000000000000000000',
+     'logo fade 3, -3, 1.4, -1.4 s -> 0'),
 ]
-LOGO_MOVS = {0x1231d79: 0x6f0, 0x1231df4: 0x728, 0x1231e45: 0x744}
 
 
 def logo_writes(eboot):
     """[(image offset, new bytes, description)] that skip the boot logos, after checking them."""
-    writes = []
-    for address, what in LOGO_ENABLES:
-        mov = bytes.fromhex('c78424') + struct.pack('<I', LOGO_MOVS[address])
-        offset = checked_offset(eboot, address, mov + struct.pack('<i', 1))
-        writes.append((offset, mov + struct.pack('<i', 0), f'skip logos: {address:#x} {what} off'))
-    return writes
+    return [(checked_offset(eboot, address, bytes.fromhex(old)), bytes.fromhex(new), f'skip logos: {address:#x} {what}')
+            for address, old, new, what in LOGO_WRITES]
 
 
 def checked_offset(eboot, address, expected):
