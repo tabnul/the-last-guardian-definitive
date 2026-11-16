@@ -1607,6 +1607,11 @@ void PhotoWorldToggle() {
     if (!photo) return;
     photo_frozen = !photo_frozen;
     std::printf("Fun: photo mode world %s\n", photo_frozen ? "frozen" : "running");
+    // Frozen, the boy cannot move: the sticks go back to the camera (the switch to the boy is
+    // blocked while frozen, see PhotoPadSync).
+    if (photo_frozen && photo_sticks_boy.exchange(false)) {
+        std::printf("Fun: photo mode sticks on the camera (world frozen)\n");
+    }
     FunQueue(std::string("local p=_TLG_PHOTO if p then p.frozen=") + (photo_frozen ? "true p:freeze()" : "false p:thaw()") +
              " L('fun photo world frozen='..tostring(p.frozen)) end");
 }

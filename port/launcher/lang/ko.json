@@ -1159,9 +1159,9 @@
     "Let the world run": "세계 움직이기",
     "Freeze the world": "세계 멈추기",
     "Sticks: camera / boy": "스틱: 카메라 / 소년",
-    "Control the boy": "소년 조작",
-    "Control the camera": "카메라 조작",
     "Photo mode: freeze world on / off": "사진 모드: 세계 정지 켜기 / 끄기",
-    "Photo mode: sticks camera / boy": "사진 모드: 스틱 카메라 / 소년"
+    "Photo mode: sticks camera / boy": "사진 모드: 스틱 카메라 / 소년",
+    "Photo mode: playing as the boy": "사진 모드: 소년 조작 중",
+    "Let the world run first": "먼저 세계를 움직이게 하세요"
   }
 }

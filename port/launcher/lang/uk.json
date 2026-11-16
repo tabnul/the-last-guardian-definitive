@@ -1159,9 +1159,9 @@
     "Let the world run": "Нехай світ живе далі",
     "Freeze the world": "Заморозити світ",
     "Sticks: camera / boy": "Стіки: камера / хлопчик",
-    "Control the boy": "Керувати хлопчиком",
-    "Control the camera": "Керувати камерою",
     "Photo mode: freeze world on / off": "Фоторежим: заморозити світ увімк. / вимк.",
-    "Photo mode: sticks camera / boy": "Фоторежим: стіки камера / хлопчик"
+    "Photo mode: sticks camera / boy": "Фоторежим: стіки камера / хлопчик",
+    "Photo mode: playing as the boy": "Фоторежим: ви керуєте хлопчиком",
+    "Let the world run first": "Спочатку відновіть рух світу"
   }
 }

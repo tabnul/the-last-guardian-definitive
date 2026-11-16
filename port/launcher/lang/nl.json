@@ -1159,9 +1159,9 @@
     "Let the world run": "Wereld laten doorlopen",
     "Freeze the world": "Wereld bevriezen",
     "Sticks: camera / boy": "Sticks: camera / jongen",
-    "Control the boy": "Jongen besturen",
-    "Control the camera": "Camera besturen",
     "Photo mode: freeze world on / off": "Fotomodus: wereld bevriezen aan / uit",
-    "Photo mode: sticks camera / boy": "Fotomodus: sticks camera / jongen"
+    "Photo mode: sticks camera / boy": "Fotomodus: sticks camera / jongen",
+    "Photo mode: playing as the boy": "Fotomodus: je speelt de jongen",
+    "Let the world run first": "Laat eerst de wereld lopen"
   }
 }

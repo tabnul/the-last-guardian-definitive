@@ -1159,9 +1159,9 @@
     "Let the world run": "Pozwól światu działać",
     "Freeze the world": "Zamroź świat",
     "Sticks: camera / boy": "Gałki: kamera / chłopiec",
-    "Control the boy": "Steruj chłopcem",
-    "Control the camera": "Steruj kamerą",
     "Photo mode: freeze world on / off": "Tryb foto: zamrożenie świata wł. / wył.",
-    "Photo mode: sticks camera / boy": "Tryb foto: gałki kamera / chłopiec"
+    "Photo mode: sticks camera / boy": "Tryb foto: gałki kamera / chłopiec",
+    "Photo mode: playing as the boy": "Tryb foto: sterujesz chłopcem",
+    "Let the world run first": "Najpierw wznów świat"
   }
 }

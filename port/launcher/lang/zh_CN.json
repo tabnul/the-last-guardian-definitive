@@ -1146,9 +1146,9 @@
     "Let the world run": "让世界继续运行",
     "Freeze the world": "冻结世界",
     "Sticks: camera / boy": "摇杆：镜头 / 男孩",
-    "Control the boy": "控制男孩",
-    "Control the camera": "控制镜头",
     "Photo mode: freeze world on / off": "拍照模式：冻结世界 开 / 关",
-    "Photo mode: sticks camera / boy": "拍照模式：摇杆 镜头 / 男孩"
+    "Photo mode: sticks camera / boy": "拍照模式：摇杆 镜头 / 男孩",
+    "Photo mode: playing as the boy": "拍照模式：正在操控男孩",
+    "Let the world run first": "请先让世界继续运行"
   }
 }
