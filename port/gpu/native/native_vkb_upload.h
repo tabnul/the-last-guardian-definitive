@@ -22,6 +22,8 @@ void Init(const VkbVulkan::Instance& instance, VkbVulkan::HostImport& host_impor
 /// Our image of engine texture `texture_id` gets the texture's contents: the engine's memory (its address and size from the engine's own description), converted from the PS4 tiling
 /// by the tiling shaders reading the imported backing in place, then copied level by level. The image is left in `final_layout`. False (counted): no description, the memory is not in
 /// one imported chunk, or the texel size of the image does not match the layout.
+/// The size of the engine texture's memory from its description (its tiled layout); 0 when it cannot be derived
+u64 GuestSize(u64 texture_id);
 bool TextureContents(u64 texture_id, vk::Image image, vk::Format format, u32 mips, u32 layers, vk::ImageLayout final_layout);
 
 /// A buffer copy in the batch (kill-experiment TLG_VKB_HOST_CACHE)
