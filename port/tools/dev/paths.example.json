@@ -1,0 +1,11 @@
+{
+  "game_dir": "D:/PS4/Games/CUSA03627",
+  "save_backups": "C:/Users/<you>/AppData/Roaming/shadPS4/savedata_backups",
+  "msys2_root": "C:/msys64",
+  "saves": {
+    "spears": "CUSA03627_2026-09-28_new_game_spears",
+    "heaviest": "CUSA03627_2026-10-19_heaviest_scene",
+    "furthest": "CUSA03627_2026-10-13_furthest_in_game_progress",
+    "bloom": "CUSA03627_2026-10-20_close_to_start_part_3_bloom_bug_bright"
+  }
+}

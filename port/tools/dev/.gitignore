@@ -1,0 +1,6 @@
+# this machine's paths (copy paths.example.json)
+paths.local.json
+# output of the thread view and the profile page
+threads.log
+threads.csv
+profile-latest.html
