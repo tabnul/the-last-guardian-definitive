@@ -54,23 +54,28 @@ GAME_RECOMMENDED = {'dlaa': '1', 'smaa': '0', 'fsr1': '0', 'sharpen': '1', 'shar
                     'texture_pack': 'off'}
 GAME_STOCK = {**GAME_RECOMMENDED, 'dlaa': '0', 'sharpen': '0', 'lod_bias': '0', 'aniso': '0', 'grass_smooth': '0',
               'haze_fringe': '100', 'color_adjust': '0', 'color_gamma': '1.00'}
+# Low-end PC (issues #85, #75): the Stock look (the lightest one) with shadows at 50% of their
+# distance, +3-10% FPS on a 4-core stand-in, hardly visible (user's live A/B 2026-11-16). Built in
+# on both sides (tlg_settings.cpp ReadPresets); it keeps the player's resolution and frame rate.
+LOWEND_NAME = 'Low-end PC'
+GAME_LOWEND = {**GAME_STOCK, 'shadow_distance': '50'}
 # Steam Deck (experimental): a launcher-only entry in the preset list (the in-game menu cannot
-# change the resolution). The Stock look (the game as shipped on PS4, the lightest one) plus the
-# machine settings for the Deck's own screen, so it always ends in one known state.
+# change the resolution). The Low-end PC look plus the machine settings for the Deck's own
+# screen, so it always ends in one known state.
 # Native 1280x800 at the game's own 30 FPS, no upscaler (they cost more than they give on that
 # chip), frame generation off (too low a base frame rate), shadows at the game's own size (2x
 # and 4x halve the frame rate there) and no texture pack.
 DECK_SETTINGS = {'resolution': '1280x800', 'frame_rate': '30'}
-DECK_INI = {**GAME_STOCK, 'upscaler': 'off', 'aa_row': '1', 'preset': '0', 'dlaa': '0',
+DECK_INI = {**GAME_LOWEND, 'upscaler': 'off', 'aa_row': '1', 'preset': '0', 'dlaa': '0',
             'frame_generation': '0'}
 
 
 DECK_NAME = 'Steam Deck'
-DECK_INDEX = 2  # its place in launcher_presets, after Stock and Recommended
+DECK_INDEX = 3  # its place in launcher_presets, after Stock, Recommended and Low-end PC
 
 
 def launcher_presets(folder):
-    """game_presets with the Steam Deck entry (launcher-only) after the two built-in ones."""
+    """game_presets with the Steam Deck entry (launcher-only) after the three built-in ones."""
     result = game_presets(folder)
     result.insert(DECK_INDEX, (DECK_NAME, DECK_INI))
     return result
@@ -92,8 +97,9 @@ def current_preset(presets, ini, settings):
 
 
 def game_presets(folder):
-    """[(name, {tlg.ini key: value})]: Stock, Recommended, then the files in `folder` by name."""
-    result = [('Stock', GAME_STOCK), ('Recommended', GAME_RECOMMENDED)]
+    """[(name, {tlg.ini key: value})]: Stock, Recommended, Low-end PC, then the files in `folder`
+    by name (the in-game menu's list, tlg_settings.cpp ReadPresets)."""
+    result = [('Stock', GAME_STOCK), ('Recommended', GAME_RECOMMENDED), (LOWEND_NAME, GAME_LOWEND)]
     for path in sorted(Path(folder).glob('*.ini')):
         values = {}
         try:
@@ -112,7 +118,7 @@ def save_game_preset(folder, name, ini):
     defaults), as the in-game menu's "Save as preset" does (tlg_settings.cpp SaveGraphicsPreset).
     Returns the name as saved, or None when nothing is left of it or it is a built-in preset."""
     clean = ''.join(c for c in name if c.isascii() and (c.isalnum() or c in ' -_')).strip()
-    if not clean or clean in ('Stock', 'Recommended', DECK_NAME):
+    if not clean or clean in ('Stock', 'Recommended', LOWEND_NAME, DECK_NAME):
         return None
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)

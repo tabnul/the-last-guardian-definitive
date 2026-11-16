@@ -99,6 +99,10 @@ MENU = [
     _menu('Effects', 'fog_distance', 'int', '100', 'Fog distance',
           'Where the fog starts and reaches full strength. Default 100% is as shipped; lower brings the fog closer.',
           lo=25, hi=400, unit='%'),
+    _menu('Effects', 'shadow_distance', 'int', '100', 'Shadow distance',
+          ('How far away objects still get sharp shadows. Default 100% is as shipped. 50% gives a few to 10% '
+           'more FPS on older CPUs and the Steam Deck; far shadows get softer, near ones stay the same.'),
+          lo=10, hi=100, unit='%'),
     _menu('Effects', 'haze_fringe', 'int', '0', 'Haze color fringe',
           ("The game's chromatic aberration on the light haze: yellow and blue edges around objects against fog, "
            'strongest toward the screen edges. Sharp anti-aliasing (DLAA, DLSS) makes it stand out more. '

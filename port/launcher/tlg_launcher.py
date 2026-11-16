@@ -112,6 +112,8 @@ TEXT = {
     'rdna_submit_draws_hint': 'Sends work to the graphics card after every 1024 draws instead of once per frame. AMD cards only. May help RDNA2 cards. By @YsraEstudos. Off by default.',
     'flag_sema_fast': 'Faster game thread signals',
     'flag_sema_fast_hint': "Fix for issue #41: the game's threads wait less for each other, a few percent more FPS, most on slower CPUs. On by default.",
+    'flag_quad_helpers': 'No draw helpers on 4-core CPUs',
+    'flag_quad_helpers_hint': "Issues #85 and #75: on CPUs with 4 cores or fewer (Steam Deck, older quad-cores) the extra draw helper threads only take turns with the game's own threads. Without them about 6% more FPS. Has no effect on CPUs with more cores. On by default.",
     'flag_vk_validation': 'Vulkan validation',
     'flag_vk_validation_hint': 'Checks every graphics call. Very slow, and only works with the Vulkan SDK installed. For developers.',
     'home_soundtrack': 'Soundtrack',
@@ -426,14 +428,16 @@ TEXT = {
     'shadow_game': 'Game (2048)',
     'graphics_preset': 'Graphics preset',
     'graphics_preset_hint': ('All look settings and the texture pack at once. Stock is the game as shipped; '
-                             'save your own here or in the in-game menu (Insert, Image tab). Steam Deck '
-                             '(experimental) is Stock plus 1280x800, 30 FPS, no upscaling and frame '
-                             'generation off: tell us how it runs.'),
+                             'save your own here or in the in-game menu (Insert, Image tab). Older or '
+                             'weaker PC: pick Low-end PC (Stock with shadows at 50% distance; keeps your '
+                             'resolution and FPS). Steam Deck: pick Steam Deck (experimental), Low-end PC '
+                             'plus 1280x800, 30 FPS, no upscaling and frame generation off: tell us how it runs.'),
     'preset_save': 'Save as preset',
     'preset_save_button': 'Save',
-    'preset_save_bad': 'Type a name (letters, digits, space, - or _; not Stock, Recommended or Steam Deck).',
+    'preset_save_bad': 'Type a name (letters, digits, space, - or _; not Stock, Recommended, Low-end PC or Steam Deck).',
     'preset_stock': 'Stock (as shipped)',
     'preset_recommended': 'Recommended (default)',
+    'preset_lowend': 'Low-end PC',
     'preset_custom': 'Custom',
     'shadow_hint': ("Draws the shadow maps at 2x or 4x the game's 2048x2048 (default: Game). The main gain is much "
                     'less shimmer of tree and leaf shadows, with any anti-aliasing. '
@@ -444,7 +448,11 @@ TEXT = {
     'effect_fog_distance': 'Fog distance',
     'effect_fog_distance_hint': ('Where the fog starts and reaches full strength. Default 100% is as shipped; lower '
                                  'brings the fog closer.'),
-    'effect_haze_fringe': 'Haze color fringe',
+    'effect_shadow_distance': 'Shadow distance',
+    'effect_shadow_distance_hint': ('How far away objects still get sharp shadows. Default 100% is as shipped. '
+                                    '50% gives a few to 10% more FPS on older CPUs and the Steam Deck; far '
+                                    'shadows get softer, near ones stay the same.'),
+    'effect_haze_fringe':'Haze color fringe',
     'effect_haze_fringe_hint': ("The game's chromatic aberration on the light haze: yellow and blue edges around "
                                 'objects against fog, strongest toward the screen edges. Sharp anti-aliasing (DLAA, '
                                 'DLSS) makes it stand out more. Default 0% gives clean edges; 100% is as shipped.'),
@@ -636,7 +644,8 @@ LOD_BIAS_DEFAULT = -4
 ANISO_LEVELS = [0, 2, 4, 8, 16]  # 0 = the game's own (PS4); default 16
 EFFECTS = {'ssao': (100, 0, 400), 'bloom': (100, 0, 400), 'ssr': (100, 0, 400), 'motion_blur': (100, 0, 400),
            'vignette_add': (0, 0, 100), 'game_sharpen': (100, 0, 100),
-           'fog_distance': (100, 25, 400), 'haze_fringe': (0, 0, 100), 'boy_wind': (100, 0, 200),
+           'fog_distance': (100, 25, 400), 'shadow_distance': (100, 10, 100), 'haze_fringe': (0, 0, 100),
+           'boy_wind': (100, 0, 200),
            'tree_wind': (100, 0, 200), 'trico_feathers': (100, 0, 400),
            'fov': (70, 50, 110, '°')}
 
@@ -2286,7 +2295,7 @@ class Launcher:
         self.refresh_preset()
 
     def preset_label(self, index, name):
-        builtin = ('preset_stock', 'preset_recommended', 'deck_preset')
+        builtin = ('preset_stock', 'preset_recommended', 'preset_lowend', 'deck_preset')
         return self.t(builtin[index]) if index < len(builtin) else name
 
     def refresh_preset(self):

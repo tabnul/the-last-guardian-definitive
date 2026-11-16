@@ -443,6 +443,7 @@ constexpr const char* Unsupported = "Unavailable: game version or code signature
 const char* PresetLabel(int index, const std::string& name) {
     return index == 0 ? TR("Stock (as shipped)")
            : index == 1 ? TR("Recommended (default)")
+           : index == 2 ? TR("Low-end PC")
                         : name.c_str();
 }
 
@@ -459,14 +460,14 @@ void PresetRows() {
         }
         ImGui::EndCombo();
     }
-    Help(TR("Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default. Your own presets are files in the presets folder, also listed in the launcher."));
+    Help(TR("Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher."));
     ImGui::PopID();
     static char name[48] = "";
     Row(TR("Save as preset"));
     const ImGuiStyle& style = ImGui::GetStyle();
     const char* save = TR("Save");
     const char* remove = TR("Delete");
-    const bool own = current >= 2;
+    const bool own = current >= TlgSettings::BuiltInPresets;
     float buttons = ImGui::CalcTextSize(save).x + style.FramePadding.x * 2 + style.ItemSpacing.x;
     if (own) buttons += ImGui::CalcTextSize(remove).x + style.FramePadding.x * 2 + style.ItemSpacing.x;
     ImGui::SetNextItemWidth(-buttons);
@@ -715,6 +716,8 @@ void ImageTab() {
                   TR("The game's own sharpening filter. On by default: 100% is the original and the maximum (recommended)."), d.game_sharpen, 100);
         SliderRow(TR("Fog distance"), s.fog_distance, 25, 400, "%d%%",
                   TR("Where the fog starts and reaches full strength. Default 100% is as shipped; lower brings the fog closer."), d.fog_distance, 100);
+        SliderRow(TR("Shadow distance"), s.shadow_distance, 10, 100, "%d%%",
+                  TR("How far away objects still get sharp shadows. Default 100% is as shipped. 50% gives a few to 10% more FPS on older CPUs and the Steam Deck; far shadows get softer, near ones stay the same."), d.shadow_distance, 100);
         SliderRow(TR("Haze color fringe"), s.haze_fringe, 0, 100, "%d%%",
                   TR("The game's chromatic aberration on the light haze: yellow and blue edges around objects against fog, strongest toward the screen edges. Sharp anti-aliasing (DLAA, DLSS) makes it stand out more. Default 0% gives clean edges; 100% is as shipped."), d.haze_fringe, 100);
         ImGui::EndTable();
