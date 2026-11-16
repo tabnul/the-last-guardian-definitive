@@ -94,7 +94,7 @@ const PhotoSlot PhotoSlots[] = {
     {&TlgSettings::Values::photo_down, TlgSettings::PadL2},
     {&TlgSettings::Values::photo_fast, TlgSettings::PadR1},
     {&TlgSettings::Values::photo_slow, TlgSettings::PadL1},
-    {&TlgSettings::Values::photo_help, TlgSettings::PadOptions},
+    {&TlgSettings::Values::photo_help, TlgSettings::PadUp},
 };
 constexpr int PhotoSlotCount = int(std::size(PhotoSlots));
 static_assert(std::size(PhotoSlots) == std::size(TlgFun::PhotoButtonNames));
@@ -2369,7 +2369,46 @@ void NoticeBox() {
     ImGui::End();
 }
 
-/// tlg: while the game's pause menu is open: how to quit and open the menus (the player's own combos).
+// tlg: the controller button(s) that press the touchpad's left side (the game's own photo mode):
+// the launcher's remap (TLG_PAD_MAP touchpad_left=..., runtime_pad.c) or the defaults.
+std::string GamePhotoButtons(bool xbox) {
+    static const struct { const char* sdl; const char* ps; const char* xbox; } names[] = {
+        {"a", "Cross", "A"}, {"b", "Circle", "B"}, {"x", "Square", "X"}, {"y", "Triangle", "Y"},
+        {"back", "Share", "View"}, {"start", "Options", "Menu"}, {"guide", "PS", "Xbox"},
+        {"leftshoulder", "L1", "LB"}, {"rightshoulder", "R1", "RB"}, {"leftstick", "L3", "LS"},
+        {"rightstick", "R3", "RS"}, {"dpup", "Up", "Up"}, {"dpdown", "Down", "Down"},
+        {"dpleft", "Left", "Left"}, {"dpright", "Right", "Right"}, {"misc1", "Mute", "Share"},
+        {"touchpad", "Touchpad", "Touchpad"},
+    };
+    std::string mapped;
+    if (const char* env = std::getenv("TLG_PAD_MAP")) {
+        std::string map = std::string(",") + env;
+        for (const char* key : {",touchpad_left=", ",touchpad="}) {
+            if (const size_t at = map.find(key); at != std::string::npos) {
+                const size_t from = at + std::strlen(key);
+                mapped = map.substr(from, map.find(',', from) - from);
+                break;
+            }
+        }
+    }
+    if (mapped.empty()) return xbox ? "Share" : TR("Touchpad (left)");
+    std::string out;
+    for (size_t from = 0; from <= mapped.size();) {
+        const size_t end = std::min(mapped.find('|', from), mapped.size());
+        const std::string name = mapped.substr(from, end - from);
+        from = end + 1;
+        if (name.empty() || name == "none") continue;
+        std::string label = name;
+        for (const auto& n : names) {
+            if (name == n.sdl) label = xbox ? n.xbox : n.ps;
+        }
+        out += (out.empty() ? "" : " / ") + label;
+    }
+    return out;
+}
+
+/// tlg: while the game's pause menu is open: the shortcuts with the player's own buttons, as a
+/// two-column list (buttons | action) like the photo mode help.
 void QuitHintBox() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
@@ -2381,25 +2420,35 @@ void QuitHintBox() {
                      ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoFocusOnAppearing);
     ImGui::SetWindowFontScale(1.1f);
-    // One line per combo, with the player's own buttons.
-    const auto line = [](const char* with, const char* without, u32 combo) {
-        std::string text = combo ? with : without;
-        if (const size_t at = text.find("%s"); combo && at != std::string::npos) {
-            text.replace(at, 2, TlgSettings::ComboLabel(combo));
-        }
-        ImGui::TextUnformatted(text.c_str());
-    };
     const auto& s = TlgSettings::Get();
-    line(TR("Quit game: hold %s for 2 seconds, or press Alt+Q"), TR("Quit game: press Alt+Q"), s.combo_quit);
-    line(TR("Port menu: %s, or press Insert"), TR("Port menu: press Insert"), s.combo_menu);
+    // Buttons, then the keyboard key; a combo set to nothing leaves only the key.
+    const auto keys = [](u32 combo, const char* key) {
+        std::string text = combo ? TlgSettings::ComboLabel(combo) : std::string();
+        if (key && *key) text += (text.empty() ? "" : " / ") + std::string(key);
+        return text.empty() ? std::string(TR("off")) : text;
+    };
+    std::string quit = s.combo_quit ? TlgSettings::ComboLabel(s.combo_quit) + " " + TR("(hold 2 s)") : "";
+    quit += (quit.empty() ? "" : " / ") + std::string("Alt+Q");
     // The keyboard keys (1 + Z) reach the QA menu only through the default combo (game pad map).
-    // The launcher note shows always, so players learn the QA menu exists.
-    std::string qa_with = s.combo_qa == TlgSettings::PadComboQa ? TR("QA menu: %s, or press 1 + Z") : TR("QA menu: %s");
-    std::string qa_without = TR("QA menu: off");
-    const std::string note = std::string(" ") + TR("(turn on Level select and QA menu in the launcher first)");
-    qa_with += note;
-    qa_without += note;
-    line(qa_with.c_str(), qa_without.c_str(), s.combo_qa);
+    const bool qa_keys = s.combo_qa == TlgSettings::PadComboQa;
+    const std::pair<std::string, const char*> rows[] = {
+        {quit, TR("Quit game")},
+        {keys(s.combo_menu, "Insert"), TR("Port menu")},
+        {keys(s.combo_photo, "F9"), TR("Photo mode on / off")},
+        {GamePhotoButtons(TlgSettings::Get().XboxIcons()), TR("Game photo mode")},
+        {keys(s.combo_qa, qa_keys ? "1 + Z" : ""), TR("QA menu")},
+    };
+    ImGui::TextDisabled("%s", TR("Shortcuts"));
+    float key_w = 0.0f;
+    for (const auto& r : rows) key_w = std::max(key_w, ImGui::CalcTextSize(r.first.c_str()).x);
+    const float col = ImGui::GetCursorPosX() + key_w + 32.0f * base_scale;
+    for (const auto& r : rows) {
+        ImGui::TextUnformatted(r.first.c_str());
+        ImGui::SameLine(col);
+        ImGui::TextUnformatted(r.second);
+    }
+    // Always shown, so players learn the QA menu exists.
+    ImGui::TextDisabled("%s", TR("QA menu: turn on Level select and QA menu in the launcher first"));
     ImGui::End();
 }
 

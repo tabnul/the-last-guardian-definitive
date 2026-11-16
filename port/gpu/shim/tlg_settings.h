@@ -237,7 +237,7 @@ struct Values {
     /// photo camera tick (TlgFun::PhotoPad). photo_invert_y: pushing the right stick forward
     /// looks down (default on, user 2026-11-16).
     std::atomic<uint32_t> photo_shot{PadCross}, photo_up{PadR2}, photo_down{PadL2}, photo_fast{PadR1},
-        photo_slow{PadL1}, photo_help{PadOptions};
+        photo_slow{PadL1}, photo_help{PadUp};
     std::atomic<bool> photo_invert_y{true};
 
     /// Startup settings for the explicit TLG_RENDER_RES compatibility patch only.
@@ -253,7 +253,7 @@ Values& Get();
 /// "share+options" (tlg.ini) <-> PadCombo bits; unknown names are skipped, an empty result keeps `fallback`.
 uint32_t ParseCombo(const std::string& text, uint32_t fallback);
 std::string ComboText(uint32_t bits);
-/// "Share + Options" for the menus.
+/// "Share + Options" for the menus; Xbox names ("View + Menu") while the game shows Xbox icons.
 std::string ComboLabel(uint32_t bits);
 
 /// Pack folders with an index.txt under TLG_TEXPACK_DIR (default "texpack"), sorted; read once.

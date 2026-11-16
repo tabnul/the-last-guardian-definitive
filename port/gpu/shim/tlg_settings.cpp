@@ -307,13 +307,17 @@ void Set(Values& v, const std::string& key, const std::string& value) {
 } // namespace
 
 namespace {
-struct ComboName { uint32_t bit; const char* key; const char* label; };
+// label: PlayStation name; xbox: the same button on an Xbox pad (as the launcher's XBOX_LABEL).
+struct ComboName { uint32_t bit; const char* key; const char* label; const char* xbox; };
 constexpr ComboName ComboNames[] = {
-    {PadCross, "cross", "Cross"}, {PadCircle, "circle", "Circle"}, {PadSquare, "square", "Square"},
-    {PadTriangle, "triangle", "Triangle"}, {PadL1, "l1", "L1"}, {PadR1, "r1", "R1"}, {PadL2, "l2", "L2"},
-    {PadR2, "r2", "R2"}, {PadL3, "l3", "L3"}, {PadR3, "r3", "R3"}, {PadShare, "share", "Share"},
-    {PadOptions, "options", "Options"}, {PadTouchpad, "touchpad", "Touchpad"}, {PadPs, "ps", "PS"},
-    {PadUp, "up", "Up"}, {PadDown, "down", "Down"}, {PadLeft, "left", "Left"}, {PadRight, "right", "Right"},
+    {PadCross, "cross", "Cross", "A"}, {PadCircle, "circle", "Circle", "B"},
+    {PadSquare, "square", "Square", "X"}, {PadTriangle, "triangle", "Triangle", "Y"},
+    {PadL1, "l1", "L1", "LB"}, {PadR1, "r1", "R1", "RB"}, {PadL2, "l2", "L2", "LT"},
+    {PadR2, "r2", "R2", "RT"}, {PadL3, "l3", "L3", "LS"}, {PadR3, "r3", "R3", "RS"},
+    {PadShare, "share", "Share", "View"}, {PadOptions, "options", "Options", "Menu"},
+    {PadTouchpad, "touchpad", "Touchpad", "Touchpad"}, {PadPs, "ps", "PS", "Xbox"},
+    {PadUp, "up", "Up", "Up"}, {PadDown, "down", "Down", "Down"}, {PadLeft, "left", "Left", "Left"},
+    {PadRight, "right", "Right", "Right"},
 };
 } // namespace
 
@@ -332,17 +336,17 @@ uint32_t ParseCombo(const std::string& text, uint32_t fallback) {
     return bits ? bits : fallback;
 }
 
-static std::string ComboJoin(uint32_t bits, bool label) {
+static std::string ComboJoin(uint32_t bits, bool label, bool xbox = false) {
     std::string out;
     for (const auto& n : ComboNames) {
         if (!(bits & n.bit)) continue;
         if (!out.empty()) out += label ? " + " : "+";
-        out += label ? n.label : n.key;
+        out += !label ? n.key : xbox ? n.xbox : n.label;
     }
     return out;
 }
 std::string ComboText(uint32_t bits) { return ComboJoin(bits, false); }
-std::string ComboLabel(uint32_t bits) { return ComboJoin(bits, true); }
+std::string ComboLabel(uint32_t bits) { return ComboJoin(bits, true, Get().XboxIcons()); }
 
 Values& Get() {
     static Values values;

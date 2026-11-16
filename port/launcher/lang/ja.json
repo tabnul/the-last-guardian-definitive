@@ -448,6 +448,8 @@
     "pad.photo_fast": "高速（長押し）",
     "pad.photo_slow": "低速（長押し）",
     "pad.photo_help_key": "ボタンヘルプの表示 / 非表示",
+    "pad.remap_touchpad_left": "タッチパッド（左）：フォトモード",
+    "pad.remap_touchpad_right": "タッチパッド（右）：ポーズ",
     "pad.photo_press": "ボタンを押してください…",
     "pad.photo_note": "1つにつき1ボタン、フォトモード中だけ。左スティックで移動、右スティックで見回します。キーボード：同じボタンのキー。Print Screen でもスクリーンショットを撮れます。"
   },
@@ -1083,14 +1085,6 @@
     "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "設定: 2つ以上のボタンを同時に長押しして離します。キーボード: Alt+Qで終了、Insertでこのメニューを開きます。",
     "Quitting...": "終了中...",
     "Quitting... (release to cancel)": "終了中...（離すとキャンセル）",
-    "Quit game: hold %s for 2 seconds, or press Alt+Q": "ゲーム終了: %s を2秒長押し、または Alt+Q",
-    "Quit game: press Alt+Q": "ゲーム終了: Alt+Q",
-    "Port menu: %s, or press Insert": "ポートメニュー: %s または Insert",
-    "Port menu: press Insert": "ポートメニュー: Insert",
-    "QA menu: %s, or press 1 + Z": "QAメニュー: %s または 1 + Z",
-    "QA menu: %s": "QAメニュー: %s",
-    "QA menu: off": "QAメニュー: オフ",
-    "(turn on Level select and QA menu in the launcher first)": "(先にランチャーでレベル選択とQAメニューをオン)",
     "Photo mode": "フォトモード",
     "Invert look up / down": "上下の視点操作を反転",
     "Pushing the right stick forward looks down, as in a plane.": "右スティックを前に倒すと下を向きます（飛行機と同じ）。",
@@ -1138,6 +1132,13 @@
     "No favourites yet. Right-click a move in another group to add it here.": "お気に入りはまだありません。他のグループの動きを右クリックするとここに追加されます。",
     "Trico's moves (F12 hides). Right-click a move to add it to your favourites.": "トリコの動き (F12 で非表示)。動きを右クリックするとお気に入りに追加されます。",
     "Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites.": "動きをクリック (ゲーム内のバーでも: F12)。動きを右クリックするとお気に入りに追加されます。",
-    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "ゲーム本編と同じ方法で、物語のトリコにお願いします。まず動きに必要な姿勢をとります (立つ、座る、伏せる)。動きが始まらないときは立ち姿勢にリセットしてもう一度お願いしますが、イベント中、ジャンプ中、よじ登り中は行いません。トリコ自身の気分が勝つこともあり、場所が必要な動きもあります (転がると少年が段差から落ちることがあります)。\"May not work\": テストで動作を確認できなかったもの。"
+    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "ゲーム本編と同じ方法で、物語のトリコにお願いします。まず動きに必要な姿勢をとります (立つ、座る、伏せる)。動きが始まらないときは立ち姿勢にリセットしてもう一度お願いしますが、イベント中、ジャンプ中、よじ登り中は行いません。トリコ自身の気分が勝つこともあり、場所が必要な動きもあります (転がると少年が段差から落ちることがあります)。\"May not work\": テストで動作を確認できなかったもの。",
+    "Shortcuts": "ショートカット",
+    "Quit game": "ゲームを終了",
+    "Port menu": "移植版メニュー",
+    "Game photo mode": "ゲームのフォトモード",
+    "Touchpad (left)": "タッチパッド(左)",
+    "(hold 2 s)": "(2秒長押し)",
+    "QA menu: turn on Level select and QA menu in the launcher first": "QAメニュー:先にランチャーでレベル選択とQAメニューをオンにしてください"
   }
 }

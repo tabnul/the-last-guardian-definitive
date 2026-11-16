@@ -448,6 +448,8 @@
     "pad.photo_fast": "快速（按住）",
     "pad.photo_slow": "慢速（按住）",
     "pad.photo_help_key": "隐藏 / 显示按键帮助",
+    "pad.remap_touchpad_left": "触控板（左）：拍照模式",
+    "pad.remap_touchpad_right": "触控板（右）：暂停",
     "pad.photo_press": "请按一个按键…",
     "pad.photo_note": "每项一个按键，仅在拍照模式中。左摇杆飞行，右摇杆环顾。键盘：相同按键对应的键；Print Screen 也会截图。"
   },
@@ -1083,14 +1085,6 @@
     "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "设置：同时按住两个或更多按键，然后松开。键盘：Alt+Q 退出，Insert 打开此菜单。",
     "Quitting...": "正在退出...",
     "Quitting... (release to cancel)": "正在退出...（松开以取消）",
-    "Quit game: hold %s for 2 seconds, or press Alt+Q": "退出游戏：按住 %s 2 秒，或按 Alt+Q",
-    "Quit game: press Alt+Q": "退出游戏：按 Alt+Q",
-    "Port menu: %s, or press Insert": "移植菜单：%s，或按 Insert",
-    "Port menu: press Insert": "移植菜单：按 Insert",
-    "QA menu: %s, or press 1 + Z": "QA 菜单：%s，或按 1 + Z",
-    "QA menu: %s": "QA 菜单：%s",
-    "QA menu: off": "QA 菜单：关闭",
-    "(turn on Level select and QA menu in the launcher first)": "（请先在启动器中开启关卡选择和 QA 菜单）",
     "Photo mode": "拍照模式",
     "Invert look up / down": "反转上下视角",
     "Pushing the right stick forward looks down, as in a plane.": "将右摇杆向前推会向下看，与飞机相同。",
@@ -1138,6 +1132,13 @@
     "No favourites yet. Right-click a move in another group to add it here.": "还没有收藏。在其他分组中右键点击一个动作即可加入这里。",
     "Trico's moves (F12 hides). Right-click a move to add it to your favourites.": "Trico 的动作（F12 隐藏）。右键点击动作即可加入收藏。",
     "Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites.": "点击一个动作（游戏中也有动作栏：F12）。右键点击动作即可加入收藏。",
-    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "像游戏本身那样请故事中的 Trico 去做。他会先摆出动作需要的姿势（站起、坐下或趴下）。如果动作没有开始，会把他重置为站立并再请求一次，但在剧情事件、跳跃或攀爬时绝不这样做。他自己的心思仍可能占上风，有些动作需要空间（打滚可能把少年推下边缘）。\"May not work\"：我们的测试中没有看到它生效。"
+    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "像游戏本身那样请故事中的 Trico 去做。他会先摆出动作需要的姿势（站起、坐下或趴下）。如果动作没有开始，会把他重置为站立并再请求一次，但在剧情事件、跳跃或攀爬时绝不这样做。他自己的心思仍可能占上风，有些动作需要空间（打滚可能把少年推下边缘）。\"May not work\"：我们的测试中没有看到它生效。",
+    "Shortcuts": "快捷键",
+    "Quit game": "退出游戏",
+    "Port menu": "移植版菜单",
+    "Game photo mode": "游戏拍照模式",
+    "Touchpad (left)": "触摸板(左侧)",
+    "(hold 2 s)": "(按住 2 秒)",
+    "QA menu: turn on Level select and QA menu in the launcher first": "QA 菜单:请先在启动器中打开关卡选择和 QA 菜单"
   }
 }

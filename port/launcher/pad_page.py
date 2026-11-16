@@ -61,6 +61,8 @@ TEXT = {
     'photo_fast': 'Fast (hold)',
     'photo_slow': 'Slow (hold)',
     'photo_help_key': 'Hide / show the button help',
+    'remap_touchpad_left': 'Touchpad (left): photo mode',
+    'remap_touchpad_right': 'Touchpad (right): pause',
     'photo_press': 'press a button…',
     'photo_note': 'One button each, used only in photo mode. Left stick flies, right stick looks around. '
                   'Keyboard: the keys of the same buttons; Print Screen also takes a screenshot.',
@@ -95,13 +97,16 @@ COMBO_BITS = {'cross': 0, 'circle': 1, 'square': 2, 'triangle': 3, 'l1': 9, 'r1'
 COMBO_LABELS = {'share': 'Share', 'options': 'Options', 'touchpad': 'Touchpad', 'ps': 'PS', 'cross': 'Cross',
                 'circle': 'Circle', 'square': 'Square', 'triangle': 'Triangle', 'up': 'Up', 'down': 'Down',
                 'left': 'Left', 'right': 'Right'}
+# The same buttons on an Xbox pad (as XBOX_LABEL and the game's own names, tlg_settings.cpp ComboNames).
+XBOX_COMBO_LABELS = dict(COMBO_LABELS, share='View', options='Menu', ps='Xbox', cross='A', circle='B',
+                         square='X', triangle='Y', l1='LB', r1='RB', l2='LT', r2='RT', l3='LS', r3='RS')
 COMBOS = (('pad_combo_quit', 'combo_quit', 'share+options'), ('pad_combo_menu', 'combo_menu', 'l2+r3'),
           ('pad_combo_qa', 'combo_qa', 'l1+l3'),
           ('pad_combo_photo', 'combo_photo', 'l3+r3'))
 # Photo mode buttons (tlg.ini pad_photo_*, tlg_settings.h photo_*): one button each.
 PHOTO_BUTTONS = (('pad_photo_shot', 'photo_shot', 'cross'), ('pad_photo_up', 'photo_up', 'r2'),
                  ('pad_photo_down', 'photo_down', 'l2'), ('pad_photo_fast', 'photo_fast', 'r1'),
-                 ('pad_photo_slow', 'photo_slow', 'l1'), ('pad_photo_help', 'photo_help_key', 'options'))
+                 ('pad_photo_slow', 'photo_slow', 'l1'), ('pad_photo_help', 'photo_help_key', 'up'))
 
 
 def parse_combo(text, fallback):
@@ -118,16 +123,20 @@ def combo_text(bits):
     return '+'.join(name for name, bit in COMBO_BITS.items() if bits & (1 << bit))
 
 
-def combo_label(bits):
-    return ' + '.join(COMBO_LABELS.get(n, n.upper()) for n in combo_text(bits).split('+') if n)
+def combo_label(bits, xbox=False):
+    labels = XBOX_COMBO_LABELS if xbox else COMBO_LABELS
+    return ' + '.join(labels.get(n, n.upper()) for n in combo_text(bits).split('+') if n)
 
 
 # The game's PS4 buttons that take gamepad buttons, with their default SDL source (runtime_pad.c pad_map).
 REMAP = [('cross', 'Cross', 'a'), ('circle', 'Circle', 'b'), ('square', 'Square', 'x'),
          ('triangle', 'Triangle', 'y'), ('l1', 'L1', 'leftshoulder'), ('r1', 'R1', 'rightshoulder'),
          ('l3', 'L3', 'leftstick'), ('r3', 'R3', 'rightstick'), ('options', 'Options', 'start'),
-         ('touchpad_right', 'Touchpad (right)', 'back'), ('up', 'D-pad up', 'dpup'),
+         ('touchpad_left', 'Touchpad (left)', 'misc1'), ('touchpad_right', 'Touchpad (right)', 'back'),
+         ('up', 'D-pad up', 'dpup'),
          ('down', 'D-pad down', 'dpdown'), ('left', 'D-pad left', 'dpleft'), ('right', 'D-pad right', 'dpright')]
+# Rows that also name what the button does in the game (TEXT keys).
+REMAP_TEXT = {'touchpad_left': 'remap_touchpad_left', 'touchpad_right': 'remap_touchpad_right'}
 
 
 class PadTool:
@@ -269,7 +278,8 @@ class ControllerPage:
         grid.pack(fill='x')
         self.sources = {}
         for index, (ps, label, _) in enumerate(REMAP):
-            ttk.Label(grid, text=label, width=16).grid(row=index, column=0, sticky='w')
+            text = self.t(REMAP_TEXT[ps]) if ps in REMAP_TEXT else label
+            ttk.Label(grid, text=text, width=28).grid(row=index, column=0, sticky='w')
             shown = ttk.Label(grid, text='', width=22, foreground=self.MUTED)
             shown.grid(row=index, column=1, sticky='w')
             ttk.Button(grid, text=self.t('set'), width=8,
@@ -280,9 +290,11 @@ class ControllerPage:
         grid.pack(fill='x')
         ini = tlg_run.read_ini(tlg_run.user_dir() / 'tlg.ini')
         self.combo_shown = {}
+        self.combo_bits = {}
         for index, (key, text, default) in enumerate(COMBOS):
             ttk.Label(grid, text=self.t(text), width=26).grid(row=index, column=0, sticky='w')
-            shown = ttk.Label(grid, text=combo_label(parse_combo(ini.get(key), default)), width=18,
+            self.combo_bits[key] = parse_combo(ini.get(key), default)
+            shown = ttk.Label(grid, text=combo_label(self.combo_bits[key], self.drawn_xbox), width=18,
                               foreground=self.MUTED)
             shown.grid(row=index, column=1, sticky='w')
             ttk.Button(grid, text=self.t('set'), width=8,
@@ -301,7 +313,8 @@ class ControllerPage:
         grid.pack(fill='x')
         for index, (key, text, default) in enumerate(PHOTO_BUTTONS):
             ttk.Label(grid, text=self.t(text), width=26).grid(row=index, column=0, sticky='w')
-            shown = ttk.Label(grid, text=combo_label(parse_combo(ini.get(key), default)), width=18,
+            self.combo_bits[key] = parse_combo(ini.get(key), default)
+            shown = ttk.Label(grid, text=combo_label(self.combo_bits[key], self.drawn_xbox), width=18,
                               foreground=self.MUTED)
             shown.grid(row=index, column=1, sticky='w')
             ttk.Button(grid, text=self.t('set'), width=8,
@@ -349,6 +362,8 @@ class ControllerPage:
                                    self.canvas.create_line(0, 0, 0, 0, fill=self.TEXT))
         if hasattr(self, 'credit'):
             self.credit.configure(text='' if xbox else self.t('credit'))  # the Xbox drawing is our own
+        for key, bits in getattr(self, 'combo_bits', {}).items():   # combo and photo buttons by pad names
+            self.combo_shown[key].configure(text=combo_label(bits, xbox))
 
     def kind(self):
         pad = self.pads.get(self.shown_id())
@@ -381,7 +396,8 @@ class ControllerPage:
 
     def store_combo(self, key, bits):
         tlg_run.update_ini(tlg_run.user_dir() / 'tlg.ini', {key: combo_text(bits)})
-        self.combo_shown[key].configure(text=combo_label(bits), foreground=self.MUTED)
+        self.combo_bits[key] = bits
+        self.combo_shown[key].configure(text=combo_label(bits, self.drawn_xbox), foreground=self.MUTED)
 
     def combo_poll(self, buttons, lt, rt):
         threshold = self.trigger.get() / 100

@@ -455,6 +455,8 @@
     "pad.photo_fast": "Szybko (przytrzymaj)",
     "pad.photo_slow": "Wolno (przytrzymaj)",
     "pad.photo_help_key": "Ukryj / pokaż pomoc przycisków",
+    "pad.remap_touchpad_left": "Touchpad (lewo): tryb zdjęć",
+    "pad.remap_touchpad_right": "Touchpad (prawo): pauza",
     "pad.photo_press": "naciśnij przycisk…",
     "pad.photo_note": "Po jednym przycisku, tylko w trybie zdjęć. Lewa gałka lata, prawa rozgląda się. Klawiatura: klawisze tych samych przycisków; Print Screen też robi zrzut ekranu."
   },
@@ -1096,14 +1098,6 @@
     "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Ustaw: przytrzymaj razem dwa lub więcej przycisków, potem puść. Klawiatura: Alt+Q wychodzi, Insert otwiera to menu.",
     "Quitting...": "Zamykanie...",
     "Quitting... (release to cancel)": "Zamykanie... (puść, aby anulować)",
-    "Quit game: hold %s for 2 seconds, or press Alt+Q": "Wyjdź z gry: przytrzymaj %s przez 2 sekundy lub naciśnij Alt+Q",
-    "Quit game: press Alt+Q": "Wyjdź z gry: naciśnij Alt+Q",
-    "Port menu: %s, or press Insert": "Menu portu: %s lub naciśnij Insert",
-    "Port menu: press Insert": "Menu portu: naciśnij Insert",
-    "QA menu: %s, or press 1 + Z": "Menu QA: %s lub naciśnij 1 + Z",
-    "QA menu: %s": "Menu QA: %s",
-    "QA menu: off": "Menu QA: wyłączone",
-    "(turn on Level select and QA menu in the launcher first)": "(najpierw włącz Wybór poziomu i menu QA w launcherze)",
     "Photo mode": "Tryb fotograficzny",
     "Invert look up / down": "Odwróć patrzenie góra / dół",
     "Pushing the right stick forward looks down, as in a plane.": "Pchnięcie prawej gałki do przodu patrzy w dół, jak w samolocie.",
@@ -1151,6 +1145,13 @@
     "No favourites yet. Right-click a move in another group to add it here.": "Brak ulubionych. Kliknij prawym przyciskiem ruch w innej grupie, aby dodać go tutaj.",
     "Trico's moves (F12 hides). Right-click a move to add it to your favourites.": "Ruchy Trico (F12 ukrywa). Kliknij ruch prawym przyciskiem, aby dodać go do ulubionych.",
     "Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites.": "Kliknij ruch (także jako pasek w grze: F12). Kliknij ruch prawym przyciskiem, aby dodać go do ulubionych.",
-    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "Prosi Trico z fabuły, aby to zrobił, tak jak robi to sama gra. Najpierw przyjmuje pozę potrzebną do ruchu (wstaje, siada lub kładzie się). Jeśli ruch się nie zacznie, zostaje przywrócony do stania i poproszony jeszcze raz, ale nigdy podczas wydarzenia fabularnego, skoku ani wspinaczki. Jego własna wola wciąż może wygrać, a niektóre ruchy potrzebują miejsca (przewrót może zepchnąć chłopca z krawędzi). \"May not work\": w naszych testach nie widzieliśmy, żeby działało."
+    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "Prosi Trico z fabuły, aby to zrobił, tak jak robi to sama gra. Najpierw przyjmuje pozę potrzebną do ruchu (wstaje, siada lub kładzie się). Jeśli ruch się nie zacznie, zostaje przywrócony do stania i poproszony jeszcze raz, ale nigdy podczas wydarzenia fabularnego, skoku ani wspinaczki. Jego własna wola wciąż może wygrać, a niektóre ruchy potrzebują miejsca (przewrót może zepchnąć chłopca z krawędzi). \"May not work\": w naszych testach nie widzieliśmy, żeby działało.",
+    "Shortcuts": "Skróty",
+    "Quit game": "Zamknij grę",
+    "Port menu": "Menu portu",
+    "Game photo mode": "Tryb fotograficzny gry",
+    "Touchpad (left)": "Touchpad (lewa strona)",
+    "(hold 2 s)": "(przytrzymaj 2 s)",
+    "QA menu: turn on Level select and QA menu in the launcher first": "Menu QA: najpierw włącz Wybór poziomu i Menu QA w launcherze"
   }
 }

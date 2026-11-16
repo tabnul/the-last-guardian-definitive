@@ -455,6 +455,8 @@
     "pad.photo_fast": "Швидко (утримувати)",
     "pad.photo_slow": "Повільно (утримувати)",
     "pad.photo_help_key": "Сховати / показати довідку кнопок",
+    "pad.remap_touchpad_left": "Сенсорна панель (ліворуч): фоторежим",
+    "pad.remap_touchpad_right": "Сенсорна панель (праворуч): пауза",
     "pad.photo_press": "натисніть кнопку…",
     "pad.photo_note": "По одній кнопці на дію, лише в режимі фото. Лівий стік — політ, правий — огляд. Клавіатура: клавіші тих самих кнопок; Print Screen теж робить знімок екрана."
   },
@@ -1096,14 +1098,6 @@
     "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Призначити: утримуйте разом дві або більше кнопок, потім відпустіть. Клавіатура: Alt+Q — вихід, Insert відкриває це меню.",
     "Quitting...": "Вихід...",
     "Quitting... (release to cancel)": "Вихід... (відпустіть, щоб скасувати)",
-    "Quit game: hold %s for 2 seconds, or press Alt+Q": "Вийти з гри: утримуйте %s 2 секунди або натисніть Alt+Q",
-    "Quit game: press Alt+Q": "Вийти з гри: натисніть Alt+Q",
-    "Port menu: %s, or press Insert": "Меню порту: %s або натисніть Insert",
-    "Port menu: press Insert": "Меню порту: натисніть Insert",
-    "QA menu: %s, or press 1 + Z": "Меню QA: %s або натисніть 1 + Z",
-    "QA menu: %s": "Меню QA: %s",
-    "QA menu: off": "Меню QA: вимкнено",
-    "(turn on Level select and QA menu in the launcher first)": "(спершу увімкніть Вибір рівня та меню QA у лаунчері)",
     "Photo mode": "Фоторежим",
     "Invert look up / down": "Інвертувати погляд вгору / вниз",
     "Pushing the right stick forward looks down, as in a plane.": "Нахил правого стіка вперед дивиться вниз, як у літаку.",
@@ -1151,6 +1145,13 @@
     "No favourites yet. Right-click a move in another group to add it here.": "Улюблених ще немає. Клацніть правою кнопкою на рух в іншій групі, щоб додати його сюди.",
     "Trico's moves (F12 hides). Right-click a move to add it to your favourites.": "Рухи Тріко (F12 ховає). Клацніть правою кнопкою на рух, щоб додати його до улюблених.",
     "Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites.": "Клацніть на рух (також панеллю в грі: F12). Клацніть правою кнопкою на рух, щоб додати його до улюблених.",
-    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "Просить Тріко з історії це зробити, як це робить сама гра. Спершу він приймає позу, потрібну для руху (встає, сідає або лягає). Якщо рух не почався, його повертають у стійку і просять ще раз, але ніколи під час сюжетної події, стрибка чи лазіння. Його власна воля все одно може перемогти, а деяким рухам потрібне місце (перекид може зіштовхнути хлопчика з краю). \"May not work\": у наших тестах не бачили, щоб працювало."
+    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "Просить Тріко з історії це зробити, як це робить сама гра. Спершу він приймає позу, потрібну для руху (встає, сідає або лягає). Якщо рух не почався, його повертають у стійку і просять ще раз, але ніколи під час сюжетної події, стрибка чи лазіння. Його власна воля все одно може перемогти, а деяким рухам потрібне місце (перекид може зіштовхнути хлопчика з краю). \"May not work\": у наших тестах не бачили, щоб працювало.",
+    "Shortcuts": "Гарячі клавіші",
+    "Quit game": "Вийти з гри",
+    "Port menu": "Меню порту",
+    "Game photo mode": "Фоторежим гри",
+    "Touchpad (left)": "Сенсорна панель (ліворуч)",
+    "(hold 2 s)": "(утримуйте 2 с)",
+    "QA menu: turn on Level select and QA menu in the launcher first": "Меню QA: спершу увімкніть Вибір рівня та Меню QA в лаунчері"
   }
 }
