@@ -316,7 +316,7 @@
     "launcher.shadow_scale": "그림자 해상도",
     "launcher.shadow_game": "게임(2048)",
     "launcher.graphics_preset": "그래픽 프리셋",
-    "launcher.graphics_preset_hint": "모든 화면 설정과 텍스처 팩을 한 번에 바꿉니다. Stock은 출시 그대로의 게임입니다. 직접 만든 프리셋은 여기나 게임 내 메뉴(Insert, 이미지 탭)에서 저장하세요. 오래되었거나 사양이 낮은 PC: 저사양 PC를 고르세요(Stock에 그림자 거리 50%와 가벼운 그림자, 해상도와 FPS는 그대로). Steam Deck: Steam Deck(실험적)을 고르세요. 저사양 PC에 1280x800, 30 FPS, 업스케일링 없음, 프레임 생성 끔이 더해집니다. 어떻게 돌아가는지 알려주세요.",
+    "launcher.graphics_preset_hint": "모든 화면 설정과 텍스처 팩을 한 번에 바꿉니다. Stock은 출시 그대로의 게임입니다. 직접 만든 프리셋은 여기나 게임 내 메뉴(Insert, 이미지 탭)에서 저장하세요. 오래되었거나 사양이 낮은 PC: 저사양 PC를 고르세요(Stock에 그림자 거리 50%와 가벼운 그림자, 그리기 도우미 끔, 그리기 파이프라인 내 컴퓨트 켬, 해상도와 FPS는 그대로). Steam Deck: Steam Deck(실험적)을 고르세요. 저사양 PC에 1280x800, 30 FPS, 업스케일링 없음, 프레임 생성 끔이 더해집니다. 어떻게 돌아가는지 알려주세요.",
     "launcher.preset_save": "프리셋으로 저장",
     "launcher.preset_save_button": "저장",
     "launcher.preset_save_bad": "이름을 입력하세요(영문자, 숫자, 공백, - 또는 _; Stock, Recommended, Low-end PC, Steam Deck은 안 됨).",
@@ -802,6 +802,14 @@
     "menu:shadow_lite": {
       "name": "가벼운 그림자",
       "what": "게임의 그림자 레이어 네 개 중 카메라에 가장 가까운 것을 뺍니다. 게임도 일부 지역에서 직접 그렇게 합니다. 오래된 CPU와 Steam Deck에서 FPS가 몇 % 오르고, 카메라 가까운 그림자가 조금 부드러워집니다. 끔은 출시 그대로입니다."
+    },
+    "menu:draw_helpers": {
+      "name": "그리기 도우미(재시작 필요)",
+      "what": "게임의 그리기 작업을 그래픽 스레드용으로 준비하는 추가 스레드입니다. 대부분의 PC에는 켬이 맞습니다. 4코어 CPU에서는 게임과 코어를 두고 경쟁하므로 끄면 FPS가 3-6% 올랐습니다. 저사양 PC 프리셋은 이것을 끕니다. 재시작 후 적용됩니다."
+    },
+    "menu:compute_pipe": {
+      "name": "그리기 파이프라인 내 컴퓨트",
+      "what": "게임의 컴퓨트 작업(연기, 모래, 물, 깃털)이 그리기 대기열이 빌 때까지 기다리지 않고 대기열에 들어갑니다. 4코어 CPU에서 FPS가 5-8% 올랐고, 빠른 CPU에서는 차이가 없습니다. 저사양 PC 프리셋은 이것을 켭니다. 로딩이 멈추면 끄세요."
     }
   },
   "menu": {
@@ -1181,6 +1189,13 @@
     "Lite shadows": "가벼운 그림자",
     "On (lighter)": "켬(더 가볍게)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "게임의 그림자 레이어 네 개 중 카메라에 가장 가까운 것을 뺍니다. 게임도 일부 지역에서 직접 그렇게 합니다. 오래된 CPU와 Steam Deck에서 FPS가 몇 % 오르고, 카메라 가까운 그림자가 조금 부드러워집니다. 끔은 출시 그대로입니다.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "이 탭의 모든 설정과 텍스처 팩을 한 번에 실시간으로 바꿉니다. Stock은 출시 그대로, 권장은 기본값, 저사양 PC는 Stock에 그림자 거리 50%와 가벼운 그림자로 오래되었거나 사양이 낮은 PC용입니다. 직접 만든 프리셋은 presets 폴더의 파일이며 런처에도 표시됩니다."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, plus draw helpers off and compute in the draw pipeline on (Performance tab), for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "이 탭의 모든 설정과 텍스처 팩을 한 번에 실시간으로 바꿉니다. Stock은 출시 그대로, 권장은 기본값, 저사양 PC는 Stock에 그림자 거리 50%와 가벼운 그림자, 그리기 도우미 끔, 그리기 파이프라인 내 컴퓨트 켬(성능 탭)으로 오래되었거나 사양이 낮은 PC용입니다. 직접 만든 프리셋은 presets 폴더의 파일이며 런처에도 표시됩니다.",
+    "Draw helpers (requires restart)": "그리기 도우미(재시작 필요)",
+    "Compute in the draw pipeline": "그리기 파이프라인 내 컴퓨트",
+    "Off (for 4-core CPUs)": "끔(4코어 CPU용)",
+    "On (default)": "켬(기본값)",
+    "On (for 4-core CPUs)": "켬(4코어 CPU용)",
+    "Extra threads that prepare the game's draws for the graphics thread. On suits most PCs. On a 4-core CPU they compete with the game for the cores: off gave 3-6% more FPS there. The Low-end PC preset turns them off. Applies after a restart.": "게임의 그리기 작업을 그래픽 스레드용으로 준비하는 추가 스레드입니다. 대부분의 PC에는 켬이 맞습니다. 4코어 CPU에서는 게임과 코어를 두고 경쟁하므로 끄면 FPS가 3-6% 올랐습니다. 저사양 PC 프리셋은 이것을 끕니다. 재시작 후 적용됩니다.",
+    "The game's compute jobs (smoke, sand, water, feathers) join the queue of draws instead of waiting until it is empty. On a 4-core CPU this gave 5-8% more FPS; on fast CPUs it makes no difference. The Low-end PC preset turns it on. Turn it off if a load ever hangs.": "게임의 컴퓨트 작업(연기, 모래, 물, 깃털)이 그리기 대기열이 빌 때까지 기다리지 않고 대기열에 들어갑니다. 4코어 CPU에서 FPS가 5-8% 올랐고, 빠른 CPU에서는 차이가 없습니다. 저사양 PC 프리셋은 이것을 켭니다. 로딩이 멈추면 끄세요."
   }
 }

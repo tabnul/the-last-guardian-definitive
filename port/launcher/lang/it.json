@@ -316,7 +316,7 @@
     "launcher.shadow_scale": "Risoluzione ombre",
     "launcher.shadow_game": "Gioco (2048)",
     "launcher.graphics_preset": "Preset grafico",
-    "launcher.graphics_preset_hint": "Tutte le impostazioni dell'immagine e il pacchetto texture insieme. Stock è il gioco come all'uscita; salva i tuoi qui o nel menu di gioco (Ins, scheda Immagine). PC vecchio o modesto: scegli PC modesto (Stock con le ombre al 50% della distanza e ombre leggere; mantiene risoluzione e FPS). Steam Deck: scegli Steam Deck (sperimentale), PC modesto più 1280x800, 30 FPS, niente upscaling e generazione di fotogrammi spenta: facci sapere come va.",
+    "launcher.graphics_preset_hint": "Tutte le impostazioni dell'immagine e il pacchetto texture insieme. Stock è il gioco come all'uscita; salva i tuoi qui o nel menu di gioco (Ins, scheda Immagine). PC vecchio o modesto: scegli PC modesto (Stock con le ombre al 50% della distanza e ombre leggere, più aiutanti di disegno disattivati e calcolo nella pipeline di disegno attivo; mantiene risoluzione e FPS). Steam Deck: scegli Steam Deck (sperimentale), PC modesto più 1280x800, 30 FPS, niente upscaling e generazione di fotogrammi spenta: facci sapere come va.",
     "launcher.preset_save": "Salva come preset",
     "launcher.preset_save_button": "Salva",
     "launcher.preset_save_bad": "Scrivi un nome (lettere, cifre, spazio, - o _; non Stock, Recommended, Low-end PC o Steam Deck).",
@@ -802,6 +802,14 @@
     "menu:shadow_lite": {
       "name": "Ombre leggere",
       "what": "Toglie il più vicino dei quattro livelli d'ombra del gioco, come fa il gioco stesso in alcune zone. Qualche % di FPS in più su CPU vecchie e su Steam Deck; le ombre vicine alla telecamera diventano un po' più morbide. No è come all'uscita."
+    },
+    "menu:draw_helpers": {
+      "name": "Aiutanti di disegno (richiede riavvio)",
+      "what": "Thread extra che preparano i disegni del gioco per il thread grafico. Attivo va bene per la maggior parte dei PC. Su una CPU a 4 core competono con il gioco per i core: disattivati hanno dato il 3-6% di FPS in più. Il preset PC modesto li disattiva. Vale dopo un riavvio."
+    },
+    "menu:compute_pipe": {
+      "name": "Calcolo nella pipeline di disegno",
+      "what": "I lavori di calcolo del gioco (fumo, sabbia, acqua, piume) entrano nella coda dei disegni invece di aspettare che sia vuota. Su una CPU a 4 core ha dato il 5-8% di FPS in più; sulle CPU veloci non cambia nulla. Il preset PC modesto lo attiva. Disattivalo se un caricamento si blocca."
     }
   },
   "menu": {
@@ -1181,6 +1189,13 @@
     "Lite shadows": "Ombre leggere",
     "On (lighter)": "Sì (più leggero)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Toglie il più vicino dei quattro livelli d'ombra del gioco, come fa il gioco stesso in alcune zone. Qualche % di FPS in più su CPU vecchie e su Steam Deck; le ombre vicine alla telecamera diventano un po' più morbide. No è come all'uscita.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Cambia tutte le impostazioni di questa scheda e il pacchetto texture insieme, dal vivo. Stock è il gioco come all'uscita; Consigliato è il predefinito; PC modesto è Stock con le ombre al 50% della distanza e ombre leggere, per PC vecchi o modesti. I tuoi preset sono file nella cartella presets, elencati anche nel launcher."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, plus draw helpers off and compute in the draw pipeline on (Performance tab), for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Cambia tutte le impostazioni di questa scheda e il pacchetto texture insieme, dal vivo. Stock è il gioco come all'uscita; Consigliato è il predefinito; PC modesto è Stock con le ombre al 50% della distanza e ombre leggere, più aiutanti di disegno disattivati e calcolo nella pipeline di disegno attivo (scheda Prestazioni), per PC vecchi o modesti. I tuoi preset sono file nella cartella presets, elencati anche nel launcher.",
+    "Draw helpers (requires restart)": "Aiutanti di disegno (richiede riavvio)",
+    "Compute in the draw pipeline": "Calcolo nella pipeline di disegno",
+    "Off (for 4-core CPUs)": "Disattivato (per CPU a 4 core)",
+    "On (default)": "Attivo (predefinito)",
+    "On (for 4-core CPUs)": "Attivo (per CPU a 4 core)",
+    "Extra threads that prepare the game's draws for the graphics thread. On suits most PCs. On a 4-core CPU they compete with the game for the cores: off gave 3-6% more FPS there. The Low-end PC preset turns them off. Applies after a restart.": "Thread extra che preparano i disegni del gioco per il thread grafico. Attivo va bene per la maggior parte dei PC. Su una CPU a 4 core competono con il gioco per i core: disattivati hanno dato il 3-6% di FPS in più. Il preset PC modesto li disattiva. Vale dopo un riavvio.",
+    "The game's compute jobs (smoke, sand, water, feathers) join the queue of draws instead of waiting until it is empty. On a 4-core CPU this gave 5-8% more FPS; on fast CPUs it makes no difference. The Low-end PC preset turns it on. Turn it off if a load ever hangs.": "I lavori di calcolo del gioco (fumo, sabbia, acqua, piume) entrano nella coda dei disegni invece di aspettare che sia vuota. Su una CPU a 4 core ha dato il 5-8% di FPS in più; sulle CPU veloci non cambia nulla. Il preset PC modesto lo attiva. Disattivalo se un caricamento si blocca."
   }
 }

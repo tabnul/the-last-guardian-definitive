@@ -294,7 +294,7 @@
     "launcher.shadow_scale": "影の解像度",
     "launcher.shadow_game": "ゲーム（2048）",
     "launcher.graphics_preset": "グラフィックプリセット",
-    "launcher.graphics_preset_hint": "すべての見た目設定とテクスチャパックを一度に切り替えます。Stockは発売時のままのゲームです。自分のプリセットはここかゲーム内メニュー(Insert、画像タブ)で保存できます。古いPCや性能の低いPC:低スペックPCを選んでください(Stockで影の距離50%、軽量シャドウ。解像度とFPSはそのまま)。Steam Deck:Steam Deck(実験的)を選んでください。低スペックPCに加えて1280x800、30 FPS、アップスケーリングなし、フレーム生成オフです。動作の様子を教えてください。",
+    "launcher.graphics_preset_hint": "すべての見た目設定とテクスチャパックを一度に切り替えます。Stockは発売時のままのゲームです。自分のプリセットはここかゲーム内メニュー(Insert、画像タブ)で保存できます。古いPCや性能の低いPC:低スペックPCを選んでください(Stockで影の距離50%、軽量シャドウ、描画ヘルパーオフ、描画パイプラインでのコンピュートオン。解像度とFPSはそのまま)。Steam Deck:Steam Deck(実験的)を選んでください。低スペックPCに加えて1280x800、30 FPS、アップスケーリングなし、フレーム生成オフです。動作の様子を教えてください。",
     "launcher.preset_save": "プリセットとして保存",
     "launcher.preset_save_button": "保存",
     "launcher.preset_save_bad": "名前を入力してください(英字、数字、スペース、- または _。Stock、Recommended、Low-end PC、Steam Deck は不可)。",
@@ -795,6 +795,14 @@
     "menu:shadow_lite": {
       "name": "軽量シャドウ",
       "what": "ゲームの4つの影レイヤーのうち、カメラに最も近いものを省きます。ゲーム自体も一部のエリアでそうしています。古いCPUやSteam DeckでFPSが数%上がり、カメラ近くの影が少しやわらかくなります。オフは発売時のままです。"
+    },
+    "menu:draw_helpers": {
+      "name": "描画ヘルパー(再起動が必要)",
+      "what": "ゲームの描画をグラフィックスレッド用に準備する追加スレッドです。ほとんどのPCではオンが合っています。4コアCPUではコアをゲームと取り合うため、オフにするとFPSが3-6%向上しました。低スペックPCプリセットはこれをオフにします。再起動後に反映されます。"
+    },
+    "menu:compute_pipe": {
+      "name": "描画パイプラインでのコンピュート",
+      "what": "ゲームのコンピュート処理(煙、砂、水、羽毛)を、描画キューが空になるのを待たずにキューに加えます。4コアCPUではFPSが5-8%向上し、高速なCPUでは差はありません。低スペックPCプリセットはこれをオンにします。ロードが止まったらオフにしてください。"
     }
   },
   "menu": {
@@ -1168,6 +1176,13 @@
     "Lite shadows": "軽量シャドウ",
     "On (lighter)": "オン（軽量）",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "ゲームの4つの影レイヤーのうち、カメラに最も近いものを省きます。ゲーム自体も一部のエリアでそうしています。古いCPUやSteam DeckでFPSが数%上がり、カメラ近くの影が少しやわらかくなります。オフは発売時のままです。",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "このタブのすべての設定とテクスチャパックを一度にライブで切り替えます。Stockは発売時のまま、推奨は既定値、低スペックPCはStockで影の距離50%、軽量シャドウの、古いPCや性能の低いPC向けです。自分のプリセットはpresetsフォルダー内のファイルで、ランチャーにも表示されます。"
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, plus draw helpers off and compute in the draw pipeline on (Performance tab), for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "このタブのすべての設定とテクスチャパックを一度にライブで切り替えます。Stockは発売時のまま、推奨は既定値、低スペックPCはStockで影の距離50%、軽量シャドウ、描画ヘルパーオフ、描画パイプラインでのコンピュートオン(パフォーマンスタブ)の、古いPCや性能の低いPC向けです。自分のプリセットはpresetsフォルダー内のファイルで、ランチャーにも表示されます。",
+    "Draw helpers (requires restart)": "描画ヘルパー(再起動が必要)",
+    "Compute in the draw pipeline": "描画パイプラインでのコンピュート",
+    "Off (for 4-core CPUs)": "オフ(4コアCPU向け)",
+    "On (default)": "オン(既定)",
+    "On (for 4-core CPUs)": "オン(4コアCPU向け)",
+    "Extra threads that prepare the game's draws for the graphics thread. On suits most PCs. On a 4-core CPU they compete with the game for the cores: off gave 3-6% more FPS there. The Low-end PC preset turns them off. Applies after a restart.": "ゲームの描画をグラフィックスレッド用に準備する追加スレッドです。ほとんどのPCではオンが合っています。4コアCPUではコアをゲームと取り合うため、オフにするとFPSが3-6%向上しました。低スペックPCプリセットはこれをオフにします。再起動後に反映されます。",
+    "The game's compute jobs (smoke, sand, water, feathers) join the queue of draws instead of waiting until it is empty. On a 4-core CPU this gave 5-8% more FPS; on fast CPUs it makes no difference. The Low-end PC preset turns it on. Turn it off if a load ever hangs.": "ゲームのコンピュート処理(煙、砂、水、羽毛)を、描画キューが空になるのを待たずにキューに加えます。4コアCPUではFPSが5-8%向上し、高速なCPUでは差はありません。低スペックPCプリセットはこれをオンにします。ロードが止まったらオフにしてください。"
   }
 }

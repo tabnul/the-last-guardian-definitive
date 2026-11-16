@@ -149,6 +149,14 @@ MENU = [
            'only while the slow motion plays, then back. Or skip the slow motion. At 30 FPS nothing changes.'),
           choices=(('0', '30 FPS during slow motion (advised)'),
                    ('1', 'Skip the slow motion'))),
+    _menu('Performance', 'draw_helpers', 'bool', '1', 'Draw helpers (requires restart)',
+          ("Extra threads that prepare the game's draws for the graphics thread. On suits most PCs. "
+           'On a 4-core CPU they compete with the game for the cores: off gave 3-6% more FPS there. '
+           'The Low-end PC preset turns them off. Applies after a restart.')),
+    _menu('Performance', 'compute_pipe', 'bool', '0', 'Compute in the draw pipeline',
+          ("The game's compute jobs (smoke, sand, water, feathers) join the queue of draws instead of "
+           'waiting until it is empty. On a 4-core CPU this gave 5-8% more FPS; on fast CPUs it makes '
+           'no difference. The Low-end PC preset turns it on. Turn it off if a load ever hangs.')),
     # Hack and fun (English only): the same text as the in-game Fun tab (tlg_fun.h DroolHelp).
     _menu('Fun', 'trico_drool', 'choice', '0', "Trico's drool",
           "A feature the developers built and then switched off just before release: Trico drools. Always: a string of drool hangs from his beak the whole time. As the developers planned: it slowly grows while Trico smells something he wants, a smell-pot cart (s04_FirstAntenna and s10_Pit), and fades away when he loses interest (the boy's smell bottle was cut, so the carts are the only trigger). Stays on through jumps, new stages and extra Tricos, and is kept for the next start.",

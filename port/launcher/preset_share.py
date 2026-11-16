@@ -48,7 +48,7 @@ GAME_RECOMMENDED = {'dlaa': '1', 'smaa': '0', 'fsr1': '0', 'sharpen': '1', 'shar
                     'motion_blur': '100', 'vignette_add': '0', 'ssao': '100', 'ssr': '100',
                     'game_sharpen': '100', 'shadow_distance': '100', 'trico_feathers': '100',
                     'boy_wind': '100', 'tree_wind': '100', 'fog_distance': '100', 'haze_fringe': '0',
-                    'grass_smooth': '1', 'shadow_lite': '0',
+                    'grass_smooth': '1', 'shadow_lite': '0', 'draw_helpers': '1', 'compute_pipe': '0',
                     'color_adjust': '1', 'color_brightness': '0.00', 'color_contrast': '1.00',
                     'color_saturation': '1.00', 'color_gamma': '1.00', 'lod_bias': '-4', 'aniso': '16',
                     'texture_pack': 'off'}
@@ -56,10 +56,12 @@ GAME_STOCK = {**GAME_RECOMMENDED, 'dlaa': '0', 'sharpen': '0', 'lod_bias': '0', 
               'haze_fringe': '100', 'color_adjust': '0', 'color_gamma': '1.00'}
 # Low-end PC (issues #85, #75): the Stock look (the lightest one) with shadows at 50% of their
 # distance, +3-10% FPS on a 4-core stand-in, hardly visible (user's live A/B 2026-11-16), and Lite
-# shadows (closest shadow layer left out, +6% in one stand-in run, look approved 2026-11-16). Built in
-# on both sides (tlg_settings.cpp ReadPresets); it keeps the player's resolution and frame rate.
+# shadows (closest shadow layer left out, +6% in one stand-in run, look approved 2026-11-16), plus
+# two CPU settings for 4 cores: draw helpers off (+3-6%) and compute in the draw pipeline on
+# (+5-8%, stand-in 2026-11-16). Built in on both sides (tlg_settings.cpp ReadPresets); it keeps the
+# player's resolution and frame rate.
 LOWEND_NAME = 'Low-end PC'
-GAME_LOWEND = {**GAME_STOCK, 'shadow_distance': '50', 'shadow_lite': '1'}
+GAME_LOWEND = {**GAME_STOCK, 'shadow_distance': '50', 'shadow_lite': '1', 'draw_helpers': '0', 'compute_pipe': '1'}
 # Steam Deck (experimental): a launcher-only entry in the preset list (the in-game menu cannot
 # change the resolution). The Low-end PC look plus the machine settings for the Deck's own
 # screen, so it always ends in one known state.

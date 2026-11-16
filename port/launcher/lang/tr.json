@@ -316,7 +316,7 @@
     "launcher.shadow_scale": "Gölge çözünürlüğü",
     "launcher.shadow_game": "Oyun (2048)",
     "launcher.graphics_preset": "Grafik ön ayarı",
-    "launcher.graphics_preset_hint": "Tüm görünüm ayarları ve doku paketi bir arada. Stock, oyunun çıktığı hâlidir; kendi ayarlarını burada veya oyun içi menüde (Insert, Görüntü sekmesi) kaydet. Eski veya zayıf PC: Düşük donanımlı PC'yi seç (gölgeler %50 mesafede ve hafif gölgelerle Stock; çözünürlüğün ve FPS'in aynı kalır). Steam Deck: Steam Deck (deneysel) seç; Düşük donanımlı PC artı 1280x800, 30 FPS, ölçekleme yok ve kare üretimi kapalı: nasıl çalıştığını bize anlat.",
+    "launcher.graphics_preset_hint": "Tüm görünüm ayarları ve doku paketi bir arada. Stock, oyunun çıktığı hâlidir; kendi ayarlarını burada veya oyun içi menüde (Insert, Görüntü sekmesi) kaydet. Eski veya zayıf PC: Düşük donanımlı PC'yi seç (gölgeler %50 mesafede ve hafif gölgelerle Stock, ayrıca çizim yardımcıları kapalı ve çizim hattında hesaplama açık; çözünürlüğün ve FPS'in aynı kalır). Steam Deck: Steam Deck (deneysel) seç; Düşük donanımlı PC artı 1280x800, 30 FPS, ölçekleme yok ve kare üretimi kapalı: nasıl çalıştığını bize anlat.",
     "launcher.preset_save": "Ön ayar olarak kaydet",
     "launcher.preset_save_button": "Kaydet",
     "launcher.preset_save_bad": "Bir ad yaz (harf, rakam, boşluk, - veya _; Stock, Recommended, Low-end PC ya da Steam Deck olamaz).",
@@ -802,6 +802,14 @@
     "menu:shadow_lite": {
       "name": "Hafif gölgeler",
       "what": "Oyunun dört gölge katmanından kameraya en yakın olanı çıkarır; oyun bazı bölgelerde bunu zaten kendisi yapar. Eski CPU'larda ve Steam Deck'te birkaç % daha fazla FPS; kameraya yakın gölgeler biraz yumuşar. Kapalı, oyunun çıktığı hâlidir."
+    },
+    "menu:draw_helpers": {
+      "name": "Çizim yardımcıları (yeniden başlatma gerekir)",
+      "what": "Oyunun çizimlerini grafik iş parçacığı için hazırlayan ek iş parçacıkları. Çoğu PC için açık uygundur. 4 çekirdekli bir CPU'da çekirdekler için oyunla yarışırlar: kapatmak orada %3-6 daha fazla FPS verdi. Düşük donanımlı PC ön ayarı bunları kapatır. Yeniden başlattıktan sonra geçerli olur."
+    },
+    "menu:compute_pipe": {
+      "name": "Çizim hattında hesaplama",
+      "what": "Oyunun hesaplama işleri (duman, kum, su, tüyler) çizim kuyruğunun boşalmasını beklemek yerine kuyruğa katılır. 4 çekirdekli bir CPU'da bu %5-8 daha fazla FPS verdi; hızlı CPU'larda fark yaratmaz. Düşük donanımlı PC ön ayarı bunu açar. Bir yükleme takılırsa kapat."
     }
   },
   "menu": {
@@ -1181,6 +1189,13 @@
     "Lite shadows": "Hafif gölgeler",
     "On (lighter)": "Açık (daha hafif)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Oyunun dört gölge katmanından kameraya en yakın olanı çıkarır; oyun bazı bölgelerde bunu zaten kendisi yapar. Eski CPU'larda ve Steam Deck'te birkaç % daha fazla FPS; kameraya yakın gölgeler biraz yumuşar. Kapalı, oyunun çıktığı hâlidir.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Bu sekmedeki tüm ayarları ve doku paketini tek seferde, canlı olarak değiştirir. Stock oyunun çıktığı hâli; Önerilen varsayılan; Düşük donanımlı PC, eski veya zayıf PC'ler için gölgeleri %50 mesafede ve hafif gölgeli Stock'tur. Kendi ön ayarların presets klasöründeki dosyalardır, başlatıcıda da listelenir."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, plus draw helpers off and compute in the draw pipeline on (Performance tab), for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Bu sekmedeki tüm ayarları ve doku paketini tek seferde, canlı olarak değiştirir. Stock oyunun çıktığı hâli; Önerilen varsayılan; Düşük donanımlı PC, eski veya zayıf PC'ler için gölgeleri %50 mesafede ve hafif gölgeli Stock'tur; ayrıca çizim yardımcıları kapalı ve çizim hattında hesaplama açıktır (Performans sekmesi). Kendi ön ayarların presets klasöründeki dosyalardır, başlatıcıda da listelenir.",
+    "Draw helpers (requires restart)": "Çizim yardımcıları (yeniden başlatma gerekir)",
+    "Compute in the draw pipeline": "Çizim hattında hesaplama",
+    "Off (for 4-core CPUs)": "Kapalı (4 çekirdekli CPU'lar için)",
+    "On (default)": "Açık (varsayılan)",
+    "On (for 4-core CPUs)": "Açık (4 çekirdekli CPU'lar için)",
+    "Extra threads that prepare the game's draws for the graphics thread. On suits most PCs. On a 4-core CPU they compete with the game for the cores: off gave 3-6% more FPS there. The Low-end PC preset turns them off. Applies after a restart.": "Oyunun çizimlerini grafik iş parçacığı için hazırlayan ek iş parçacıkları. Çoğu PC için açık uygundur. 4 çekirdekli bir CPU'da çekirdekler için oyunla yarışırlar: kapatmak orada %3-6 daha fazla FPS verdi. Düşük donanımlı PC ön ayarı bunları kapatır. Yeniden başlattıktan sonra geçerli olur.",
+    "The game's compute jobs (smoke, sand, water, feathers) join the queue of draws instead of waiting until it is empty. On a 4-core CPU this gave 5-8% more FPS; on fast CPUs it makes no difference. The Low-end PC preset turns it on. Turn it off if a load ever hangs.": "Oyunun hesaplama işleri (duman, kum, su, tüyler) çizim kuyruğunun boşalmasını beklemek yerine kuyruğa katılır. 4 çekirdekli bir CPU'da bu %5-8 daha fazla FPS verdi; hızlı CPU'larda fark yaratmaz. Düşük donanımlı PC ön ayarı bunu açar. Bir yükleme takılırsa kapat."
   }
 }

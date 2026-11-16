@@ -95,6 +95,7 @@ enum : std::uint64_t {
     Frame10Bit = 64,       ///< the 10-bit frame image (bit set: 8-bit, as before; live A/B)
     GpuWriteSubresourceOff = 128, ///< #24: GPU writes into the middle of an image no longer dirty it
     ExactReadbackWaits = 512, ///< #175: TextureCache resolve/cancel uses exact byte range
+    PipelinedCompute = 1024, ///< compute queues hand dispatches and labels to the draw pipe
 };
 inline bool Disabled2(std::uint64_t bit) {
     return (__atomic_load_n(&runtime_disabled_optimizations2, __ATOMIC_RELAXED) & bit) != 0;

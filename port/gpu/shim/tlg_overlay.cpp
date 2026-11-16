@@ -460,7 +460,7 @@ void PresetRows() {
         }
         ImGui::EndCombo();
     }
-    Help(TR("Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher."));
+    Help(TR("Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, plus draw helpers off and compute in the draw pipeline on (Performance tab), for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher."));
     ImGui::PopID();
     static char name[48] = "";
     Row(TR("Save as preset"));
@@ -904,6 +904,20 @@ void PerformanceTab() {
                      "Trico's tail (s06_FallingBridge, cutscene fb_110) and the collapsing bridge (s10_Pit). "
                      "Issues #39 and #40. At 30 FPS nothing changes. Applies when the scene starts."),
                   d.slow_motion);
+        static const char* const helper_labels[] = {TR("Off (for 4-core CPUs)"), TR("On (default)")};
+        static const int helper_values[] = {0, 1};
+        ChoiceRow(TR("Draw helpers (requires restart)"), s.draw_helpers, helper_labels, helper_values, 2,
+                  TR("Extra threads that prepare the game's draws for the graphics thread. On suits most PCs. "
+                     "On a 4-core CPU they compete with the game for the cores: off gave 3-6% more FPS there. "
+                     "The Low-end PC preset turns them off. Applies after a restart."),
+                  d.draw_helpers, 1);
+        static const char* const pipe_labels[] = {TR("Off (default)"), TR("On (for 4-core CPUs)")};
+        static const int pipe_values[] = {0, 1};
+        ChoiceRow(TR("Compute in the draw pipeline"), s.compute_pipe, pipe_labels, pipe_values, 2,
+                  TR("The game's compute jobs (smoke, sand, water, feathers) join the queue of draws instead of "
+                     "waiting until it is empty. On a 4-core CPU this gave 5-8% more FPS; on fast CPUs it makes "
+                     "no difference. The Low-end PC preset turns it on. Turn it off if a load ever hangs."),
+                  d.compute_pipe, 0);
         CheckRow(TR("Texture cleanup after loads"), s.texture_cleanup,
                  TR("After each stage or checkpoint load, frees the textures of earlier stages that the new one does "
                     "not use. Without it they stay in video memory until it runs short. In one test it kept 69 FPS "
@@ -1635,7 +1649,8 @@ int RestartChanges() {
     const auto& s = TlgSettings::Get();
     return (s.render_resolution != s.startup_render_resolution) + (s.engine_fps != s.startup_engine_fps) +
            (s.deferred_readback != s.startup_deferred_readback) + (s.stale_readback != s.startup_stale_readback) +
-           (s.hdr != s.startup_hdr) + (s.preset != s.startup_preset);
+           (s.hdr != s.startup_hdr) + (s.preset != s.startup_preset) +
+           (s.draw_helpers != s.startup_draw_helpers);
 }
 
 void Menu() {

@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "tlg_settings.h"
 #include "tlg_threads.h"
 #include "tlg_toggles.h"
 #include "common/thread.h"
@@ -50,6 +51,11 @@ void ForEachPacket(std::span<const u32> commands, Func&& func) {
 u32 DefaultWorkerCount() {
     if (const char* env = std::getenv("TLG_PREP_WORKERS")) {
         return static_cast<u32>(std::clamp(std::atoi(env), 0, 16));
+    }
+    // Draw helpers setting (tlg.ini draw_helpers, the Low-end PC preset turns it off): +3-6% on
+    // a 4-core stand-in, where the helpers compete with the game for cores (2026-11-16).
+    if (!TlgSettings::Get().startup_draw_helpers) {
+        return 0;
     }
     // Workers are SCHED_IDLE and claim whole buffers, so more of them only use more idle
     // cores: half the cores (Steam Deck 4, 16-thread desktop 8), physical cores with

@@ -316,7 +316,7 @@
     "launcher.shadow_scale": "陰影解析度",
     "launcher.shadow_game": "遊戲（2048）",
     "launcher.graphics_preset": "畫面預設",
-    "launcher.graphics_preset_hint": "一次切換所有畫面設定和材質包。Stock 為遊戲發售時的原樣;可在這裡或遊戲內選單(Insert,影像頁)儲存自己的預設。較舊或較弱的電腦:選擇 低階電腦(Stock 加陰影距離 50% 和輕量陰影;保留你的解析度和 FPS)。Steam Deck:選擇 Steam Deck(實驗性),即 低階電腦 加 1280x800、30 FPS、不放大、關閉畫格生成:告訴我們執行得如何。",
+    "launcher.graphics_preset_hint": "一次切換所有畫面設定和材質包。Stock 為遊戲發售時的原樣;可在這裡或遊戲內選單(Insert,影像頁)儲存自己的預設。較舊或較弱的電腦:選擇 低階電腦(Stock 加陰影距離 50% 、輕量陰影、關閉繪製助手並開啟繪製管線內運算;保留你的解析度和 FPS)。Steam Deck:選擇 Steam Deck(實驗性),即 低階電腦 加 1280x800、30 FPS、不放大、關閉畫格生成:告訴我們執行得如何。",
     "launcher.preset_save": "儲存為預設",
     "launcher.preset_save_button": "儲存",
     "launcher.preset_save_bad": "請輸入名稱(字母、數字、空格、- 或 _;不能是 Stock、Recommended、Low-end PC 或 Steam Deck)。",
@@ -802,6 +802,14 @@
     "menu:shadow_lite": {
       "name": "輕量陰影",
       "what": "去掉遊戲四層陰影中離鏡頭最近的一層,遊戲自己在某些區域也這樣做。在較舊的 CPU 和 Steam Deck 上 FPS 高幾個百分點;鏡頭附近的陰影會稍微柔和一些。關閉為發售時的原樣。"
+    },
+    "menu:draw_helpers": {
+      "name": "繪製助手(需重新啟動)",
+      "what": "為圖形執行緒準備遊戲繪製的額外執行緒。大多數電腦適合開啟。在 4 核心 CPU 上它們會與遊戲爭搶核心:關閉後那裡的 FPS 提高了 3-6%。低階電腦 預設會關閉它們。重新啟動後生效。"
+    },
+    "menu:compute_pipe": {
+      "name": "繪製管線內運算",
+      "what": "遊戲的運算工作(煙、沙、水、羽毛)直接加入繪製佇列,而不是等佇列清空。在 4 核心 CPU 上 FPS 提高了 5-8%;在快速 CPU 上沒有差別。低階電腦 預設會開啟它。如果載入卡住,請關閉它。"
     }
   },
   "menu": {
@@ -1181,6 +1189,13 @@
     "Lite shadows": "輕量陰影",
     "On (lighter)": "開啟（更輕）",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "去掉遊戲四層陰影中離鏡頭最近的一層,遊戲自己在某些區域也這樣做。在較舊的 CPU 和 Steam Deck 上 FPS 高幾個百分點;鏡頭附近的陰影會稍微柔和一些。關閉為發售時的原樣。",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "一次即時切換此頁的所有設定和材質包。Stock 為遊戲發售時的原樣;推薦 為預設值;低階電腦 是陰影距離 50% 並開啟輕量陰影的 Stock,適合較舊或較弱的電腦。你自己的預設是 presets 資料夾裡的檔案,啟動器中也會列出。"
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, plus draw helpers off and compute in the draw pipeline on (Performance tab), for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "一次即時切換此頁的所有設定和材質包。Stock 為遊戲發售時的原樣;推薦 為預設值;低階電腦 是陰影距離 50% 並開啟輕量陰影、關閉繪製助手、開啟繪製管線內運算(效能頁)的 Stock,適合較舊或較弱的電腦。你自己的預設是 presets 資料夾裡的檔案,啟動器中也會列出。",
+    "Draw helpers (requires restart)": "繪製助手(需重新啟動)",
+    "Compute in the draw pipeline": "繪製管線內運算",
+    "Off (for 4-core CPUs)": "關(適合 4 核心 CPU)",
+    "On (default)": "開(預設)",
+    "On (for 4-core CPUs)": "開(適合 4 核心 CPU)",
+    "Extra threads that prepare the game's draws for the graphics thread. On suits most PCs. On a 4-core CPU they compete with the game for the cores: off gave 3-6% more FPS there. The Low-end PC preset turns them off. Applies after a restart.": "為圖形執行緒準備遊戲繪製的額外執行緒。大多數電腦適合開啟。在 4 核心 CPU 上它們會與遊戲爭搶核心:關閉後那裡的 FPS 提高了 3-6%。低階電腦 預設會關閉它們。重新啟動後生效。",
+    "The game's compute jobs (smoke, sand, water, feathers) join the queue of draws instead of waiting until it is empty. On a 4-core CPU this gave 5-8% more FPS; on fast CPUs it makes no difference. The Low-end PC preset turns it on. Turn it off if a load ever hangs.": "遊戲的運算工作(煙、沙、水、羽毛)直接加入繪製佇列,而不是等佇列清空。在 4 核心 CPU 上 FPS 提高了 5-8%;在快速 CPU 上沒有差別。低階電腦 預設會開啟它。如果載入卡住,請關閉它。"
   }
 }

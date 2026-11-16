@@ -316,7 +316,7 @@
     "launcher.shadow_scale": "Schaduwresolutie",
     "launcher.shadow_game": "Game (2048)",
     "launcher.graphics_preset": "Grafische preset",
-    "launcher.graphics_preset_hint": "Alle beeldinstellingen en het texturepakket in één keer. Stock is de game zoals uitgebracht; sla je eigen op hier of in het in-game menu (Insert, tab Beeld). Oudere of zwakkere pc: kies Low-end pc (Stock met schaduwen op 50% afstand en lichte schaduwen; houdt je resolutie en FPS). Steam Deck: kies Steam Deck (experimenteel), Low-end pc plus 1280x800, 30 FPS, geen upscaling en framegeneratie uit: laat ons weten hoe het loopt.",
+    "launcher.graphics_preset_hint": "Alle beeldinstellingen en het texturepakket in één keer. Stock is de game zoals uitgebracht; sla je eigen op hier of in het in-game menu (Insert, tab Beeld). Oudere of zwakkere pc: kies Low-end pc (Stock met schaduwen op 50% afstand en lichte schaduwen, plus tekenhelpers uit en compute in de tekenpijplijn aan; houdt je resolutie en FPS). Steam Deck: kies Steam Deck (experimenteel), Low-end pc plus 1280x800, 30 FPS, geen upscaling en framegeneratie uit: laat ons weten hoe het loopt.",
     "launcher.preset_save": "Opslaan als preset",
     "launcher.preset_save_button": "Opslaan",
     "launcher.preset_save_bad": "Typ een naam (letters, cijfers, spatie, - of _; niet Stock, Recommended, Low-end PC of Steam Deck).",
@@ -802,6 +802,14 @@
     "menu:shadow_lite": {
       "name": "Lichte schaduwen",
       "what": "Laat de dichtstbijzijnde van de vier schaduwlagen van de game weg, zoals de game zelf in sommige gebieden doet. Een paar % meer FPS op oudere cpu's en de Steam Deck; schaduwen dicht bij de camera worden iets zachter. Uit is zoals uitgebracht."
+    },
+    "menu:draw_helpers": {
+      "name": "Tekenhelpers (herstart nodig)",
+      "what": "Extra threads die de tekenopdrachten van de game voorbereiden voor de grafische thread. Aan past bij de meeste pc's. Op een 4-core-cpu concurreren ze met de game om de cores: uit gaf daar 3-6% meer FPS. De preset Low-end pc zet ze uit. Werkt na een herstart."
+    },
+    "menu:compute_pipe": {
+      "name": "Compute in de tekenpijplijn",
+      "what": "De compute-taken van de game (rook, zand, water, veren) schuiven aan in de rij tekenopdrachten in plaats van te wachten tot die leeg is. Op een 4-core-cpu gaf dit 5-8% meer FPS; op snelle cpu's maakt het geen verschil. De preset Low-end pc zet het aan. Zet het uit als een laadscherm ooit blijft hangen."
     }
   },
   "menu": {
@@ -1181,6 +1189,13 @@
     "Lite shadows": "Lichte schaduwen",
     "On (lighter)": "Aan (lichter)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Laat de dichtstbijzijnde van de vier schaduwlagen van de game weg, zoals de game zelf in sommige gebieden doet. Een paar % meer FPS op oudere cpu's en de Steam Deck; schaduwen dicht bij de camera worden iets zachter. Uit is zoals uitgebracht.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Zet alle instellingen op dit tabblad en het texturepakket in één keer om, live. Stock is de game zoals uitgebracht; Aanbevolen is de standaard; Low-end pc is Stock met schaduwen op 50% afstand en lichte schaduwen, voor oudere of zwakkere pc's. Je eigen presets zijn bestanden in de map presets, ook te zien in de launcher."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, plus draw helpers off and compute in the draw pipeline on (Performance tab), for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Zet alle instellingen op dit tabblad en het texturepakket in één keer om, live. Stock is de game zoals uitgebracht; Aanbevolen is de standaard; Low-end pc is Stock met schaduwen op 50% afstand en lichte schaduwen, plus tekenhelpers uit en compute in de tekenpijplijn aan (tab Prestaties), voor oudere of zwakkere pc's. Je eigen presets zijn bestanden in de map presets, ook te zien in de launcher.",
+    "Draw helpers (requires restart)": "Tekenhelpers (herstart nodig)",
+    "Compute in the draw pipeline": "Compute in de tekenpijplijn",
+    "Off (for 4-core CPUs)": "Uit (voor 4-core-cpu's)",
+    "On (default)": "Aan (standaard)",
+    "On (for 4-core CPUs)": "Aan (voor 4-core-cpu's)",
+    "Extra threads that prepare the game's draws for the graphics thread. On suits most PCs. On a 4-core CPU they compete with the game for the cores: off gave 3-6% more FPS there. The Low-end PC preset turns them off. Applies after a restart.": "Extra threads die de tekenopdrachten van de game voorbereiden voor de grafische thread. Aan past bij de meeste pc's. Op een 4-core-cpu concurreren ze met de game om de cores: uit gaf daar 3-6% meer FPS. De preset Low-end pc zet ze uit. Werkt na een herstart.",
+    "The game's compute jobs (smoke, sand, water, feathers) join the queue of draws instead of waiting until it is empty. On a 4-core CPU this gave 5-8% more FPS; on fast CPUs it makes no difference. The Low-end PC preset turns it on. Turn it off if a load ever hangs.": "De compute-taken van de game (rook, zand, water, veren) schuiven aan in de rij tekenopdrachten in plaats van te wachten tot die leeg is. Op een 4-core-cpu gaf dit 5-8% meer FPS; op snelle cpu's maakt het geen verschil. De preset Low-end pc zet het aan. Zet het uit als een laadscherm ooit blijft hangen."
   }
 }

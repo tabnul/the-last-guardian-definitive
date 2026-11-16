@@ -294,7 +294,7 @@
     "launcher.shadow_scale": "Resolución de sombras",
     "launcher.shadow_game": "Juego (2048)",
     "launcher.graphics_preset": "Preajuste gráfico",
-    "launcher.graphics_preset_hint": "Todos los ajustes de imagen y el paquete de texturas a la vez. Stock es el juego tal como se lanzó; guarda los tuyos aquí o en el menú del juego (Insert, pestaña Imagen). PC antiguo o modesto: elige PC modesto (Stock con sombras al 50% de distancia y sombras ligeras; mantiene tu resolución y FPS). Steam Deck: elige Steam Deck (experimental), PC modesto más 1280x800, 30 FPS, sin escalado y sin generación de fotogramas: cuéntanos qué tal va.",
+    "launcher.graphics_preset_hint": "Todos los ajustes de imagen y el paquete de texturas a la vez. Stock es el juego tal como se lanzó; guarda los tuyos aquí o en el menú del juego (Insert, pestaña Imagen). PC antiguo o modesto: elige PC modesto (Stock con sombras al 50% de distancia y sombras ligeras, además de ayudantes de dibujo desactivados y cómputo en la cola de dibujo activado; mantiene tu resolución y FPS). Steam Deck: elige Steam Deck (experimental), PC modesto más 1280x800, 30 FPS, sin escalado y sin generación de fotogramas: cuéntanos qué tal va.",
     "launcher.preset_save": "Guardar como preajuste",
     "launcher.preset_save_button": "Guardar",
     "launcher.preset_save_bad": "Escribe un nombre (letras, dígitos, espacio, - o _; no Stock, Recommended, Low-end PC ni Steam Deck).",
@@ -795,6 +795,14 @@
     "menu:shadow_lite": {
       "name": "Sombras ligeras",
       "what": "Omite la más cercana de las cuatro capas de sombra del juego, como hace el propio juego en algunas zonas. Unos pocos % más de FPS en CPU antiguas y en Steam Deck; las sombras cerca de la cámara quedan algo más suaves. Desactivado es como se lanzó."
+    },
+    "menu:draw_helpers": {
+      "name": "Ayudantes de dibujo (requiere reinicio)",
+      "what": "Hilos extra que preparan los dibujos del juego para el hilo gráfico. Activado va bien en la mayoría de PC. En una CPU de 4 núcleos compiten con el juego por los núcleos: desactivados dieron un 3-6% más de FPS allí. El preset PC modesto los desactiva. Se aplica tras reiniciar."
+    },
+    "menu:compute_pipe": {
+      "name": "Cómputo en la cola de dibujo",
+      "what": "Las tareas de cómputo del juego (humo, arena, agua, plumas) entran en la cola de dibujos en lugar de esperar a que se vacíe. En una CPU de 4 núcleos dio un 5-8% más de FPS; en CPU rápidas no cambia nada. El preset PC modesto lo activa. Desactívalo si alguna carga se queda colgada."
     }
   },
   "menu": {
@@ -1168,6 +1176,13 @@
     "Lite shadows": "Sombras ligeras",
     "On (lighter)": "Activado (más ligero)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Omite la más cercana de las cuatro capas de sombra del juego, como hace el propio juego en algunas zonas. Unos pocos % más de FPS en CPU antiguas y en Steam Deck; las sombras cerca de la cámara quedan algo más suaves. Desactivado es como se lanzó.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Cambia todos los ajustes de esta pestaña y el paquete de texturas a la vez, en directo. Stock es el juego tal como se lanzó; Recomendado es el predeterminado; PC modesto es Stock con sombras al 50% de distancia y sombras ligeras, para PC antiguos o modestos. Tus propios presets son archivos en la carpeta presets, también listados en el launcher."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, plus draw helpers off and compute in the draw pipeline on (Performance tab), for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Cambia todos los ajustes de esta pestaña y el paquete de texturas a la vez, en directo. Stock es el juego tal como se lanzó; Recomendado es el predeterminado; PC modesto es Stock con sombras al 50% de distancia y sombras ligeras, además de ayudantes de dibujo desactivados y cómputo en la cola de dibujo activado (pestaña Rendimiento), para PC antiguos o modestos. Tus propios presets son archivos en la carpeta presets, también listados en el launcher.",
+    "Draw helpers (requires restart)": "Ayudantes de dibujo (requiere reinicio)",
+    "Compute in the draw pipeline": "Cómputo en la cola de dibujo",
+    "Off (for 4-core CPUs)": "Desactivado (para CPU de 4 núcleos)",
+    "On (default)": "Activado (predeterminado)",
+    "On (for 4-core CPUs)": "Activado (para CPU de 4 núcleos)",
+    "Extra threads that prepare the game's draws for the graphics thread. On suits most PCs. On a 4-core CPU they compete with the game for the cores: off gave 3-6% more FPS there. The Low-end PC preset turns them off. Applies after a restart.": "Hilos extra que preparan los dibujos del juego para el hilo gráfico. Activado va bien en la mayoría de PC. En una CPU de 4 núcleos compiten con el juego por los núcleos: desactivados dieron un 3-6% más de FPS allí. El preset PC modesto los desactiva. Se aplica tras reiniciar.",
+    "The game's compute jobs (smoke, sand, water, feathers) join the queue of draws instead of waiting until it is empty. On a 4-core CPU this gave 5-8% more FPS; on fast CPUs it makes no difference. The Low-end PC preset turns it on. Turn it off if a load ever hangs.": "Las tareas de cómputo del juego (humo, arena, agua, plumas) entran en la cola de dibujos en lugar de esperar a que se vacíe. En una CPU de 4 núcleos dio un 5-8% más de FPS; en CPU rápidas no cambia nada. El preset PC modesto lo activa. Desactívalo si alguna carga se queda colgada."
   }
 }

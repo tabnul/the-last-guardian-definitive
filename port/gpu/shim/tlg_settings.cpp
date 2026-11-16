@@ -258,6 +258,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.mod_throw_up = i == 1 ? 1 : 0;
     } else if (key == "mod_hints") {
         v.mod_hints = i != 0;
+    } else if (key == "draw_helpers") {
+        v.draw_helpers = value.empty() || i != 0;
+    } else if (key == "compute_pipe") {
+        v.compute_pipe = i != 0;
     } else if (key == "keep_gpu_textures") {
         v.keep_gpu_textures = value.empty() || i != 0;
     } else if (key == "arena_release") {
@@ -462,6 +466,7 @@ void Load() {
         {"TLG_HDR", "hdr"},                          {"TLG_FG", "frame_generation"},
         {"TLG_ARENA_RELEASE", "arena_release"},      {"TLG_GC_LIVE_BUDGET", "gc_live_budget"},
         {"TLG_SHADOW_DISTANCE", "shadow_distance"}, {"TLG_SHADOW_LITE", "shadow_lite"},
+        {"TLG_DRAW_HELPERS", "draw_helpers"},       {"TLG_COMPUTE_PIPE", "compute_pipe"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -490,6 +495,7 @@ void Load() {
     v.startup_deferred_readback = v.deferred_readback;
     v.startup_stale_readback = v.stale_readback;
     v.startup_hdr = v.hdr;
+    v.startup_draw_helpers = v.draw_helpers;
 }
 
 bool GraphicsNeedRestart() {
@@ -498,7 +504,7 @@ bool GraphicsNeedRestart() {
            v.engine_fps != v.startup_engine_fps ||
            v.deferred_readback != v.startup_deferred_readback ||
            v.stale_readback != v.startup_stale_readback || v.hdr != v.startup_hdr ||
-           QualityNeedsRestart();
+           v.draw_helpers != v.startup_draw_helpers || QualityNeedsRestart();
 }
 
 bool QualityNeedsRestart() {
@@ -756,6 +762,7 @@ void Save() {
     std::fprintf(file, "frame_generation=%d\n", v.frame_generation.load());
     std::fprintf(file, "audio_device=%s\naudio_surround=%d\n", v.audio_device.c_str(), int(v.audio_surround.load()));
     std::fprintf(file, "keep_gpu_textures=%d\n", int(v.keep_gpu_textures.load()));
+    std::fprintf(file, "draw_helpers=%d\ncompute_pipe=%d\n", v.draw_helpers.load(), v.compute_pipe.load());
     std::fprintf(file, "arena_release=%d\ngc_live_budget=%d\n", int(v.arena_release.load()),
                  int(v.gc_live_budget.load()));
     std::fprintf(file,
@@ -853,6 +860,9 @@ std::string GraphicsText(const Values& v) {
     add_float("color_gamma", v.color_gamma);
     add("lod_bias", v.lod_bias);
     add("aniso", v.aniso);
+    // Not look settings, but the Low-end PC preset sets them (user 2026-11-16).
+    add("draw_helpers", v.draw_helpers);
+    add("compute_pipe", v.compute_pipe);
     const int pack = v.texture_pack;
     text += "texture_pack=" + (pack > 0 ? TexturePackNames()[pack - 1] : std::string("off")) + "\n";
     return text;
@@ -874,11 +884,12 @@ struct GraphicsPreset {
 };
 
 std::vector<GraphicsPreset> ReadPresets() {
-    // Low-end PC (#85, #75): Stock with shadows at 50% distance and Lite shadows (launcher
-    // preset_share GAME_LOWEND).
-    std::vector<GraphicsPreset> list{{"Stock", Normalized(StockLines)},
-                                     {"Recommended", Normalized("")},
-                                     {"Low-end PC", Normalized(std::string(StockLines) + "shadow_distance=50\nshadow_lite=1\n")}};
+    // Low-end PC (#85, #75): Stock with shadows at 50% distance and Lite shadows, draw helpers
+    // off and compute in the draw pipeline (launcher preset_share GAME_LOWEND).
+    std::vector<GraphicsPreset> list{
+        {"Stock", Normalized(StockLines)},
+        {"Recommended", Normalized("")},
+        {"Low-end PC", Normalized(std::string(StockLines) + "shadow_distance=50\nshadow_lite=1\ndraw_helpers=0\ncompute_pipe=1\n")}};
     std::vector<std::filesystem::path> files;
     std::error_code error;
     for (const auto& entry : std::filesystem::directory_iterator(PresetDir(), error)) {

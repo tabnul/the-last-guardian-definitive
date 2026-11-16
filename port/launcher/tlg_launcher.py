@@ -427,7 +427,7 @@ TEXT = {
     'graphics_preset': 'Graphics preset',
     'graphics_preset_hint': ('All look settings and the texture pack at once. Stock is the game as shipped; '
                              'save your own here or in the in-game menu (Insert, Image tab). Older or '
-                             'weaker PC: pick Low-end PC (Stock with shadows at 50% distance and Lite shadows; keeps your '
+                             'weaker PC: pick Low-end PC (Stock with shadows at 50% distance and Lite shadows, draw helpers off and compute in the draw pipeline on; keeps your '
                              'resolution and FPS). Steam Deck: pick Steam Deck (experimental), Low-end PC '
                              'plus 1280x800, 30 FPS, no upscaling and frame generation off: tell us how it runs.'),
     'preset_save': 'Save as preset',
@@ -2809,6 +2809,23 @@ class Launcher:
         slow_box.bind('<<ComboboxSelected>>', lambda _: slow_picked())
         help_mark(parent, slow.what).grid(row=row, column=2, sticky='w', padx=(4, 0), pady=3)
         resets.append(lambda: (slow_box.current(slow_values.index(slow.default)), slow_picked()))
+        # CPU switches for 4-core PCs (tlg.ini; the Low-end PC preset sets both).
+        ini_now = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
+        for key in ('draw_helpers', 'compute_pipe'):
+            item = next(entry for entry in backports_table.MENU if entry.key == key)
+            parent, row = place(1)
+            var = tk.BooleanVar(value=ini_now.get(key, item.default) not in ('0', ''))
+
+            def cpu_toggled(key=key, var=var):
+                tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
+                tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {key: int(var.get())})
+                self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
+
+            ttk.Checkbutton(parent, text=item.name, variable=var, command=cpu_toggled).grid(
+                row=row, column=0, columnspan=2, sticky='w')
+            help_mark(parent, item.what).grid(row=row, column=2, sticky='w', padx=(4, 0), pady=3)
+            resets.append(lambda var=var, default=item.default == '1', cpu_toggled=cpu_toggled:
+                          (var.set(default), cpu_toggled()))
         # The memory test switches moved to Debug > Flags (2026-11-12).
         bottom = ttk.Frame(frame)
         bottom.grid(row=2, column=0, columnspan=2, sticky='ew', pady=(10, 0))

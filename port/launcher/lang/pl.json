@@ -316,7 +316,7 @@
     "launcher.shadow_scale": "Rozdzielczość cieni",
     "launcher.shadow_game": "Gra (2048)",
     "launcher.graphics_preset": "Profil grafiki",
-    "launcher.graphics_preset_hint": "Wszystkie ustawienia wyglądu i paczka tekstur naraz. Stock to gra jak w dniu premiery; własne zapisz tutaj lub w menu w grze (Insert, karta Obraz). Starszy lub słabszy PC: wybierz Słabszy PC (Stock z cieniami na 50% odległości i lekkimi cieniami; zostawia twoją rozdzielczość i FPS). Steam Deck: wybierz Steam Deck (eksperymentalny), Słabszy PC plus 1280x800, 30 FPS, bez skalowania i bez generowania klatek: daj znać, jak działa.",
+    "launcher.graphics_preset_hint": "Wszystkie ustawienia wyglądu i paczka tekstur naraz. Stock to gra jak w dniu premiery; własne zapisz tutaj lub w menu w grze (Insert, karta Obraz). Starszy lub słabszy PC: wybierz Słabszy PC (Stock z cieniami na 50% odległości i lekkimi cieniami, do tego pomocnicy rysowania wyłączeni i obliczenia w potoku rysowania włączone; zostawia twoją rozdzielczość i FPS). Steam Deck: wybierz Steam Deck (eksperymentalny), Słabszy PC plus 1280x800, 30 FPS, bez skalowania i bez generowania klatek: daj znać, jak działa.",
     "launcher.preset_save": "Zapisz jako profil",
     "launcher.preset_save_button": "Zapisz",
     "launcher.preset_save_bad": "Wpisz nazwę (litery, cyfry, spacja, - lub _; nie Stock, Recommended, Low-end PC ani Steam Deck).",
@@ -802,6 +802,14 @@
     "menu:shadow_lite": {
       "name": "Lekkie cienie",
       "what": "Pomija najbliższą z czterech warstw cieni gry, tak jak gra sama robi w niektórych miejscach. Kilka % więcej FPS na starszych procesorach i Steam Decku; cienie blisko kamery są trochę bardziej miękkie. Wył. to gra jak w dniu premiery."
+    },
+    "menu:draw_helpers": {
+      "name": "Pomocnicy rysowania (wymaga restartu)",
+      "what": "Dodatkowe wątki, które przygotowują rysowanie gry dla wątku graficznego. Wł. pasuje do większości komputerów. Na CPU 4-rdzeniowym konkurują z grą o rdzenie: wyłączenie dało tam 3-6% więcej FPS. Preset Słabszy PC je wyłącza. Działa po restarcie."
+    },
+    "menu:compute_pipe": {
+      "name": "Obliczenia w potoku rysowania",
+      "what": "Zadania obliczeniowe gry (dym, piasek, woda, pióra) dołączają do kolejki rysowania zamiast czekać, aż się opróżni. Na CPU 4-rdzeniowym dało to 5-8% więcej FPS; na szybkich CPU nie ma różnicy. Preset Słabszy PC je włącza. Wyłącz, jeśli wczytywanie kiedyś się zawiesi."
     }
   },
   "menu": {
@@ -1181,6 +1189,13 @@
     "Lite shadows": "Lekkie cienie",
     "On (lighter)": "Wł. (lżej)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Pomija najbliższą z czterech warstw cieni gry, tak jak gra sama robi w niektórych miejscach. Kilka % więcej FPS na starszych procesorach i Steam Decku; cienie blisko kamery są trochę bardziej miękkie. Wył. to gra jak w dniu premiery.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Przełącza naraz wszystkie ustawienia tej karty i paczkę tekstur, na żywo. Stock to gra jak w dniu premiery; Zalecane to domyślne; Słabszy PC to Stock z cieniami na 50% odległości i lekkimi cieniami, dla starszych lub słabszych komputerów. Twoje presety to pliki w folderze presets, widoczne też w launcherze."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, plus draw helpers off and compute in the draw pipeline on (Performance tab), for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Przełącza naraz wszystkie ustawienia tej karty i paczkę tekstur, na żywo. Stock to gra jak w dniu premiery; Zalecane to domyślne; Słabszy PC to Stock z cieniami na 50% odległości i lekkimi cieniami, do tego pomocnicy rysowania wyłączeni i obliczenia w potoku rysowania włączone (karta Wydajność), dla starszych lub słabszych komputerów. Twoje presety to pliki w folderze presets, widoczne też w launcherze.",
+    "Draw helpers (requires restart)": "Pomocnicy rysowania (wymaga restartu)",
+    "Compute in the draw pipeline": "Obliczenia w potoku rysowania",
+    "Off (for 4-core CPUs)": "Wył. (dla CPU 4-rdzeniowych)",
+    "On (default)": "Wł. (domyślnie)",
+    "On (for 4-core CPUs)": "Wł. (dla CPU 4-rdzeniowych)",
+    "Extra threads that prepare the game's draws for the graphics thread. On suits most PCs. On a 4-core CPU they compete with the game for the cores: off gave 3-6% more FPS there. The Low-end PC preset turns them off. Applies after a restart.": "Dodatkowe wątki, które przygotowują rysowanie gry dla wątku graficznego. Wł. pasuje do większości komputerów. Na CPU 4-rdzeniowym konkurują z grą o rdzenie: wyłączenie dało tam 3-6% więcej FPS. Preset Słabszy PC je wyłącza. Działa po restarcie.",
+    "The game's compute jobs (smoke, sand, water, feathers) join the queue of draws instead of waiting until it is empty. On a 4-core CPU this gave 5-8% more FPS; on fast CPUs it makes no difference. The Low-end PC preset turns it on. Turn it off if a load ever hangs.": "Zadania obliczeniowe gry (dym, piasek, woda, pióra) dołączają do kolejki rysowania zamiast czekać, aż się opróżni. Na CPU 4-rdzeniowym dało to 5-8% więcej FPS; na szybkich CPU nie ma różnicy. Preset Słabszy PC je włącza. Wyłącz, jeśli wczytywanie kiedyś się zawiesi."
   }
 }

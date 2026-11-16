@@ -83,6 +83,13 @@ struct Values {
     /// Lite shadows (1) or as shipped (0): the closest of the sun's four shadow layers left out
     /// (first split distance -1), as the game's own *_Lite cascade presets do; tlg_lua.cpp.
     std::atomic<int> shadow_lite{0};
+    /// Draw helpers (1, default) or none (0): the worker threads that prepare draws for the GPU
+    /// thread (vk_draw_prep.cpp; read at start, startup_draw_helpers). Off is faster on 4-core CPUs.
+    /// In the presets (Low-end PC: off), though not a look setting. Env TLG_PREP_WORKERS wins.
+    std::atomic<int> draw_helpers{1};
+    /// Compute in the draw pipeline (1) or the drain before each compute packet (0, default):
+    /// liverpool.cpp ProcessCompute (PipelinedCompute), live. Low-end PC preset: on.
+    std::atomic<int> compute_pipe{0};
     /// Lab tab (menu, live; tuning tests): texture LOD bias under DLAA in quarter steps (-4 =
     /// -1.0, the DLSS guide value), anisotropic filtering forced on mipmapped textures (0 = the
     /// game's own), the half-resolution effect targets drawn at 2x (fog, particles, AO;
@@ -202,6 +209,7 @@ struct Values {
     /// rate patch does not apply to this game build.
     std::atomic<int> applied_engine_fps{120};
     bool startup_deferred_readback = true, startup_stale_readback = true, startup_hdr = true;
+    int startup_draw_helpers = 1;
     // FSR 4 checks (menu): the provider's auto exposure, the jitter sign it is given.
     std::atomic<bool> fsr4_auto_exposure{true};
     std::atomic<bool> fsr4_invert_jitter{false};

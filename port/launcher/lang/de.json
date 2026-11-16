@@ -294,7 +294,7 @@
     "launcher.shadow_scale": "Schattenauflösung",
     "launcher.shadow_game": "Spiel (2048)",
     "launcher.graphics_preset": "Grafik-Preset",
-    "launcher.graphics_preset_hint": "Alle Look-Einstellungen und das Texturpaket auf einmal. Stock ist das Spiel wie ausgeliefert; eigene hier oder im Spielmenü speichern (Einfg, Bild-Tab). Älterer oder schwächerer PC: Schwacher PC wählen (Stock mit Schatten auf 50% Distanz und leichten Schatten; behält deine Auflösung und FPS). Steam Deck: Steam Deck (experimentell) wählen, Schwacher PC plus 1280x800, 30 FPS, kein Upscaling und Frame Generation aus: sag uns, wie es läuft.",
+    "launcher.graphics_preset_hint": "Alle Look-Einstellungen und das Texturpaket auf einmal. Stock ist das Spiel wie ausgeliefert; eigene hier oder im Spielmenü speichern (Einfg, Bild-Tab). Älterer oder schwächerer PC: Schwacher PC wählen (Stock mit Schatten auf 50% Distanz und leichten Schatten, dazu Zeichenhelfer aus und Compute in der Zeichen-Pipeline an; behält deine Auflösung und FPS). Steam Deck: Steam Deck (experimentell) wählen, Schwacher PC plus 1280x800, 30 FPS, kein Upscaling und Frame Generation aus: sag uns, wie es läuft.",
     "launcher.preset_save": "Als Preset speichern",
     "launcher.preset_save_button": "Speichern",
     "launcher.preset_save_bad": "Gib einen Namen ein (Buchstaben, Ziffern, Leerzeichen, - oder _; nicht Stock, Recommended, Low-end PC oder Steam Deck).",
@@ -795,6 +795,14 @@
     "menu:shadow_lite": {
       "name": "Leichte Schatten",
       "what": "Lässt die nächste der vier Schattenebenen des Spiels weg, wie es das Spiel in manchen Gebieten selbst tut. Ein paar % mehr FPS auf älteren CPUs und dem Steam Deck; Schatten nah an der Kamera werden etwas weicher. Aus ist wie ausgeliefert."
+    },
+    "menu:draw_helpers": {
+      "name": "Zeichenhelfer (Neustart nötig)",
+      "what": "Zusätzliche Threads, die die Zeichenaufrufe des Spiels für den Grafik-Thread vorbereiten. An passt für die meisten PCs. Auf einer 4-Kern-CPU konkurrieren sie mit dem Spiel um die Kerne: aus brachte dort 3-6% mehr FPS. Das Preset Schwacher PC schaltet sie aus. Wirkt nach einem Neustart."
+    },
+    "menu:compute_pipe": {
+      "name": "Compute in der Zeichen-Pipeline",
+      "what": "Die Compute-Aufgaben des Spiels (Rauch, Sand, Wasser, Federn) reihen sich in die Warteschlange der Zeichenaufrufe ein, statt zu warten, bis sie leer ist. Auf einer 4-Kern-CPU brachte das 5-8% mehr FPS; auf schnellen CPUs macht es keinen Unterschied. Das Preset Schwacher PC schaltet es an. Schalte es aus, falls ein Ladevorgang je hängen bleibt."
     }
   },
   "menu": {
@@ -1168,6 +1176,13 @@
     "Lite shadows": "Leichte Schatten",
     "On (lighter)": "An (leichter)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Lässt die nächste der vier Schattenebenen des Spiels weg, wie es das Spiel in manchen Gebieten selbst tut. Ein paar % mehr FPS auf älteren CPUs und dem Steam Deck; Schatten nah an der Kamera werden etwas weicher. Aus ist wie ausgeliefert.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Schaltet alle Einstellungen dieses Tabs und das Texturpaket auf einmal um, live. Stock ist das Spiel wie ausgeliefert; Empfohlen ist der Standard; Schwacher PC ist Stock mit Schatten auf 50% Distanz und leichten Schatten, für ältere oder schwächere PCs. Eigene Presets sind Dateien im Ordner presets, auch im Launcher aufgelistet."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, plus draw helpers off and compute in the draw pipeline on (Performance tab), for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Schaltet alle Einstellungen dieses Tabs und das Texturpaket auf einmal um, live. Stock ist das Spiel wie ausgeliefert; Empfohlen ist der Standard; Schwacher PC ist Stock mit Schatten auf 50% Distanz und leichten Schatten, dazu Zeichenhelfer aus und Compute in der Zeichen-Pipeline an (Tab Leistung), für ältere oder schwächere PCs. Eigene Presets sind Dateien im Ordner presets, auch im Launcher aufgelistet.",
+    "Draw helpers (requires restart)": "Zeichenhelfer (Neustart nötig)",
+    "Compute in the draw pipeline": "Compute in der Zeichen-Pipeline",
+    "Off (for 4-core CPUs)": "Aus (für 4-Kern-CPUs)",
+    "On (default)": "An (Standard)",
+    "On (for 4-core CPUs)": "An (für 4-Kern-CPUs)",
+    "Extra threads that prepare the game's draws for the graphics thread. On suits most PCs. On a 4-core CPU they compete with the game for the cores: off gave 3-6% more FPS there. The Low-end PC preset turns them off. Applies after a restart.": "Zusätzliche Threads, die die Zeichenaufrufe des Spiels für den Grafik-Thread vorbereiten. An passt für die meisten PCs. Auf einer 4-Kern-CPU konkurrieren sie mit dem Spiel um die Kerne: aus brachte dort 3-6% mehr FPS. Das Preset Schwacher PC schaltet sie aus. Wirkt nach einem Neustart.",
+    "The game's compute jobs (smoke, sand, water, feathers) join the queue of draws instead of waiting until it is empty. On a 4-core CPU this gave 5-8% more FPS; on fast CPUs it makes no difference. The Low-end PC preset turns it on. Turn it off if a load ever hangs.": "Die Compute-Aufgaben des Spiels (Rauch, Sand, Wasser, Federn) reihen sich in die Warteschlange der Zeichenaufrufe ein, statt zu warten, bis sie leer ist. Auf einer 4-Kern-CPU brachte das 5-8% mehr FPS; auf schnellen CPUs macht es keinen Unterschied. Das Preset Schwacher PC schaltet es an. Schalte es aus, falls ein Ladevorgang je hängen bleibt."
   }
 }

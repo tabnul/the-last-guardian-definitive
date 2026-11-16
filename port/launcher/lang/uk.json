@@ -316,7 +316,7 @@
     "launcher.shadow_scale": "Роздільність тіней",
     "launcher.shadow_game": "Гра (2048)",
     "launcher.graphics_preset": "Графічний пресет",
-    "launcher.graphics_preset_hint": "Усі налаштування вигляду та пакет текстур одразу. Stock — гра як у релізі; свої зберігайте тут або в меню гри (Insert, вкладка Зображення). Старий чи слабкий ПК: виберіть Слабкий ПК (Stock із тінями на 50% відстані та легкими тінями; ваша роздільність і FPS лишаються). Steam Deck: виберіть Steam Deck (експериментально) — Слабкий ПК плюс 1280x800, 30 FPS, без масштабування й без генерації кадрів: розкажіть, як працює.",
+    "launcher.graphics_preset_hint": "Усі налаштування вигляду та пакет текстур одразу. Stock — гра як у релізі; свої зберігайте тут або в меню гри (Insert, вкладка Зображення). Старий чи слабкий ПК: виберіть Слабкий ПК (Stock із тінями на 50% відстані та легкими тінями, а також вимкненими помічниками малювання й увімкненими обчисленнями в конвеєрі малювання; ваша роздільність і FPS лишаються). Steam Deck: виберіть Steam Deck (експериментально) — Слабкий ПК плюс 1280x800, 30 FPS, без масштабування й без генерації кадрів: розкажіть, як працює.",
     "launcher.preset_save": "Зберегти як пресет",
     "launcher.preset_save_button": "Зберегти",
     "launcher.preset_save_bad": "Введіть назву (літери, цифри, пробіл, - або _; не Stock, Recommended, Low-end PC чи Steam Deck).",
@@ -802,6 +802,14 @@
     "menu:shadow_lite": {
       "name": "Легкі тіні",
       "what": "Прибирає найближчий із чотирьох шарів тіней гри, як сама гра робить у деяких місцях. На кілька % більше FPS на старих процесорах і Steam Deck; тіні біля камери стають трохи м'якшими. Вимк. — як у релізі."
+    },
+    "menu:draw_helpers": {
+      "name": "Помічники малювання (потрібен перезапуск)",
+      "what": "Додаткові потоки, що готують малювання гри для графічного потоку. Увімк. підходить більшості ПК. На 4-ядерному CPU вони змагаються з грою за ядра: вимкнення дало там на 3-6% більше FPS. Пресет Слабкий ПК їх вимикає. Діє після перезапуску."
+    },
+    "menu:compute_pipe": {
+      "name": "Обчислення в конвеєрі малювання",
+      "what": "Обчислювальні завдання гри (дим, пісок, вода, пір'я) стають у чергу малювання, а не чекають, поки вона спорожніє. На 4-ядерному CPU це дало на 5-8% більше FPS; на швидких CPU різниці немає. Пресет Слабкий ПК його вмикає. Вимкніть, якщо завантаження колись зависне."
     }
   },
   "menu": {
@@ -1181,6 +1189,13 @@
     "Lite shadows": "Легкі тіні",
     "On (lighter)": "Увімк. (легше)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Прибирає найближчий із чотирьох шарів тіней гри, як сама гра робить у деяких місцях. На кілька % більше FPS на старих процесорах і Steam Deck; тіні біля камери стають трохи м'якшими. Вимк. — як у релізі.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Перемикає всі налаштування цієї вкладки та пакет текстур одразу, наживо. Stock — гра як у релізі; Рекомендовано — типові значення; Слабкий ПК — це Stock із тінями на 50% відстані та легкими тінями, для старих чи слабких ПК. Ваші пресети — файли в теці presets, їх також видно в лаунчері."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, plus draw helpers off and compute in the draw pipeline on (Performance tab), for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Перемикає всі налаштування цієї вкладки та пакет текстур одразу, наживо. Stock — гра як у релізі; Рекомендовано — типові значення; Слабкий ПК — це Stock із тінями на 50% відстані та легкими тінями, а також вимкненими помічниками малювання й увімкненими обчисленнями в конвеєрі малювання (вкладка Продуктивність), для старих чи слабких ПК. Ваші пресети — файли в теці presets, їх також видно в лаунчері.",
+    "Draw helpers (requires restart)": "Помічники малювання (потрібен перезапуск)",
+    "Compute in the draw pipeline": "Обчислення в конвеєрі малювання",
+    "Off (for 4-core CPUs)": "Вимк. (для 4-ядерних CPU)",
+    "On (default)": "Увімк. (типово)",
+    "On (for 4-core CPUs)": "Увімк. (для 4-ядерних CPU)",
+    "Extra threads that prepare the game's draws for the graphics thread. On suits most PCs. On a 4-core CPU they compete with the game for the cores: off gave 3-6% more FPS there. The Low-end PC preset turns them off. Applies after a restart.": "Додаткові потоки, що готують малювання гри для графічного потоку. Увімк. підходить більшості ПК. На 4-ядерному CPU вони змагаються з грою за ядра: вимкнення дало там на 3-6% більше FPS. Пресет Слабкий ПК їх вимикає. Діє після перезапуску.",
+    "The game's compute jobs (smoke, sand, water, feathers) join the queue of draws instead of waiting until it is empty. On a 4-core CPU this gave 5-8% more FPS; on fast CPUs it makes no difference. The Low-end PC preset turns it on. Turn it off if a load ever hangs.": "Обчислювальні завдання гри (дим, пісок, вода, пір'я) стають у чергу малювання, а не чекають, поки вона спорожніє. На 4-ядерному CPU це дало на 5-8% більше FPS; на швидких CPU різниці немає. Пресет Слабкий ПК його вмикає. Вимкніть, якщо завантаження колись зависне."
   }
 }
