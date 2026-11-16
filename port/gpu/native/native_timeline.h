@@ -9,6 +9,8 @@
 #include <functional>
 #include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "common/types.h"
 
@@ -133,6 +135,9 @@ bool StopCapture();
 void RegisterSpan(u32 id, const std::string& name);
 /// Names for the capture file: an object (a guest wait object, a stage) gets a text.
 void CaptureNote(u64 id, const char* text);
+/// Names of the process's threads by OS thread id, for capture files and profiler pages: the OS names, with the guest threads' full names from the runtime
+/// where the OS has none or only its first 15 characters, and the guest threads that ended.
+std::vector<std::pair<u32, std::string>> ThreadNames();
 
 inline u64 Now() {
     return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());

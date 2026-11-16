@@ -73,10 +73,14 @@ def main():
     steps = max(int((t1 - t0) // STEP_NS), 1)
     xs = (np.arange(steps) + 0.5) * STEP_NS / 1e9
     cpu = ev[ev['type'] == tr.T_CPU]
-    # the PS4 path's stage threads, or the Vulkan backend's (recorder = resolver + recording threads; presenter): whichever ran
-    groups = {'raster thread': ['shadPS4:GpuRaster', 'vkb:Recorder'], 'command processor': ['shadPS4:GpuCommandProcessor', 'vkb:Record1', 'vkb:Record2'],
-              'encoder thread': ['shadPS4:GpuEncoder', 'shadPS4:PresentThread', 'tlg:Present'],
-              'game render thread': ['ps4render']}
+    # the Vulkan backend's threads when it ran (the game's render thread captures, the recorder resolves, the recording threads record), else the PS4 path's stages
+    if any(n.startswith('vkb:') for n in names.values()):
+        groups = {'game render thread (ps4render)': ['ps4render'], 'game submit thread': ['ps4render_submi'], 'recorder (vkb:Recorder)': ['vkb:Recorder'],
+                  'recording threads (vkb:Record1/2, sum)': ['vkb:Record1', 'vkb:Record2'], 'present thread': ['tlg:Present', 'shadPS4:PresentThread'],
+                  'completion thread (vkb:Completion)': ['vkb:Completion']}
+    else:
+        groups = {'raster thread': ['shadPS4:GpuRaster'], 'command processor': ['shadPS4:GpuCommandProcessor'], 'encoder thread': ['shadPS4:GpuEncoder'],
+                  'game render thread': ['ps4render']}
     cpu_lines = []
     idx = np.clip(((cpu['ns'].astype(np.int64) - t0) // STEP_NS).astype(np.int64), 0, steps - 1)
     for label, thread_names in groups.items():
@@ -92,7 +96,7 @@ def main():
 
     # GPU busy per 100 ms step (passes and dispatches)
     gp = ev[ev['type'] == tr.T_GPU_PASS]
-    work = gp[np.isin(gp['arg'] >> 56, [0x11, 0x12, 0x13, 0x21])]
+    work = gp[np.isin(gp['arg'] >> 56, tr.BUSY_KINDS)]
     w_dur = (work['arg'] & ((1 << 56) - 1)).astype(np.int64)
     w_end = work['ns'].astype(np.int64)
     gidx = np.clip(((w_end - t0) // STEP_NS).astype(np.int64), 0, steps - 1)

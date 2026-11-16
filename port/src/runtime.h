@@ -188,6 +188,9 @@ typedef struct RuntimeThreadInfo {
 } RuntimeThreadInfo;
 /* Guest threads and host wait slots; returns how many were written (at most max). */
 size_t runtime_thread_snapshot(RuntimeThreadInfo *out, size_t max);
+/* VKB: OS thread id and full guest name of every guest (or attached host) thread record, for the frame timeline's thread names (the OS name holds
+ * 15 characters, and a thread renamed by another thread or the main thread has none). Returns how many were written (at most max). */
+size_t runtime_thread_names(uint64_t *os_tids, char (*names)[32], size_t max);
 /* One line: "waiting on mutex 'name' 0x... for 1234 ms, held by 'Main'" ("running" without a
  * wait). threads/count resolve owners to names. */
 void runtime_freeze_describe_wait(char *out, size_t size, const RuntimeWait *wait, uint64_t now_ms,

@@ -20,12 +20,86 @@
 
 #include "common/logging/log.h"
 #include "common/path_util.h"
+#include "common/thread.h"
 #include "native/native_prof.h"
 #include "native/native_stall.h"
 #include "native/native_timeline.h"
 #include "native/shadps4/video_core/thread_usage.h"
 
+extern "C" size_t runtime_thread_names(uint64_t* os_tids, char (*names)[32], size_t max); // src/runtime.h
+
 namespace Core::FrameTimeline {
+
+/// A thread with no OS name and no guest record (a driver's or the system's): "<module of its start address> thread", e.g. "nvoglv64.dll thread".
+std::string UnnamedThreadName(u32 tid, const std::string& fallback) {
+#ifdef _WIN32
+    using QueryFn = LONG(WINAPI*)(HANDLE, int, PVOID, ULONG, PULONG);
+    static const auto query = reinterpret_cast<QueryFn>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationThread"));
+    if (query == nullptr) {
+        return fallback;
+    }
+    HANDLE thread = OpenThread(THREAD_QUERY_INFORMATION, FALSE, tid);
+    if (thread == nullptr) {
+        return fallback;
+    }
+    PVOID start = nullptr;
+    const LONG status = query(thread, 9 /* ThreadQuerySetWin32StartAddress */, &start, sizeof(start), nullptr);
+    CloseHandle(thread);
+    HMODULE module = nullptr;
+    if (status != 0 || start == nullptr ||
+        !GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, static_cast<LPCWSTR>(start), &module)) {
+        return fallback;
+    }
+    char path[MAX_PATH]{};
+    if (GetModuleFileNameA(module, path, MAX_PATH) == 0) {
+        return fallback;
+    }
+    std::string file = path;
+    if (const size_t slash = file.find_last_of("\\/"); slash != std::string::npos) {
+        file = file.substr(slash + 1);
+    }
+    return file + " thread";
+#else
+    (void)tid;
+    return fallback;
+#endif
+}
+
+std::vector<std::pair<u32, std::string>> ThreadNames() {
+    auto out = VideoCore::ThreadNames();
+    constexpr size_t MaxGuest = 1024;
+    static std::vector<uint64_t> tids(MaxGuest);
+    static std::vector<std::array<char, 32>> guest(MaxGuest);
+    static std::mutex guest_mutex;
+    std::scoped_lock lock{guest_mutex};
+    const size_t n = runtime_thread_names(tids.data(), reinterpret_cast<char(*)[32]>(guest.data()), MaxGuest);
+    std::map<u32, std::string> by_tid;
+    for (size_t i = 0; i < n; ++i) {
+        by_tid[static_cast<u32>(tids[i])] = guest[i].data();
+    }
+    // The guest's name when the OS has none (a thread renamed from another thread, the main thread, a thread that ended), or only its first 15 characters;
+    // the OS name otherwise (our own threads that call guest code are guest records named "host").
+    for (auto& [tid, name] : out) {
+        const auto it = by_tid.find(tid);
+        if (it == by_tid.end() || it->second.empty()) {
+            if (name.rfind("tid", 0) == 0) {
+                name = UnnamedThreadName(tid, name);
+            }
+            continue;
+        }
+        if (name.rfind("tid", 0) == 0 || (it->second.size() > name.size() && it->second.rfind(name, 0) == 0)) {
+            name = it->second;
+        }
+        by_tid.erase(it);
+    }
+    for (const auto& [tid, name] : by_tid) {
+        if (!name.empty()) {
+            out.emplace_back(tid, name); // ended threads: their events stay in the capture
+        }
+    }
+    return out;
+}
+
 namespace {
 constexpr u64 CaptureCapacity = 12ull << 20; // events, 384 MiB
 std::mutex capture_mutex;
@@ -48,6 +122,7 @@ void SampleThreads(const std::stop_token& stop) {
     };
     std::map<DWORD, Tracked> tracked;
     u64 last_refresh = 0;
+    Common::SetCurrentThreadName("tlg:capture_cpu"); // the capture's own cost (about 100 threads read every millisecond), named so the report shows it
     const DWORD pid = GetCurrentProcessId();
     while (!stop.stop_requested() && capture_active.load(std::memory_order_relaxed)) {
         const u64 now = Now();
@@ -96,7 +171,7 @@ void WriteCapture(const std::string& tag) {
     if (Stall::ThisIsStallCapture()) {
         // the stall profiler (F8): analysed on the spot, the events are not written
         std::map<u32, std::string> threads;
-        for (const auto& [id, name] : VideoCore::ThreadNames()) {
+        for (const auto& [id, name] : ThreadNames()) {
             threads[id] = name;
         }
         std::map<u64, std::string> names;
@@ -150,7 +225,7 @@ void WriteCapture(const std::string& tag) {
         }
     }
     auto& threads = j["threads"] = nlohmann::json::object();
-    for (const auto& [id, name] : VideoCore::ThreadNames()) {
+    for (const auto& [id, name] : ThreadNames()) {
         threads[std::to_string(id)] = name;
     }
     auto& names = j["names"] = nlohmann::json::object();
@@ -199,6 +274,7 @@ bool StartCapture(u32 seconds, const std::string& tag, bool ring) {
 #endif
     capture_active.store(true, std::memory_order_release);
     capture_thread = std::jthread([seconds, tag, tsc_start](std::stop_token stop) {
+        Common::SetCurrentThreadName("tlg:capture");
         const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
 #ifdef _WIN32
         std::jthread sampler(SampleThreads);

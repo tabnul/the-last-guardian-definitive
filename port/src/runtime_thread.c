@@ -360,6 +360,18 @@ int runtime_wait_copy(const RuntimeWait *from,RuntimeWait *to) {
     memset(to,0,sizeof(*to));
     return 0;
 }
+size_t runtime_thread_names(uint64_t *os_tids,char (*names)[32],size_t max) {
+    size_t n=0;
+    pthread_mutex_lock(&lock);
+    for (GuestThread *t=threads;t && n<max;t=t->next) {
+        if (!t->os_tid) continue;
+        os_tids[n]=t->os_tid;
+        memcpy(names[n],t->name,sizeof(names[n])); names[n][sizeof(names[n])-1]=0;
+        ++n;
+    }
+    pthread_mutex_unlock(&lock);
+    return n;
+}
 size_t runtime_thread_snapshot(RuntimeThreadInfo *out,size_t max) {
     size_t n=0;
     pthread_mutex_lock(&lock);

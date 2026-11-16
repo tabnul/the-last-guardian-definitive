@@ -24,7 +24,11 @@ STAGE = {1: 'front op', 2: 'front: queue full', 3: 'front: drain writes', 4: 'ra
          8: 'encoder submit', 9: 'encoder idle', 10: 'raster: handoff wait'}
 WAIT_KIND = {1: 'cond', 2: 'sema', 3: 'sleep', 4: 'equeue', 5: 'mutex', 6: 'other'}
 PASS_KIND = {0x01: 'between passes (before a pass)', 0x11: 'pass depth only', 0x12: 'pass color', 0x13: 'pass gbuffer (4+ targets)',
-             0x20: 'between passes (before a dispatch)', 0x21: 'dispatch', 0xF0: 'out of order stamp'}
+             0x20: 'between passes (before a dispatch)', 0x21: 'dispatch', 0xF0: 'out of order stamp',
+             0x30: 'vkb submission (lean stamps)', 0x31: 'vkb staging copies'}
+# GPU busy: passes and dispatches (PS4 path, or the backend with TLG_VKB_STAMPS=1); the backend's default lean stamps give whole submissions (0x30) and its
+# staging copies (0x31)
+BUSY_KINDS = [0x11, 0x12, 0x13, 0x21, 0x30, 0x31]
 
 
 def load(base):
@@ -163,7 +167,7 @@ def main():
     cb_end = cb['ns'].astype(np.int64)
     order = np.argsort(cb_start)
     cb_start, cb_end = cb_start[order], cb_end[order]
-    work = gp[np.isin(gp['arg'] >> 56, [0x11, 0x12, 0x13, 0x21])]
+    work = gp[np.isin(gp['arg'] >> 56, BUSY_KINDS)]
     w_dur = (work['arg'] & ((1 << 56) - 1)).astype(np.int64)
     w_end = work['ns'].astype(np.int64)
     o = np.argsort(w_end)

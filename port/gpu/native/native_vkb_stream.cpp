@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "native/native_flight.h"
+#include "native/native_timeline.h"
 #include "native/native_vkb_stream.h"
 #include "native/native_vkb.h"
 
@@ -26,6 +27,9 @@
 #include "native/shadps4/video_core/renderer_vulkan/vk_scheduler.h"
 
 #include <vk_mem_alloc.h>
+#ifdef _WIN32
+#include <windows.h> // QueryPerformanceFrequency: the timeline capture's GPU clock calibration
+#endif
 
 namespace Core::Vkb::Stream {
 
@@ -1498,6 +1502,82 @@ u64 Generation() {
     return t_rec->generation;
 }
 
+namespace {
+// The frame timeline capture (F9 frame profiler, F8 stall profiler, timeline_report.py): the GPU time of our submissions, as the old PS4 path's
+// GpuTimeline wrote it. Our stamps are in the GPU clock; VK_EXT_calibrated_timestamps maps them to the CPU clock of FrameTimeline::Now (QPC on Windows).
+// Recorded only while a capture runs, from the stamps FinishedStamps reads anyway.
+struct GpuClock {
+    u64 gpu_ns = 0, cpu_ns = 0, taken_ns = 0;
+    bool valid = false;
+};
+GpuClock gpu_clock; ///< under the stream lock
+void CalibrateGpuClockLocked() {
+    const u64 now = FrameTimeline::Now();
+    if (gpu_clock.valid && now - gpu_clock.taken_ns < 500'000'000ull) {
+        return;
+    }
+    gpu_clock.taken_ns = now;
+#ifdef _WIN32
+    if (!instance->IsCalibratedTimestampsSupported()) {
+        return;
+    }
+    static const long long frequency = [] {
+        LARGE_INTEGER f{};
+        QueryPerformanceFrequency(&f);
+        return static_cast<long long>(f.QuadPart);
+    }();
+    const std::array<vk::CalibratedTimestampInfoEXT, 2> infos = {vk::CalibratedTimestampInfoEXT{.timeDomain = vk::TimeDomainEXT::eDevice},
+                                                                 vk::CalibratedTimestampInfoEXT{.timeDomain = vk::TimeDomainEXT::eQueryPerformanceCounter}};
+    std::array<u64, 2> stamps{};
+    u64 deviation = 0;
+    if (frequency <= 0 ||
+        instance->GetDevice().getCalibratedTimestampsEXT(static_cast<u32>(infos.size()), infos.data(), stamps.data(), &deviation) != vk::Result::eSuccess) {
+        return;
+    }
+    gpu_clock.gpu_ns = static_cast<u64>(static_cast<double>(stamps[0]) * stamp_period_ns); // the same conversion as the stamps (FinishedStamps)
+    gpu_clock.cpu_ns = static_cast<u64>(static_cast<double>(stamps[1]) * 1e9 / static_cast<double>(frequency));
+    gpu_clock.valid = true;
+    FrameTimeline::Record(FrameTimeline::GpuClockSync, stamps[0], gpu_clock.cpu_ns, static_cast<u64>(stamp_period_ns * 1000.0));
+#endif
+}
+u64 GpuToCpuNs(u64 gpu_ns) {
+    return gpu_clock.cpu_ns + static_cast<u64>(static_cast<s64>(gpu_ns - gpu_clock.gpu_ns));
+}
+/// GPU pass kinds of the timeline (timeline_report.py PASS_KIND): 0x11 depth only, 0x12 color, 0x13 g-buffer, 0x21 dispatch (the full stamps of TLG_VKB_STAMPS=1);
+/// 0x30 a whole submission (lean stamps, the default: begin to end, every kind of work), 0x31 the staging copies submitted in front of a submission.
+constexpr u64 GpuKindSubmission = 0x30, GpuKindStaging = 0x31;
+void TimelineGpuPass(u64 kind, u64 begin, u64 end, u64 detail) {
+    if (end >= begin) {
+        FrameTimeline::Record(FrameTimeline::GpuPass, (end - begin) | (kind << 56), GpuToCpuNs(end), detail);
+    }
+}
+void TimelineSubmissionLocked(const Submitted& s, const std::vector<u64>& ns) {
+    if (!gpu_clock.valid || s.count == 0 || s.segments.empty() || s.count > ns.size()) {
+        return;
+    }
+    const u64 first = ns[s.segments.front().stamp];
+    const u64 end = ns[s.count - 1];
+    if (end < first) {
+        return;
+    }
+    FrameTimeline::Record(FrameTimeline::GpuCommandBuffer, end - first, GpuToCpuNs(end), s.value);
+    if (StampsLean()) {
+        TimelineGpuPass(GpuKindSubmission, first, end, s.value);
+        return;
+    }
+    for (const PassStamp& p : s.passes) {
+        if (p.begin < s.count && p.end < s.count) {
+            TimelineGpuPass(0x11 + p.kind, ns[p.begin], ns[p.end], (p.draws & 0xffffffu) | (u64(p.width & 0xfffffu) << 24) | (u64(p.height) << 44));
+        }
+    }
+    for (size_t i = 0; i < s.segments.size(); ++i) {
+        if (s.segments[i].work == Work::Dispatch) {
+            TimelineGpuPass(0x21, ns[s.segments[i].stamp], i + 1 < s.segments.size() ? ns[s.segments[i + 1].stamp] : end, 0);
+        }
+    }
+}
+} // namespace
+
 std::vector<Stamps> FinishedStamps() {
     std::scoped_lock lock{mutex};
     std::vector<Stamps> out;
@@ -1505,6 +1585,10 @@ std::vector<Stamps> FinishedStamps() {
         return out;
     }
     const u64 done = instance->GetDevice().getSemaphoreCounterValue(timeline).value;
+    const bool capture = FrameTimeline::capture_active.load(std::memory_order_relaxed);
+    if (capture) {
+        CalibrateGpuClockLocked();
+    }
     std::unique_lock stage_lock{stage_mutex};
     while (!stage_stamped.empty() && stage_stamped.front().value <= done) {
         std::array<u64, 2> t{};
@@ -1513,6 +1597,10 @@ std::vector<Stamps> FinishedStamps() {
             t[1] >= t[0]) {
             stage_gpu_ns_total += static_cast<u64>(static_cast<double>(t[1] - t[0]) * stamp_period_ns);
             ++stage_gpu_timed;
+            if (capture && gpu_clock.valid) {
+                TimelineGpuPass(GpuKindStaging, static_cast<u64>(static_cast<double>(t[0]) * stamp_period_ns), static_cast<u64>(static_cast<double>(t[1]) * stamp_period_ns),
+                                stage_stamped.front().value);
+            }
         }
         stage_stamped.pop_front();
     }
@@ -1526,6 +1614,9 @@ std::vector<Stamps> FinishedStamps() {
         (void)instance->GetDevice().getQueryPoolResults(stamp_pools[s.pool], 0, s.count, r.ns.size() * sizeof(u64), r.ns.data(), sizeof(u64), vk::QueryResultFlagBits::e64);
         for (u64& t : r.ns) {
             t = static_cast<u64>(static_cast<double>(t) * stamp_period_ns);
+        }
+        if (capture) {
+            TimelineSubmissionLocked(s, r.ns);
         }
         static const bool dump = [] { const char* e = std::getenv("TLG_VKB_PASS_DUMP"); return e != nullptr && e[0] == '1'; }();
         static u64 dump_seen = 0;

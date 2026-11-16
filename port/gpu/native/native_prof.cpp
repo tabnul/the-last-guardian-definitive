@@ -538,7 +538,7 @@ bool Start(const Config& config) {
     }
     g_open.store(config.open);
     const double cost = CalibrateTicks();
-    const auto names = VideoCore::ThreadNames();
+    const auto names = FrameTimeline::ThreadNames(); // with the guest threads' full names
     std::scoped_lock lock{g_mutex};
     g_config = config;
     g_cost_ticks = cost;
