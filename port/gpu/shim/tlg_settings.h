@@ -80,6 +80,9 @@ struct Values {
         boy_wind{100}, tree_wind{100}, fog_distance{100}, haze_fringe{0};
     /// Grass animated every frame (1, default) or every 4th frame as shipped (0); tlg_lua.cpp.
     std::atomic<int> grass_smooth{1};
+    /// Lite shadows (1) or as shipped (0): the closest of the sun's four shadow layers left out
+    /// (first split distance -1), as the game's own *_Lite cascade presets do; tlg_lua.cpp.
+    std::atomic<int> shadow_lite{0};
     /// Lab tab (menu, live; tuning tests): texture LOD bias under DLAA in quarter steps (-4 =
     /// -1.0, the DLSS guide value), anisotropic filtering forced on mipmapped textures (0 = the
     /// game's own), the half-resolution effect targets drawn at 2x (fog, particles, AO;
@@ -263,7 +266,7 @@ std::string TexturePackDir(int index);
 
 /// Graphics presets: the look settings (Image tab, texture rows of the Lab tab) as one set.
 /// 0 = Stock (the game as shipped), 1 = Recommended (the defaults), 2 = Low-end PC (Stock with
-/// shadows at 50% distance), then the files presets/<name>.ini next to tlg.ini, sorted. The
+/// shadows at 50% distance and Lite shadows), then the files presets/<name>.ini next to tlg.ini, sorted. The
 /// launcher uses the same files.
 constexpr int BuiltInPresets = 3;
 std::vector<std::string> GraphicsPresetNames();

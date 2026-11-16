@@ -35,7 +35,7 @@ constexpr std::pair<const char*, Effect> EffectKeys[] = {
     {"game_sharpen", &Values::game_sharpen}, {"shadow_distance", &Values::shadow_distance},
     {"trico_feathers", &Values::trico_feathers}, {"boy_wind", &Values::boy_wind}, {"tree_wind", &Values::tree_wind},
     {"fog_distance", &Values::fog_distance}, {"haze_fringe", &Values::haze_fringe},
-    {"grass_smooth", &Values::grass_smooth}};
+    {"grass_smooth", &Values::grass_smooth}, {"shadow_lite", &Values::shadow_lite}};
 
 std::atomic<int>* EffectSetting(Values& v, const std::string& key) {
     for (const auto& [name, member] : EffectKeys)
@@ -461,7 +461,7 @@ void Load() {
         {"TLG_CAS", "cas"},                          {"TLG_COLOR_ADJUST", "color_adjust"},
         {"TLG_HDR", "hdr"},                          {"TLG_FG", "frame_generation"},
         {"TLG_ARENA_RELEASE", "arena_release"},      {"TLG_GC_LIVE_BUDGET", "gc_live_budget"},
-        {"TLG_SHADOW_DISTANCE", "shadow_distance"},
+        {"TLG_SHADOW_DISTANCE", "shadow_distance"}, {"TLG_SHADOW_LITE", "shadow_lite"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -874,10 +874,11 @@ struct GraphicsPreset {
 };
 
 std::vector<GraphicsPreset> ReadPresets() {
-    // Low-end PC (#85, #75): Stock with shadows at 50% distance (launcher preset_share GAME_LOWEND).
+    // Low-end PC (#85, #75): Stock with shadows at 50% distance and Lite shadows (launcher
+    // preset_share GAME_LOWEND).
     std::vector<GraphicsPreset> list{{"Stock", Normalized(StockLines)},
                                      {"Recommended", Normalized("")},
-                                     {"Low-end PC", Normalized(std::string(StockLines) + "shadow_distance=50\n")}};
+                                     {"Low-end PC", Normalized(std::string(StockLines) + "shadow_distance=50\nshadow_lite=1\n")}};
     std::vector<std::filesystem::path> files;
     std::error_code error;
     for (const auto& entry : std::filesystem::directory_iterator(PresetDir(), error)) {

@@ -316,7 +316,7 @@
     "launcher.shadow_scale": "Роздільність тіней",
     "launcher.shadow_game": "Гра (2048)",
     "launcher.graphics_preset": "Графічний пресет",
-    "launcher.graphics_preset_hint": "Усі налаштування вигляду та пакет текстур одразу. Stock — гра як у релізі; свої зберігайте тут або в меню гри (Insert, вкладка Зображення). Старий чи слабкий ПК: виберіть Слабкий ПК (Stock із тінями на 50% відстані; ваша роздільність і FPS лишаються). Steam Deck: виберіть Steam Deck (експериментально) — Слабкий ПК плюс 1280x800, 30 FPS, без масштабування й без генерації кадрів: розкажіть, як працює.",
+    "launcher.graphics_preset_hint": "Усі налаштування вигляду та пакет текстур одразу. Stock — гра як у релізі; свої зберігайте тут або в меню гри (Insert, вкладка Зображення). Старий чи слабкий ПК: виберіть Слабкий ПК (Stock із тінями на 50% відстані та легкими тінями; ваша роздільність і FPS лишаються). Steam Deck: виберіть Steam Deck (експериментально) — Слабкий ПК плюс 1280x800, 30 FPS, без масштабування й без генерації кадрів: розкажіть, як працює.",
     "launcher.preset_save": "Зберегти як пресет",
     "launcher.preset_save_button": "Зберегти",
     "launcher.preset_save_bad": "Введіть назву (літери, цифри, пробіл, - або _; не Stock, Recommended, Low-end PC чи Steam Deck).",
@@ -463,7 +463,9 @@
     "pad.remap_touchpad_left": "Сенсорна панель (ліворуч): фоторежим",
     "pad.remap_touchpad_right": "Сенсорна панель (праворуч): пауза",
     "pad.photo_press": "натисніть кнопку…",
-    "pad.photo_note": "По одній кнопці на дію, лише в режимі фото. Лівий стік — політ, правий — огляд. Клавіатура: клавіші тих самих кнопок; Print Screen теж робить знімок екрана."
+    "pad.photo_note": "По одній кнопці на дію, лише в режимі фото. Лівий стік — політ, правий — огляд. Клавіатура: клавіші тих самих кнопок; Print Screen теж робить знімок екрана.",
+    "launcher.shadow_lite": "Легкі тіні",
+    "launcher.shadow_lite_hint": "Прибирає найближчий із чотирьох шарів тіней гри, як сама гра робить у деяких місцях. На кілька % більше FPS на старих процесорах і Steam Deck; тіні біля камери стають трохи м'якшими. Вимк. — як у релізі."
   },
   "items": {
     "menu:sharpen": {
@@ -796,6 +798,10 @@
     "menu:mod_hints": {
       "name": "Вирізані підказки оповідача",
       "what": "23 підказки оповідача, які розробники вирізали у вересні 2016 року. Увімк.: коли здається, що ви застрягли, оповідач знову допомагає там, де спочатку стояли його репліки. Вони видають розв'язки головоломок."
+    },
+    "menu:shadow_lite": {
+      "name": "Легкі тіні",
+      "what": "Прибирає найближчий із чотирьох шарів тіней гри, як сама гра робить у деяких місцях. На кілька % більше FPS на старих процесорах і Steam Deck; тіні біля камери стають трохи м'якшими. Вимк. — як у релізі."
     }
   },
   "menu": {
@@ -810,7 +816,6 @@
     "Low-end PC": "Слабкий ПК",
     "Graphics preset": "Графічний пресет",
     "Custom": "Власний",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Перемикає всі налаштування цієї вкладки та пакет текстур одразу, наживо. Stock — гра як у релізі; Рекомендовано — типові значення; Слабкий ПК — це Stock із тінями на 50% відстані, для старих чи слабких ПК. Ваші пресети — файли в теці presets, їх також видно в лаунчері.",
     "Save as preset": "Зберегти як пресет",
     "Save": "Зберегти",
     "Delete": "Видалити",
@@ -1172,6 +1177,10 @@
     "Photo mode: freeze world on / off": "Фоторежим: заморозити світ увімк. / вимк.",
     "Photo mode: sticks camera / boy": "Фоторежим: стіки камера / хлопчик",
     "Photo mode: playing as the boy": "Фоторежим: ви керуєте хлопчиком",
-    "Let the world run first": "Спочатку відновіть рух світу"
+    "Let the world run first": "Спочатку відновіть рух світу",
+    "Lite shadows": "Легкі тіні",
+    "On (lighter)": "Увімк. (легше)",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Прибирає найближчий із чотирьох шарів тіней гри, як сама гра робить у деяких місцях. На кілька % більше FPS на старих процесорах і Steam Deck; тіні біля камери стають трохи м'якшими. Вимк. — як у релізі.",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Перемикає всі налаштування цієї вкладки та пакет текстур одразу, наживо. Stock — гра як у релізі; Рекомендовано — типові значення; Слабкий ПК — це Stock із тінями на 50% відстані та легкими тінями, для старих чи слабких ПК. Ваші пресети — файли в теці presets, їх також видно в лаунчері."
   }
 }

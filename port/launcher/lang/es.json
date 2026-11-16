@@ -294,7 +294,7 @@
     "launcher.shadow_scale": "Resolución de sombras",
     "launcher.shadow_game": "Juego (2048)",
     "launcher.graphics_preset": "Preajuste gráfico",
-    "launcher.graphics_preset_hint": "Todos los ajustes de imagen y el paquete de texturas a la vez. Stock es el juego tal como se lanzó; guarda los tuyos aquí o en el menú del juego (Insert, pestaña Imagen). PC antiguo o modesto: elige PC modesto (Stock con sombras al 50% de distancia; mantiene tu resolución y FPS). Steam Deck: elige Steam Deck (experimental), PC modesto más 1280x800, 30 FPS, sin escalado y sin generación de fotogramas: cuéntanos qué tal va.",
+    "launcher.graphics_preset_hint": "Todos los ajustes de imagen y el paquete de texturas a la vez. Stock es el juego tal como se lanzó; guarda los tuyos aquí o en el menú del juego (Insert, pestaña Imagen). PC antiguo o modesto: elige PC modesto (Stock con sombras al 50% de distancia y sombras ligeras; mantiene tu resolución y FPS). Steam Deck: elige Steam Deck (experimental), PC modesto más 1280x800, 30 FPS, sin escalado y sin generación de fotogramas: cuéntanos qué tal va.",
     "launcher.preset_save": "Guardar como preajuste",
     "launcher.preset_save_button": "Guardar",
     "launcher.preset_save_bad": "Escribe un nombre (letras, dígitos, espacio, - o _; no Stock, Recommended, Low-end PC ni Steam Deck).",
@@ -456,7 +456,9 @@
     "pad.remap_touchpad_left": "Panel táctil (izquierda): modo foto",
     "pad.remap_touchpad_right": "Panel táctil (derecha): pausa",
     "pad.photo_press": "pulsa un botón…",
-    "pad.photo_note": "Un botón cada uno, solo en el modo foto. El stick izquierdo vuela, el derecho mira alrededor. Teclado: las teclas de los mismos botones; Impr Pant también hace una captura."
+    "pad.photo_note": "Un botón cada uno, solo en el modo foto. El stick izquierdo vuela, el derecho mira alrededor. Teclado: las teclas de los mismos botones; Impr Pant también hace una captura.",
+    "launcher.shadow_lite": "Sombras ligeras",
+    "launcher.shadow_lite_hint": "Omite la más cercana de las cuatro capas de sombra del juego, como hace el propio juego en algunas zonas. Unos pocos % más de FPS en CPU antiguas y en Steam Deck; las sombras cerca de la cámara quedan algo más suaves. Desactivado es como se lanzó."
   },
   "items": {
     "menu:sharpen": {
@@ -789,6 +791,10 @@
     "menu:mod_hints": {
       "name": "Pistas del narrador eliminadas",
       "what": "Las 23 pistas del narrador que los desarrolladores eliminaron en septiembre de 2016. Activado: cuando parezcas atascado, el narrador vuelve a ayudarte, donde colocaron sus frases al principio. Revelan soluciones de los puzles."
+    },
+    "menu:shadow_lite": {
+      "name": "Sombras ligeras",
+      "what": "Omite la más cercana de las cuatro capas de sombra del juego, como hace el propio juego en algunas zonas. Unos pocos % más de FPS en CPU antiguas y en Steam Deck; las sombras cerca de la cámara quedan algo más suaves. Desactivado es como se lanzó."
     }
   },
   "menu": {
@@ -803,7 +809,6 @@
     "Low-end PC": "PC modesto",
     "Graphics preset": "Preajuste gráfico",
     "Custom": "Personalizado",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Cambia todos los ajustes de esta pestaña y el paquete de texturas a la vez, en directo. Stock es el juego tal como se lanzó; Recomendado es el predeterminado; PC modesto es Stock con sombras al 50% de distancia, para PC antiguos o modestos. Tus propios presets son archivos en la carpeta presets, también listados en el launcher.",
     "Save as preset": "Guardar como preajuste",
     "Save": "Guardar",
     "Delete": "Borrar",
@@ -1159,6 +1164,10 @@
     "Photo mode: freeze world on / off": "Modo foto: congelar el mundo sí / no",
     "Photo mode: sticks camera / boy": "Modo foto: sticks cámara / niño",
     "Photo mode: playing as the boy": "Modo foto: juegas con el niño",
-    "Let the world run first": "Primero deja que el mundo siga"
+    "Let the world run first": "Primero deja que el mundo siga",
+    "Lite shadows": "Sombras ligeras",
+    "On (lighter)": "Activado (más ligero)",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Omite la más cercana de las cuatro capas de sombra del juego, como hace el propio juego en algunas zonas. Unos pocos % más de FPS en CPU antiguas y en Steam Deck; las sombras cerca de la cámara quedan algo más suaves. Desactivado es como se lanzó.",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Cambia todos los ajustes de esta pestaña y el paquete de texturas a la vez, en directo. Stock es el juego tal como se lanzó; Recomendado es el predeterminado; PC modesto es Stock con sombras al 50% de distancia y sombras ligeras, para PC antiguos o modestos. Tus propios presets son archivos en la carpeta presets, también listados en el launcher."
   }
 }

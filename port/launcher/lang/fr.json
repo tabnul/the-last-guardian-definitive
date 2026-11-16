@@ -294,7 +294,7 @@
     "launcher.shadow_scale": "Résolution des ombres",
     "launcher.shadow_game": "Jeu (2048)",
     "launcher.graphics_preset": "Préréglage graphique",
-    "launcher.graphics_preset_hint": "Tous les réglages d'image et le pack de textures en une fois. Stock est le jeu tel que sorti ; enregistrez les vôtres ici ou dans le menu du jeu (Inser, onglet Image). PC ancien ou modeste : choisissez PC modeste (Stock avec les ombres à 50 % de distance ; garde votre résolution et vos FPS). Steam Deck : choisissez Steam Deck (expérimental), PC modeste plus 1280x800, 30 FPS, sans upscaling et sans génération d'images : dites-nous comment ça tourne.",
+    "launcher.graphics_preset_hint": "Tous les réglages d'image et le pack de textures en une fois. Stock est le jeu tel que sorti ; enregistrez les vôtres ici ou dans le menu du jeu (Inser, onglet Image). PC ancien ou modeste : choisissez PC modeste (Stock avec les ombres à 50 % de distance et les ombres allégées ; garde votre résolution et vos FPS). Steam Deck : choisissez Steam Deck (expérimental), PC modeste plus 1280x800, 30 FPS, sans upscaling et sans génération d'images : dites-nous comment ça tourne.",
     "launcher.preset_save": "Enregistrer comme préréglage",
     "launcher.preset_save_button": "Enregistrer",
     "launcher.preset_save_bad": "Tapez un nom (lettres, chiffres, espace, - ou _ ; pas Stock, Recommended, Low-end PC ni Steam Deck).",
@@ -456,7 +456,9 @@
     "pad.remap_touchpad_left": "Pavé tactile (gauche) : mode photo",
     "pad.remap_touchpad_right": "Pavé tactile (droite) : pause",
     "pad.photo_press": "appuyez sur un bouton…",
-    "pad.photo_note": "Un bouton chacun, seulement en mode photo. Le stick gauche vole, le stick droit regarde autour. Clavier : les touches des mêmes boutons ; Impr. écran prend aussi une capture."
+    "pad.photo_note": "Un bouton chacun, seulement en mode photo. Le stick gauche vole, le stick droit regarde autour. Clavier : les touches des mêmes boutons ; Impr. écran prend aussi une capture.",
+    "launcher.shadow_lite": "Ombres allégées",
+    "launcher.shadow_lite_hint": "Supprime la plus proche des quatre couches d'ombre du jeu, comme le jeu le fait lui-même dans certaines zones. Quelques % de FPS en plus sur les CPU anciens et le Steam Deck ; les ombres proches de la caméra deviennent un peu plus douces. Désactivé est comme à la sortie."
   },
   "items": {
     "menu:sharpen": {
@@ -789,6 +791,10 @@
     "menu:mod_hints": {
       "name": "Indices du narrateur coupés",
       "what": "Les 23 indices du narrateur que les développeurs ont coupés en septembre 2016. Activé : quand vous semblez bloqué, le narrateur vous aide à nouveau, là où ils avaient placé ses phrases au départ. Ils dévoilent des solutions d'énigmes."
+    },
+    "menu:shadow_lite": {
+      "name": "Ombres allégées",
+      "what": "Supprime la plus proche des quatre couches d'ombre du jeu, comme le jeu le fait lui-même dans certaines zones. Quelques % de FPS en plus sur les CPU anciens et le Steam Deck ; les ombres proches de la caméra deviennent un peu plus douces. Désactivé est comme à la sortie."
     }
   },
   "menu": {
@@ -803,7 +809,6 @@
     "Low-end PC": "PC modeste",
     "Graphics preset": "Préréglage graphique",
     "Custom": "Personnalisé",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Change tous les réglages de cet onglet et le pack de textures en une fois, en direct. Stock est le jeu tel que sorti ; Recommandé est le réglage par défaut ; PC modeste est Stock avec les ombres à 50 % de distance, pour les PC anciens ou modestes. Vos propres presets sont des fichiers dans le dossier presets, aussi listés dans le launcher.",
     "Save as preset": "Enregistrer comme préréglage",
     "Save": "Enregistrer",
     "Delete": "Supprimer",
@@ -1159,6 +1164,10 @@
     "Photo mode: freeze world on / off": "Mode photo : figer le monde oui / non",
     "Photo mode: sticks camera / boy": "Mode photo : sticks caméra / garçon",
     "Photo mode: playing as the boy": "Mode photo : vous jouez le garçon",
-    "Let the world run first": "Laissez d'abord le monde reprendre"
+    "Let the world run first": "Laissez d'abord le monde reprendre",
+    "Lite shadows": "Ombres allégées",
+    "On (lighter)": "Activé (plus léger)",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Supprime la plus proche des quatre couches d'ombre du jeu, comme le jeu le fait lui-même dans certaines zones. Quelques % de FPS en plus sur les CPU anciens et le Steam Deck ; les ombres proches de la caméra deviennent un peu plus douces. Désactivé est comme à la sortie.",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Change tous les réglages de cet onglet et le pack de textures en une fois, en direct. Stock est le jeu tel que sorti ; Recommandé est le réglage par défaut ; PC modeste est Stock avec les ombres à 50 % de distance et les ombres allégées, pour les PC anciens ou modestes. Vos propres presets sont des fichiers dans le dossier presets, aussi listés dans le launcher."
   }
 }

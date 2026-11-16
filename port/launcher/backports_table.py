@@ -108,6 +108,10 @@ MENU = [
            'strongest toward the screen edges. Sharp anti-aliasing (DLAA, DLSS) makes it stand out more. '
            'Default 0% gives clean edges; 100% is as shipped.'),
           lo=0, hi=100, unit='%'),
+    _menu('Effects', 'shadow_lite', 'bool', '0', 'Lite shadows',
+          ("Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. "
+           'A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. '
+           'Off is as shipped.')),
     _menu('Effects', 'grass_smooth', 'bool', '1', 'Grass animated every frame',
           'The game moves most grass only every 4th frame. On (default) moves it every frame; off is as shipped.'),
     _menu('Effects', 'boy_wind', 'int', '100', 'Boy wind (hair + clothing)',

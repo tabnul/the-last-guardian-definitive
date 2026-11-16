@@ -460,7 +460,7 @@ void PresetRows() {
         }
         ImGui::EndCombo();
     }
-    Help(TR("Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher."));
+    Help(TR("Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher."));
     ImGui::PopID();
     static char name[48] = "";
     Row(TR("Save as preset"));
@@ -718,6 +718,10 @@ void ImageTab() {
                   TR("Where the fog starts and reaches full strength. Default 100% is as shipped; lower brings the fog closer."), d.fog_distance, 100);
         SliderRow(TR("Shadow distance"), s.shadow_distance, 10, 100, "%d%%",
                   TR("How far away objects still get sharp shadows. Default 100% is as shipped. 50% gives a few to 10% more FPS on older CPUs and the Steam Deck; far shadows get softer, near ones stay the same."), d.shadow_distance, 100);
+        static const char* const lite_labels[] = {TR("Off (default)"), TR("On (lighter)")};
+        static const int lite_values[] = {0, 1};
+        ChoiceRow(TR("Lite shadows"), s.shadow_lite, lite_labels, lite_values, 2,
+                  TR("Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped."), d.shadow_lite, 0);
         SliderRow(TR("Haze color fringe"), s.haze_fringe, 0, 100, "%d%%",
                   TR("The game's chromatic aberration on the light haze: yellow and blue edges around objects against fog, strongest toward the screen edges. Sharp anti-aliasing (DLAA, DLSS) makes it stand out more. Default 0% gives clean edges; 100% is as shipped."), d.haze_fringe, 100);
         ImGui::EndTable();

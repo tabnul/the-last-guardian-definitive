@@ -294,7 +294,7 @@
     "launcher.shadow_scale": "阴影分辨率",
     "launcher.shadow_game": "游戏（2048）",
     "launcher.graphics_preset": "画面预设",
-    "launcher.graphics_preset_hint": "一次切换所有画面设置和纹理包。Stock 为游戏发售时的原样;可在这里或游戏内菜单(Insert,图像页)保存自己的预设。较旧或较弱的电脑:选择 低配电脑(Stock 加阴影距离 50%;保留你的分辨率和 FPS)。Steam Deck:选择 Steam Deck(实验性),即 低配电脑 加 1280x800、30 FPS、不放大、关闭帧生成:告诉我们运行得怎样。",
+    "launcher.graphics_preset_hint": "一次切换所有画面设置和纹理包。Stock 为游戏发售时的原样;可在这里或游戏内菜单(Insert,图像页)保存自己的预设。较旧或较弱的电脑:选择 低配电脑(Stock 加阴影距离 50% 和轻量阴影;保留你的分辨率和 FPS)。Steam Deck:选择 Steam Deck(实验性),即 低配电脑 加 1280x800、30 FPS、不放大、关闭帧生成:告诉我们运行得怎样。",
     "launcher.preset_save": "保存为预设",
     "launcher.preset_save_button": "保存",
     "launcher.preset_save_bad": "请输入名称(字母、数字、空格、- 或 _;不能是 Stock、Recommended、Low-end PC 或 Steam Deck)。",
@@ -456,7 +456,9 @@
     "pad.remap_touchpad_left": "触控板（左）：拍照模式",
     "pad.remap_touchpad_right": "触控板（右）：暂停",
     "pad.photo_press": "请按一个按键…",
-    "pad.photo_note": "每项一个按键，仅在拍照模式中。左摇杆飞行，右摇杆环顾。键盘：相同按键对应的键；Print Screen 也会截图。"
+    "pad.photo_note": "每项一个按键，仅在拍照模式中。左摇杆飞行，右摇杆环顾。键盘：相同按键对应的键；Print Screen 也会截图。",
+    "launcher.shadow_lite": "轻量阴影",
+    "launcher.shadow_lite_hint": "去掉游戏四层阴影中离镜头最近的一层,游戏自己在某些区域也这样做。在较旧的 CPU 和 Steam Deck 上 FPS 高几个百分点;镜头附近的阴影会稍微柔和一些。关闭为发售时的原样。"
   },
   "items": {
     "menu:sharpen": {
@@ -789,6 +791,10 @@
     "menu:mod_hints": {
       "name": "被删减的旁白提示",
       "what": "开发者在 2016 年 9 月删减的 23 条旁白提示。开启：当你看起来卡住时，旁白会在最初安排的位置再次提供帮助。会透露谜题的解法。"
+    },
+    "menu:shadow_lite": {
+      "name": "轻量阴影",
+      "what": "去掉游戏四层阴影中离镜头最近的一层,游戏自己在某些区域也这样做。在较旧的 CPU 和 Steam Deck 上 FPS 高几个百分点;镜头附近的阴影会稍微柔和一些。关闭为发售时的原样。"
     }
   },
   "menu": {
@@ -803,7 +809,6 @@
     "Low-end PC": "低配电脑",
     "Graphics preset": "画面预设",
     "Custom": "自定义",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "一次实时切换此页的所有设置和纹理包。Stock 为游戏发售时的原样;推荐 为默认值;低配电脑 是阴影距离 50% 的 Stock,适合较旧或较弱的电脑。你自己的预设是 presets 文件夹里的文件,启动器中也会列出。",
     "Save as preset": "保存为预设",
     "Save": "保存",
     "Delete": "删除",
@@ -1159,6 +1164,10 @@
     "Photo mode: freeze world on / off": "拍照模式：冻结世界 开 / 关",
     "Photo mode: sticks camera / boy": "拍照模式：摇杆 镜头 / 男孩",
     "Photo mode: playing as the boy": "拍照模式：正在操控男孩",
-    "Let the world run first": "请先让世界继续运行"
+    "Let the world run first": "请先让世界继续运行",
+    "Lite shadows": "轻量阴影",
+    "On (lighter)": "开启（更轻）",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "去掉游戏四层阴影中离镜头最近的一层,游戏自己在某些区域也这样做。在较旧的 CPU 和 Steam Deck 上 FPS 高几个百分点;镜头附近的阴影会稍微柔和一些。关闭为发售时的原样。",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "一次实时切换此页的所有设置和纹理包。Stock 为游戏发售时的原样;推荐 为默认值;低配电脑 是阴影距离 50% 并开启轻量阴影的 Stock,适合较旧或较弱的电脑。你自己的预设是 presets 文件夹里的文件,启动器中也会列出。"
   }
 }

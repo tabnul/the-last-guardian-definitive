@@ -316,7 +316,7 @@
     "launcher.shadow_scale": "Schaduwresolutie",
     "launcher.shadow_game": "Game (2048)",
     "launcher.graphics_preset": "Grafische preset",
-    "launcher.graphics_preset_hint": "Alle beeldinstellingen en het texturepakket in één keer. Stock is de game zoals uitgebracht; sla je eigen op hier of in het in-game menu (Insert, tab Beeld). Oudere of zwakkere pc: kies Low-end pc (Stock met schaduwen op 50% afstand; houdt je resolutie en FPS). Steam Deck: kies Steam Deck (experimenteel), Low-end pc plus 1280x800, 30 FPS, geen upscaling en framegeneratie uit: laat ons weten hoe het loopt.",
+    "launcher.graphics_preset_hint": "Alle beeldinstellingen en het texturepakket in één keer. Stock is de game zoals uitgebracht; sla je eigen op hier of in het in-game menu (Insert, tab Beeld). Oudere of zwakkere pc: kies Low-end pc (Stock met schaduwen op 50% afstand en lichte schaduwen; houdt je resolutie en FPS). Steam Deck: kies Steam Deck (experimenteel), Low-end pc plus 1280x800, 30 FPS, geen upscaling en framegeneratie uit: laat ons weten hoe het loopt.",
     "launcher.preset_save": "Opslaan als preset",
     "launcher.preset_save_button": "Opslaan",
     "launcher.preset_save_bad": "Typ een naam (letters, cijfers, spatie, - of _; niet Stock, Recommended, Low-end PC of Steam Deck).",
@@ -463,7 +463,9 @@
     "pad.remap_touchpad_left": "Touchpad (links): fotomodus",
     "pad.remap_touchpad_right": "Touchpad (rechts): pauze",
     "pad.photo_press": "druk op een knop…",
-    "pad.photo_note": "Eén knop per actie, alleen in fotomodus. Linkerstick vliegt, rechterstick kijkt rond. Toetsenbord: de toetsen van dezelfde knoppen; Print Screen maakt ook een screenshot."
+    "pad.photo_note": "Eén knop per actie, alleen in fotomodus. Linkerstick vliegt, rechterstick kijkt rond. Toetsenbord: de toetsen van dezelfde knoppen; Print Screen maakt ook een screenshot.",
+    "launcher.shadow_lite": "Lichte schaduwen",
+    "launcher.shadow_lite_hint": "Laat de dichtstbijzijnde van de vier schaduwlagen van de game weg, zoals de game zelf in sommige gebieden doet. Een paar % meer FPS op oudere cpu's en de Steam Deck; schaduwen dicht bij de camera worden iets zachter. Uit is zoals uitgebracht."
   },
   "items": {
     "menu:sharpen": {
@@ -796,6 +798,10 @@
     "menu:mod_hints": {
       "name": "Geschrapte vertellerhints",
       "what": "De 23 hints van de verteller die de ontwikkelaars in september 2016 schrapten. Aan: als je vast lijkt te zitten, helpt de verteller weer, op de plekken waar ze zijn zinnen eerst hadden gezet. Ze verklappen oplossingen van puzzels."
+    },
+    "menu:shadow_lite": {
+      "name": "Lichte schaduwen",
+      "what": "Laat de dichtstbijzijnde van de vier schaduwlagen van de game weg, zoals de game zelf in sommige gebieden doet. Een paar % meer FPS op oudere cpu's en de Steam Deck; schaduwen dicht bij de camera worden iets zachter. Uit is zoals uitgebracht."
     }
   },
   "menu": {
@@ -810,7 +816,6 @@
     "Low-end PC": "Low-end pc",
     "Graphics preset": "Grafische preset",
     "Custom": "Aangepast",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Zet alle instellingen op dit tabblad en het texturepakket in één keer om, live. Stock is de game zoals uitgebracht; Aanbevolen is de standaard; Low-end pc is Stock met schaduwen op 50% afstand, voor oudere of zwakkere pc's. Je eigen presets zijn bestanden in de map presets, ook te zien in de launcher.",
     "Save as preset": "Opslaan als preset",
     "Save": "Opslaan",
     "Delete": "Verwijderen",
@@ -1172,6 +1177,10 @@
     "Photo mode: freeze world on / off": "Fotomodus: wereld bevriezen aan / uit",
     "Photo mode: sticks camera / boy": "Fotomodus: sticks camera / jongen",
     "Photo mode: playing as the boy": "Fotomodus: je speelt de jongen",
-    "Let the world run first": "Laat eerst de wereld lopen"
+    "Let the world run first": "Laat eerst de wereld lopen",
+    "Lite shadows": "Lichte schaduwen",
+    "On (lighter)": "Aan (lichter)",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Laat de dichtstbijzijnde van de vier schaduwlagen van de game weg, zoals de game zelf in sommige gebieden doet. Een paar % meer FPS op oudere cpu's en de Steam Deck; schaduwen dicht bij de camera worden iets zachter. Uit is zoals uitgebracht.",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Zet alle instellingen op dit tabblad en het texturepakket in één keer om, live. Stock is de game zoals uitgebracht; Aanbevolen is de standaard; Low-end pc is Stock met schaduwen op 50% afstand en lichte schaduwen, voor oudere of zwakkere pc's. Je eigen presets zijn bestanden in de map presets, ook te zien in de launcher."
   }
 }

@@ -316,7 +316,7 @@
     "launcher.shadow_scale": "Rozdzielczość cieni",
     "launcher.shadow_game": "Gra (2048)",
     "launcher.graphics_preset": "Profil grafiki",
-    "launcher.graphics_preset_hint": "Wszystkie ustawienia wyglądu i paczka tekstur naraz. Stock to gra jak w dniu premiery; własne zapisz tutaj lub w menu w grze (Insert, karta Obraz). Starszy lub słabszy PC: wybierz Słabszy PC (Stock z cieniami na 50% odległości; zostawia twoją rozdzielczość i FPS). Steam Deck: wybierz Steam Deck (eksperymentalny), Słabszy PC plus 1280x800, 30 FPS, bez skalowania i bez generowania klatek: daj znać, jak działa.",
+    "launcher.graphics_preset_hint": "Wszystkie ustawienia wyglądu i paczka tekstur naraz. Stock to gra jak w dniu premiery; własne zapisz tutaj lub w menu w grze (Insert, karta Obraz). Starszy lub słabszy PC: wybierz Słabszy PC (Stock z cieniami na 50% odległości i lekkimi cieniami; zostawia twoją rozdzielczość i FPS). Steam Deck: wybierz Steam Deck (eksperymentalny), Słabszy PC plus 1280x800, 30 FPS, bez skalowania i bez generowania klatek: daj znać, jak działa.",
     "launcher.preset_save": "Zapisz jako profil",
     "launcher.preset_save_button": "Zapisz",
     "launcher.preset_save_bad": "Wpisz nazwę (litery, cyfry, spacja, - lub _; nie Stock, Recommended, Low-end PC ani Steam Deck).",
@@ -463,7 +463,9 @@
     "pad.remap_touchpad_left": "Touchpad (lewo): tryb zdjęć",
     "pad.remap_touchpad_right": "Touchpad (prawo): pauza",
     "pad.photo_press": "naciśnij przycisk…",
-    "pad.photo_note": "Po jednym przycisku, tylko w trybie zdjęć. Lewa gałka lata, prawa rozgląda się. Klawiatura: klawisze tych samych przycisków; Print Screen też robi zrzut ekranu."
+    "pad.photo_note": "Po jednym przycisku, tylko w trybie zdjęć. Lewa gałka lata, prawa rozgląda się. Klawiatura: klawisze tych samych przycisków; Print Screen też robi zrzut ekranu.",
+    "launcher.shadow_lite": "Lekkie cienie",
+    "launcher.shadow_lite_hint": "Pomija najbliższą z czterech warstw cieni gry, tak jak gra sama robi w niektórych miejscach. Kilka % więcej FPS na starszych procesorach i Steam Decku; cienie blisko kamery są trochę bardziej miękkie. Wył. to gra jak w dniu premiery."
   },
   "items": {
     "menu:sharpen": {
@@ -796,6 +798,10 @@
     "menu:mod_hints": {
       "name": "Wycięte podpowiedzi narratora",
       "what": "23 podpowiedzi narratora, które twórcy wycięli we wrześniu 2016. Włączone: gdy wygląda na to, że utknąłeś, narrator znów pomaga, tam gdzie pierwotnie umieszczono jego kwestie. Zdradzają rozwiązania zagadek."
+    },
+    "menu:shadow_lite": {
+      "name": "Lekkie cienie",
+      "what": "Pomija najbliższą z czterech warstw cieni gry, tak jak gra sama robi w niektórych miejscach. Kilka % więcej FPS na starszych procesorach i Steam Decku; cienie blisko kamery są trochę bardziej miękkie. Wył. to gra jak w dniu premiery."
     }
   },
   "menu": {
@@ -810,7 +816,6 @@
     "Low-end PC": "Słabszy PC",
     "Graphics preset": "Profil grafiki",
     "Custom": "Własne",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Przełącza naraz wszystkie ustawienia tej karty i paczkę tekstur, na żywo. Stock to gra jak w dniu premiery; Zalecane to domyślne; Słabszy PC to Stock z cieniami na 50% odległości, dla starszych lub słabszych komputerów. Twoje presety to pliki w folderze presets, widoczne też w launcherze.",
     "Save as preset": "Zapisz jako profil",
     "Save": "Zapisz",
     "Delete": "Usuń",
@@ -1172,6 +1177,10 @@
     "Photo mode: freeze world on / off": "Tryb foto: zamrożenie świata wł. / wył.",
     "Photo mode: sticks camera / boy": "Tryb foto: gałki kamera / chłopiec",
     "Photo mode: playing as the boy": "Tryb foto: sterujesz chłopcem",
-    "Let the world run first": "Najpierw wznów świat"
+    "Let the world run first": "Najpierw wznów świat",
+    "Lite shadows": "Lekkie cienie",
+    "On (lighter)": "Wł. (lżej)",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Pomija najbliższą z czterech warstw cieni gry, tak jak gra sama robi w niektórych miejscach. Kilka % więcej FPS na starszych procesorach i Steam Decku; cienie blisko kamery są trochę bardziej miękkie. Wył. to gra jak w dniu premiery.",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Przełącza naraz wszystkie ustawienia tej karty i paczkę tekstur, na żywo. Stock to gra jak w dniu premiery; Zalecane to domyślne; Słabszy PC to Stock z cieniami na 50% odległości i lekkimi cieniami, dla starszych lub słabszych komputerów. Twoje presety to pliki w folderze presets, widoczne też w launcherze."
   }
 }

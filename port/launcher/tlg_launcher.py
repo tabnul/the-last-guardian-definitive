@@ -427,7 +427,7 @@ TEXT = {
     'graphics_preset': 'Graphics preset',
     'graphics_preset_hint': ('All look settings and the texture pack at once. Stock is the game as shipped; '
                              'save your own here or in the in-game menu (Insert, Image tab). Older or '
-                             'weaker PC: pick Low-end PC (Stock with shadows at 50% distance; keeps your '
+                             'weaker PC: pick Low-end PC (Stock with shadows at 50% distance and Lite shadows; keeps your '
                              'resolution and FPS). Steam Deck: pick Steam Deck (experimental), Low-end PC '
                              'plus 1280x800, 30 FPS, no upscaling and frame generation off: tell us how it runs.'),
     'preset_save': 'Save as preset',
@@ -443,6 +443,10 @@ TEXT = {
     'grass_smooth': 'Grass animated every frame (default)',
     'grass_hint': ('The game moves most grass only every 4th frame, which looks choppy at high frame rates. '
                    'Off is as shipped.'),
+    'shadow_lite': 'Lite shadows',
+    'shadow_lite_hint': ("Leaves out the closest of the game's four shadow layers, as the game itself does in "
+                         'some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the '
+                         'camera get a little softer. Off is as shipped.'),
     'effect_fog_distance': 'Fog distance',
     'effect_fog_distance_hint': ('Where the fog starts and reaches full strength. Default 100% is as shipped; lower '
                                  'brings the fog closer.'),
@@ -2611,8 +2615,13 @@ class Launcher:
                         command=lambda: write({'grass_smooth': int(grass.get())})).grid(
             row=5, column=0, columnspan=4, sticky='w')
         hint(scene, 6, 'grass_hint', on_off(True), on_off(False))
+        lite = tk.BooleanVar(value=number('shadow_lite', 0) != 0)
+        ttk.Checkbutton(scene, text=self.t('shadow_lite'), variable=lite,
+                        command=lambda: write({'shadow_lite': int(lite.get())})).grid(
+            row=7, column=0, columnspan=4, sticky='w')
+        hint(scene, 8, 'shadow_lite_hint', on_off(False), on_off(False))
         # Textures (the in-game menu's Image tab): LOD bias, anisotropic filtering.
-        row = 7
+        row = 9
         ttk.Separator(scene).grid(row=row, column=0, columnspan=5, sticky='ew', pady=(8, 4))
         ttk.Label(scene, text=self.t('textures'), foreground=MUTED).grid(row=row + 1, column=0, columnspan=4, sticky='w')
         bias_text = lambda quarters: f'{quarters * 0.25:+.2f}'
@@ -2686,8 +2695,9 @@ class Launcher:
         def reset():
             shadow.current(0)
             grass.set(True)
+            lite.set(False)
             aniso.current(len(ANISO_LEVELS) - 1)
-            write({'shadow_scale': 1, 'grass_smooth': 1, 'aniso': 16, 'texture_pack': 'off'})
+            write({'shadow_scale': 1, 'grass_smooth': 1, 'shadow_lite': 0, 'aniso': 16, 'texture_pack': 'off'})
             self.refresh_texture_pack()
             bias_slider.set(LOD_BIAS_DEFAULT)
             bias_moved(LOD_BIAS_DEFAULT)

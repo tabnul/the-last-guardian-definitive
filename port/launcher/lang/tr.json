@@ -316,7 +316,7 @@
     "launcher.shadow_scale": "Gölge çözünürlüğü",
     "launcher.shadow_game": "Oyun (2048)",
     "launcher.graphics_preset": "Grafik ön ayarı",
-    "launcher.graphics_preset_hint": "Tüm görünüm ayarları ve doku paketi bir arada. Stock, oyunun çıktığı hâlidir; kendi ayarlarını burada veya oyun içi menüde (Insert, Görüntü sekmesi) kaydet. Eski veya zayıf PC: Düşük donanımlı PC'yi seç (gölgeler %50 mesafede Stock; çözünürlüğün ve FPS'in aynı kalır). Steam Deck: Steam Deck (deneysel) seç; Düşük donanımlı PC artı 1280x800, 30 FPS, ölçekleme yok ve kare üretimi kapalı: nasıl çalıştığını bize anlat.",
+    "launcher.graphics_preset_hint": "Tüm görünüm ayarları ve doku paketi bir arada. Stock, oyunun çıktığı hâlidir; kendi ayarlarını burada veya oyun içi menüde (Insert, Görüntü sekmesi) kaydet. Eski veya zayıf PC: Düşük donanımlı PC'yi seç (gölgeler %50 mesafede ve hafif gölgelerle Stock; çözünürlüğün ve FPS'in aynı kalır). Steam Deck: Steam Deck (deneysel) seç; Düşük donanımlı PC artı 1280x800, 30 FPS, ölçekleme yok ve kare üretimi kapalı: nasıl çalıştığını bize anlat.",
     "launcher.preset_save": "Ön ayar olarak kaydet",
     "launcher.preset_save_button": "Kaydet",
     "launcher.preset_save_bad": "Bir ad yaz (harf, rakam, boşluk, - veya _; Stock, Recommended, Low-end PC ya da Steam Deck olamaz).",
@@ -463,7 +463,9 @@
     "pad.remap_touchpad_left": "Dokunmatik yüzey (sol): fotoğraf modu",
     "pad.remap_touchpad_right": "Dokunmatik yüzey (sağ): duraklat",
     "pad.photo_press": "bir tuşa bas…",
-    "pad.photo_note": "Her biri için bir tuş, yalnızca fotoğraf modunda. Sol çubuk uçurur, sağ çubuk etrafa baktırır. Klavye: aynı tuşların klavye karşılıkları; Print Screen de ekran görüntüsü alır."
+    "pad.photo_note": "Her biri için bir tuş, yalnızca fotoğraf modunda. Sol çubuk uçurur, sağ çubuk etrafa baktırır. Klavye: aynı tuşların klavye karşılıkları; Print Screen de ekran görüntüsü alır.",
+    "launcher.shadow_lite": "Hafif gölgeler",
+    "launcher.shadow_lite_hint": "Oyunun dört gölge katmanından kameraya en yakın olanı çıkarır; oyun bazı bölgelerde bunu zaten kendisi yapar. Eski CPU'larda ve Steam Deck'te birkaç % daha fazla FPS; kameraya yakın gölgeler biraz yumuşar. Kapalı, oyunun çıktığı hâlidir."
   },
   "items": {
     "menu:sharpen": {
@@ -796,6 +798,10 @@
     "menu:mod_hints": {
       "name": "Kesilen anlatıcı ipuçları",
       "what": "Geliştiricilerin Eylül 2016'da kestiği 23 anlatıcı ipucu. Açık: takılmış gibi göründüğünde anlatıcı, repliklerinin ilk konduğu yerlerde yine yardım eder. Bulmaca çözümlerini ele verirler."
+    },
+    "menu:shadow_lite": {
+      "name": "Hafif gölgeler",
+      "what": "Oyunun dört gölge katmanından kameraya en yakın olanı çıkarır; oyun bazı bölgelerde bunu zaten kendisi yapar. Eski CPU'larda ve Steam Deck'te birkaç % daha fazla FPS; kameraya yakın gölgeler biraz yumuşar. Kapalı, oyunun çıktığı hâlidir."
     }
   },
   "menu": {
@@ -810,7 +816,6 @@
     "Low-end PC": "Düşük donanımlı PC",
     "Graphics preset": "Grafik ön ayarı",
     "Custom": "Özel",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Bu sekmedeki tüm ayarları ve doku paketini tek seferde, canlı olarak değiştirir. Stock oyunun çıktığı hâli; Önerilen varsayılan; Düşük donanımlı PC, eski veya zayıf PC'ler için gölgeleri %50 mesafede olan Stock'tur. Kendi ön ayarların presets klasöründeki dosyalardır, başlatıcıda da listelenir.",
     "Save as preset": "Ön ayar olarak kaydet",
     "Save": "Kaydet",
     "Delete": "Sil",
@@ -1172,6 +1177,10 @@
     "Photo mode: freeze world on / off": "Fotoğraf modu: dünyayı dondur açık / kapalı",
     "Photo mode: sticks camera / boy": "Fotoğraf modu: çubuklar kamera / çocuk",
     "Photo mode: playing as the boy": "Fotoğraf modu: çocuğu oynuyorsun",
-    "Let the world run first": "Önce dünyayı çalıştır"
+    "Let the world run first": "Önce dünyayı çalıştır",
+    "Lite shadows": "Hafif gölgeler",
+    "On (lighter)": "Açık (daha hafif)",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Oyunun dört gölge katmanından kameraya en yakın olanı çıkarır; oyun bazı bölgelerde bunu zaten kendisi yapar. Eski CPU'larda ve Steam Deck'te birkaç % daha fazla FPS; kameraya yakın gölgeler biraz yumuşar. Kapalı, oyunun çıktığı hâlidir.",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Bu sekmedeki tüm ayarları ve doku paketini tek seferde, canlı olarak değiştirir. Stock oyunun çıktığı hâli; Önerilen varsayılan; Düşük donanımlı PC, eski veya zayıf PC'ler için gölgeleri %50 mesafede ve hafif gölgeli Stock'tur. Kendi ön ayarların presets klasöründeki dosyalardır, başlatıcıda da listelenir."
   }
 }

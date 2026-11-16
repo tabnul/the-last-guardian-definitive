@@ -52,8 +52,9 @@ end end) end
 )";
 
 // Shared by every TLGSET chunk: Scale keeps the game's own value per object property and
-// writes it times pct/100, or plus add when given (vectors: the listed components). A value differing from our last
-// write was set by the game (cutscene, area change): it becomes the new base. Feature turns a
+// writes it times pct/100, or plus add when given (vectors: the listed components; set: fixed
+// values for some of them, e.g. {-1} for the first). A value differing from our last write was
+// set by the game (cutscene, area change): it becomes the new base. Feature turns a
 // pass off at 0% (it costs nothing then) and back on when the game had it.
 constexpr std::string_view Prelude = R"(
 local ls=loadstring or load
@@ -61,7 +62,7 @@ local function L(s) local f=ls('--TLGLOG '..s) if f then f() end end
 _TLGB=_TLGB or {}
 local B=_TLGB
 local function Parts(v) local t={} for n in tostring(v):gmatch('%S+') do t[#t+1]=tonumber(n) or 0 end return t end
-local function Scale(o,key,prop,pct,parts,add)
+local function Scale(o,key,prop,pct,parts,add,set)
   if not o then return end
   local cur=o[prop]
   local s=tostring(cur)
@@ -71,6 +72,7 @@ local function Scale(o,key,prop,pct,parts,add)
     if type(cur)~='userdata' then return end
     local t={} for i=1,4 do t[i]=e.b[i] or 0 end
     for _,i in ipairs(parts) do t[i]=add and t[i]+add or t[i]*pct/100 end
+    if set then for i,x in pairs(set) do t[i]=x end end
     local n=Vector(t[1],t[2],t[3],t[4])
     if tostring(n)~=s then o[prop]=n end
   else
@@ -726,13 +728,14 @@ std::string SetChunk() {
                   "Scale(pp,'sharp','sharpenScale',%d)\n"
                   "Scale(pp,'fogd','fogParam',%d,XY)\n"
                   "Scale(pp,'lvca','lightVolumeChromaticAberration',%d,X)\n"
-                  "Scale(cs,'shd','splitDistances',%d,ALL)\n"
+                  "Scale(cs,'shd','splitDistances',%d,ALL,nil,%s)\n"
                   "Feathers(%d) Fov(%d) Grass(%s) BoyWind(%d) TreeWind(%d)\n",
                   s.bloom.load(), s.bloom.load(), s.ssao.load(), s.ssao.load(), s.ssr.load(),
                   s.ssr.load(), s.motion_blur.load(), s.motion_blur.load(),
                   s.vignette.load() * 0.01, std::min(s.game_sharpen.load(), 100),
                   s.fog_distance.load(), s.haze_fringe.load(),
-                  std::clamp(s.shadow_distance.load(), 10, 100), s.trico_feathers.load(), s.fov.load(),
+                  std::clamp(s.shadow_distance.load(), 10, 100),
+                  s.shadow_lite.load() ? "{-1}" : "nil", s.trico_feathers.load(), s.fov.load(),
                   s.grass_smooth.load() ? "true" : "false", s.boy_wind.load(), s.tree_wind.load());
     code += line;
     code += "Drool(" + std::to_string(std::clamp(s.trico_drool.load(), 0, 2)) + ")\n";

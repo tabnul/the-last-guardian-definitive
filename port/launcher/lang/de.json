@@ -294,7 +294,7 @@
     "launcher.shadow_scale": "Schattenauflösung",
     "launcher.shadow_game": "Spiel (2048)",
     "launcher.graphics_preset": "Grafik-Preset",
-    "launcher.graphics_preset_hint": "Alle Look-Einstellungen und das Texturpaket auf einmal. Stock ist das Spiel wie ausgeliefert; eigene hier oder im Spielmenü speichern (Einfg, Bild-Tab). Älterer oder schwächerer PC: Schwacher PC wählen (Stock mit Schatten auf 50% Distanz; behält deine Auflösung und FPS). Steam Deck: Steam Deck (experimentell) wählen, Schwacher PC plus 1280x800, 30 FPS, kein Upscaling und Frame Generation aus: sag uns, wie es läuft.",
+    "launcher.graphics_preset_hint": "Alle Look-Einstellungen und das Texturpaket auf einmal. Stock ist das Spiel wie ausgeliefert; eigene hier oder im Spielmenü speichern (Einfg, Bild-Tab). Älterer oder schwächerer PC: Schwacher PC wählen (Stock mit Schatten auf 50% Distanz und leichten Schatten; behält deine Auflösung und FPS). Steam Deck: Steam Deck (experimentell) wählen, Schwacher PC plus 1280x800, 30 FPS, kein Upscaling und Frame Generation aus: sag uns, wie es läuft.",
     "launcher.preset_save": "Als Preset speichern",
     "launcher.preset_save_button": "Speichern",
     "launcher.preset_save_bad": "Gib einen Namen ein (Buchstaben, Ziffern, Leerzeichen, - oder _; nicht Stock, Recommended, Low-end PC oder Steam Deck).",
@@ -456,7 +456,9 @@
     "pad.remap_touchpad_left": "Touchpad (links): Fotomodus",
     "pad.remap_touchpad_right": "Touchpad (rechts): Pause",
     "pad.photo_press": "Taste drücken…",
-    "pad.photo_note": "Je eine Taste, nur im Fotomodus. Linker Stick fliegt, rechter Stick schaut umher. Tastatur: die Tasten derselben Knöpfe; Druck macht auch einen Screenshot."
+    "pad.photo_note": "Je eine Taste, nur im Fotomodus. Linker Stick fliegt, rechter Stick schaut umher. Tastatur: die Tasten derselben Knöpfe; Druck macht auch einen Screenshot.",
+    "launcher.shadow_lite": "Leichte Schatten",
+    "launcher.shadow_lite_hint": "Lässt die nächste der vier Schattenebenen des Spiels weg, wie es das Spiel in manchen Gebieten selbst tut. Ein paar % mehr FPS auf älteren CPUs und dem Steam Deck; Schatten nah an der Kamera werden etwas weicher. Aus ist wie ausgeliefert."
   },
   "items": {
     "menu:sharpen": {
@@ -789,6 +791,10 @@
     "menu:mod_hints": {
       "name": "Gestrichene Erzählerhinweise",
       "what": "Die 23 Hinweise des Erzählers, die die Entwickler im September 2016 gestrichen haben. An: Wenn du feststeckst, hilft der Erzähler wieder, dort, wo sie seine Sätze ursprünglich platziert hatten. Sie verraten Rätsellösungen."
+    },
+    "menu:shadow_lite": {
+      "name": "Leichte Schatten",
+      "what": "Lässt die nächste der vier Schattenebenen des Spiels weg, wie es das Spiel in manchen Gebieten selbst tut. Ein paar % mehr FPS auf älteren CPUs und dem Steam Deck; Schatten nah an der Kamera werden etwas weicher. Aus ist wie ausgeliefert."
     }
   },
   "menu": {
@@ -803,7 +809,6 @@
     "Low-end PC": "Schwacher PC",
     "Graphics preset": "Grafik-Preset",
     "Custom": "Eigene",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Schaltet alle Einstellungen dieses Tabs und das Texturpaket auf einmal um, live. Stock ist das Spiel wie ausgeliefert; Empfohlen ist der Standard; Schwacher PC ist Stock mit Schatten auf 50% Distanz, für ältere oder schwächere PCs. Eigene Presets sind Dateien im Ordner presets, auch im Launcher aufgelistet.",
     "Save as preset": "Als Preset speichern",
     "Save": "Speichern",
     "Delete": "Löschen",
@@ -1159,6 +1164,10 @@
     "Photo mode: freeze world on / off": "Fotomodus: Welt einfrieren an / aus",
     "Photo mode: sticks camera / boy": "Fotomodus: Sticks Kamera / Junge",
     "Photo mode: playing as the boy": "Fotomodus: du spielst den Jungen",
-    "Let the world run first": "Lass zuerst die Welt laufen"
+    "Let the world run first": "Lass zuerst die Welt laufen",
+    "Lite shadows": "Leichte Schatten",
+    "On (lighter)": "An (leichter)",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Lässt die nächste der vier Schattenebenen des Spiels weg, wie es das Spiel in manchen Gebieten selbst tut. Ein paar % mehr FPS auf älteren CPUs und dem Steam Deck; Schatten nah an der Kamera werden etwas weicher. Aus ist wie ausgeliefert.",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Schaltet alle Einstellungen dieses Tabs und das Texturpaket auf einmal um, live. Stock ist das Spiel wie ausgeliefert; Empfohlen ist der Standard; Schwacher PC ist Stock mit Schatten auf 50% Distanz und leichten Schatten, für ältere oder schwächere PCs. Eigene Presets sind Dateien im Ordner presets, auch im Launcher aufgelistet."
   }
 }
