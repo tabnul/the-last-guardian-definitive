@@ -1159,9 +1159,9 @@
     "Let the world run": "Lascia scorrere il mondo",
     "Freeze the world": "Congela il mondo",
     "Sticks: camera / boy": "Levette: telecamera / ragazzo",
-    "Control the boy": "Controlla il ragazzo",
-    "Control the camera": "Controlla la telecamera",
     "Photo mode: freeze world on / off": "Modalità foto: congela il mondo sì / no",
-    "Photo mode: sticks camera / boy": "Modalità foto: levette telecamera / ragazzo"
+    "Photo mode: sticks camera / boy": "Modalità foto: levette telecamera / ragazzo",
+    "Photo mode: playing as the boy": "Modalità foto: controlli il ragazzo",
+    "Let the world run first": "Prima fai ripartire il mondo"
   }
 }

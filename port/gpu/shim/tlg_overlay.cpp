@@ -2279,7 +2279,9 @@ void PhotoHelpBox() {
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                      ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoFocusOnAppearing);
-    ImGui::TextUnformatted(TR("Photo mode"));
+    // Sticks on the boy: say so in the title, so the shorter list below makes sense.
+    const bool boy = TlgFun::PhotoSticksBoy();
+    ImGui::TextUnformatted(boy ? TR("Photo mode: playing as the boy") : TR("Photo mode"));
     ImGui::Separator();
     // Key column as wide as its longest text (packs translate it) plus a clear gap.
     // The buttons as set (Controls tab, tlg.ini pad_photo_*).
@@ -2292,32 +2294,33 @@ void PhotoHelpBox() {
     const std::string world_key = key(st.photo_world);
     const std::string sticks_key = key(st.photo_sticks);
     const std::string exit_keys = key(st.combo_photo) + " / F9";
-    // Sticks on the boy: the controller plays the game, so only the buttons that still act show.
-    const bool boy = TlgFun::PhotoSticksBoy();
+    // One fixed list (user 2026-11-16: a list that changed with the sticks looked like a second
+    // menu). Sticks on the boy: the camera rows stay, greyed out, as those buttons play the game.
     const char* world_text = TlgFun::PhotoWorldFrozen() ? TR("Let the world run") : TR("Freeze the world");
-    std::vector<std::pair<const char*, const char*>> rows;
-    if (boy) {
-        rows = {{TR("Print Screen"), TR("Screenshot")},
-                {sticks_key.c_str(), TR("Control the camera")},
-                {world_key.c_str(), world_text}};
-    } else {
-        rows = {{shot_keys.c_str(), TR("Screenshot")},
-                {TR("Left stick"), TR("Fly")},
-                {TR("Right stick"), TR("Look around")},
-                {up_down.c_str(), TR("Down / up")},
-                {fast_slow.c_str(), TR("Fast / slow")},
-                {sticks_key.c_str(), TR("Control the boy")},
-                {world_key.c_str(), world_text}};
-    }
-    rows.push_back({help_key.c_str(), TR("Hide this help")});
-    rows.push_back({exit_keys.c_str(), TR("Exit photo mode")});
+    struct Row {
+        const char* key;
+        const char* text;
+        bool camera; // greyed out while the sticks are on the boy
+    };
+    const Row rows[] = {{shot_keys.c_str(), TR("Screenshot"), false},
+                        {TR("Left stick"), TR("Fly"), true},
+                        {TR("Right stick"), TR("Look around"), true},
+                        {up_down.c_str(), TR("Down / up"), true},
+                        {fast_slow.c_str(), TR("Fast / slow"), true},
+                        {sticks_key.c_str(), TR("Sticks: camera / boy"), false},
+                        {world_key.c_str(), world_text, false},
+                        {help_key.c_str(), TR("Hide this help"), false},
+                        {exit_keys.c_str(), TR("Exit photo mode"), false}};
     float key_w = 0.0f;
-    for (const auto& r : rows) key_w = std::max(key_w, ImGui::CalcTextSize(r.first).x);
+    for (const auto& r : rows) key_w = std::max(key_w, ImGui::CalcTextSize(r.key).x);
     const float col = ImGui::GetCursorPosX() + key_w + 32.0f * base_scale;
     for (const auto& r : rows) {
-        ImGui::TextUnformatted(r.first);
+        const bool grey = boy && r.camera;
+        if (grey) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        ImGui::TextUnformatted(r.key);
         ImGui::SameLine(col);
-        ImGui::TextUnformatted(r.second);
+        ImGui::TextUnformatted(r.text);
+        if (grey) ImGui::PopStyleColor();
     }
     ImGui::End();
 }
@@ -2366,7 +2369,17 @@ void PhotoPadSync() {
     // Not under the game's pause menu: there the button belongs to the menu, and the world
     // would run behind it.
     if ((pressed & 4) && !pause_menu_open) TlgFun::PhotoWorldToggle();
-    if ((pressed & 8) && !pause_menu_open) TlgFun::PhotoSticksToggle();
+    // The boy can only move in a running world: while frozen the switch is blocked with a note,
+    // else the camera buttons rest and nothing moves (SteamOS test 2026-11-16, user picked this).
+    if ((pressed & 8) && !pause_menu_open) {
+        if (!boy && TlgFun::PhotoWorldFrozen()) {
+            NoticeLocked(std::string(TR("Let the world run first")) + " (" +
+                             TlgSettings::ComboLabel(s.photo_world) + ")",
+                         2.5f);
+        } else {
+            TlgFun::PhotoSticksToggle();
+        }
+    }
     const bool up = !boy && held(s.photo_up), down = !boy && held(s.photo_down),
                fast = !boy && held(s.photo_fast), slow = !boy && held(s.photo_slow), inv = s.photo_invert_y;
     const int now = up | down << 1 | fast << 2 | slow << 3 | inv << 4;

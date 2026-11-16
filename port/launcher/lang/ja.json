@@ -1146,9 +1146,9 @@
     "Let the world run": "世界を動かす",
     "Freeze the world": "世界を止める",
     "Sticks: camera / boy": "スティック: カメラ / 少年",
-    "Control the boy": "少年を操作",
-    "Control the camera": "カメラを操作",
     "Photo mode: freeze world on / off": "フォトモード: 世界の停止 オン / オフ",
-    "Photo mode: sticks camera / boy": "フォトモード: スティック カメラ / 少年"
+    "Photo mode: sticks camera / boy": "フォトモード: スティック カメラ / 少年",
+    "Photo mode: playing as the boy": "フォトモード: 少年を操作中",
+    "Let the world run first": "先に世界を動かしてください"
   }
 }

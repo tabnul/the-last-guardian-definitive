@@ -1159,9 +1159,9 @@
     "Let the world run": "Dünyanın akmasına izin ver",
     "Freeze the world": "Dünyayı dondur",
     "Sticks: camera / boy": "Çubuklar: kamera / çocuk",
-    "Control the boy": "Çocuğu kontrol et",
-    "Control the camera": "Kamerayı kontrol et",
     "Photo mode: freeze world on / off": "Fotoğraf modu: dünyayı dondur açık / kapalı",
-    "Photo mode: sticks camera / boy": "Fotoğraf modu: çubuklar kamera / çocuk"
+    "Photo mode: sticks camera / boy": "Fotoğraf modu: çubuklar kamera / çocuk",
+    "Photo mode: playing as the boy": "Fotoğraf modu: çocuğu oynuyorsun",
+    "Let the world run first": "Önce dünyayı çalıştır"
   }
 }

@@ -1159,9 +1159,9 @@
     "Let the world run": "Deixar o mundo continuar",
     "Freeze the world": "Congelar o mundo",
     "Sticks: camera / boy": "Manípulos: câmara / rapaz",
-    "Control the boy": "Controlar o rapaz",
-    "Control the camera": "Controlar a câmara",
     "Photo mode: freeze world on / off": "Modo fotografia: congelar o mundo sim / não",
-    "Photo mode: sticks camera / boy": "Modo fotografia: manípulos câmara / rapaz"
+    "Photo mode: sticks camera / boy": "Modo fotografia: manípulos câmara / rapaz",
+    "Photo mode: playing as the boy": "Modo fotografia: a jogar com o rapaz",
+    "Let the world run first": "Primeiro deixe o mundo continuar"
   }
 }

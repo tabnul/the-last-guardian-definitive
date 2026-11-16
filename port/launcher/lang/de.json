@@ -1146,9 +1146,9 @@
     "Let the world run": "Welt weiterlaufen lassen",
     "Freeze the world": "Welt einfrieren",
     "Sticks: camera / boy": "Sticks: Kamera / Junge",
-    "Control the boy": "Junge steuern",
-    "Control the camera": "Kamera steuern",
     "Photo mode: freeze world on / off": "Fotomodus: Welt einfrieren an / aus",
-    "Photo mode: sticks camera / boy": "Fotomodus: Sticks Kamera / Junge"
+    "Photo mode: sticks camera / boy": "Fotomodus: Sticks Kamera / Junge",
+    "Photo mode: playing as the boy": "Fotomodus: du spielst den Jungen",
+    "Let the world run first": "Lass zuerst die Welt laufen"
   }
 }
