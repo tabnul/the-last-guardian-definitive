@@ -58,6 +58,8 @@ bool Visible();
 
 /// Present thread: draws into `view` (layout ColorAttachmentOptimal).
 void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent);
+/// Frame generation: the presenter marks the generated images it presents, so the counter shows real frames and frames on screen apart
+void SetPresentingGenerated(bool generated);
 
 /// A short message at the top of the screen for `seconds` (any thread), e.g. an input mode change.
 void Notice(const std::string& text, float seconds);

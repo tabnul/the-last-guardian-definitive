@@ -431,7 +431,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         if (gap_ms > 0.0f && gap_ms < 100.0f) {
             fg_interval_ms += (gap_ms - fg_interval_ms) * 0.1f;
         }
-        if (PresentImage(frame, frame->fg_image, false, is_reusing_frame)) {
+        TlgOverlay::SetPresentingGenerated(true); // the overlay counts it as a generated image
+        const bool shown = PresentImage(frame, frame->fg_image, false, is_reusing_frame);
+        TlgOverlay::SetPresentingGenerated(false);
+        if (shown) {
             Core::Vkb::Aa::NoteFg(false, true, false);
             const auto target = std::chrono::steady_clock::now() +
                                 std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<float, std::milli>(fg_interval_ms * 0.5f));
