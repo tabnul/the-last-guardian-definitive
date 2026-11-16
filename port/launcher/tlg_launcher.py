@@ -751,7 +751,10 @@ class BenchmarkWindow:
         custom_bar = ttk.Scrollbar(custom_box, orient='vertical', command=self.custom.yview)
         custom_bar.grid(row=0, column=1, sticky='ns')
         self.custom.configure(yscrollcommand=custom_bar.set)
-        self.custom.bind('<KeyRelease>', lambda _e: (self.remember_custom(), self.refresh()))
+        # Save on every change, not only on a key: a mouse paste (middle click, the Deck's
+        # on-screen keyboard) sends no key event, and closing the window skips close().
+        self.custom.edit_modified(False)
+        self.custom.bind('<<Modified>>', self.custom_changed)
 
         line = ttk.Frame(win)
         line.grid(row=7, column=0, columnspan=3, sticky='w', pady=(8, 0))
@@ -810,6 +813,13 @@ class BenchmarkWindow:
             points = self.bm.default_points()
             return [points[i] for i in self.pick.curselection()], []
         return self.bm.parse_points(self.custom.get('1.0', 'end'))
+
+    def custom_changed(self, _event=None):
+        if not self.custom.edit_modified():
+            return
+        self.custom.edit_modified(False)   # re-arms <<Modified>> for the next change
+        self.remember_custom()
+        self.refresh()
 
     def remember_custom(self):
         """Save the custom list when it changed (settings.json), so it is back next time."""
