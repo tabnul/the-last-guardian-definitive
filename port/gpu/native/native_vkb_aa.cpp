@@ -391,7 +391,11 @@ bool CensusOn() {
     return on;
 }
 
-bool DrawJitter(u64 depth_view_id, bool depth_write, bool geometry, u64 mesh_key, std::array<float, 2>& jitter) {
+bool IsSceneDepth(u64 depth_view_id) {
+    return depth_view_id != 0 && (depth_view_id == scene_depth_view || depth_view_id == scene_depth_other);
+}
+
+bool DrawJitter(u64 depth_view_id, bool depth_write, bool geometry, bool samples_depth, u64 mesh_key, std::array<float, 2>& jitter) {
     if (CensusOn()) {
         auto& c = depth_census[depth_view_id];
         c[0] += depth_write && geometry, c[1] += depth_write, c[2] += !depth_write, c[3] += 1;
@@ -400,9 +404,11 @@ bool DrawJitter(u64 depth_view_id, bool depth_write, bool geometry, u64 mesh_key
         return false;
     }
     bool on = false;
-    if (geometry && depth_write) {
+    if (geometry && !samples_depth) {
         on = true;
-        jittered_meshes.insert(mesh_key);
+        if (depth_write) {
+            jittered_meshes.insert(mesh_key);
+        }
     } else if (mesh_key != 0 && jittered_meshes.contains(mesh_key)) {
         on = true; // a redraw of a mesh drawn jittered into this depth takes the same shift (water over its pre-pass)
         c_jittered_meshes.fetch_add(1, std::memory_order_relaxed);

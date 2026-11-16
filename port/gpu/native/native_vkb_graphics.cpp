@@ -1674,7 +1674,21 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         }
         const bool geometry = (kind == 2) || a1 > 6 || instances > 1;
         const u64 mesh = Mix(Mix(Mix(a1, a2), a3), v.vs.info ? v.vs.info->pgm_hash : 0ull);
-        job->jittered = Core::Vkb::Aa::DrawJitter(dsv_id, fixed.depth_write, geometry, mesh, job->jitter);
+        // does the pixel shader read a scene depth (decals, lights): its used texture slots' resources against the scene depth ids
+        bool samples_depth = false;
+        const u64 ps_object = Rd<u64>(ctx, CtxPixelShader);
+        if (Core::Vkb::Aa::IsSceneDepth(dsv_id) && ps_object != 0 && IsHeapPointer(ps_object)) {
+            const u64 masks[2] = {Rd<u64>(ps_object, 0x30 + 0xc0), Rd<u64>(ps_object, 0x30 + 0xc8)};
+            for (u32 half = 0; half < 2 && !samples_depth; ++half) {
+                for (u64 bits = masks[half]; bits != 0 && !samples_depth; bits &= bits - 1) {
+                    const u32 s = half * 64 + static_cast<u32>(std::countr_zero(bits));
+                    const u64 view = Rd<u64>(ctx, SrvTable(1) + s * 8);
+                    const u64 resource = view != 0 && IsHeapPointer(view) ? Rd<u64>(view, 0x30) : 0;
+                    samples_depth = resource != 0 && IsHeapPointer(resource) && Core::Vkb::Aa::IsSceneDepth(Rd<u64>(resource, 0x10));
+                }
+            }
+        }
+        job->jittered = Core::Vkb::Aa::DrawJitter(dsv_id, fixed.depth_write, geometry, samples_depth, mesh, job->jitter);
     }
     job->ps_hash = v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0ull;
     job->color_format0 = static_cast<u32>(v.color_formats[0]);

@@ -34,7 +34,12 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter);
 /// F1c, the game's render thread (in game order): the motion pass's depth view (the scene depth), a draw's jitter (scene geometry writing that depth, and
 /// later draws of a mesh drawn so in this frame: water over its own pre-pass), and the combine queued: returns the frame's jitter, then advances it (Halton 2, 3)
 void NoteSceneDepth(u64 depth_view_id);
-[[nodiscard]] bool DrawJitter(u64 depth_view_id, bool depth_write, bool geometry, u64 mesh_key, std::array<float, 2>& jitter);
+/// Is `depth_view_id` one of the (two alternating) scene depths
+[[nodiscard]] bool IsSceneDepth(u64 depth_view_id);
+/// Upstream's rule (their vk_rasterizer.cpp): geometry drawn with the scene depth is jittered, writing it or only testing against it (the boy's skin, hair and eye
+/// passes test without writing: unjittered they flickered against the jittered depth, owner play 2026-11-16), except volumes that sample a scene depth (decals,
+/// lights rebuild positions from it); a redraw of a mesh drawn jittered with depth writes takes the shift too.
+[[nodiscard]] bool DrawJitter(u64 depth_view_id, bool depth_write, bool geometry, bool samples_depth, u64 mesh_key, std::array<float, 2>& jitter);
 [[nodiscard]] std::array<float, 2> OnCombineQueued();
 [[nodiscard]] nlohmann::json Report();
 
