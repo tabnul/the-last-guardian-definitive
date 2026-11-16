@@ -59,6 +59,11 @@ bool ViewExtent(u64 view_id, u32& width, u32& height, u32* depth = nullptr, u64*
 void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name);
 /// note 41, debug only: `size` bytes of `buffer` at `offset` (the GPU's copy) to log/vkb_image_dump/<name>_<size>B.gpu once the GPU has it
 void DumpBuffer(vk::CommandBuffer cmd, vk::Buffer buffer, u64 offset, u64 size, const std::string& name);
+/// note 91: the image `image` (a pass attachment, by its Vulkan handle) at full size, as DumpView
+void DumpImageHandle(vk::CommandBuffer cmd, vk::Image image, const std::string& name);
+/// note 91: dump files queued and not yet written; waits (up to `timeout_ms`) until none is left
+[[nodiscard]] u64 DumpsPending();
+bool WaitDumps(u64 timeout_ms);
 /// Our sampler for an engine sampler object, made once from its Direct3D 11 description (V2d)
 /// note 40: `compare` for a shader that samples it with a depth compare (the S# compares per instruction on GCN; a Vulkan sampler compares for all its reads)
 [[nodiscard]] vk::Sampler SamplerFor(u64 sampler_object, bool compare = false);

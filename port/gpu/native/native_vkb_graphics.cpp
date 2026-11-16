@@ -908,6 +908,9 @@ struct DrawJob final : Stream::Job {
     std::vector<std::pair<u64, std::string>> dump_views;
     bool dump_buffers{};
     std::string dump_prefix; ///< note 90: debugger mode's slow-pass dump goes to vkb_image_dump/<prefix>
+    u64 debug_id{};          ///< note 91: debugger mode: the draw's id (per-draw GPU time, capture row); 0 otherwise
+    u64 vs_hash{};
+    bool capture{};          ///< note 91: the draw belongs to the frame capture
     boost::container::small_vector<Stream::Use, 64> uses;
     boost::container::small_vector<Stream::Use, 9> attachment_uses;
     Stream::Pass pass{};
@@ -1658,6 +1661,16 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     job->kind = kind, job->a1 = a1, job->a2 = a2, job->a3 = a3;
     job->ps_hash = v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0ull;
     job->color_format0 = static_cast<u32>(v.color_formats[0]);
+    job->debug_id = 0, job->capture = false;
+    if (Core::FrameWalk::DebuggerMode()) [[unlikely]] { // note 91
+        static std::atomic<u64> ids{0};
+        job->debug_id = ids.fetch_add(1, std::memory_order_relaxed) + 1;
+        job->vs_hash = v.vs.info ? v.vs.info->pgm_hash : 0ull;
+        if (Stream::FrameCaptureOn()) {
+            job->capture = true;
+            Stream::CaptureDrawQueued();
+        }
+    }
     job->work = Stream::Work::Draw;
     Stream::Enqueue(std::move(job));
     phase(3);
@@ -2006,6 +2019,25 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
         cmd.drawIndexedIndirect(args_buffer, args_offset, 1, 20);
     } else {
         cmd.draw(static_cast<u32>(a1), instances, static_cast<u32>(a2), 0);
+    }
+    if (debug_id != 0) [[unlikely]] { // note 91: the draw's GPU time, and its row in the frame capture
+        Stream::StampDraw(debug_id, vs_hash, ps_hash, kind == 2 ? 0u : static_cast<u32>(a1), instances);
+        if (capture) {
+            nlohmann::json images = nlohmann::json::array();
+            for (const auto& im : b.images) {
+                images.push_back(fmt::format("{:#x}", reinterpret_cast<u64>(static_cast<VkImageView>(im.imageView))));
+            }
+            std::string push_hex;
+            const auto* pb = reinterpret_cast<const u8*>(&push);
+            for (size_t i = 0; i < sizeof(push); ++i) {
+                push_hex += fmt::format("{:02x}", pb[i]);
+            }
+            nlohmann::json row{{"id", debug_id}, {"vs", fmt::format("{:016x}", vs_hash)}, {"ps", fmt::format("{:016x}", ps_hash)},
+                               {"kind", kind == 0 ? "indexed" : kind == 1 ? "auto" : "indirect"}, {"count", a1}, {"first", a2}, {"instances", instances},
+                               {"targets", pass.color_count}, {"size", fmt::format("{}x{}", pass.extent.width, pass.extent.height)}, {"depth", pass.depth ? true : false},
+                               {"images", images}, {"push_data_hex", push_hex}};
+            (void)Stream::NoteCapturedDraw(std::move(row), std::span<const vk::DescriptorBufferInfo>{b.buffers.data(), b.buffers.size()});
+        }
     }
     if (!dump_views.empty() || dump_buffers) {
         Stream::BreakPass(cmd);

@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "native/native_vkb_objects.h"
 #include "native/native_vkb_shader_dump.h"
 #include "native/native_vkb_stream.h"
 #include "native/native_framewalk.h"
@@ -49,6 +50,13 @@ const bool enabled = [] {
 
 std::mutex mutex;
 std::condition_variable cv;
+/// note 91: F5 in debugger mode captures one whole frame before the freeze: 1 armed (the next frame boundary starts the capture), 2 capturing (the next boundary
+/// ends it), 3 the captured frame is being flipped (the next boundary freezes). TLG_FRAMEWALK_CAPTURE=0: F5 freezes at once, as before.
+std::atomic<u32> capture_step{0};
+bool FrameCaptureWanted() {
+    static const bool on = [] { const char* e = std::getenv("TLG_FRAMEWALK_CAPTURE"); return e == nullptr || e[0] != '0'; }();
+    return on;
+}
 std::atomic<bool> hold{false};  ///< a freeze is requested or active: AtSubmit waits
 std::atomic<u32> state{static_cast<u32>(State::Idle)};
 bool blocked = false;            ///< the render thread is waiting inside AtSubmit
@@ -200,6 +208,26 @@ void FreezeWorker() {
             // no debugger mode before the freeze: nothing to add
         } else {
             WriteText(dir / "byte_audit.json", ByteAudit::Report());
+            { // note 91: the frame capture: wait for its copies (the GPU had the frame before the freeze), then its table, then the files into the folder
+                std::error_code ec;
+                const auto from = LogDir() / "vkb_image_dump" / "capture";
+                if (std::filesystem::exists(from, ec)) {
+                    const auto wait_begin = std::chrono::steady_clock::now();
+                    while (Core::Vkb::Stream::CaptureJobsLeft() != 0 && std::chrono::steady_clock::now() - wait_begin < std::chrono::seconds(10)) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                    }
+                    const bool written = Core::Vkb::WaitDumps(180000);
+                    nlohmann::json table = Core::Vkb::Stream::CaptureReport();
+                    table["all_files_written"] = written;
+                    table["draws_never_recorded"] = Core::Vkb::Stream::CaptureJobsLeft();
+                    WriteText(from / "capture.json", table.dump(1));
+                    std::filesystem::rename(from, dir / "capture", ec);
+                    if (ec) {
+                        std::filesystem::copy(from, dir / "capture", std::filesystem::copy_options::recursive, ec);
+                        std::filesystem::remove_all(from, ec);
+                    }
+                }
+            }
             (void)Core::Vkb::ShaderDump::Write(dir / "shaders"); // note 89: every shader used while recording
             { // note 90: the slow-pass draw dumps of this recording (written by their own threads once the GPU had them)
                 std::error_code ec;
@@ -287,6 +315,13 @@ void KeyFreeze() {
     switch (Current()) {
     case State::Idle:
     case State::Recording:
+        if (Current() == State::Recording && DebuggerMode() && FrameCaptureWanted()) {
+            u32 idle = 0;
+            if (capture_step.compare_exchange_strong(idle, 1)) {
+                LOG_INFO(Render, "frame walk: capturing the next frame, then freezing");
+            }
+            break;
+        }
         StartFreeze();
         break;
     case State::Frozen:
@@ -298,6 +333,20 @@ void KeyFreeze() {
 }
 
 void AtSubmit() {
+    if (const u32 step = capture_step.load(std::memory_order_relaxed); step != 0) [[unlikely]] { // note 91
+        if (step == 1) {
+            std::error_code ec;
+            std::filesystem::remove_all(LogDir() / "vkb_image_dump" / "capture", ec);
+            Core::Vkb::Stream::SetFrameCapture(true);
+            capture_step.store(2);
+        } else if (step == 2) {
+            Core::Vkb::Stream::SetFrameCapture(false);
+            capture_step.store(3);
+        } else {
+            capture_step.store(0);
+            StartFreeze();
+        }
+    }
     if (!hold.load(std::memory_order_relaxed)) {
         return;
     }

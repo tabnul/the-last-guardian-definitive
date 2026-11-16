@@ -10,6 +10,8 @@
 #include "native/shadps4/video_core/host_shaders/fill_pattern_comp.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_shader_util.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_platform.h"
+#include <condition_variable>
+#include <functional>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -27,6 +29,7 @@
 #include <boost/container/small_vector.hpp>
 #include <nlohmann/json.hpp>
 
+#include "common/thread.h"
 #include "common/logging/log.h"
 #include "common/path_util.h"
 #include "native/native_content.h"
@@ -2131,6 +2134,61 @@ std::string DescribeView(u64 view_id) {
 
 /// note 41, debug only: copies the subresource of our view of engine view `view_id` (its first mip and layer) into a host buffer and writes it, once the GPU has
 /// done this command buffer, to log/vkb_image_dump/<name>_<w>x<h>_<format>.bin (raw texels; depth images: the depth aspect). Recording thread, lock held, outside a pass.
+void DumpImageCore(vk::CommandBuffer cmd, vk::Image image, vk::Format format, u32 width, u32 height, u32 slices, u32 mip, u32 layer, bool depth, const std::string& name);
+/// note 91: the dump files are written by one thread in order (a thread per file was fine for one draw; a frame capture writes thousands)
+namespace {
+struct DumpTask {
+    u64 after{};
+    std::function<void()> work;
+};
+std::mutex dump_mutex;
+std::condition_variable dump_cv;
+std::deque<DumpTask> dump_tasks;
+std::atomic<u64> dump_pending{0};
+bool dump_thread_started = false;
+void QueueDump(u64 after, std::function<void()> work) {
+    dump_pending.fetch_add(1, std::memory_order_relaxed);
+    {
+        std::scoped_lock lock{dump_mutex};
+        dump_tasks.push_back({after, std::move(work)});
+        if (!dump_thread_started) {
+            dump_thread_started = true;
+            std::thread([] {
+                Common::SetCurrentThreadName("vkb:dumps");
+                for (;;) {
+                    DumpTask t;
+                    {
+                        std::unique_lock l{dump_mutex};
+                        dump_cv.wait(l, [] { return !dump_tasks.empty(); });
+                        t = std::move(dump_tasks.front());
+                        dump_tasks.pop_front();
+                    }
+                    Stream::Wait(t.after);
+                    t.work();
+                    dump_pending.fetch_sub(1, std::memory_order_relaxed);
+                }
+            }).detach();
+        }
+    }
+    dump_cv.notify_one();
+}
+} // namespace
+
+u64 DumpsPending() {
+    return dump_pending.load(std::memory_order_relaxed);
+}
+
+bool WaitDumps(u64 timeout_ms) {
+    const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    while (dump_pending.load() != 0) {
+        if (std::chrono::steady_clock::now() > end) {
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    return true;
+}
+
 void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
     vk::Image image{};
     vk::Format format{};
@@ -2154,6 +2212,10 @@ void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
             slices = std::max(1u, i->second.depth >> mip); // the whole volume (slices one after another)
         }
     }
+    DumpImageCore(cmd, image, format, width, height, slices, mip, layer, depth, name);
+}
+
+void DumpImageCore(vk::CommandBuffer cmd, vk::Image image, vk::Format format, u32 width, u32 height, u32 slices, u32 mip, u32 layer, bool depth, const std::string& name) {
     u32 texel = 0;
     switch (format) {
     case vk::Format::eR8Unorm: texel = 1; break;
@@ -2202,7 +2264,7 @@ void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
     const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump";
     const std::string file = (dir / (slices > 1 ? fmt::format("{}_{}x{}x{}_{}.bin", name, width, height, slices, vk::to_string(format))
                                                  : fmt::format("{}_{}x{}_{}.bin", name, width, height, vk::to_string(format)))).string();
-    std::thread([buffer, allocation, mapped = info.pMappedData, bytes, after, dir, file] {
+    QueueDump(after, [buffer, allocation, mapped = info.pMappedData, bytes, after, dir, file] {
         Stream::Wait(after);
         std::error_code ec;
         std::filesystem::create_directories(std::filesystem::path(file).parent_path(), ec);
@@ -2212,7 +2274,27 @@ void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
         }
         vmaDestroyBuffer(instance->GetAllocator(), buffer, allocation);
         LOG_INFO(Render_Vulkan, "vkb image dump written: {}", file);
-    }).detach();
+    });
+}
+
+void DumpImageHandle(vk::CommandBuffer cmd, vk::Image handle, const std::string& name) {
+    vk::Format format{};
+    u32 width = 0, height = 0;
+    bool depth = false, found = false;
+    {
+        std::scoped_lock lock{mutex};
+        for (const auto& [id, img] : images) {
+            if (img.image == handle) {
+                format = img.format, width = img.width, height = img.height, depth = img.is_depth, found = true;
+                break;
+            }
+        }
+    }
+    if (!found) {
+        LOG_WARNING(Render_Vulkan, "vkb image dump {}: unknown image", name);
+        return;
+    }
+    DumpImageCore(cmd, handle, format, width, height, 1, 0, 0, depth, name);
 }
 
 void DumpBuffer(vk::CommandBuffer cmd, vk::Buffer source, u64 offset, u64 size, const std::string& name) {
@@ -2237,7 +2319,7 @@ void DumpBuffer(vk::CommandBuffer cmd, vk::Buffer source, u64 offset, u64 size, 
     const u64 after = Stream::RecordingValue();
     const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump";
     const std::string file = (dir / fmt::format("{}_{}B.gpu", name, size)).string();
-    std::thread([buffer, allocation, mapped = info.pMappedData, size, after, dir, file] {
+    QueueDump(after, [buffer, allocation, mapped = info.pMappedData, size, after, dir, file] {
         Stream::Wait(after);
         std::error_code ec;
         std::filesystem::create_directories(std::filesystem::path(file).parent_path(), ec);
@@ -2246,7 +2328,7 @@ void DumpBuffer(vk::CommandBuffer cmd, vk::Buffer source, u64 offset, u64 size, 
             std::fclose(f);
         }
         vmaDestroyBuffer(instance->GetAllocator(), buffer, allocation);
-    }).detach();
+    });
 }
 
 // note 42: a staging texture's data (CopyResource into a usage-3 texture, then Map READ) comes from host buffers our copies fill. Each staging subresource has a ring
