@@ -119,7 +119,9 @@ Presenter::~Presenter() {
 }
 
 bool Presenter::MustKeepDrawing() {
-    return TlgOverlay::Visible();
+    // only while the menu or a dialog takes input (it must answer while the game sends no frames). Not for the FPS overlay: the present
+    // thread then repeated the last frame on every vblank without a new one, and the overlay counted those repeats as frames.
+    return TlgOverlay::CapturesInput();
 }
 
 void Presenter::RecreateFrame(Frame* frame, u32 width, u32 height) {

@@ -1120,6 +1120,12 @@ def open_external(target):
             return False
 
 
+def console_options():
+    """Windows: no console window for the game (tlg-probe is a console program; started from the windowless launcher
+    Windows opened one for it). Its output goes to the log file either way."""
+    return {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
+
+
 def detach_options():
     """Popen options that make the game an independent process: closing the launcher (or its
     terminal) does not reach it. Linux: its own session. Windows: its own process group, no console."""
@@ -1230,7 +1236,7 @@ def launch(settings, seconds=0, extra_env=None, detached=False, header=()):
         out.flush()
         process = subprocess.Popen(cmd, cwd=str(data), env=build_env(settings, extra_env),
                                    stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
-                                   **(detach_options() if detached else {}))
+                                   **(detach_options() if detached else console_options()))
     return process, log
 
 

@@ -26,7 +26,7 @@ foreach ($kv in $Extra.Split(",")) { if ($kv.Contains("=")) { $p = $kv.Split("="
 foreach ($k in @($e.Keys)) { Set-Item "Env:$k" $e[$k] }
 $log = Join-Path $User 'log'
 New-Item -ItemType Directory -Force $log | Out-Null
-$proc = Start-Process -FilePath python -ArgumentList "`"$Port\launcher\tlg_run.py`"" -WorkingDirectory $Port -RedirectStandardOutput "$log\game_$Tag.txt" -RedirectStandardError "$log\game_$Tag.err" -PassThru
+$proc = Start-Process -FilePath python -WindowStyle Hidden -ArgumentList "`"$Port\launcher\tlg_run.py`"" -WorkingDirectory $Port -RedirectStandardOutput "$log\game_$Tag.txt" -RedirectStandardError "$log\game_$Tag.err" -PassThru
 Start-Sleep 5
 foreach ($k in @($e.Keys)) { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
 "started pid $($proc.Id), switches: $($Extra)"

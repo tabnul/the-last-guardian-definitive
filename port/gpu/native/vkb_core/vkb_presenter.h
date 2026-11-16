@@ -64,7 +64,7 @@ public:
     Frame* PrepareLastFrame();
     void Present(Frame* frame, bool is_reusing_frame = false, bool is_game_frame = true);
 
-    /// The present thread redraws the last frame while nothing new comes, as long as the overlay is open (it animates and takes input)
+    /// The present thread redraws the last frame while nothing new comes, as long as the menu or a dialog takes input
     [[nodiscard]] static bool MustKeepDrawing();
 
 private:
