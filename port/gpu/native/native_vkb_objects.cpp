@@ -1144,6 +1144,14 @@ void BufferCreated(const Object& buffer) {
     }
 }
 
+void RetireView(vk::ImageView view) {
+    if (!view) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    doomed.push_back({static_cast<u32>(GraphicsSubmits()) + DestroyDelay(), {}, {}, view});
+}
+
 namespace {
 void ObjectDeletedNow(u64 id);
 std::atomic<u64> c_deletes_in_order{0};

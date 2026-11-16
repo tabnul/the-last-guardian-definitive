@@ -63,6 +63,8 @@ void DumpBuffer(vk::CommandBuffer cmd, vk::Buffer buffer, u64 offset, u64 size, 
 void DumpImageHandle(vk::CommandBuffer cmd, vk::Image image, const std::string& name);
 /// F1: the format, size and kind of our image `image` (false: not one of ours); a scan, once a frame at most
 bool ImageFacts(vk::Image image, vk::Format& format, u32& width, u32& height, bool& depth);
+/// A view recorded into the graphics stream, destroyed once the GPU has done the submit that may use it (as views of deleted engine objects)
+void RetireView(vk::ImageView view);
 /// note 91: dump files queued and not yet written; waits (up to `timeout_ms`) until none is left
 [[nodiscard]] u64 DumpsPending();
 bool WaitDumps(u64 timeout_ms);

@@ -116,24 +116,66 @@ vk::ImageView motion_px_view{}, output_view{};
 std::mutex fg_mutex;
 FgInputs fg_inputs{};
 u64 fg_serial = 0, fg_taken = 0;
-std::map<std::pair<VkImage, u32>, vk::ImageView> views; ///< (image, format) -> view
+// F2: our copy of the scene depth (double-buffered with the motion): the presenter reads only images the AA owns, the backend frees the game's (loading)
+std::array<VkImage, 2> depth_copies{};
+std::array<VmaAllocation, 2> depth_copy_allocs{};
+std::array<vk::ImageView, 2> depth_copy_views{};
+vk::Format depth_copy_format{};
+u32 depth_copy_w = 0, depth_copy_h = 0;
 vk::DescriptorSetLayout motion_set_layout{};
 vk::PipelineLayout motion_layout{};
 vk::Pipeline motion_pipeline{};
 u32 dl_w = 0, dl_h = 0;
 
+/// A view of one of the game's images for this run only: retired through the backend once the submit is done (a cache by handle went stale when the backend
+/// freed an image during loading and a new one got the same handle: device lost, owner play 2026-11-16)
 vk::ImageView ViewOf(VkImage image, vk::Format format, vk::ImageAspectFlags aspect) {
-    const auto key = std::make_pair(image, static_cast<u32>(format));
-    if (const auto it = views.find(key); it != views.end()) {
-        return it->second;
-    }
     const auto [r, view] = instance->GetDevice().createImageView(
         {.image = vk::Image{image}, .viewType = vk::ImageViewType::e2D, .format = format, .subresourceRange = {aspect, 0, 1, 0, 1}});
     if (r != vk::Result::eSuccess) {
         return {};
     }
-    views.emplace(key, view);
+    Core::Vkb::RetireView(view);
     return view;
+}
+
+void DestroyDepthCopies() {
+    for (u32 i = 0; i < 2; ++i) {
+        if (depth_copies[i] != VK_NULL_HANDLE) {
+            instance->GetDevice().destroyImageView(depth_copy_views[i]);
+            vmaDestroyImage(instance->GetAllocator(), depth_copies[i], depth_copy_allocs[i]);
+            depth_copies[i] = VK_NULL_HANDLE;
+        }
+    }
+}
+
+/// F2: our depth images at the render size and the game's depth format (destroyed only after a device-wide wait)
+bool EnsureDepthCopies(u32 w, u32 h, vk::Format format) {
+    if (depth_copies[0] != VK_NULL_HANDLE && depth_copy_format == format && depth_copy_w == w && depth_copy_h == h) {
+        return true;
+    }
+    DestroyDepthCopies(); // EnsureDlaa has idled the device on a size change; a format change idles here
+    const VkImageCreateInfo ci{.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                               .imageType = VK_IMAGE_TYPE_2D,
+                               .format = static_cast<VkFormat>(format),
+                               .extent = {w, h, 1},
+                               .mipLevels = 1,
+                               .arrayLayers = 1,
+                               .samples = VK_SAMPLE_COUNT_1_BIT,
+                               .tiling = VK_IMAGE_TILING_OPTIMAL,
+                               .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                               .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                               .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
+    const VmaAllocationCreateInfo alloc{.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
+    for (u32 i = 0; i < 2; ++i) {
+        if (vmaCreateImage(instance->GetAllocator(), &ci, &alloc, &depth_copies[i], &depth_copy_allocs[i], nullptr) != VK_SUCCESS) {
+            return false;
+        }
+        depth_copy_views[i] = instance->GetDevice().createImageView({.image = vk::Image{depth_copies[i]}, .viewType = vk::ImageViewType::e2D, .format = format,
+                                                                     .subresourceRange = {vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1}}).value;
+    }
+    depth_copy_format = format, depth_copy_w = w, depth_copy_h = h;
+    return true;
 }
 
 bool EnsureDlaa(u32 w, u32 h) {
@@ -421,7 +463,11 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
         return;
     }
     const bool want_px = Chosen() == Kind::Dlaa || Core::Vkb::DlssGlue::FgWanted();
-    if (!EnsureContext(w, h) || (want_px && !EnsureDlaa(w, h))) {
+    if (depth_copies[0] != VK_NULL_HANDLE && depth_copy_format != d.format) {
+        IdleDevice(instance->GetDevice()); // the presenter may read the old copies
+        DestroyDepthCopies();
+    }
+    if (!EnsureContext(w, h) || (want_px && !EnsureDlaa(w, h)) || (Core::Vkb::DlssGlue::FgWanted() && !EnsureDepthCopies(w, h, d.format))) {
         failed = true;
         c_failed.fetch_add(1, std::memory_order_relaxed);
         return;
@@ -466,10 +512,20 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
         cmd.pushConstants(motion_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(size), size.data());
         cmd.dispatch((w + 7) / 8, (h + 7) / 8, 1);
         Barrier(cmd);
-        { // F2: this frame's depth and motion for the presenter's frame generation
+        if (Core::Vkb::DlssGlue::FgWanted()) { // F2: this frame's depth (our copy) and motion for the presenter's frame generation
+            const vk::Image copy{depth_copies[px_index]};
+            const vk::ImageMemoryBarrier2 to_dst{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands, .srcAccessMask = vk::AccessFlagBits2::eNone,
+                                                 .dstStageMask = vk::PipelineStageFlagBits2::eTransfer, .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+                                                 .oldLayout = vk::ImageLayout::eUndefined, .newLayout = vk::ImageLayout::eGeneral, .image = copy,
+                                                 .subresourceRange = {vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1}};
+            cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &to_dst});
+            const vk::ImageCopy region{.srcSubresource = {vk::ImageAspectFlagBits::eDepth, 0, 0, 1}, .dstSubresource = {vk::ImageAspectFlagBits::eDepth, 0, 0, 1},
+                                       .extent = {w, h, 1}};
+            cmd.copyImage(d.image, vk::ImageLayout::eGeneral, copy, vk::ImageLayout::eGeneral, region);
+            Barrier(cmd);
             std::scoped_lock fg_lock{fg_mutex};
-            fg_inputs = {.depth = d.image, .motion = vk::Image{motion_px}, .depth_view = ViewOf(d.image, d.format, vk::ImageAspectFlagBits::eDepth),
-                         .motion_view = motion_px_view, .depth_format = d.format, .width = w, .height = h, .reset = reset};
+            fg_inputs = {.depth = copy, .motion = vk::Image{motion_px}, .depth_view = depth_copy_views[px_index], .motion_view = motion_px_view, .depth_format = d.format,
+                         .width = w, .height = h, .reset = reset};
             ++fg_serial;
         }
     }
