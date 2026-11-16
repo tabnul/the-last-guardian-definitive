@@ -135,6 +135,7 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         auto* target = key == "pad_photo_shot" ? &v.photo_shot : key == "pad_photo_up" ? &v.photo_up
                      : key == "pad_photo_down" ? &v.photo_down : key == "pad_photo_fast" ? &v.photo_fast
                      : key == "pad_photo_slow" ? &v.photo_slow : key == "pad_photo_help" ? &v.photo_help
+                     : key == "pad_photo_world" ? &v.photo_world : key == "pad_photo_sticks" ? &v.photo_sticks
                                                : nullptr;
         if (target) target->store(ParseCombo(value, target->load()));
         return;
@@ -774,9 +775,10 @@ void Save() {
                  ComboText(v.combo_photo).c_str());
     std::fprintf(file,
                  "pad_photo_shot=%s\npad_photo_up=%s\npad_photo_down=%s\npad_photo_fast=%s\npad_photo_slow=%s\n"
-                 "pad_photo_help=%s\nphoto_invert_y=%d\n",
+                 "pad_photo_help=%s\npad_photo_world=%s\npad_photo_sticks=%s\nphoto_invert_y=%d\n",
                  ComboText(v.photo_shot).c_str(), ComboText(v.photo_up).c_str(), ComboText(v.photo_down).c_str(),
                  ComboText(v.photo_fast).c_str(), ComboText(v.photo_slow).c_str(), ComboText(v.photo_help).c_str(),
+                 ComboText(v.photo_world).c_str(), ComboText(v.photo_sticks).c_str(),
                  int(v.photo_invert_y.load()));
     std::fprintf(file, "trico_drool=%d\n", v.trico_drool.load());
     std::fprintf(file, "button_icons=%d\n", v.button_icons.load());

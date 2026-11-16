@@ -455,6 +455,8 @@
     "pad.photo_fast": "빠르게 (누르고 있기)",
     "pad.photo_slow": "느리게 (누르고 있기)",
     "pad.photo_help_key": "버튼 도움말 숨기기 / 보이기",
+    "pad.photo_world_key": "세계 정지 켜기 / 끄기",
+    "pad.photo_sticks_key": "스틱: 카메라 / 소년",
     "pad.remap_touchpad_left": "터치패드 (왼쪽): 사진 모드",
     "pad.remap_touchpad_right": "터치패드 (오른쪽): 일시 정지",
     "pad.photo_press": "버튼을 누르세요…",
@@ -1152,6 +1154,14 @@
     "Game photo mode": "게임 사진 모드",
     "Touchpad (left)": "터치패드 (왼쪽)",
     "(hold 2 s)": "(2초 누르기)",
-    "QA menu: turn on Level select and QA menu in the launcher first": "QA 메뉴: 먼저 런처에서 레벨 선택과 QA 메뉴를 켜세요"
+    "QA menu: turn on Level select and QA menu in the launcher first": "QA 메뉴: 먼저 런처에서 레벨 선택과 QA 메뉴를 켜세요",
+    "Freeze world on / off": "세계 정지 켜기 / 끄기",
+    "Let the world run": "세계 움직이기",
+    "Freeze the world": "세계 멈추기",
+    "Sticks: camera / boy": "스틱: 카메라 / 소년",
+    "Control the boy": "소년 조작",
+    "Control the camera": "카메라 조작",
+    "Photo mode: freeze world on / off": "사진 모드: 세계 정지 켜기 / 끄기",
+    "Photo mode: sticks camera / boy": "사진 모드: 스틱 카메라 / 소년"
   }
 }

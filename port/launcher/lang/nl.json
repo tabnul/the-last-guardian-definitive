@@ -455,6 +455,8 @@
     "pad.photo_fast": "Snel (vasthouden)",
     "pad.photo_slow": "Langzaam (vasthouden)",
     "pad.photo_help_key": "Knoppenhulp verbergen / tonen",
+    "pad.photo_world_key": "Wereld bevriezen aan / uit",
+    "pad.photo_sticks_key": "Sticks: camera / jongen",
     "pad.remap_touchpad_left": "Touchpad (links): fotomodus",
     "pad.remap_touchpad_right": "Touchpad (rechts): pauze",
     "pad.photo_press": "druk op een knop…",
@@ -1152,6 +1154,14 @@
     "Game photo mode": "Fotomodus van het spel",
     "Touchpad (left)": "Touchpad (links)",
     "(hold 2 s)": "(2 s vasthouden)",
-    "QA menu: turn on Level select and QA menu in the launcher first": "QA-menu: zet eerst Levelselectie en QA-menu aan in de launcher"
+    "QA menu: turn on Level select and QA menu in the launcher first": "QA-menu: zet eerst Levelselectie en QA-menu aan in de launcher",
+    "Freeze world on / off": "Wereld bevriezen aan / uit",
+    "Let the world run": "Wereld laten doorlopen",
+    "Freeze the world": "Wereld bevriezen",
+    "Sticks: camera / boy": "Sticks: camera / jongen",
+    "Control the boy": "Jongen besturen",
+    "Control the camera": "Camera besturen",
+    "Photo mode: freeze world on / off": "Fotomodus: wereld bevriezen aan / uit",
+    "Photo mode: sticks camera / boy": "Fotomodus: sticks camera / jongen"
   }
 }

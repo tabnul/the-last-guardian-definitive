@@ -446,6 +446,8 @@
     "pad.photo_fast": "Rápido (segurar)",
     "pad.photo_slow": "Lento (segurar)",
     "pad.photo_help_key": "Ocultar / mostrar a ajuda dos botões",
+    "pad.photo_world_key": "Congelar o mundo sim / não",
+    "pad.photo_sticks_key": "Analógicos: câmera / garoto",
     "pad.remap_touchpad_left": "Touchpad (esquerda): modo foto",
     "pad.remap_touchpad_right": "Touchpad (direita): pausa",
     "pad.photo_press": "pressione um botão…",
@@ -1133,6 +1135,14 @@
     "Game photo mode": "Modo foto do jogo",
     "Touchpad (left)": "Touchpad (esquerda)",
     "(hold 2 s)": "(segure 2 s)",
-    "QA menu: turn on Level select and QA menu in the launcher first": "Menu QA: ative primeiro Seleção de fase e Menu QA no launcher"
+    "QA menu: turn on Level select and QA menu in the launcher first": "Menu QA: ative primeiro Seleção de fase e Menu QA no launcher",
+    "Freeze world on / off": "Congelar o mundo sim / não",
+    "Let the world run": "Deixar o mundo seguir",
+    "Freeze the world": "Congelar o mundo",
+    "Sticks: camera / boy": "Analógicos: câmera / garoto",
+    "Control the boy": "Controlar o garoto",
+    "Control the camera": "Controlar a câmera",
+    "Photo mode: freeze world on / off": "Modo foto: congelar o mundo sim / não",
+    "Photo mode: sticks camera / boy": "Modo foto: analógicos câmera / garoto"
   }
 }

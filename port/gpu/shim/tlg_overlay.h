@@ -46,6 +46,7 @@ void Notice(const std::string& text, float seconds);
 bool TakeScreenshotRequest();
 /// The game's pause menu opened or closed (shows the quit hint).
 void SetPauseMenu(bool open);
+bool PauseMenuOpen();
 
 /// The menu is open or a text entry is shown: the game's input is held neutral.
 bool CapturesInput();

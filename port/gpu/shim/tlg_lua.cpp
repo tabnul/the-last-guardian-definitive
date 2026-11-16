@@ -252,21 +252,28 @@ local XBOXPAD={R1={158.0,7.7},R2={159.4,-1.1},L1={66.0,7.7},L2={64.6,-1.1},Left=
   Push={100.0,33.0},PS={112.0,21.0},Select={100.0,33.0},Start={124.0,33.0}}
 -- wide: screen shape / 16:9 (1 up to 16:9). The game draws the glow that much wider, from its left
 -- edge (the glow sheet has 32 pixels a button), so its place moves left by half the extra width.
+-- The PlayStation places get the same move under names of their own ('Ps'..name), wider than 16:9.
 local function ButtonIcons(xbox,wide)
   local G=GuideSystem local B=G and G._Const and G._Const.BUTTON
   if not B or not B.Cross or Loading() then return end
   if not Guide_SetButtonData or not Guide_SetButtonParam then return end
   -- The engine keeps the first place it was given for a button name, so the Xbox places go in
   -- under names of their own ('Xb'..name) and the hints ask for those while Xbox icons are on.
+  local shift=16*((wide or 1)-1)
+  _TLGPADPS=shift>0.05
   local function Names()
     for k,v in pairs(XBOXPAD) do local d=B[k]
-      if d then Guide_SetButtonData('Xb'..k,d.uv[1],d.uv[2],d.uv[3],d.uv[4],v[1]-16*((wide or 1)-1),v[2]) end
+      if d then Guide_SetButtonData('Xb'..k,d.uv[1],d.uv[2],d.uv[3],d.uv[4],v[1]-shift,v[2]) end
     end
+    if _TLGPADPS then for k,d in pairs(B) do
+      if d.uv and d.offsetX then Guide_SetButtonData('Ps'..k,d.uv[1],d.uv[2],d.uv[3],d.uv[4],d.offsetX-shift,d.offsetY) end
+    end end
   end
   if not _TLGPADSET then
     _TLGPADSET=Guide_SetButtonParam
     Guide_SetButtonParam=function(n,id,...)
-      if _TLGPADXB and XBOXPAD[id] then id='Xb'..id end
+      if _TLGPADXB and XBOXPAD[id] then id='Xb'..id
+      elseif not _TLGPADXB and _TLGPADPS and type(id)=='string' and B[id] then id='Ps'..id end
       return _TLGPADSET(n,id,...)
     end
   end
@@ -274,7 +281,8 @@ local function ButtonIcons(xbox,wide)
     G._tlgCreate=G.CreateObject
     G.CreateObject=function(self,...) pcall(Names) return G._tlgCreate(self,...) end
   end
-  if (_TLGPADXB or false)==xbox then return end
+  -- The first run regenerates too when the PlayStation places move (hints made before the hook).
+  if (_TLGPADXB or false)==xbox and (_TLGPADXB~=nil or not _TLGPADPS) then return end
   _TLGPADXB=xbox
   if G.isCreateObj then pcall(G.RegenerationGuide,G) end
 end
@@ -403,6 +411,9 @@ std::atomic<float> trico_size{1.0f};
 std::string cam_pending; // the latest free camera wish, under fun_mutex
 std::atomic<bool> free_cam{false};
 std::atomic<bool> photo{false};
+std::atomic<bool> photo_frozen{true}; // photo mode: world frozen (Freeze world on / off button)
+std::atomic<bool> photo_sticks_boy{false}; // photo mode: the sticks drive the boy, not the camera
+std::atomic<uint32_t> photo_sticks{0x80808080u}; // the last raw sticks lx|ly<<8|rx<<16|ry<<24 (pad thread)
 std::atomic<TlgFun::PhotoFreeze> photo_freeze{TlgFun::PhotoFreeze::Pause};
 std::atomic<bool> pilot{false}; // Tricopilot (TlgFun::Tricopilot)
 // Which camera watches him (TlgFun::PilotCam). Middle is what autoTrico() picks itself, so that
@@ -1160,6 +1171,11 @@ extern "C" __attribute__((sysv_abi)) int tlg_lua_load(void* L, void* options, co
         TlgLab::Report(std::string_view(buffer + 9, size - 9));
         return original(L, options, Empty.data(), Empty.size(), name);
     }
+    if (StartsWith(buffer, size, "--TLGPAD")) { // photo camera sticks, every frame (PhotoPadChunk)
+        static std::string pad; // game thread only
+        pad = TlgFun::PhotoPadChunk();
+        return original(L, options, pad.data(), pad.size(), name);
+    }
     if (StartsWith(buffer, size, "--TLGPAUSE")) {
         TlgOverlay::SetPauseMenu(size > 10 && buffer[10] == '1');
         return original(L, options, Empty.data(), Empty.size(), name);
@@ -1476,6 +1492,9 @@ bool FreeCameraOn() {
 // keyboard camera does (camera/camerasetup.lua DbgCamConfig).
 // The world is frozen as before. Ticks keep running during the game's pause (the developers' QA
 // menu relies on the same), so our camera and leaving both work while paused.
+// Freeze world on / off (PhotoWorldToggle) lets the world run under the photo camera, or freezes it
+// again. While frozen, the tick freezes again when something else let the world run: the game's
+// pause menu resumes the game when it closes (user 2026-11-16), so it checks every 30 ticks.
 // _TLG_PHOTO remembers what we changed, so leaving undoes only that: a pause we did not make
 // (the pause menu) stays, and the scene's own slow motion comes back at its own speed.
 // The first test (2026-11-14) logged paused=false right after "trico pause" and the boy kept
@@ -1488,22 +1507,28 @@ constexpr std::string_view PhotoOnLua =
     " CameraManager:SetActiveCamera('default')\n"
     " P.name='_default_camera' local cam=FindObject(P.name)\n"
     " P.x,P.y,P.z=pos.X,pos.Y,pos.Z cam.position=pos P.pitch=rot.X P.yaw=rot.Y cam.rotation=Vector(P.pitch,P.yaw,0)\n"
-    " if %STOPTIME% then P.speed=MS.GetGameSpeed() MS.SetGameSpeed(0.001,0)\n"
-    " elseif not TricoGame_IsGamePause() then luaCommand('trico pause') P.paused=true end\n"
-    " P.n=0\n"
+    " P.stop=%STOPTIME% P.frozen=true P.try=0\n"
+    " P.freeze=function(p) if p.stop then if not p.speed then p.speed=MS.GetGameSpeed() end MS.SetGameSpeed(0.001,0)\n"
+    "  elseif not TricoGame_IsGamePause() then luaCommand('trico pause') p.paused=true end end\n"
+    " P.thaw=function(p) if p.paused then luaCommand('trico resume') p.paused=nil end\n"
+    "  if p.speed then MS.SetGameSpeed(p.speed,0) p.speed=nil end end\n"
+    " P.ls=loadstring or load\n"
+    " P.n=0 P:freeze()\n"
     " P.tick=function(dt,edt)\n"
     "  local p=_TLG_PHOTO if not p or p.dead then return end\n"
     "  local ok,e=pcall(function()\n"
     "   local t=edt if type(t)~='number' or t<=0 or t>0.25 then t=1/60 end\n"
     "   p.n=p.n+1\n"
+    "   if p.frozen and p.n>=p.try then p.try=p.n+30\n"
+    "    if p.stop then if MS.GetGameSpeed()>0.01 then p:freeze() end\n"
+    "    elseif not TricoGame_IsGamePause() then p:freeze() L('fun photo re-freeze') end end\n"
     "   if p.n==30 then L('fun photo tick dt='..tostring(dt)..' edt='..tostring(edt)..' paused='"
     "..tostring(TricoGame_IsGamePause())..' speed='..tostring(MS.GetGameSpeed())..' cam='"
     "..tostring(w.activeCamera:GetName())) end\n"
     "   local c=FindObject(p.name) if not c then return end\n"
-    "   local pd=Input.pad1\n"
-    "   local function dz(v) if math.abs(v)<0.15 then return 0 end return v end\n"
-    "   local lx,ly=dz(pd.LX*pd.LMag),dz(pd.LY*pd.LMag)\n"
-    "   local rx,ry=dz(pd.RX*pd.RMag),dz(pd.RY*pd.RMag)\n"
+    "   local f=p.ls('--TLGPAD') local sx,sy,sz,sw=0,0,0,0 if f then sx,sy,sz,sw=f() end\n"
+    "   local function dz(v) if type(v)~='number' or math.abs(v)<0.15 then return 0 end return v end\n"
+    "   local lx,ly,rx,ry=dz(sx),dz(sy),dz(sz),dz(sw)\n"
     "   if not p.said and (math.abs(ly)>0.8 or math.abs(ry)>0.8) then p.said=true "
     "L('fun photo stick ly='..tostring(ly)..' ry='..tostring(ry)) end\n"
     "   local sp=3 if p.fast then sp=12 elseif p.slow then sp=0.6 end\n"
@@ -1538,6 +1563,8 @@ constexpr std::string_view PhotoOffLua =
 
 void PhotoMode(bool on) {
     photo = on;
+    photo_frozen = true;
+    photo_sticks_boy = false;
     std::printf("Fun: photo mode %s\n", on ? "on" : "off");
     std::string code(on ? PhotoOnLua : PhotoOffLua);
     if (on) {
@@ -1559,6 +1586,47 @@ void PhotoPad(bool up, bool down, bool fast, bool slow, bool invert_y) {
 
 bool PhotoModeOn() {
     return photo;
+}
+
+void PhotoWorldToggle() {
+    if (!photo) return;
+    photo_frozen = !photo_frozen;
+    std::printf("Fun: photo mode world %s\n", photo_frozen ? "frozen" : "running");
+    FunQueue(std::string("local p=_TLG_PHOTO if p then p.frozen=") + (photo_frozen ? "true p:freeze()" : "false p:thaw()") +
+             " L('fun photo world frozen='..tostring(p.frozen)) end");
+}
+
+bool PhotoWorldFrozen() {
+    return photo_frozen;
+}
+
+void PhotoSticksToggle() {
+    if (!photo) return;
+    photo_sticks_boy = !photo_sticks_boy;
+    std::printf("Fun: photo mode sticks on the %s\n", photo_sticks_boy ? "boy" : "camera");
+}
+
+bool PhotoSticksBoy() {
+    return photo_sticks_boy;
+}
+
+bool PhotoTakesPad(uint8_t lx, uint8_t ly, uint8_t rx, uint8_t ry) {
+    photo_sticks = uint32_t(lx) | uint32_t(ly) << 8 | uint32_t(rx) << 16 | uint32_t(ry) << 24;
+    return photo && !photo_sticks_boy && !TlgOverlay::PauseMenuOpen();
+}
+
+std::string PhotoPadChunk() {
+    if (!photo || photo_sticks_boy || TlgOverlay::PauseMenuOpen()) return "return 0,0,0,0";
+    const uint32_t v = photo_sticks;
+    // 0 = left / up on the PS4 pad; the camera wants up = +, like the game's Input.pad1.
+    const auto axis = [](uint32_t b, bool flip) {
+        const float f = std::clamp((float(b & 0xff) - 128.0f) / 127.0f, -1.0f, 1.0f);
+        return flip ? -f : f;
+    };
+    char line[96];
+    std::snprintf(line, sizeof(line), "return %.3f,%.3f,%.3f,%.3f", axis(v, false), axis(v >> 8, true),
+                  axis(v >> 16, false), axis(v >> 24, true));
+    return line;
 }
 
 void PhotoModeFreeze(TlgFun::PhotoFreeze how) {

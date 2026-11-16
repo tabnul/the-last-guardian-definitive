@@ -713,6 +713,14 @@ static void sample(PadData *d) {
         else hold_after_capture=0;
     }
     tlggpu_pad_game_buttons(d->buttons);
+    /* Photo mode with the world running and the sticks on the camera: the camera takes the
+     * sticks, the boy gets none of the controller (only Options and the touchpad: pause, photo
+     * mode). The photo buttons were read above (game buttons). */
+    if (tlggpu_photo_takes_pad(d->left_x,d->left_y,d->right_x,d->right_y)) {
+        d->left_x=d->left_y=d->right_x=d->right_y=128;
+        d->l2=d->r2=0;
+        d->buttons&=BTN_OPTIONS|BTN_TOUCHPAD;
+    }
 }
 
 static ABI int32_t pad_init(void) { pthread_mutex_lock(&lock); initialized=1; pthread_mutex_unlock(&lock); return 0; }

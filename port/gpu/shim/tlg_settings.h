@@ -237,7 +237,7 @@ struct Values {
     /// photo camera tick (TlgFun::PhotoPad). photo_invert_y: pushing the right stick forward
     /// looks down (default on, user 2026-11-16).
     std::atomic<uint32_t> photo_shot{PadCross}, photo_up{PadR2}, photo_down{PadL2}, photo_fast{PadR1},
-        photo_slow{PadL1}, photo_help{PadUp};
+        photo_slow{PadL1}, photo_help{PadUp}, photo_world{PadDown}, photo_sticks{PadLeft};
     std::atomic<bool> photo_invert_y{true};
 
     /// Startup settings for the explicit TLG_RENDER_RES compatibility patch only.
