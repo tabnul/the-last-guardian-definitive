@@ -168,6 +168,11 @@ void MemoryManager::CopySparseMemory(VAddr source, u8* dest, u64 size) {
         CopySparseSerial(source + offset, dest + offset, std::min(Chunk, size - offset));
     });
 }
+bool MemoryManager::IsValidMapping(VAddr virtual_addr, u64 size) { // VKB
+    uintptr_t start = 0, end = 0;
+    int mapped = 0;
+    return runtime_memory_region(virtual_addr, &start, &end, &mapped) && mapped && virtual_addr >= start && virtual_addr + size <= end;
+}
 bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
     TlgWriteLog::Note(reinterpret_cast<uintptr_t>(address), data, size, TlgWriteLog::Backing);
     return runtime_memory_write_backing(reinterpret_cast<uintptr_t>(address), data, size) != 0;

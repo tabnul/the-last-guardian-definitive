@@ -1,0 +1,3006 @@
+// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "native/vkb_core/vkb_device.h"
+#include "native/native_vkb_objects.h"
+#include "native/native_vkb_util.h"
+
+#include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
+#include "native/shadps4/video_core/host_shaders/fill_pattern_comp.h"
+#include "native/shadps4/video_core/renderer_vulkan/vk_shader_util.h"
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <deque>
+#include <filesystem>
+#include <thread>
+#include <memory>
+#include <map>
+#include <string>
+#include <mutex>
+#include <set>
+#include <unordered_map>
+#include <vector>
+#include <boost/container/small_vector.hpp>
+#include <nlohmann/json.hpp>
+
+#include "common/logging/log.h"
+#include "common/path_util.h"
+#include "native/native_content.h"
+#include "native/native_debug_server.h"
+#include "native/native_vkb.h"
+#include "native/native_vkb_stream.h"
+#include "native/native_vkb_upload.h"
+#include "native/shadps4/video_core/renderer_vulkan/vk_host_import.h"
+#include "native/shadps4/video_core/renderer_vulkan/vk_instance.h"
+
+#include <vk_mem_alloc.h>
+#include <xxhash.h>
+
+
+namespace Core::Vkb {
+void BumpBufferEpoch(); ///< note 46: an A1 memo answer may have changed (definitions below)
+void BumpViewEpoch();
+
+namespace {
+
+using NativeDevice::Kind;
+using NativeDevice::Object;
+
+// Direct3D 11 bind flags and misc flags
+constexpr u32 BindShaderResource = 0x8, BindRenderTarget = 0x20, BindDepthStencil = 0x40, BindUnorderedAccess = 0x80;
+constexpr u32 MiscTextureCube = 0x4;
+
+/// A DXGI format as a Vulkan format (the plain Direct3D 11 to Vulkan mapping; typeless formats take their unorm / float / uint member). eUndefined: not mapped.
+vk::Format ColorFormat(u32 dxgi) {
+    using F = vk::Format;
+    switch (dxgi) {
+    case 1: case 3: return F::eR32G32B32A32Uint;
+    case 2: return F::eR32G32B32A32Sfloat;
+    case 4: return F::eR32G32B32A32Sint;
+    case 6: return F::eR32G32B32Sfloat;
+    case 9: case 10: return F::eR16G16B16A16Sfloat;
+    case 11: return F::eR16G16B16A16Unorm;
+    case 12: return F::eR16G16B16A16Uint;
+    case 13: return F::eR16G16B16A16Snorm;
+    case 14: return F::eR16G16B16A16Sint;
+    case 15: case 17: return F::eR32G32Uint;
+    case 16: return F::eR32G32Sfloat;
+    case 18: return F::eR32G32Sint;
+    case 23: case 24: return F::eA2B10G10R10UnormPack32;
+    case 25: return F::eA2B10G10R10UintPack32;
+    case 26: return F::eB10G11R11UfloatPack32;
+    case 27: case 28: return F::eR8G8B8A8Unorm;
+    case 29: return F::eR8G8B8A8Srgb;
+    case 30: return F::eR8G8B8A8Uint;
+    case 31: return F::eR8G8B8A8Snorm;
+    case 32: return F::eR8G8B8A8Sint;
+    case 33: case 34: return F::eR16G16Sfloat;
+    case 35: return F::eR16G16Unorm;
+    case 36: return F::eR16G16Uint;
+    case 37: return F::eR16G16Snorm;
+    case 38: return F::eR16G16Sint;
+    case 39: case 42: return F::eR32Uint;
+    case 40: case 41: return F::eR32Sfloat;
+    case 43: return F::eR32Sint;
+    case 44: case 46: return F::eR32Sfloat; // R24G8 / R24_UNORM_X8: the console keeps such depth as 32 bit float
+    case 48: case 49: return F::eR8G8Unorm;
+    case 50: return F::eR8G8Uint;
+    case 51: return F::eR8G8Snorm;
+    case 52: return F::eR8G8Sint;
+    case 53: case 54: return F::eR16Sfloat;
+    case 55: case 56: return F::eR16Unorm;
+    case 57: return F::eR16Uint;
+    case 58: return F::eR16Snorm;
+    case 59: return F::eR16Sint;
+    case 60: case 61: case 65: return F::eR8Unorm;
+    case 62: return F::eR8Uint;
+    case 63: return F::eR8Snorm;
+    case 64: return F::eR8Sint;
+    case 70: case 71: return F::eBc1RgbaUnormBlock;
+    case 72: return F::eBc1RgbaSrgbBlock;
+    case 73: case 74: return F::eBc2UnormBlock;
+    case 75: return F::eBc2SrgbBlock;
+    case 76: case 77: return F::eBc3UnormBlock;
+    case 78: return F::eBc3SrgbBlock;
+    case 79: case 80: return F::eBc4UnormBlock;
+    case 81: return F::eBc4SnormBlock;
+    case 82: case 83: return F::eBc5UnormBlock;
+    case 84: return F::eBc5SnormBlock;
+    case 85: return F::eR5G6B5UnormPack16;
+    case 86: return F::eA1R5G5B5UnormPack16;
+    case 87: case 88: case 90: return F::eB8G8R8A8Unorm;
+    case 91: return F::eB8G8R8A8Srgb;
+    case 94: case 95: return F::eBc6HUfloatBlock;
+    case 96: return F::eBc6HSfloatBlock;
+    case 97: case 98: return F::eBc7UnormBlock;
+    case 99: return F::eBc7SrgbBlock;
+    default: return F::eUndefined;
+    }
+}
+
+/// The depth format of a texture bound as a depth stencil target (eUndefined: not a depth format)
+vk::Format DepthFormat(u32 dxgi) {
+    switch (dxgi) {
+    case 39: case 40: case 41: return vk::Format::eD32Sfloat;
+    case 19: case 20: case 21: case 22: case 44: case 45: case 46: case 47: return vk::Format::eD32SfloatS8Uint;
+    case 53: case 55: case 56: return vk::Format::eD16Unorm;
+    default: return vk::Format::eUndefined;
+    }
+}
+bool HasStencil(vk::Format f) {
+    return f == vk::Format::eD32SfloatS8Uint;
+}
+bool IsStencilView(u32 dxgi) {
+    return dxgi == 22 || dxgi == 47; // X32_TYPELESS_G8X24_UINT, X24_TYPELESS_G8_UINT
+}
+
+struct Image {
+    vk::Image image{};
+    VmaAllocation allocation{};
+    vk::Format format{};
+    vk::ImageType type{};
+    u32 width{}, height{}, depth{}, mips{}, layers{};
+    bool is_depth{}, cube{};
+    bool cube_compatible{}; ///< square 2D with a multiple of six layers: a module may read it as a cube even when the engine did not flag it one
+    u64 address{};          ///< the engine texture's memory (V4c: the display buffers)
+    u64 bytes{};
+    vk::ImageLayout layout{vk::ImageLayout::eUndefined}; ///< after its upload (V2b); render targets stay undefined until V4 writes them
+    bool mutable_format{true}; ///< R5 test TLG_VKB_TARGETS_FIXED=1: false for color render targets made without MUTABLE_FORMAT (views in its own format only)
+};
+/// R5 bound test (TLG_VKB_TARGETS_FIXED=1, wrong picture where a target is read in another format): color render targets (not UAVs) are made without MUTABLE_FORMAT /
+/// EXTENDED_USAGE, which can keep the driver from compressing them
+bool TargetsFixed() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_TARGETS_FIXED"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+std::atomic<u64> c_fixed_targets{0}, c_fixed_view_format_forced{0}, c_fixed_attachment_refused{0};
+struct View {
+    vk::ImageView view{};
+    u64 texture_id{};
+    vk::ImageViewType type{};
+    vk::Format format{};
+    vk::ImageSubresourceRange range{};
+    std::array<vk::ImageView, 7> other{}; ///< the same range in another view type, by vk::ImageViewType (made at the first need)
+    std::vector<std::pair<vk::Format, vk::ImageView>> formatted; ///< V4: the same range in another format (attachments in the pipeline's format)
+};
+struct Doomed {
+    u32 due_submit;
+    vk::Image image;
+    VmaAllocation allocation;
+    vk::ImageView view;
+    VkBuffer buffer{};
+    VmaAllocation buffer_allocation{};
+};
+/// V2f: our device buffer for an engine buffer the GPU writes, by the start of the engine buffer's memory
+struct DeviceBuffer {
+    u64 end{};
+    VkBuffer buffer{};
+    VmaAllocation allocation{};
+    u64 id{};
+};
+
+std::mutex mutex;
+std::unordered_map<u64, Image> images;
+std::unordered_map<u64, View> views;
+std::unordered_map<u64, u64> image_at_address; ///< V4c: the newest render target image at an engine texture's memory, by address
+std::map<u64, DeviceBuffer> device_buffers;
+std::unordered_map<u64, u64> device_buffer_start; ///< engine id -> start address
+std::deque<Doomed> doomed;
+std::unique_ptr<VkbVulkan::HostImport> host_import;
+bool device_ready = false;
+const VkbVulkan::Instance* instance = nullptr;
+
+std::atomic<u64> c_images_created{0}, c_images_failed{0}, c_images_unmapped_format{0}, c_images_destroyed{0}, c_image_bytes{0}, c_image_ns{0};
+std::atomic<u64> c_views_created{0}, c_views_failed{0}, c_views_clamped{0}, c_views_no_image{0}, c_views_destroyed{0}, c_views_buffer{0};
+std::atomic<u64> c_dev_buffers{0}, c_dev_failed{0}, c_dev_bytes{0}, c_dev_destroyed{0}, c_dev_no_initial{0}, c_dev_replaced{0}, c_find_straddle{0}, c_find_none{0};
+std::map<std::string, u64> refused_pairs; ///< (mutex) our view's type, the type a module wanted
+std::atomic<u64> c_other_views{0}, c_other_view_refused{0}, c_tex_copies{0}, c_tex_copy_no_image{0}, c_tex_copy_mismatch{0};
+std::atomic<u64> c_display_found{0}, c_display_missed{0}, c_display_not_general{0};
+std::atomic<u64> c_attach_views{0}, c_attach_refused{0}, c_clears_color{0}, c_clears_depth{0}, c_clear_no_view{0};
+std::atomic<u64> c_samplers_made{0}, c_samplers_invalid{0}, c_sampler_minmax{0}, c_sampler_border_rounded{0}, c_sampler_mirror_once{0};
+std::unordered_map<u64, vk::Sampler> samplers; ///< by engine sampler id (mutex)
+std::atomic<u64> c_reupload_wanted{0}, c_reupload_done{0}, c_reupload_no_image{0};
+std::atomic<u64> c_cpu_writes{0}, c_cpu_write_bytes{0}, c_copies{0}, c_copy_bytes{0}, c_copies_device{0}, c_copy_unresolved{0}, c_copy_overlap{0}, c_fills{0}, c_fill_unresolved{0};
+std::atomic<u64> c_buffers{0}, c_buffers_in_place{0}, c_buffers_not_in_place{0}, c_buffer_bytes{0}, c_too_early{0}, c_deleted_unknown{0};
+
+u64 NowNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+/// The device, once the presenter (and with it the rasterizer) exists; false before that (the object is then made at its first use)
+bool Ready() {
+    if (device_ready) {
+        return true;
+    }
+    if (!Core::Vkb::Device::Ready()) { // merge note 5: the backend's own device, made by its presenter
+        c_too_early.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    instance = &Core::Vkb::Device::Instance();
+    host_import = std::make_unique<VkbVulkan::HostImport>(*instance);
+    Upload::Init(*instance, *host_import);
+    Stream::Init(*instance);
+    device_ready = true;
+    LOG_INFO(Render_Vulkan, "vkb: objects on the device, in place buffers {}", host_import->Available() ? "available" : "NOT available");
+    return true;
+}
+
+u32 FullMips(u32 w, u32 h, u32 d) {
+    u32 m = 1;
+    for (u32 s = std::max({w, h, d}); s > 1; s >>= 1) {
+        ++m;
+    }
+    return m;
+}
+
+/// note 66 (R2b part 2a): an image gets its one layout, GENERAL, when it is made (a D3D11 driver's resources keep one layout for their life): an image with initial
+/// data is left in it by its upload; every other one by one stream job queued right after the creation (in stream order before any work that can use it). Binds,
+/// clears and copies never move a layout.
+struct NewImage {
+    vk::Image image;
+    vk::ImageAspectFlags aspect;
+    bool batch; ///< a colour texture that is not a render target: its contents can come through the upload batch (Map / Unmap), so its layout is set there, in order with them
+};
+thread_local std::vector<NewImage> t_new_images; ///< made under this module's lock; their layout job is queued after it (no job is made under the lock)
+std::atomic<u64> c_layout_jobs{0}, c_layout_images{0}, c_layout_by_upload{0}, c_layout_in_batch{0};
+/// Queues the layout job of the images this thread made (this module's lock not held)
+void InitNewImages() {
+    if (t_new_images.empty()) {
+        return;
+    }
+    std::vector<NewImage> list;
+    for (const NewImage& n : t_new_images) {
+        if (n.batch) {
+            Upload::InitLayout(n.image);
+            c_layout_in_batch.fetch_add(1, std::memory_order_relaxed);
+        } else {
+            list.push_back(n);
+        }
+    }
+    t_new_images.clear();
+    if (list.empty()) {
+        return;
+    }
+    c_layout_jobs.fetch_add(1, std::memory_order_relaxed);
+    c_layout_images.fetch_add(list.size(), std::memory_order_relaxed);
+    Stream::Defer(Stream::Work::Other, [list = std::move(list)](vk::CommandBuffer cmd) {
+        boost::container::small_vector<vk::ImageMemoryBarrier2, 8> barriers;
+        for (const NewImage& n : list) {
+            barriers.push_back({.srcStageMask = vk::PipelineStageFlagBits2::eNone,
+                                .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                                .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+                                .oldLayout = vk::ImageLayout::eUndefined,
+                                .newLayout = vk::ImageLayout::eGeneral,
+                                .image = n.image,
+                                .subresourceRange = {n.aspect, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}});
+        }
+        cmd.pipelineBarrier2({.imageMemoryBarrierCount = static_cast<u32>(barriers.size()), .pImageMemoryBarriers = barriers.data()});
+    });
+}
+
+/// Creates the image of `texture` (mutex held)
+Image* MakeImage(const Object& texture) {
+    if (auto it = images.find(texture.id); it != images.end()) {
+        return &it->second;
+    }
+    const u64 t0 = NowNs();
+    Image img;
+    img.is_depth = (texture.bind & BindDepthStencil) != 0;
+    img.format = img.is_depth ? DepthFormat(texture.format) : ColorFormat(texture.format);
+    if (img.format == vk::Format::eUndefined) {
+        c_images_unmapped_format.fetch_add(1, std::memory_order_relaxed);
+        static std::atomic<u32> logged{0};
+        if (logged.fetch_add(1) < 16) {
+            LOG_WARNING(Render_Vulkan, "vkb: texture id {} has DXGI format {} (bind {:#x}) with no Vulkan format", texture.id, texture.format, texture.bind);
+        }
+        return nullptr;
+    }
+    img.width = std::max(texture.width, 1u);
+    img.height = std::max(texture.height, 1u);
+    img.depth = std::max(texture.depth, 1u);
+    // note 41: a 1D texture is a 2D image of height 1: the recompiled shaders declare every 1D image as 2D (spirv_emit_context.cpp ImageType), and a 1D view in a 2D
+    // slot reads zeros (the occlusion pass 0x1930bb5e read its 1D tables as 0: the grey haze)
+    img.type = texture.kind == Kind::Texture3D ? vk::ImageType::e3D : vk::ImageType::e2D;
+    const u32 full = FullMips(img.width, img.height, img.type == vk::ImageType::e3D ? img.depth : 1);
+    img.mips = texture.mips == 0 ? full : std::min(texture.mips, full);
+    img.layers = img.type == vk::ImageType::e3D ? 1 : std::max(texture.layers, 1u);
+    img.cube_compatible = img.type == vk::ImageType::e2D && img.layers % 6 == 0 && img.width == img.height;
+    img.address = texture.address;
+    img.cube = (texture.misc & MiscTextureCube) != 0 && img.cube_compatible;
+    u32 samples = 1;
+    if (texture.kind == Kind::Texture2D && texture.object != 0) {
+        samples = *reinterpret_cast<const u32*>(texture.object + 0x180 + 5 * 4); // SampleCount
+        if (samples != 2 && samples != 4 && samples != 8) {
+            samples = 1;
+        }
+    }
+    vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled;
+    if (img.is_depth) {
+        usage |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
+    } else {
+        if ((texture.bind & BindRenderTarget) != 0) {
+            usage |= vk::ImageUsageFlagBits::eColorAttachment;
+        }
+        if ((texture.bind & BindUnorderedAccess) != 0) {
+            usage |= vk::ImageUsageFlagBits::eStorage;
+        }
+    }
+    vk::ImageCreateFlags flags = img.is_depth ? vk::ImageCreateFlags{} : (vk::ImageCreateFlagBits::eMutableFormat | vk::ImageCreateFlagBits::eExtendedUsage);
+    if (TargetsFixed() && !img.is_depth && (texture.bind & BindRenderTarget) != 0 && (texture.bind & BindUnorderedAccess) == 0) {
+        flags = {};
+        img.mutable_format = false;
+        c_fixed_targets.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (img.cube_compatible && samples == 1) {
+        flags |= vk::ImageCreateFlagBits::eCubeCompatible;
+    }
+    if (img.type == vk::ImageType::e3D && !img.is_depth) {
+        flags |= vk::ImageCreateFlagBits::e2DArrayCompatible;
+    }
+    const vk::ImageCreateInfo ci{
+        .flags = flags,
+        .imageType = img.type,
+        .format = img.format,
+        .extent = {img.width, img.height, img.depth},
+        .mipLevels = img.mips,
+        .arrayLayers = img.layers,
+        .samples = static_cast<vk::SampleCountFlagBits>(samples),
+        .tiling = vk::ImageTiling::eOptimal,
+        .usage = usage,
+        .sharingMode = vk::SharingMode::eExclusive,
+        .initialLayout = vk::ImageLayout::eUndefined,
+    };
+    const VmaAllocationCreateInfo alloc_ci{.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
+    const VkImageCreateInfo ci_raw = static_cast<VkImageCreateInfo>(ci);
+    VkImage raw{};
+    VmaAllocationInfo info{};
+    const VkResult result = vmaCreateImage(instance->GetAllocator(), &ci_raw, &alloc_ci, &raw, &img.allocation, &info);
+    if (result != VK_SUCCESS) {
+        c_images_failed.fetch_add(1, std::memory_order_relaxed);
+        static std::atomic<u32> logged{0};
+        if (logged.fetch_add(1) < 16) {
+            LOG_ERROR(Render_Vulkan, "vkb: image of texture id {} ({}x{}x{} mips {} layers {} {}) failed: {}", texture.id, img.width, img.height, img.depth, img.mips,
+                      img.layers, vk::to_string(img.format), vk::to_string(vk::Result{result}));
+        }
+        return nullptr;
+    }
+    img.image = vk::Image{raw};
+    img.bytes = info.size;
+    c_images_created.fetch_add(1, std::memory_order_relaxed);
+    c_image_bytes.fetch_add(info.size, std::memory_order_relaxed);
+    c_image_ns.fetch_add(NowNs() - t0, std::memory_order_relaxed);
+    // note 66: GENERAL from here on (the job is queued by the caller after the lock; an upload of its contents takes its place)
+    img.layout = vk::ImageLayout::eGeneral;
+    t_new_images.push_back({img.image, !img.is_depth ? vk::ImageAspectFlags{vk::ImageAspectFlagBits::eColor}
+                                      : HasStencil(img.format) ? (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil)
+                                                               : vk::ImageAspectFlags{vk::ImageAspectFlagBits::eDepth},
+                            !img.is_depth && (texture.bind & BindRenderTarget) == 0});
+    return &images.emplace(texture.id, img).first->second;
+}
+
+/// The view's range from its Direct3D 11 description (`d`, dwords after format and dimension), as (view type, first level, levels, first layer, layers); false: not an image view
+struct Range {
+    vk::ImageViewType type;
+    u32 base_mip, mips, base_layer, layers;
+    bool depth_slices{}; ///< a 3D render target or UAV that names depth slices (the view covers the whole volume here)
+};
+bool ViewRange(Kind kind, const Object& view, const Image& img, Range& r) {
+    const u32 all_mips = img.mips, all_layers = img.layers;
+    r = {img.type == vk::ImageType::e1D ? (all_layers > 1 ? vk::ImageViewType::e1DArray : vk::ImageViewType::e1D)
+         : img.type == vk::ImageType::e3D ? vk::ImageViewType::e3D
+         : img.cube ? vk::ImageViewType::eCube
+         : (all_layers > 1 ? vk::ImageViewType::e2DArray : vk::ImageViewType::e2D),
+         0, all_mips, 0, all_layers};
+    if (!view.has_desc) {
+        return true; // a null description: the whole resource
+    }
+    const u32 dim = view.desc[1];
+    const u32* d = &view.desc[2];
+    const bool srv = kind == Kind::ShaderResourceView;
+    const bool dsv = kind == Kind::DepthStencilView;
+    if (srv) {
+        switch (dim) {
+        case 1: case 11: return false; // buffer
+        case 2: r = {vk::ImageViewType::e1D, d[0], d[1], 0, 1}; break;
+        case 3: r = {vk::ImageViewType::e1DArray, d[0], d[1], d[2], d[3]}; break;
+        case 4: r = {vk::ImageViewType::e2D, d[0], d[1], 0, 1}; break;
+        case 5: r = {vk::ImageViewType::e2DArray, d[0], d[1], d[2], d[3]}; break;
+        case 6: r = {vk::ImageViewType::e2D, 0, 1, 0, 1}; break;
+        case 7: r = {vk::ImageViewType::e2DArray, 0, 1, d[0], d[1]}; break;
+        case 8: r = {vk::ImageViewType::e3D, d[0], d[1], 0, 1}; break;
+        case 9: r = {vk::ImageViewType::eCube, d[0], d[1], 0, 6}; break;
+        case 10: r = {vk::ImageViewType::eCubeArray, d[0], d[1], d[2], d[3] * 6}; break;
+        default: return true;
+        }
+    } else if (dsv) {
+        // D3D11_DEPTH_STENCIL_VIEW_DESC: format, dimension, flags, then the range
+        switch (dim) {
+        case 1: r = {vk::ImageViewType::e1D, d[1], 1, 0, 1}; break;
+        case 2: r = {vk::ImageViewType::e1DArray, d[1], 1, d[2], d[3]}; break;
+        case 3: r = {vk::ImageViewType::e2D, d[1], 1, 0, 1}; break;
+        case 4: r = {vk::ImageViewType::e2DArray, d[1], 1, d[2], d[3]}; break;
+        case 5: r = {vk::ImageViewType::e2D, 0, 1, 0, 1}; break;
+        case 6: r = {vk::ImageViewType::e2DArray, 0, 1, d[0], d[1]}; break;
+        default: r.mips = 1; return true;
+        }
+    } else {
+        // render target and unordered access views: format, dimension, mip slice, then the array or depth slices
+        switch (dim) {
+        case 1: return false; // buffer
+        case 2: r = {vk::ImageViewType::e1D, d[0], 1, 0, 1}; break;
+        case 3: r = {vk::ImageViewType::e1DArray, d[0], 1, d[1], d[2]}; break;
+        case 4: r = {vk::ImageViewType::e2D, d[0], 1, 0, 1}; break;
+        case 5: r = {vk::ImageViewType::e2DArray, d[0], 1, d[1], d[2]}; break;
+        case 6: r = {vk::ImageViewType::e2D, 0, 1, 0, 1}; break;
+        case 7: r = {vk::ImageViewType::e2DArray, 0, 1, d[0], d[1]}; break;
+        case 8: r = {vk::ImageViewType::e3D, d[0], 1, 0, 1, true}; break;
+        default: r.mips = 1; return true;
+        }
+    }
+    // -1 (all remaining) and out of range values are clamped to the image
+    bool clamped = false;
+    if (r.base_mip >= all_mips) {
+        r.base_mip = all_mips - 1, clamped = true;
+    }
+    if (r.mips == ~0u || r.mips == 0 || r.base_mip + r.mips > all_mips) {
+        clamped |= r.mips != ~0u && r.mips != 0;
+        r.mips = all_mips - r.base_mip;
+    }
+    if (img.type == vk::ImageType::e3D) {
+        r.base_layer = 0, r.layers = 1;
+    } else {
+        if (r.base_layer >= all_layers) {
+            r.base_layer = all_layers - 1, clamped = true;
+        }
+        if (r.layers == ~0u || r.layers == 0 || r.base_layer + r.layers > all_layers) {
+            clamped |= r.layers != ~0u && r.layers != 0;
+            r.layers = all_layers - r.base_layer;
+        }
+    }
+    if ((r.type == vk::ImageViewType::eCube && (!img.cube || r.layers != 6)) || (r.type == vk::ImageViewType::eCubeArray && (!img.cube || r.layers % 6 != 0))) {
+        r.type = vk::ImageViewType::e2DArray;
+    }
+    if (r.type == vk::ImageViewType::e2D && r.layers > 1) {
+        r.type = vk::ImageViewType::e2DArray;
+    }
+    if (img.type == vk::ImageType::e3D && r.type != vk::ImageViewType::e3D) {
+        r.type = vk::ImageViewType::e3D;
+    }
+    if (clamped) {
+        c_views_clamped.fetch_add(1, std::memory_order_relaxed);
+    }
+    return true;
+}
+
+/// note 44 test (TLG_VKB_DESTROY_DELAY=<submits>, default 3): how many graphics submits after the engine's delete an object of ours lives on. A large value (60) keeps
+/// deleted images and buffers alive for about a second: if the post-load glitches stop, an image or buffer was freed while the GPU still used it
+u32 DestroyDelay() {
+    static const u32 n = [] {
+        const char* e = std::getenv("TLG_VKB_DESTROY_DELAY");
+        const long v = e != nullptr ? std::strtol(e, nullptr, 10) : 3;
+        return static_cast<u32>(std::clamp(v, 3L, 600L));
+    }();
+    return n;
+}
+
+void DestroyDue(u32 now, bool all) {
+    std::vector<Doomed> due;
+    {
+        std::scoped_lock lock{mutex};
+        // V4g: an object goes once the GPU has done the graphics submit after its delete (the last one that may use it); the submits are counted where the engine makes them,
+        // our recording thread may still be one behind
+        while (!doomed.empty() && (all || (doomed.front().due_submit <= now && GraphicsSubmitDone(doomed.front().due_submit - 2)))) {
+            due.push_back(doomed.front());
+            doomed.pop_front();
+        }
+    }
+    if (due.empty() || instance == nullptr) {
+        return;
+    }
+    const vk::Device device = instance->GetDevice();
+    for (const Doomed& d : due) {
+        if (d.view) {
+            device.destroyImageView(d.view);
+            c_views_destroyed.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (d.image) {
+            vmaDestroyImage(instance->GetAllocator(), static_cast<VkImage>(d.image), d.allocation);
+            c_images_destroyed.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (d.buffer) {
+            vmaDestroyBuffer(instance->GetAllocator(), d.buffer, d.buffer_allocation);
+            c_dev_destroyed.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+}
+
+/// Everything before in the stream is done and visible before what follows (copies, fills)
+void FullBarrier(vk::CommandBuffer cmd) {
+    const vk::MemoryBarrier2 barrier{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands, .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+                                     .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands, .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite};
+    cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &barrier});
+}
+
+/// The device buffer holding [address, address + size) (mutex held); null when none; `straddle` when the range starts in one and leaves it
+const DeviceBuffer* DeviceBufferOf(u64 address, u64 size, u64& start, bool& straddle) {
+    straddle = false;
+    auto it = device_buffers.upper_bound(address);
+    if (it == device_buffers.begin()) {
+        return nullptr;
+    }
+    --it;
+    if (address >= it->second.end) {
+        return nullptr;
+    }
+    if (address + size > it->second.end) {
+        straddle = true;
+        return nullptr;
+    }
+    start = it->first;
+    return &it->second;
+}
+
+/// Kill-experiment TLG_VKB_HOST_CACHE=1: a range read in place gets a copy in the device arena at its first use (in the upload batch); uses from two graphics submits on
+/// read the copy. Under the module lock.
+struct CachedRange {
+    u64 offset;
+    u64 queued_at;
+};
+std::map<std::pair<u64, u64>, CachedRange> host_cache;
+u64 host_cache_head = 0;
+std::atomic<u64> c_cache_hits{0}, c_cache_copies{0}, c_cache_full{0}, c_cache_bytes{0};
+
+/// V4e check (TLG_VKB_DEVICE_BUFFERS=1, changes nothing on the GPU): every engine buffer read in place, by class: 0 the CPU cannot write it by its description (usage default or
+/// immutable, no CPU write access), 1 dynamic or CPU-writable, 2 staging. The class-0 buffers' memory is hashed at creation and watched round robin: a change the hooked writers
+/// (UpdateSubresource, our copies and fills) do not explain is counted. Under the module lock.
+u32 DeviceBuffersMode() {
+    // default 2 since 2026-11-14 (gameplay 25.5 -> 30.7 fps, 0 copies sent back); 1 the check only; 0 off (LEGACY(vkb_device_buffers): every non-UAV buffer read in place)
+    static const u32 mode = [] { const char* e = std::getenv("TLG_VKB_DEVICE_BUFFERS"); return e != nullptr && e[0] != 0 ? static_cast<u32>(std::atoi(e)) : 2u; }();
+    return mode;
+}
+struct Watched {
+    u64 end, id;
+    u32 cls, usage, bind, cpu_access;
+    u64 hash;
+    bool gpu_written; ///< our copy or fill wrote it (in place: its memory changes legitimately)
+    u64 first_bind_submit{}; ///< the graphics submit of its first bind (0: never bound)
+    u32 changes_after_bind{};
+    u32 settle_changes{}; ///< V4j: changes seen while settling (more than SettleGiveUp: in place for good)
+    // V4e (mode 2): its own device copy once its memory has been unchanged for SettleSubmits graphics submits after its first bind
+    enum class State : u8 { InPlace, Device, Unstable } state{State::InPlace};
+    u64 last_change_submit{}; ///< the submit its memory last changed (or its first bind)
+    u64 ready_submit{};       ///< Device: bound from this submit on (the upload batch has copied it)
+    VkBuffer device{};
+    VmaAllocation allocation{};
+};
+constexpr u64 SettleSubmits = 8;
+constexpr u32 SettleGiveUp = 4;
+std::atomic<u64> c_dev2_gave_up{0};
+std::vector<u64> settling; ///< addresses of class-0 buffers bound and still in place (mode 2), hashed every submit
+std::atomic<u64> c_dev2_made{0}, c_dev2_mb{0}, c_dev2_unstable{0}, c_dev2_binds{0}, c_dev2_bind_mb{0}, c_dev2_failed{0}, c_dev2_settle_changes{0};
+std::atomic<u64> c_watch_changed_before_bind{0}, c_watch_changed_after_bind{0}, c_watch_buffers_changed_after_bind{0}, c_watch_buffers_changed_often{0},
+    c_watch_changed_within_3{0};
+std::map<u64, Watched> watched; ///< by address
+std::unordered_map<u64, u64> watched_by_id;
+u64 watch_cursor = 0;
+std::atomic<u64> c_watch_binds[4], c_watch_bind_bytes[4], c_watch_buffers[3], c_watch_bytes[3], c_watch_mismatch{0}, c_watch_mismatch_gpu{0}, c_watch_cpu_updates{0},
+    c_watch_hashed_mb{0}, c_watch_rounds{0};
+u64 HashGuest(u64 address, u64 bytes) {
+    return XXH3_64bits(reinterpret_cast<const void*>(address), bytes);
+}
+Watched* WatchedAt(u64 address, u64 size) {
+    auto it = watched.upper_bound(address);
+    if (it == watched.begin()) {
+        return nullptr;
+    }
+    --it;
+    return address >= it->first && address + size <= it->second.end ? &it->second : nullptr;
+}
+std::vector<std::pair<u64, u64>> gpu_write_pending; ///< destinations of our in-place copies and fills (stream lock held when pushed), marked at the tick
+std::mutex gpu_write_mutex;
+void NoteGpuWrite(u64 address, u64 size) {
+    if (DeviceBuffersMode() == 0) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    if (Watched* w = WatchedAt(address, size)) {
+        w->gpu_written = true;
+    }
+}
+
+// R3 census (TLG_VKB_SOURCE_CENSUS=1): where the buffers bound in place live. 0 a class-0 engine buffer (static by its description) not yet copied, 1 class-1 (dynamic
+// or CPU-writable), 2 class-2 (staging), 3 the frame allocator's ring, 4 other engine memory
+std::atomic<u64> frame_ring_base{0}, frame_ring_size{0};
+std::array<std::atomic<u64>, 5> c_src_binds{}, c_src_bytes{};
+std::array<std::atomic<u64>, 4> c_src_ring_sizes{}; ///< ring binds by size: < 1 KiB, < 16 KiB, < 256 KiB, larger
+bool SourceCensusOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_SOURCE_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+// per engine buffer read in place: binds, bound bytes, its size, class, usage, bind and CPU access flags (census only)
+struct SourceStat {
+    u64 binds{}, bytes{}, size{};
+    u32 cls{}, usage{}, bind{}, cpu{};
+};
+std::unordered_map<u64, SourceStat> source_stats; ///< by buffer start (under mutex)
+void NoteSource(u64 address, u64 size) {
+    u32 k = 4;
+    const u64 rb = frame_ring_base.load(std::memory_order_relaxed), rs = frame_ring_size.load(std::memory_order_relaxed);
+    if (rb != 0 && address >= rb && address + size <= rb + rs) {
+        k = 3;
+        c_src_ring_sizes[size < 1024 ? 0 : size < (16u << 10) ? 1 : size < (256u << 10) ? 2 : 3].fetch_add(1, std::memory_order_relaxed);
+    } else {
+        std::scoped_lock lock{mutex};
+        if (const Watched* w = WatchedAt(address, size)) {
+            k = std::min<u32>(w->cls, 2);
+            const u64 start = std::prev(watched.upper_bound(address))->first;
+            SourceStat& st = source_stats[start];
+            ++st.binds;
+            st.bytes += size;
+            st.size = w->end - start, st.cls = w->cls, st.usage = w->usage, st.bind = w->bind, st.cpu = w->cpu_access;
+        }
+    }
+    c_src_binds[k].fetch_add(1, std::memory_order_relaxed);
+    c_src_bytes[k].fetch_add(size, std::memory_order_relaxed);
+}
+
+// R3a: the frame ring in our device memory (set once; read without a lock)
+std::atomic<u64> vram_ring_base{0}, vram_ring_end{0};
+VkBuffer vram_ring_buffer{};
+VmaAllocation vram_ring_allocation{};
+std::atomic<u64> c_ring_vram_binds{0}, c_ring_vram_straddle{0};
+std::atomic<u64> host_side_ring_base{0}, host_side_ring_size{0};
+constexpr u64 VramRingSlack = 16ull << 20; ///< bound ranges may reach past the ring's end (the guest memory behind it was readable): our block is that much larger
+inline bool InVramRing(u64 address, u64 size, BufferWindow& out) {
+    const u64 base = vram_ring_base.load(std::memory_order_acquire);
+    if (base == 0 || address < base || address >= vram_ring_end.load(std::memory_order_relaxed)) {
+        return false;
+    }
+    if (address + size > vram_ring_end.load(std::memory_order_relaxed)) {
+        c_ring_vram_straddle.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    out = {vk::Buffer{vram_ring_buffer}, address - base, true};
+    return true;
+}
+
+/// R3d (TLG_VKB_STATIC_AT_BIND, default on; =0: settle by hash, V4e): a static engine buffer (usage default or immutable, no CPU write access) gets its device copy at its
+/// first bind, copied in the frame stream in front of that bind. The engine's data is in it by then (the V4e check: 0 changes after a first bind); a later
+/// UpdateSubresource sends it back in place (BufferCpuWritten). Deletes the settling by hash and the watch.
+bool StaticAtBindOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_STATIC_AT_BIND"); return e == nullptr || e[0] != '0'; }();
+    return on;
+}
+std::atomic<u64> c_static_at_bind{0}, c_static_at_bind_mb{0}, c_static_at_bind_failed{0};
+VkBuffer MakeDeviceBuffer(u64 bytes, VmaAllocation& allocation) {
+    const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                                .size = bytes,
+                                .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                                         VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+    VmaAllocationCreateInfo alloc{};
+    alloc.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    VkBuffer handle{};
+    if (vmaCreateBuffer(instance->GetAllocator(), &ci, &alloc, &handle, &allocation, nullptr) != VK_SUCCESS) {
+        return VK_NULL_HANDLE;
+    }
+    return handle;
+}
+
+/// A window without the stream lock order problem: called with the stream recording held (stream lock, then this module's lock)
+bool FindLocked(u64 address, u64 size, BufferWindow& out) {
+    struct InitialCopy {
+        u64 address{}, bytes{};
+        VkBuffer device{};
+    } initial;
+    if (InVramRing(address, size, out)) {
+        c_ring_vram_binds.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    {
+        std::scoped_lock lock{mutex};
+        u64 start = 0;
+        bool straddle = false;
+        if (const DeviceBuffer* d = DeviceBufferOf(address, size, start, straddle)) {
+            out = {vk::Buffer{d->buffer}, address - start, true};
+            return true;
+        }
+        if (straddle) {
+            c_find_straddle.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+        if (DeviceBuffersMode() == 2) {
+            // V4j: the device copy (V4e), in the same lock; the in-place lookup is not needed for it
+            auto it = watched.upper_bound(address);
+            if (it != watched.begin()) {
+                --it;
+                Watched& wb = it->second;
+                if (address >= it->first && address + size <= wb.end && wb.cls == 0) {
+                    const u64 now = GraphicsSubmits();
+                    if (wb.first_bind_submit == 0 && StaticAtBindOn() && !wb.gpu_written && !(Stream::OnRecorder() && Stream::RecorderOn())) {
+                        // R3d: its device copy now; the copy job goes into the stream below, after the lock, in front of the job of this bind
+                        wb.first_bind_submit = now + 1;
+                        const u64 bytes = wb.end - it->first;
+                        wb.device = MakeDeviceBuffer(bytes, wb.allocation);
+                        BumpBufferEpoch(); // note 46: A1 memo answers may change
+                        if (wb.device == VK_NULL_HANDLE) {
+                            wb.state = Watched::State::Unstable;
+                            BumpBufferEpoch(); // note 46: A1 memo answers may change
+                            c_static_at_bind_failed.fetch_add(1, std::memory_order_relaxed);
+                        } else {
+                            wb.state = Watched::State::Device;
+                            BumpBufferEpoch(); // note 46: A1 memo answers may change
+                            wb.ready_submit = 0;
+                            initial = {it->first, bytes, wb.device};
+                            out = {vk::Buffer{wb.device}, address - it->first, true};
+                            c_static_at_bind.fetch_add(1, std::memory_order_relaxed);
+                            c_static_at_bind_mb.fetch_add(bytes, std::memory_order_relaxed);
+                            c_dev2_mb.fetch_add(bytes, std::memory_order_relaxed);
+                        }
+                    } else if (wb.first_bind_submit == 0) {
+                        wb.first_bind_submit = now + 1;
+                        wb.last_change_submit = now;
+                        settling.push_back(it->first);
+                    } else if (wb.state == Watched::State::Device && now >= wb.ready_submit) {
+                        out = {vk::Buffer{wb.device}, address - it->first, true};
+                        c_dev2_binds.fetch_add(1, std::memory_order_relaxed);
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    if (initial.device != VK_NULL_HANDLE) {
+        const BufferWindow src = SourceWindow(initial.address, initial.bytes);
+        const VkBuffer device = initial.device;
+        const u64 bytes = initial.bytes;
+        Stream::NoteBytes(Stream::Work::Upload, bytes);
+        Stream::Defer(Stream::Work::Upload, [src, device, bytes](vk::CommandBuffer cmd) {
+            if (src.buffer) {
+                Stream::Hazard(cmd, {Stream::BufferUse(src.buffer, src.offset, bytes, false), Stream::BufferUse(vk::Buffer{device}, 0, bytes, true)});
+                cmd.copyBuffer(src.buffer, vk::Buffer{device}, vk::BufferCopy{src.offset, 0, bytes});
+            } else {
+                Stream::Hazard(cmd, {Stream::BufferUse(vk::Buffer{device}, 0, bytes, true)});
+                cmd.fillBuffer(vk::Buffer{device}, 0, VK_WHOLE_SIZE, 0);
+            }
+        });
+        return true;
+    }
+    if (host_import == nullptr) {
+        return false;
+    }
+    const VkbVulkan::HostImport::Window w = host_import->Find(address, size);
+    if (!w.buffer) {
+        c_find_none.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    out = {w.buffer, w.offset, false};
+    if (SourceCensusOn()) {
+        NoteSource(address, size);
+    }
+    if (DeviceBuffersMode() == 2) {
+        return true;
+    }
+    if (DeviceBuffersMode() == 1) {
+        std::scoped_lock lock{mutex};
+        Watched* wb = WatchedAt(address, size);
+        const u32 cls = wb != nullptr ? wb->cls : 3;
+        if (wb != nullptr && wb->first_bind_submit == 0) {
+            wb->first_bind_submit = GraphicsSubmits() + 1;
+        }
+        c_watch_binds[cls].fetch_add(1, std::memory_order_relaxed);
+        c_watch_bind_bytes[cls].fetch_add(size, std::memory_order_relaxed);
+    }
+    if (const vk::Buffer arena = Stream::HostCacheArena(); arena) {
+        std::scoped_lock lock{mutex};
+        const u64 now = GraphicsSubmits();
+        const auto key = std::make_pair(address, size);
+        if (const auto it = host_cache.find(key); it != host_cache.end()) {
+            if (now >= it->second.queued_at + 2) {
+                out = {arena, it->second.offset, false};
+                c_cache_hits.fetch_add(1, std::memory_order_relaxed);
+            }
+            return true;
+        }
+        const u64 low = w.offset & 0xff;
+        const u64 at = ((host_cache_head + 255) & ~255ull) + low;
+        if (at + size > Stream::HostCacheBytes) {
+            c_cache_full.fetch_add(1, std::memory_order_relaxed);
+            return true;
+        }
+        host_cache_head = at + size;
+        host_cache.emplace(key, CachedRange{at, now});
+        Upload::CopyBuffer(w.buffer, w.offset, arena, at, size);
+        c_cache_copies.fetch_add(1, std::memory_order_relaxed);
+        c_cache_bytes.fetch_add(size, std::memory_order_relaxed);
+        return true;
+    }
+    if (const vk::Buffer scratch = Stream::HostScratch(); scratch && size + 256 <= Stream::HostScratchBytes) {
+        out = {scratch, w.offset & 0xff, false}; // kill-experiment TLG_VKB_HOST_SCRATCH=1: the same alignment, zeroed device memory
+    }
+    return true;
+}
+
+} // namespace
+
+/// V2b: a texture that holds data (not a render or depth target, not dynamic or staging) gets the engine's initial contents, uploaded once
+constexpr u32 UsageDynamic = 2, UsageStaging = 3;
+std::atomic<u64> c_upload_wanted{0}, c_upload_done{0};
+void FillReadersCheck(u64 address, u64 size, int what); // note 49/51 census, below
+bool UploadContents(u64 id, bool fresh) {
+    vk::Image image{};
+    vk::Format format{};
+    u32 mips = 0, layers = 0;
+    vk::ImageLayout layout{};
+    {
+        std::scoped_lock lock{mutex};
+        const auto it = images.find(id);
+        if (it == images.end() || !fresh) {
+            return false;
+        }
+        image = it->second.image, format = it->second.format, mips = it->second.mips, layers = it->second.layers;
+        layout = it->second.layout;
+        if (FillReadersOn() && it->second.address != 0) { // note 51 census: a texture whose contents come from memory a fill wrote
+            CensusTag(id);
+            FillReadersCheck(it->second.address, std::max<u64>(it->second.bytes, 1), 2);
+        }
+    }
+    c_upload_wanted.fetch_add(1, std::memory_order_relaxed);
+    if (Upload::TextureContents(id, image, format, mips, layers, layout)) {
+        c_upload_done.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    return false;
+}
+
+void TextureCreated(const Object& texture) {
+    if (!On() || !Ready()) {
+        return;
+    }
+    bool fresh = false;
+    NewImage fresh_image{};
+    {
+        std::scoped_lock lock{mutex};
+        const bool known = images.contains(texture.id);
+        Image* img = MakeImage(texture);
+        if (img != nullptr && (texture.bind & BindRenderTarget) != 0 && texture.address != 0) {
+            image_at_address[texture.address] = texture.id;
+        }
+        fresh = img != nullptr && !known && !img->is_depth && (texture.bind & (BindRenderTarget | BindDepthStencil)) == 0 && texture.usage != UsageDynamic &&
+                texture.usage != UsageStaging;
+        if (fresh && !t_new_images.empty() && t_new_images.back().image == img->image) {
+            fresh_image = t_new_images.back();
+            t_new_images.pop_back(); // note 66: its upload leaves it in GENERAL
+        }
+    }
+    if (!UploadContents(texture.id, fresh) && fresh_image.image) {
+        t_new_images.push_back(fresh_image); // no contents after all: the layout job
+    } else if (fresh_image.image) {
+        c_layout_by_upload.fetch_add(1, std::memory_order_relaxed);
+    }
+    InitNewImages();
+}
+
+void ViewCreated(const Object& view, const Object& resource) {
+    if (!On() || !Ready()) {
+        return;
+    }
+    struct AfterLock {
+        ~AfterLock() { InitNewImages(); } // note 66: (declared before the lock: runs after it is released)
+    } after_lock;
+    if (resource.kind == Kind::Buffer) {
+        c_views_buffer.fetch_add(1, std::memory_order_relaxed); // a buffer view: (chunk buffer, offset) at the bind, no object
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    if (views.contains(view.id)) {
+        return;
+    }
+    Image* img = MakeImage(resource);
+    if (img == nullptr) {
+        c_views_no_image.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    if ((resource.bind & BindRenderTarget) != 0 && resource.address != 0 && !image_at_address.contains(resource.address)) {
+        image_at_address[resource.address] = resource.id;
+    }
+    Range r;
+    if (!ViewRange(view.kind, view, *img, r)) {
+        c_views_buffer.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    if (r.type == vk::ImageViewType::e1D || r.type == vk::ImageViewType::e1DArray) { // note 41: 1D is 2D of height 1 here (above)
+        r.type = r.type == vk::ImageViewType::e1D ? vk::ImageViewType::e2D : vk::ImageViewType::e2DArray;
+    }
+    vk::Format format = img->format;
+    vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor;
+    if (img->is_depth) {
+        const u32 view_dxgi = view.has_desc ? view.desc[0] : 0;
+        if (view.kind == Kind::DepthStencilView) {
+            aspect = HasStencil(img->format) ? (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil) : vk::ImageAspectFlagBits::eDepth;
+        } else {
+            aspect = IsStencilView(view_dxgi) && HasStencil(img->format) ? vk::ImageAspectFlagBits::eStencil : vk::ImageAspectFlagBits::eDepth;
+        }
+    } else if (view.has_desc && view.desc[0] != 0) {
+        if (const vk::Format f = ColorFormat(view.desc[0]); f != vk::Format::eUndefined) {
+            format = f;
+        }
+    }
+    if (!img->mutable_format && format != img->format) {
+        format = img->format;
+        c_fixed_view_format_forced.fetch_add(1, std::memory_order_relaxed);
+    }
+    const vk::ImageViewCreateInfo ci{
+        .image = img->image,
+        .viewType = r.type,
+        .format = format,
+        .subresourceRange = {aspect, r.base_mip, r.mips, r.base_layer, r.layers},
+    };
+    const auto [result, handle] = instance->GetDevice().createImageView(ci);
+    if (result != vk::Result::eSuccess) {
+        c_views_failed.fetch_add(1, std::memory_order_relaxed);
+        static std::atomic<u32> logged{0};
+        if (logged.fetch_add(1) < 16) {
+            LOG_ERROR(Render_Vulkan, "vkb: view id {} of texture id {} failed: {}", view.id, resource.id, vk::to_string(result));
+        }
+        return;
+    }
+    views.emplace(view.id, View{handle, resource.id, r.type, format, ci.subresourceRange, {}});
+    c_views_created.fetch_add(1, std::memory_order_relaxed);
+}
+
+bool DynamicDeviceOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_DYNAMIC_DEVICE"); return e == nullptr || e[0] != '0'; }(); // default on since 2026-11-14 (note 29); =0: in place
+    return on && On();
+}
+
+std::atomic<u64> c_dyn_device{0}, c_dyn_unmaps{0}, c_dyn_unmap_mb{0}, c_dyn_checks{0}, c_dyn_changed_outside{0};
+void DynamicUnmapped(u64 memory, u64 bytes) {
+    c_dyn_unmaps.fetch_add(1, std::memory_order_relaxed);
+    c_dyn_unmap_mb.fetch_add(bytes, std::memory_order_relaxed);
+    BufferCpuWritten(memory, bytes);
+}
+
+std::mutex dyn_check_mutex;
+std::unordered_map<u64, u64> dyn_check_hash; ///< memory -> hash at its last Unmap
+void DynamicCheck(u64 memory, u64 bytes, bool at_unmap) {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_DYN_CHECK"); return e != nullptr && e[0] == '1'; }();
+    if (!on || memory == 0 || bytes == 0) {
+        return;
+    }
+    const u64 h = HashGuest(memory, bytes);
+    std::scoped_lock lock{dyn_check_mutex};
+    if (at_unmap) {
+        dyn_check_hash[memory] = h;
+        return;
+    }
+    if (const auto it = dyn_check_hash.find(memory); it != dyn_check_hash.end()) {
+        c_dyn_checks.fetch_add(1, std::memory_order_relaxed);
+        if (it->second != h) {
+            c_dyn_changed_outside.fetch_add(1, std::memory_order_relaxed);
+            static std::atomic<u32> logged{0};
+            if (logged.fetch_add(1, std::memory_order_relaxed) < 8) {
+                LOG_WARNING(Render_Vulkan, "vkb R3b check: dynamic buffer memory {:#x} ({} bytes) changed between its Unmap and its next Map", memory, bytes);
+            }
+        }
+        dyn_check_hash.erase(it);
+    }
+}
+
+void BufferCreated(const Object& buffer) {
+    if (!On() || !Ready()) {
+        return;
+    }
+    c_buffers.fetch_add(1, std::memory_order_relaxed);
+    const bool dynamic_device = DynamicDeviceOn() && buffer.usage == UsageDynamic && (buffer.cpu_access & 0x20000) == 0; // (never one the CPU reads)
+    if (((buffer.bind & BindUnorderedAccess) != 0 || dynamic_device) && buffer.address != 0 && buffer.bytes != 0) {
+        if (dynamic_device && (buffer.bind & BindUnorderedAccess) == 0) {
+            c_dyn_device.fetch_add(1, std::memory_order_relaxed);
+        }
+        // V2f: a buffer the GPU writes lives in device memory
+        const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                                    .size = buffer.bytes,
+                                    .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                                             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                                             VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                    .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+        VmaAllocationCreateInfo alloc{};
+        alloc.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        VkBuffer handle{};
+        VmaAllocation allocation{};
+        if (vmaCreateBuffer(instance->GetAllocator(), &ci, &alloc, &handle, &allocation, nullptr) != VK_SUCCESS) {
+            c_dev_failed.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        {
+            std::scoped_lock lock{mutex};
+            const u32 due = static_cast<u32>(GraphicsSubmits()) + DestroyDelay();
+            // an older buffer at the same memory (its delete not seen) goes
+            if (const auto old = device_buffers.find(buffer.address); old != device_buffers.end()) {
+                doomed.push_back({due, {}, {}, {}, old->second.buffer, old->second.allocation});
+                device_buffer_start.erase(old->second.id);
+                device_buffers.erase(old);
+                BumpBufferEpoch(); // note 46: A1 memo answers may change
+                c_dev_replaced.fetch_add(1, std::memory_order_relaxed);
+            }
+            device_buffers[buffer.address] = {buffer.address + buffer.bytes, handle, allocation, buffer.id};
+            device_buffer_start[buffer.id] = buffer.address;
+        }
+        c_dev_buffers.fetch_add(1, std::memory_order_relaxed);
+        c_dev_bytes.fetch_add(buffer.bytes, std::memory_order_relaxed);
+        // its initial data, copied in the frame stream (so after anything recorded before it, before anything after it)
+        const BufferWindow w = SourceWindow(buffer.address, buffer.bytes);
+        if (!w.buffer) {
+            c_dev_no_initial.fetch_add(1, std::memory_order_relaxed);
+        }
+        const u64 bytes = buffer.bytes;
+        Stream::NoteBytes(Stream::Work::UploadInitial, bytes);
+        Stream::Defer(Stream::Work::UploadInitial, [w, handle, bytes](vk::CommandBuffer cmd) {
+            if (w.buffer) {
+                Stream::Hazard(cmd, {Stream::BufferUse(w.buffer, w.offset, bytes, false), Stream::BufferUse(vk::Buffer{handle}, 0, bytes, true)});
+                cmd.copyBuffer(w.buffer, vk::Buffer{handle}, vk::BufferCopy{w.offset, 0, bytes});
+            } else {
+                Stream::Hazard(cmd, {Stream::BufferUse(vk::Buffer{handle}, 0, bytes, true)});
+                cmd.fillBuffer(vk::Buffer{handle}, 0, VK_WHOLE_SIZE, 0);
+            }
+        });
+        return;
+    }
+    if (buffer.address == 0 || buffer.bytes == 0 || !host_import->Available()) {
+        c_buffers_not_in_place.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    if (host_import->Find(buffer.address, buffer.bytes).buffer) {
+        c_buffers_in_place.fetch_add(1, std::memory_order_relaxed);
+        c_buffer_bytes.fetch_add(buffer.bytes, std::memory_order_relaxed);
+        if (DeviceBuffersMode() != 0) {
+            const u32 cls = buffer.usage == UsageStaging ? 2 : (buffer.usage == UsageDynamic || (buffer.cpu_access & 0x10000) != 0) ? 1 : 0;
+            std::scoped_lock lock{mutex};
+            if (const auto old = watched.find(buffer.address); old != watched.end()) {
+                if (old->second.device != VK_NULL_HANDLE) {
+                    doomed.push_back({static_cast<u32>(GraphicsSubmits()) + DestroyDelay(), {}, {}, {}, old->second.device, old->second.allocation});
+                }
+                watched_by_id.erase(old->second.id);
+                watched.erase(old);
+                BumpBufferEpoch(); // note 46: A1 memo answers may change
+            }
+            watched[buffer.address] = {buffer.address + buffer.bytes, buffer.id, cls, buffer.usage, buffer.bind, buffer.cpu_access,
+                                       cls == 0 ? HashGuest(buffer.address, buffer.bytes) : 0, false};
+            watched_by_id[buffer.id] = buffer.address;
+            c_watch_buffers[cls].fetch_add(1, std::memory_order_relaxed);
+            c_watch_bytes[cls].fetch_add(buffer.bytes, std::memory_order_relaxed);
+        }
+    } else {
+        c_buffers_not_in_place.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+namespace {
+void ObjectDeletedNow(u64 id);
+std::atomic<u64> c_deletes_in_order{0};
+} // namespace
+/// R2a (note 63): an engine object's deletion reaches our tables in stream order: an unlocked job (it ends no pass) erases our entry after every draw and dispatch
+/// captured before the delete, on the recording thread. Today the lookups still run at the draw, so nothing reads a deleted id later; R2b moves them to the
+/// recording thread, which needs exactly this order. TLG_VKB_DELETE_NOW=1: erased at the call, as before.
+void ObjectDeleted(u64 id) {
+    if (!On() || !device_ready) {
+        return;
+    }
+    static const bool now = [] { const char* e = std::getenv("TLG_VKB_DELETE_NOW"); return e != nullptr && e[0] == '1'; }();
+    if (now || !Stream::RecorderOn()) {
+        ObjectDeletedNow(id);
+        return;
+    }
+    c_deletes_in_order.fetch_add(1, std::memory_order_relaxed);
+    Stream::DeferUnlocked([id](vk::CommandBuffer) { ObjectDeletedNow(id); });
+}
+namespace {
+void ObjectDeletedNow(u64 id) {
+    const u32 due = static_cast<u32>(GraphicsSubmits()) + DestroyDelay();
+    std::scoped_lock lock{mutex};
+    if (const auto wid = watched_by_id.find(id); wid != watched_by_id.end()) {
+        if (const auto w = watched.find(wid->second); w != watched.end() && w->second.id == id) {
+            if (w->second.device != VK_NULL_HANDLE) {
+                doomed.push_back({due, {}, {}, {}, w->second.device, w->second.allocation});
+                c_dev2_mb.fetch_sub(w->second.end - w->first, std::memory_order_relaxed);
+                BumpBufferEpoch(); // note 46: only a device answer can be in the A1 memo
+            }
+            watched.erase(w);
+        }
+        watched_by_id.erase(wid);
+    }
+    if (const auto v = views.find(id); v != views.end()) {
+        doomed.push_back({due, {}, {}, v->second.view});
+        for (const vk::ImageView other : v->second.other) {
+            if (other) {
+                doomed.push_back({due, {}, {}, other});
+            }
+        }
+        for (const auto& [format, formatted] : v->second.formatted) {
+            doomed.push_back({due, {}, {}, formatted});
+        }
+        views.erase(v);
+        BumpViewEpoch(); // note 46: A1 memo answers may change
+        return;
+    }
+    if (const auto b = device_buffer_start.find(id); b != device_buffer_start.end()) {
+        if (const auto d = device_buffers.find(b->second); d != device_buffers.end() && d->second.id == id) {
+            doomed.push_back({due, {}, {}, {}, d->second.buffer, d->second.allocation});
+            c_dev_bytes.fetch_sub(d->second.end - d->first, std::memory_order_relaxed);
+            device_buffers.erase(d);
+            BumpBufferEpoch(); // note 46: A1 memo answers may change
+        }
+        device_buffer_start.erase(b);
+        return;
+    }
+    if (const auto i = images.find(id); i != images.end()) {
+        // the image's views the engine has not deleted yet go with it
+        for (auto v = views.begin(); v != views.end();) {
+            if (v->second.texture_id == id) {
+                doomed.push_back({due, {}, {}, v->second.view});
+                for (const vk::ImageView other : v->second.other) {
+                    if (other) {
+                        doomed.push_back({due, {}, {}, other});
+                    }
+                }
+                for (const auto& [format, formatted] : v->second.formatted) {
+                    doomed.push_back({due, {}, {}, formatted});
+                }
+                v = views.erase(v);
+                BumpViewEpoch(); // note 46: A1 memo answers may change
+            } else {
+                ++v;
+            }
+        }
+        doomed.push_back({due, i->second.image, i->second.allocation, {}});
+        c_image_bytes.fetch_sub(i->second.bytes, std::memory_order_relaxed);
+        images.erase(i);
+        BumpViewEpoch(); // note 46: A1 memo answers may change
+        return;
+    }
+    c_deleted_unknown.fetch_add(1, std::memory_order_relaxed);
+}
+} // namespace
+
+namespace {
+void CensusFrame();
+}
+
+std::atomic<u64> frame_ring_handle{0}, frame_ring_in_place_begin{0}, frame_ring_in_place_end{0};
+void NoteFrameRing(u64 base, u64 size) {
+    if (frame_ring_base.load(std::memory_order_relaxed) != base || frame_ring_handle.load(std::memory_order_relaxed) == 0) {
+        frame_ring_base.store(base, std::memory_order_relaxed);
+        frame_ring_size.store(size, std::memory_order_relaxed);
+        if (device_ready && host_import && host_import->Available()) {
+            if (const VkbVulkan::HostImport::Window w = host_import->Find(base, size); w.buffer) {
+                frame_ring_in_place_begin.store(w.offset, std::memory_order_relaxed);
+                frame_ring_in_place_end.store(w.offset + size, std::memory_order_relaxed);
+                frame_ring_handle.store(reinterpret_cast<u64>(static_cast<VkBuffer>(w.buffer)), std::memory_order_release);
+            }
+        }
+    }
+}
+
+bool PlaceFrameRing(u64 allocator) {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RING_VRAM"); return e == nullptr || e[0] != '0'; }(); // default on since 2026-11-14 (note 29); =0: in place
+    static std::once_flag once;
+    static std::atomic<bool> placed{false};
+    if (!on || allocator == 0 || !device_ready) {
+        return false;
+    }
+    std::call_once(once, [allocator] {
+        const u64 size = *reinterpret_cast<const u32*>(allocator);
+        const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                                    .size = size + VramRingSlack,
+                                    .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                                             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                                             VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                    .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+        VmaAllocationCreateInfo alloc{};
+        alloc.usage = VMA_MEMORY_USAGE_UNKNOWN;
+        alloc.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        alloc.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+        VmaAllocationInfo info{};
+        if (size == 0 || vmaCreateBuffer(instance->GetAllocator(), &ci, &alloc, &vram_ring_buffer, &vram_ring_allocation, &info) != VK_SUCCESS || info.pMappedData == nullptr) {
+            LOG_ERROR(Render_Vulkan, "vkb R3a: no device-local CPU-visible memory for the frame ring ({} bytes): it stays in place", size);
+            return;
+        }
+        const u64 mapped = reinterpret_cast<u64>(info.pMappedData);
+        if (mapped + size + VramRingSlack > (1ull << 40)) {
+            // the engine's buffer descriptions hold 40 bit addresses
+            LOG_ERROR(Render_Vulkan, "vkb R3a: the frame ring's mapping {:#x} is above 40 bits: it stays in place", mapped);
+            vmaDestroyBuffer(instance->GetAllocator(), vram_ring_buffer, vram_ring_allocation);
+            vram_ring_buffer = VK_NULL_HANDLE;
+            return;
+        }
+        std::memset(info.pMappedData, 0, size + VramRingSlack); // (what the guest memory behind a block held is not known; zero, not garbage)
+        host_side_ring_size.store(size, std::memory_order_relaxed);
+        host_side_ring_base.store(*reinterpret_cast<const u64*>(allocator + 0x18), std::memory_order_release);
+        vram_ring_end.store(mapped + size + VramRingSlack, std::memory_order_relaxed);
+        vram_ring_base.store(mapped, std::memory_order_release);
+        *reinterpret_cast<u64*>(allocator + 0x18) = mapped; // from the next allocation on, the blocks are ours (base + offset)
+        placed.store(true, std::memory_order_release);
+        LOG_INFO(Render_Vulkan, "vkb R3a: the frame ring ({} MiB) is in device memory at {:#x}", size >> 20, mapped);
+    });
+    return placed.load(std::memory_order_acquire);
+}
+
+std::array<std::array<std::array<std::atomic<u64>, 2>, 8>, 4> c_map_count{}, c_map_bytes{}; ///< [usage][type][in place]
+void NoteBufferMap(u32 usage, u32 type, bool in_place, u64 bytes) {
+    usage = std::min<u32>(usage, 3), type = std::min<u32>(type, 7);
+    c_map_count[usage][type][in_place ? 1 : 0].fetch_add(1, std::memory_order_relaxed);
+    c_map_bytes[usage][type][in_place ? 1 : 0].fetch_add(bytes, std::memory_order_relaxed);
+}
+
+bool HostSideRing(u64& base, u64& size) {
+    base = host_side_ring_base.load(std::memory_order_acquire);
+    size = host_side_ring_size.load(std::memory_order_relaxed);
+    return base != 0 && size != 0;
+}
+
+/// note 49 census, debug only: TLG_VKB_FILL_READERS=1 writes log/vkb_fill_readers.txt: every in-place fill target (with the engine's caller), then each distinct
+/// buffer bind (shader tag), copy or upload source, and texture whose memory overlaps one of them. Answers who reads the host-memory fills.
+bool FillReadersOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_FILL_READERS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+namespace {
+std::mutex fr_mutex;
+std::vector<std::pair<u64, u64>> fr_ranges;
+std::set<std::tuple<u64, u64, u64, int>> fr_seen;
+std::set<u64> fr_images_seen;
+thread_local u64 t_census_tag = 0;
+void FillReadersLine(const std::string& text) {
+    if (FILE* f = std::fopen((Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_fill_readers.txt").string().c_str(), "a")) {
+        std::fputs(text.c_str(), f);
+        std::fputc(10, f);
+        std::fclose(f);
+    }
+}
+} // namespace
+void CensusTag(u64 tag) {
+    t_census_tag = tag;
+}
+extern std::atomic<u64> g_buffer_epoch; // note 46, defined below
+namespace {
+struct ObjectBufferMemo {
+    u64 object{}, id{}, epoch{~0ull}, bytes{};
+    BufferWindow window{};
+    bool ok{};
+};
+thread_local std::unique_ptr<std::array<ObjectBufferMemo, 4096>> t_object_buffers;
+std::atomic<u64> c_r7_ring_buffers{0}, c_r7_window_checks{0}, c_r7_window_differs{0}, c_r7_hits{0}, c_r7_resolves{0}, c_r7_whole_failed{0}, c_r7_range_fallback{0}, c_r7_past_end{0}, c_r7_ring_cb{0}, c_r7_cb_copied{0};
+} // namespace
+void NoteConstantCopied() {
+    c_r7_cb_copied.fetch_add(1, std::memory_order_relaxed);
+}
+bool ConstantInRing(u64 address, u64 size, BufferWindow& out) {
+    if (InVramRing(address, size, out)) {
+        c_r7_ring_cb.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    return false;
+}
+bool BufferInRing(u64 address, u64 size, BufferWindow& out) {
+    if (InVramRing(address, size, out)) {
+        c_r7_ring_buffers.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    return false;
+}
+bool BufferOfObject(u64 buffer, u64 offset, u64 size, BufferWindow& out) {
+    if (!device_ready || buffer == 0 || size == 0) {
+        return false;
+    }
+    return BufferOfObjectFields(buffer, Util::Rd<u64>(buffer, 0x10), Util::Rd<u64>(buffer, 0x30), Util::Rd<u32>(buffer, 0x180), offset, size, out);
+}
+bool BufferOfObjectFields(u64 buffer, u64 id, u64 memory, u64 bytes, u64 offset, u64 size, BufferWindow& out) {
+    if (!device_ready || buffer == 0 || size == 0) {
+        return false;
+    }
+    if (!t_object_buffers) {
+        t_object_buffers = std::make_unique<std::array<ObjectBufferMemo, 4096>>();
+    }
+    // a buffer whose memory is in the frame ring (dynamic data the engine placed there) moves with the ring every submission: by arithmetic each time, never cached
+    if (InVramRing(memory + offset, size, out)) {
+        c_r7_ring_buffers.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    ObjectBufferMemo& m = (*t_object_buffers)[((buffer >> 4) ^ (buffer >> 16) ^ id) & 4095];
+    const u64 epoch = g_buffer_epoch.load(std::memory_order_acquire);
+    if (m.object != buffer || m.id != id || m.epoch != epoch) {
+        c_r7_resolves.fetch_add(1, std::memory_order_relaxed);
+        m = {buffer, id, epoch, bytes, {}, false};
+        if (memory != 0 && bytes != 0) {
+            m.ok = FindLocked(memory, bytes, m.window);
+            // its device copy may have been made just now (R3d): the answer stands only for this epoch
+            m.epoch = g_buffer_epoch.load(std::memory_order_acquire) == epoch ? epoch : ~0ull;
+        }
+        if (!m.ok) {
+            c_r7_whole_failed.fetch_add(1, std::memory_order_relaxed);
+        }
+    } else {
+        c_r7_hits.fetch_add(1, std::memory_order_relaxed);
+    }
+    static const bool check = [] { const char* e = std::getenv("TLG_VKB_R7_CHECK"); return e != nullptr && e[0] == '1'; }();
+    if (check && m.ok) { // note 56 check: the cached window against a fresh find of the same range
+        BufferWindow fresh;
+        const bool fresh_ok = FindBuffer(memory + offset, size, fresh);
+        const bool same = fresh_ok && fresh.buffer == m.window.buffer && fresh.offset == m.window.offset + offset && fresh.device == m.window.device;
+        c_r7_window_checks.fetch_add(1, std::memory_order_relaxed);
+        if (!same) {
+            c_r7_window_differs.fetch_add(1, std::memory_order_relaxed);
+            static std::atomic<u32> logged{0};
+            if (logged.fetch_add(1, std::memory_order_relaxed) < 24) {
+                LOG_WARNING(Render_Vulkan, "vkb R7 window check: object {:#x} id {} memory {:#x} bytes {} usage {} bind {:#x} misc {:#x}: +{} {} B cached {:x}+{} dev {} / fresh ok {} {:x}+{} dev {}", buffer, id, memory, m.bytes,
+                            Util::Rd<u32>(buffer, 0x184), Util::Rd<u32>(buffer, 0x188), Util::Rd<u32>(buffer, 0x190), offset, size, reinterpret_cast<u64>(static_cast<VkBuffer>(m.window.buffer)),
+                            m.window.offset + offset, m.window.device, fresh_ok, reinterpret_cast<u64>(static_cast<VkBuffer>(fresh.buffer)), fresh.offset, fresh.device);
+            }
+        }
+    }
+    if (m.ok) {
+        if (offset + size > m.bytes) {
+            c_r7_past_end.fetch_add(1, std::memory_order_relaxed); // an index range estimate past the buffer's end (the old path bound it the same way)
+        }
+        out = m.window;
+        out.offset += offset;
+        return true;
+    }
+    // the whole buffer is not in one window of ours (an imported memory chunk boundary): the range alone, by address, as before
+    c_r7_range_fallback.fetch_add(1, std::memory_order_relaxed);
+    return memory != 0 && FindBuffer(memory + offset, size, out);
+}
+nlohmann::json BindByObjectReport() {
+    return {{"object_hits", c_r7_hits.load()}, {"object_resolves", c_r7_resolves.load()}, {"whole_buffer_not_one_window", c_r7_whole_failed.load()},
+            {"range_by_address_fallback", c_r7_range_fallback.load()}, {"index_past_the_end", c_r7_past_end.load()}, {"constants_in_the_frame_ring", c_r7_ring_cb.load()},
+            {"constants_copied_at_the_draw", c_r7_cb_copied.load()}, {"window_checks_differs", {c_r7_window_checks.load(), c_r7_window_differs.load()}}, {"buffers_in_the_frame_ring", c_r7_ring_buffers.load()}};
+}
+bool R7CensusOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_R7_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+namespace {
+// [bind][where]: 0 the buffer's own memory at offset 0, 1 its own memory at an offset, 2 the frame ring, 3 elsewhere, 4 the range runs past the buffer's end; [bind][5 + usage]: binds by usage
+std::atomic<u64> c_r7[5][10]{};
+std::atomic<u64> c_r7_device_home[5]{}; ///< binds of a buffer that has a device buffer of ours from its creation (UAV, dynamic)
+std::atomic<u64> c_r7_size_differs[5]{}; ///< the descriptor's size is not the buffer's ByteWidth minus the offset
+} // namespace
+void R7Census(u32 bind, u64 object, u64 address, u64 size) {
+    if (!R7CensusOn() || bind >= 5 || object == 0) {
+        return;
+    }
+    const u64 buffer = (bind == 1 || bind == 2) ? Util::Rd<u64>(object, 0x30) : object;
+    if (buffer == 0) {
+        c_r7[bind][3].fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    const u64 memory = Util::Rd<u64>(buffer, 0x30), bytes = Util::Rd<u32>(buffer, 0x180), usage = Util::Rd<u32>(buffer, 0x184);
+    const u64 rb = frame_ring_base.load(std::memory_order_relaxed), rs = frame_ring_size.load(std::memory_order_relaxed);
+    u32 where = 3;
+    if (address >= memory && address < memory + bytes) {
+        where = address + size > memory + bytes ? 4 : address == memory ? 0 : 1;
+        if (address + size <= memory + bytes && size != memory + bytes - address) {
+            c_r7_size_differs[bind].fetch_add(1, std::memory_order_relaxed);
+        }
+    } else if (rb != 0 && address >= rb && address < rb + rs) {
+        where = 2;
+    }
+    c_r7[bind][where].fetch_add(1, std::memory_order_relaxed);
+    if (where == 3 && bind == 0) { // note 56: what a constant buffer's descriptor points at when it is neither its own memory nor the frame ring (first 24 regions)
+        static std::mutex m;
+        static std::vector<u64> regions;
+        std::scoped_lock lock{m};
+        if (regions.size() < 24 && std::find(regions.begin(), regions.end(), address >> 20) == regions.end()) {
+            regions.push_back(address >> 20);
+            std::string owner = "no engine buffer";
+            {
+                std::scoped_lock objects_lock{mutex};
+                u64 start = 0;
+                bool straddle = false;
+                if (const DeviceBuffer* d = DeviceBufferOf(address, size, start, straddle)) {
+                    owner = fmt::format("device buffer of engine id {} at {:#x}", d->id, start);
+                } else if (const Watched* w = WatchedAt(address, size)) {
+                    owner = fmt::format("engine buffer id {} usage {} bind {:#x} cpu {:#x} (in place)", w->id, w->usage, w->bind, w->cpu_access);
+                }
+            }
+            FillReadersLine(fmt::format("r7 cb elsewhere: cb id {} memory {:#x} bytes {} -> descriptor {:#x}+{}: {}", Util::Rd<u64>(buffer, 0x10), memory, bytes, address, size, owner));
+        }
+    }
+    c_r7[bind][5 + std::min<u64>(usage, 4)].fetch_add(1, std::memory_order_relaxed);
+    {
+        std::scoped_lock lock{mutex};
+        if (device_buffer_start.contains(Util::Rd<u64>(buffer, 0x10))) {
+            c_r7_device_home[bind].fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+}
+nlohmann::json R7CensusReport() {
+    nlohmann::json j = nlohmann::json::object();
+    static const char* names[] = {"constant_buffer", "buffer_view", "uav_view", "vertex", "index"};
+    for (u32 b = 0; b < 5; ++b) {
+        j[names[b]] = {{"own_memory_at_0", c_r7[b][0].load()}, {"own_memory_at_offset", c_r7[b][1].load()}, {"frame_ring", c_r7[b][2].load()}, {"elsewhere", c_r7[b][3].load()},
+                       {"past_the_end", c_r7[b][4].load()}, {"by_usage_default_immutable_dynamic_staging", {c_r7[b][5].load(), c_r7[b][6].load(), c_r7[b][7].load(), c_r7[b][8].load()}},
+                       {"device_home_from_creation", c_r7_device_home[b].load()}, {"size_not_bytewidth_minus_offset", c_r7_size_differs[b].load()}};
+    }
+    return j;
+}
+void FillReadersTarget(u64 destination, u64 bytes, u64 caller, const char* what) {
+    if (!FillReadersOn()) {
+        return;
+    }
+    std::scoped_lock lock{fr_mutex};
+    for (const auto& r : fr_ranges) {
+        if (r.first == destination && r.second == bytes) {
+            return;
+        }
+    }
+    fr_ranges.push_back({destination, bytes});
+    FillReadersLine(fmt::format("{} {:#x}..{:#x} ({} bytes) caller {:#x} submit {}", what, destination, destination + bytes, bytes, caller, GraphicsSubmits()));
+}
+void FillReadersCheck(u64 address, u64 size, int what) {
+    if (!FillReadersOn()) {
+        return;
+    }
+    std::scoped_lock lock{fr_mutex};
+    for (const auto& r : fr_ranges) {
+        if (address < r.first + r.second && r.first < address + size) {
+            if (fr_seen.size() < 4096 && fr_seen.insert({address, size, t_census_tag, what}).second) {
+                static const char* names[] = {"bind", "copy/upload source", "texture contents upload"};
+                FillReadersLine(fmt::format("{} {:#x}+{} (fill {:#x}+{:#x}) tag {:#x} submit {}", names[what], address, size, r.first, address - r.first, t_census_tag,
+                                            GraphicsSubmits()));
+            }
+            return;
+        }
+    }
+}
+
+BufferWindow SourceWindow(u64 address, u64 size) {
+    FillReadersCheck(address, size, 1);
+    BufferWindow out;
+    if (InVramRing(address, size, out)) {
+        return out;
+    }
+    if (device_ready && host_import && host_import->Available()) {
+        if (const VkbVulkan::HostImport::Window w = host_import->Find(address, size); w.buffer) {
+            out = {w.buffer, w.offset, false};
+        }
+    }
+    return out;
+}
+
+bool FrameRingInPlace(u64& buffer_handle, u64& begin, u64& end) {
+    buffer_handle = frame_ring_handle.load(std::memory_order_acquire);
+    begin = frame_ring_in_place_begin.load(std::memory_order_relaxed);
+    end = frame_ring_in_place_end.load(std::memory_order_relaxed);
+    return buffer_handle != 0;
+}
+
+void ObjectsTick() {
+    if (!On() || !device_ready) {
+        return;
+    }
+    DestroyDue(static_cast<u32>(GraphicsSubmits()), false);
+    CensusFrame();
+    if (DeviceBuffersMode() != 0) {
+        std::vector<std::pair<u64, u64>> marks;
+        {
+            std::scoped_lock marks_lock{gpu_write_mutex};
+            marks.swap(gpu_write_pending);
+        }
+        for (const auto& [a, n] : marks) {
+            NoteGpuWrite(a, n);
+        }
+    }
+    if (DeviceBuffersMode() == 2) {
+        // V4j: the settling buffers are hashed outside the lock (the render thread finds buffers under it)
+        std::vector<std::pair<u64, u64>> to_hash; // address, bytes
+        {
+            std::scoped_lock lock{mutex};
+            to_hash.reserve(settling.size());
+            for (const u64 address : settling) {
+                if (const auto it = watched.find(address); it != watched.end() && it->second.state == Watched::State::InPlace) {
+                    to_hash.emplace_back(address, it->second.end - address);
+                }
+            }
+        }
+        std::unordered_map<u64, u64> hashes;
+        hashes.reserve(to_hash.size());
+        for (const auto& [address, bytes] : to_hash) {
+            hashes[address] = HashGuest(address, bytes);
+        }
+        std::scoped_lock lock{mutex};
+        const u64 now = GraphicsSubmits();
+        // bound buffers still in place: hashed every submit; unchanged for SettleSubmits -> their own device copy (copied in this submit's upload batch, bound from two submits on)
+        std::erase_if(settling, [&](u64 address) {
+            const auto it = watched.find(address);
+            if (it == watched.end() || it->second.state != Watched::State::InPlace) {
+                return true;
+            }
+            Watched& w = it->second;
+            const u64 bytes = w.end - address;
+            const auto hashed = hashes.find(address);
+            if (hashed == hashes.end()) {
+                return false; // added after the snapshot: next submit
+            }
+            if (hashed->second != w.hash) {
+                w.hash = hashed->second;
+                w.last_change_submit = now;
+                c_dev2_settle_changes.fetch_add(1, std::memory_order_relaxed);
+                if (++w.settle_changes > SettleGiveUp) {
+                    w.state = Watched::State::Unstable; // the CPU keeps writing it: in place for good
+                    BumpBufferEpoch(); // note 46: A1 memo answers may change
+                    c_dev2_gave_up.fetch_add(1, std::memory_order_relaxed);
+                    return true;
+                }
+                return false;
+            }
+            if (w.gpu_written) {
+                w.state = Watched::State::Unstable; // our copies or fills write it in place: it stays there
+                BumpBufferEpoch(); // note 46: A1 memo answers may change
+                return true;
+            }
+            if (now < w.last_change_submit + SettleSubmits) {
+                return false;
+            }
+            const VkbVulkan::HostImport::Window src = host_import->Find(address, bytes);
+            const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                                        .size = bytes,
+                                        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                                                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                        .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+            VmaAllocationCreateInfo alloc{};
+            alloc.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+            if (!src.buffer || vmaCreateBuffer(instance->GetAllocator(), &ci, &alloc, &w.device, &w.allocation, nullptr) != VK_SUCCESS) {
+                w.device = VK_NULL_HANDLE;
+                BumpBufferEpoch(); // note 46: A1 memo answers may change
+                w.state = Watched::State::Unstable;
+                BumpBufferEpoch(); // note 46: A1 memo answers may change
+                c_dev2_failed.fetch_add(1, std::memory_order_relaxed);
+                return true;
+            }
+            Upload::CopyBuffer(src.buffer, src.offset, vk::Buffer{w.device}, 0, bytes);
+            w.state = Watched::State::Device;
+            BumpBufferEpoch(); // note 46: A1 memo answers may change
+            w.ready_submit = now + 2;
+            c_dev2_made.fetch_add(1, std::memory_order_relaxed);
+            c_dev2_mb.fetch_add(bytes, std::memory_order_relaxed);
+            return true;
+        });
+        // buffers with a device copy: watched round robin (16 MiB a submit); a change sends one back to in place for good
+        // kill-experiment; R3d: off by default with the copies at first bind (TLG_VKB_NO_WATCH=0 turns it on again)
+        static const bool no_watch = [] { const char* e = std::getenv("TLG_VKB_NO_WATCH"); return e != nullptr ? e[0] == '1' : StaticAtBindOn(); }();
+        u64 budget = no_watch ? 0 : 4ull << 20; // V4i: 4 MiB a submit (0 copies ever changed after their copy; the hashing was 9 % of the recording thread)
+        auto it = watched.lower_bound(watch_cursor);
+        for (size_t visited = 0; budget != 0 && !watched.empty() && visited < watched.size(); ++visited) {
+            if (it == watched.end()) {
+                it = watched.begin();
+                c_watch_rounds.fetch_add(1, std::memory_order_relaxed);
+            }
+            Watched& w = it->second;
+            if (w.state == Watched::State::Device) {
+                const u64 bytes = w.end - it->first;
+                if (const u64 h = HashGuest(it->first, bytes); h != w.hash) {
+                    w.hash = h;
+                    w.state = Watched::State::Unstable;
+                    BumpBufferEpoch(); // note 46: A1 memo answers may change
+                    doomed.push_back({static_cast<u32>(now) + DestroyDelay(), {}, {}, {}, w.device, w.allocation});
+                    c_dev2_mb.fetch_sub(bytes, std::memory_order_relaxed);
+                    w.device = VK_NULL_HANDLE;
+                    BumpBufferEpoch(); // note 46: A1 memo answers may change
+                    c_dev2_unstable.fetch_add(1, std::memory_order_relaxed);
+                    static std::atomic<u32> logged{0};
+                    if (logged.fetch_add(1, std::memory_order_relaxed) < 12) {
+                        LOG_WARNING(Render_Vulkan, "vkb device buffers: buffer id {} at {:#x} ({} bytes, usage {}, bind {:#x}) changed after its device copy: back in place",
+                                    w.id, it->first, bytes, w.usage, w.bind);
+                    }
+                }
+                c_watch_hashed_mb.fetch_add(bytes, std::memory_order_relaxed);
+                budget = bytes >= budget ? 0 : budget - bytes;
+            }
+            ++it;
+            watch_cursor = it == watched.end() ? 0 : it->first;
+        }
+    }
+    if (DeviceBuffersMode() == 1) {
+        // the watch: up to 16 MiB of class-0 buffers hashed again per graphics submit, round robin
+        std::scoped_lock lock{mutex};
+        u64 budget = 16ull << 20;
+        auto it = watched.lower_bound(watch_cursor);
+        while (budget != 0 && !watched.empty()) {
+            if (it == watched.end()) {
+                it = watched.begin();
+                c_watch_rounds.fetch_add(1, std::memory_order_relaxed);
+            }
+            Watched& w = it->second;
+            const u64 bytes = w.end - it->first;
+            if (w.cls == 0) {
+                const u64 h = HashGuest(it->first, bytes);
+                if (h != w.hash) {
+                    if (w.gpu_written) {
+                        c_watch_mismatch_gpu.fetch_add(1, std::memory_order_relaxed);
+                    } else if (w.first_bind_submit == 0) {
+                        c_watch_changed_before_bind.fetch_add(1, std::memory_order_relaxed);
+                    } else {
+                        c_watch_changed_after_bind.fetch_add(1, std::memory_order_relaxed);
+                        if (GraphicsSubmits() + 1 <= w.first_bind_submit + 3) {
+                            c_watch_changed_within_3.fetch_add(1, std::memory_order_relaxed);
+                        }
+                        if (++w.changes_after_bind == 1) {
+                            c_watch_buffers_changed_after_bind.fetch_add(1, std::memory_order_relaxed);
+                        } else if (w.changes_after_bind == 3) {
+                            c_watch_buffers_changed_often.fetch_add(1, std::memory_order_relaxed);
+                        }
+                        static std::atomic<u32> logged{0};
+                        if (logged.fetch_add(1, std::memory_order_relaxed) < 12) {
+                            LOG_WARNING(Render_Vulkan, "vkb device buffer check: buffer id {} at {:#x} ({} bytes, usage {}, bind {:#x}, cpu access {:#x}) changed without a hooked write",
+                                        w.id, it->first, bytes, w.usage, w.bind, w.cpu_access);
+                        }
+                        c_watch_mismatch.fetch_add(1, std::memory_order_relaxed);
+                    }
+                    w.hash = h;
+                }
+                c_watch_hashed_mb.fetch_add(bytes, std::memory_order_relaxed);
+                budget = bytes >= budget ? 0 : budget - bytes;
+            }
+            ++it;
+            watch_cursor = it == watched.end() ? 0 : it->first;
+        }
+    }
+    Upload::Submit();
+    PublishObjects();
+}
+
+VkbVulkan::HostImport* InPlace() {
+    return device_ready ? host_import.get() : nullptr;
+}
+
+namespace {
+/// note 46, A1 (capture by change; TLG_VKB_MEMO, default on, =0 off): each thread keeps the answers of its last lookups (a buffer range's device window, a view as
+/// a shader type, a sampler) and reuses them while nothing that could change an answer has happened. Buffers: only device answers are kept (ring, dynamic and static
+/// device copies); the buffer epoch moves when a device window is made in place of another, dropped or replaced. Views: the view epoch moves when a view or an image goes,
+/// or an image's layout is set back. Samplers never go (one per engine sampler id), so a sampler answer stays.
+bool MemoOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_MEMO"); return e == nullptr || e[0] != '0'; }();
+    return on;
+}
+std::atomic<u64> c_memo_hits[3]{}, c_memo_misses[3]{}, c_memo_bumps[2]{};
+constexpr u32 MemoSize = 4096; // per thread, direct mapped
+struct BufferMemo {
+    u64 address{}, size{}, epoch{~0ull};
+    BufferWindow window{};
+};
+struct ViewMemo {
+    u64 id{}, epoch{~0ull};
+    u32 want{};
+    vk::ImageView view{};
+    vk::Image image{};
+};
+struct SamplerMemo {
+    u64 key{~0ull};
+    vk::Sampler sampler{};
+};
+thread_local std::unique_ptr<std::array<BufferMemo, MemoSize>> t_buffer_memo;
+thread_local std::unique_ptr<std::array<ViewMemo, MemoSize>> t_view_memo;
+thread_local std::unique_ptr<std::array<SamplerMemo, MemoSize>> t_sampler_memo;
+inline u32 MemoSlot(u64 a, u64 b) {
+    const u64 h = (a ^ (b * 0x9e3779b97f4a7c15ull)) * 0xff51afd7ed558ccdull;
+    return static_cast<u32>(h >> 52) & (MemoSize - 1);
+}
+} // namespace
+std::atomic<u64> g_buffer_epoch{0}, g_view_epoch{0};
+void BumpBufferEpoch() {
+    g_buffer_epoch.fetch_add(1, std::memory_order_release);
+    c_memo_bumps[0].fetch_add(1, std::memory_order_relaxed);
+}
+void BumpViewEpoch() {
+    g_view_epoch.fetch_add(1, std::memory_order_release);
+    c_memo_bumps[1].fetch_add(1, std::memory_order_relaxed);
+}
+/// note 45: time in our object lookups (views, buffers, samplers, attachments), by lookup kind, on any thread
+std::atomic<u64> g_lookup_ns[4]{}, g_lookup_n[4]{};
+bool LookupTimesOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_TIMES"); return e != nullptr && e[0] == '1'; }(); return on; } ///< TLG_VKB_TIMES=1 only
+struct LookupTimer {
+    u32 kind;
+    u64 t0;
+    explicit LookupTimer(u32 k) : kind{k}, t0{LookupTimesOn() ? static_cast<u64>(std::chrono::steady_clock::now().time_since_epoch().count()) : 0} {}
+    ~LookupTimer() {
+        if (t0 == 0) {
+            return;
+        }
+        g_lookup_ns[kind].fetch_add(static_cast<u64>(std::chrono::steady_clock::now().time_since_epoch().count()) - t0, std::memory_order_relaxed);
+        g_lookup_n[kind].fetch_add(1, std::memory_order_relaxed);
+    }
+};
+nlohmann::json LookupReport() {
+    static constexpr const char* names[] = {"view", "buffer", "sampler", "attachment"};
+    nlohmann::json j = nlohmann::json::object();
+    j["memo"] = {{"on", MemoOn()}, {"buffer_hits_misses", {c_memo_hits[0].load(), c_memo_misses[0].load()}}, {"view_hits_misses", {c_memo_hits[1].load(), c_memo_misses[1].load()}},
+                 {"sampler_hits_misses", {c_memo_hits[2].load(), c_memo_misses[2].load()}}, {"epoch_bumps_buffer_view", {c_memo_bumps[0].load(), c_memo_bumps[1].load()}}};
+    for (u32 i = 0; i < 4; ++i) {
+        j[names[i]] = {{"calls", g_lookup_n[i].load()}, {"ms_total", g_lookup_ns[i].load() / 1000000}, {"us_mean", g_lookup_n[i].load() ? static_cast<double>(g_lookup_ns[i].load()) / 1e3 / static_cast<double>(g_lookup_n[i].load()) : 0.0}};
+    }
+    return j;
+}
+
+bool ViewForComputeLookup(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, vk::ImageView& out, vk::Image* image);
+bool ViewForCompute(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, vk::ImageView& out, vk::Image* image) {
+    const LookupTimer lookup_timer{0};
+    if (!MemoOn()) {
+        return ViewForComputeLookup(view_id, want, cmd, out, image);
+    }
+    if (!t_view_memo) {
+        t_view_memo = std::make_unique<std::array<ViewMemo, MemoSize>>();
+    }
+    ViewMemo& m = (*t_view_memo)[MemoSlot(view_id, static_cast<u64>(want) + 1)];
+    const u64 epoch = g_view_epoch.load(std::memory_order_acquire);
+    if (m.epoch == epoch && m.id == view_id && m.want == static_cast<u32>(want)) {
+        out = m.view;
+        if (image != nullptr) {
+            *image = m.image;
+        }
+        c_memo_hits[1].fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    c_memo_misses[1].fetch_add(1, std::memory_order_relaxed);
+    vk::Image found{};
+    if (!ViewForComputeLookup(view_id, want, cmd, out, &found)) {
+        return false;
+    }
+    if (image != nullptr) {
+        *image = found;
+    }
+    m = {view_id, epoch, static_cast<u32>(want), out, found}; // the epoch read before the lookup: a change during it leaves the entry stale-marked
+    return true;
+}
+bool ViewForComputeLookup(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, vk::ImageView& out, vk::Image* image) {
+    std::scoped_lock lock{mutex};
+    const auto v = views.find(view_id);
+    if (v == views.end()) {
+        return false;
+    }
+    const auto i = images.find(v->second.texture_id);
+    if (i == images.end()) {
+        return false;
+    }
+    if (image != nullptr) {
+        *image = i->second.image;
+    }
+    View& view = v->second;
+    if (view.type != want) {
+        using T = vk::ImageViewType;
+        const u32 layers = view.range.layerCount;
+        const bool allowed = (view.type == T::eCube && want == T::e2DArray) || (view.type == T::eCubeArray && want == T::e2DArray) ||
+                             (view.type == T::e2D && want == T::e2DArray) || (view.type == T::e2DArray && want == T::e2D && layers == 1) ||
+                             (view.type == T::e2DArray && (want == T::eCube || want == T::eCubeArray) && i->second.cube_compatible && layers % 6 == 0) ||
+                             (view.type == T::e1D && want == T::e1DArray) || (view.type == T::e1DArray && want == T::e1D && layers == 1);
+        const u32 slot = static_cast<u32>(want);
+        if (!allowed || slot >= view.other.size()) {
+            ++refused_pairs[vk::to_string(view.type) + " as " + vk::to_string(want) + " layers " + std::to_string(layers) + (i->second.cube ? " cube" : "")];
+            c_other_view_refused.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+        if (!view.other[slot]) {
+            vk::ImageSubresourceRange range = view.range;
+            if (want == T::eCube) {
+                range.layerCount = 6; // a cube read that does not index slices reads the first cube of the range
+            } else if (want == T::e2D || want == T::e1D) {
+                range.layerCount = 1;
+            }
+            const auto [result, handle] = instance->GetDevice().createImageView({.image = i->second.image, .viewType = want, .format = view.format, .subresourceRange = range});
+            if (result != vk::Result::eSuccess) {
+                c_other_view_refused.fetch_add(1, std::memory_order_relaxed);
+                return false;
+            }
+            view.other[slot] = handle;
+            c_other_views.fetch_add(1, std::memory_order_relaxed);
+        }
+        out = view.other[slot];
+        return true;
+    }
+    out = view.view;
+    return true;
+}
+
+void CopyTextureAll(u64 destination_id, u64 source_id) {
+    u32 mips = 0, layers = 0;
+    {
+        std::scoped_lock lock{mutex};
+        const auto d = images.find(destination_id);
+        const auto s = images.find(source_id);
+        if (d == images.end() || s == images.end()) {
+            c_tex_copy_no_image.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        mips = std::min(d->second.mips, s->second.mips);
+        layers = d->second.type == vk::ImageType::e3D ? 1 : std::min(d->second.layers, s->second.layers);
+        if (d->second.mips != s->second.mips) {
+            c_tex_copy_mismatch.fetch_add(1, std::memory_order_relaxed);
+            return; // the engine numbers subresources by its own mip count: both must agree
+        }
+    }
+    for (u32 layer = 0; layer < layers; ++layer) {
+        for (u32 mip = 0; mip < mips; ++mip) {
+            (void)CopyTexture(destination_id, layer * mips + mip, source_id, layer * mips + mip);
+        }
+    }
+}
+
+namespace {
+u32 TexelBytes(vk::Format f); // defined further down
+}
+bool CopyTexture(u64 destination_id, u32 destination_sub, u64 source_id, u32 source_sub) {
+    if (!On() || !device_ready) {
+        return false;
+    }
+    std::unique_lock lock{mutex};
+    const auto d = images.find(destination_id);
+    const auto s = images.find(source_id);
+    if (d == images.end() || s == images.end()) {
+        c_tex_copy_no_image.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    Image& to = d->second;
+    Image& from = s->second;
+    const u32 to_mip = destination_sub % std::max(to.mips, 1u), to_layer = destination_sub / std::max(to.mips, 1u);
+    const u32 from_mip = source_sub % std::max(from.mips, 1u), from_layer = source_sub / std::max(from.mips, 1u);
+    const auto extent = [](const Image& img, u32 mip) {
+        return vk::Extent3D{std::max(img.width >> mip, 1u), std::max(img.height >> mip, 1u), img.type == vk::ImageType::e3D ? std::max(img.depth >> mip, 1u) : 1u};
+    };
+    const vk::Extent3D a = extent(to, to_mip), b = extent(from, from_mip);
+    const bool layers_ok = (to.type == vk::ImageType::e3D || to_layer < to.layers) && (from.type == vk::ImageType::e3D || from_layer < from.layers);
+    if (to.is_depth != from.is_depth || to.type != from.type || to_mip >= to.mips || from_mip >= from.mips || !layers_ok || a != b || to.image == from.image) {
+        c_tex_copy_mismatch.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    const vk::ImageAspectFlags aspect = !to.is_depth ? vk::ImageAspectFlags{vk::ImageAspectFlagBits::eColor} : vk::ImageAspectFlags{vk::ImageAspectFlagBits::eDepth};
+    const bool volume = to.type == vk::ImageType::e3D;
+    const vk::ImageCopy region{.srcSubresource = {aspect, from_mip, volume ? 0u : from_layer, 1},
+                               .dstSubresource = {aspect, to_mip, volume ? 0u : to_layer, 1},
+                               .extent = a};
+    lock.unlock(); // (no job is made under this module's lock: the recording thread's tick takes it)
+    Stream::NoteBytes(Stream::Work::Copy, static_cast<u64>(region.extent.width) * region.extent.height * region.extent.depth * TexelBytes(to.format));
+    Stream::Defer(Stream::Work::Copy, [src = from.image, dst = to.image, region](vk::CommandBuffer cmd) {
+        Stream::Hazard(cmd, {Stream::ImageUse(src, false), Stream::ImageUse(dst, true)});
+        cmd.copyImage(src, vk::ImageLayout::eGeneral, dst, vk::ImageLayout::eGeneral, region);
+    });
+    c_tex_copies.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+namespace {
+std::mutex census_mutex;
+std::unordered_map<u64, u64> census_frame; ///< (in-place buffer, offset) -> the largest size bound this frame
+std::atomic<u64> c_pattern_fills{0};
+std::atomic<u64> c_census_binds[4][2]{}, c_census_bytes[4]{}, c_census_written[4]{}, c_census_unique_bytes{0}, c_census_unique_ranges{0}, c_census_frames{0},
+    c_census_bucket[4]{};
+void CensusFrame() {
+    std::scoped_lock lock{census_mutex};
+    if (census_frame.empty()) {
+        return;
+    }
+    u64 bytes = 0;
+    for (const auto& [key, size] : census_frame) {
+        bytes += size;
+        c_census_bucket[size < (4u << 10) ? 0 : size < (64u << 10) ? 1 : size < (1u << 20) ? 2 : 3].fetch_add(size, std::memory_order_relaxed);
+    }
+    c_census_unique_bytes.fetch_add(bytes, std::memory_order_relaxed);
+    c_census_unique_ranges.fetch_add(census_frame.size(), std::memory_order_relaxed);
+    c_census_frames.fetch_add(1, std::memory_order_relaxed);
+    census_frame.clear();
+}
+} // namespace
+
+void NoteBind(u32 kind, const BufferWindow& w, u64 size, bool written) {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_BIND_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    if (!on) {
+        return;
+    }
+    kind = std::min<u32>(kind, 3);
+    c_census_binds[kind][w.device ? 1 : 0].fetch_add(1, std::memory_order_relaxed);
+    if (w.device) {
+        return;
+    }
+    c_census_bytes[kind].fetch_add(size, std::memory_order_relaxed);
+    if (written) {
+        c_census_written[kind].fetch_add(1, std::memory_order_relaxed);
+    }
+    const u64 key = (reinterpret_cast<u64>(static_cast<VkBuffer>(w.buffer)) << 20) ^ w.offset;
+    std::scoped_lock lock{census_mutex};
+    u64& s = census_frame[key];
+    s = std::max(s, size);
+}
+
+bool FindBuffer(u64 address, u64 size, BufferWindow& out) {
+    const LookupTimer lookup_timer{1};
+    FillReadersCheck(address, size, 0);
+    if (!device_ready || size == 0) {
+        return false;
+    }
+    // note 53 bound, test only: TLG_VKB_TEST_DOUBLE_LOOKUP=1 runs every buffer lookup once more first, against the same memo state and without storing anything, so
+    // the run pays exactly one extra lookup per call; the fps it loses is what the address lookups cost (the answer used is the normal one, the picture is right)
+    static const bool double_lookup = [] { const char* e = std::getenv("TLG_VKB_TEST_DOUBLE_LOOKUP"); return e != nullptr && e[0] == '1'; }();
+    if (double_lookup) {
+        BufferWindow scratch;
+        bool hit = false;
+        if (MemoOn() && t_buffer_memo) {
+            const BufferMemo& m = (*t_buffer_memo)[MemoSlot(address, size)];
+            hit = m.epoch == g_buffer_epoch.load(std::memory_order_acquire) && m.address == address && m.size == size;
+            if (hit) {
+                scratch = m.window;
+                c_memo_hits[0].fetch_add(0, std::memory_order_relaxed);
+            }
+        }
+        if (!hit) {
+            (void)FindLocked(address, size, scratch);
+        }
+        asm volatile("" : : "r"(scratch.offset) : "memory");
+    }
+    if (!MemoOn()) {
+        return FindLocked(address, size, out);
+    }
+    if (!t_buffer_memo) {
+        t_buffer_memo = std::make_unique<std::array<BufferMemo, MemoSize>>();
+    }
+    BufferMemo& m = (*t_buffer_memo)[MemoSlot(address, size)];
+    const u64 epoch = g_buffer_epoch.load(std::memory_order_acquire);
+    if (m.epoch == epoch && m.address == address && m.size == size) {
+        out = m.window;
+        c_memo_hits[0].fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    c_memo_misses[0].fetch_add(1, std::memory_order_relaxed);
+    if (!FindLocked(address, size, out)) {
+        return false;
+    }
+    if (out.device) { // in-place answers can still move to a device copy later: asked again each time
+        m = {address, size, epoch, out};
+    }
+    return true;
+}
+
+void BufferCpuWritten(u64 address, u64 size) {
+    if (!On() || !device_ready || size == 0) {
+        return;
+    }
+    if (DeviceBuffersMode() == 2) {
+        std::scoped_lock lock{mutex};
+        if (Watched* w = WatchedAt(address, size); w != nullptr && w->cls == 0 && w->state == Watched::State::Device) {
+            w->state = Watched::State::Unstable;
+            BumpBufferEpoch(); // note 46: A1 memo answers may change
+            doomed.push_back({static_cast<u32>(GraphicsSubmits()) + DestroyDelay(), {}, {}, {}, w->device, w->allocation});
+            w->device = VK_NULL_HANDLE;
+            BumpBufferEpoch(); // note 46: A1 memo answers may change
+            c_dev2_unstable.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    if (DeviceBuffersMode() == 1) {
+        std::scoped_lock lock{mutex};
+        if (Watched* w = WatchedAt(address, size); w != nullptr && w->cls == 0) {
+            const u64 start = std::prev(watched.upper_bound(address))->first;
+            w->hash = HashGuest(start, w->end - start); // the engine's own update: expected
+            c_watch_cpu_updates.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    VkBuffer device_buffer{};
+    u64 offset = 0;
+    {
+        std::scoped_lock lock{mutex};
+        u64 start = 0;
+        bool straddle = false;
+        const DeviceBuffer* d = DeviceBufferOf(address, size, start, straddle);
+        if (d == nullptr) {
+            return;
+        }
+        device_buffer = d->buffer, offset = address - start;
+    }
+    const BufferWindow w = SourceWindow(address, size);
+    if (!w.buffer) {
+        c_copy_unresolved.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    Stream::NoteBytes(Stream::Work::UploadCpuWritten, size);
+    Stream::Defer(Stream::Work::UploadCpuWritten, [w, device_buffer, offset, size](vk::CommandBuffer cmd) {
+        Stream::Hazard(cmd, {Stream::BufferUse(w.buffer, w.offset, size, false), Stream::BufferUse(vk::Buffer{device_buffer}, offset, size, true)});
+        cmd.copyBuffer(w.buffer, vk::Buffer{device_buffer}, vk::BufferCopy{w.offset, offset, size});
+    });
+    c_cpu_writes.fetch_add(1, std::memory_order_relaxed);
+    c_cpu_write_bytes.fetch_add(size, std::memory_order_relaxed);
+}
+
+namespace {
+/// The size class of a format for a view of an image of another format (a view must have the same texel block size)
+u32 TexelBytes(vk::Format f) {
+    using F = vk::Format;
+    switch (f) {
+    case F::eR8Unorm: case F::eR8Snorm: case F::eR8Uint: case F::eR8Sint: case F::eR8Srgb: return 1;
+    case F::eR8G8Unorm: case F::eR8G8Snorm: case F::eR8G8Uint: case F::eR8G8Sint: case F::eR16Unorm: case F::eR16Snorm: case F::eR16Uint: case F::eR16Sint:
+    case F::eR16Sfloat: case F::eB5G6R5UnormPack16: case F::eR5G6B5UnormPack16: case F::eA1R5G5B5UnormPack16: case F::eB5G5R5A1UnormPack16: case F::eR4G4B4A4UnormPack16:
+    case F::eB4G4R4A4UnormPack16: return 2;
+    case F::eR8G8B8A8Unorm: case F::eR8G8B8A8Snorm: case F::eR8G8B8A8Uint: case F::eR8G8B8A8Sint: case F::eR8G8B8A8Srgb: case F::eB8G8R8A8Unorm: case F::eB8G8R8A8Srgb:
+    case F::eA2B10G10R10UnormPack32: case F::eA2R10G10B10UnormPack32: case F::eA2B10G10R10UintPack32: case F::eB10G11R11UfloatPack32: case F::eE5B9G9R9UfloatPack32:
+    case F::eR16G16Unorm: case F::eR16G16Snorm: case F::eR16G16Uint: case F::eR16G16Sint: case F::eR16G16Sfloat: case F::eR32Uint: case F::eR32Sint: case F::eR32Sfloat:
+    case F::eA8B8G8R8UnormPack32: case F::eA8B8G8R8SrgbPack32: return 4;
+    case F::eR16G16B16A16Unorm: case F::eR16G16B16A16Snorm: case F::eR16G16B16A16Uint: case F::eR16G16B16A16Sint: case F::eR16G16B16A16Sfloat: case F::eR32G32Uint:
+    case F::eR32G32Sint: case F::eR32G32Sfloat: return 8;
+    case F::eR32G32B32A32Uint: case F::eR32G32B32A32Sint: case F::eR32G32B32A32Sfloat: return 16;
+    default: return 0;
+    }
+}
+
+vk::SamplerAddressMode AddressOf(u32 d3d) {
+    switch (d3d) {
+    case 2: return vk::SamplerAddressMode::eMirroredRepeat;
+    case 3: return vk::SamplerAddressMode::eClampToEdge;
+    case 4: return vk::SamplerAddressMode::eClampToBorder;
+    case 5: c_sampler_mirror_once.fetch_add(1, std::memory_order_relaxed); return vk::SamplerAddressMode::eMirroredRepeat;
+    default: return vk::SamplerAddressMode::eRepeat;
+    }
+}
+
+template <typename T>
+T RdObj(u64 base, u64 offset) {
+    T value;
+    std::memcpy(&value, reinterpret_cast<const void*>(base + offset), sizeof(T));
+    return value;
+}
+} // namespace
+
+std::string DescribeView(u64 view_id) {
+    std::scoped_lock lock{mutex};
+    const auto v = views.find(view_id);
+    if (v == views.end()) {
+        return "unknown view";
+    }
+    const auto i = images.find(v->second.texture_id);
+    if (i == images.end()) {
+        return "view without image";
+    }
+    const Image& m = i->second;
+    const View& w = v->second;
+    return fmt::format("tex {} {}x{}x{} mips {} layers {} image {} | view {} {} mips {}+{} layers {}+{}{} | {} MB", w.texture_id, m.width, m.height, m.depth, m.mips, m.layers, vk::to_string(m.format),
+                       vk::to_string(w.type), vk::to_string(w.format), w.range.baseMipLevel, w.range.levelCount, w.range.baseArrayLayer, w.range.layerCount,
+                       m.is_depth ? " depth" : "", m.bytes >> 20);
+}
+
+/// note 41, debug only: copies the subresource of our view of engine view `view_id` (its first mip and layer) into a host buffer and writes it, once the GPU has
+/// done this command buffer, to log/vkb_image_dump/<name>_<w>x<h>_<format>.bin (raw texels; depth images: the depth aspect). Recording thread, lock held, outside a pass.
+void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
+    vk::Image image{};
+    vk::Format format{};
+    u32 width = 0, height = 0, mip = 0, layer = 0;
+    bool depth = false;
+    {
+        std::scoped_lock lock{mutex};
+        const auto v = views.find(view_id);
+        if (v == views.end()) {
+            LOG_WARNING(Render_Vulkan, "vkb image dump {}: unknown view", name);
+            return;
+        }
+        const auto i = images.find(v->second.texture_id);
+        if (i == images.end()) {
+            return;
+        }
+        image = i->second.image, format = i->second.format, depth = i->second.is_depth;
+        mip = v->second.range.baseMipLevel, layer = v->second.range.baseArrayLayer;
+        width = std::max(1u, i->second.width >> mip), height = std::max(1u, i->second.height >> mip);
+    }
+    u32 texel = 0;
+    switch (format) {
+    case vk::Format::eR8Unorm: texel = 1; break;
+    case vk::Format::eR8G8Unorm: case vk::Format::eR16Unorm: case vk::Format::eR16Sfloat: case vk::Format::eD16Unorm: texel = 2; break;
+    case vk::Format::eR8G8B8A8Unorm: case vk::Format::eR8G8B8A8Srgb: case vk::Format::eB8G8R8A8Unorm: case vk::Format::eB8G8R8A8Srgb:
+    case vk::Format::eA2B10G10R10UnormPack32: case vk::Format::eB10G11R11UfloatPack32: case vk::Format::eR32Sfloat: case vk::Format::eR32Uint:
+    case vk::Format::eR16G16Sfloat: case vk::Format::eR16G16Unorm: case vk::Format::eD32Sfloat: case vk::Format::eD32SfloatS8Uint: case vk::Format::eE5B9G9R9UfloatPack32:
+        texel = 4; break;
+    case vk::Format::eR16G16B16A16Sfloat: case vk::Format::eR32G32Sfloat: case vk::Format::eR16G16B16A16Unorm: texel = 8; break;
+    case vk::Format::eR32G32B32A32Sfloat: texel = 16; break;
+    default: break;
+    }
+    u32 block = 0; // compressed formats: bytes per 4x4 block (raw blocks are written)
+    switch (format) {
+    case vk::Format::eBc1RgbaUnormBlock: case vk::Format::eBc1RgbaSrgbBlock: case vk::Format::eBc1RgbUnormBlock: case vk::Format::eBc1RgbSrgbBlock:
+    case vk::Format::eBc4UnormBlock: case vk::Format::eBc4SnormBlock: block = 8; break;
+    case vk::Format::eBc2UnormBlock: case vk::Format::eBc2SrgbBlock: case vk::Format::eBc3UnormBlock: case vk::Format::eBc3SrgbBlock: case vk::Format::eBc5UnormBlock:
+    case vk::Format::eBc5SnormBlock: case vk::Format::eBc6HUfloatBlock: case vk::Format::eBc6HSfloatBlock: case vk::Format::eBc7UnormBlock: case vk::Format::eBc7SrgbBlock:
+        block = 16; break;
+    default: break;
+    }
+    if (texel == 0 && block == 0) {
+        LOG_WARNING(Render_Vulkan, "vkb image dump {}: format {} not handled", name, vk::to_string(format));
+        return;
+    }
+    const u64 bytes = block != 0 ? u64{(width + 3) / 4} * ((height + 3) / 4) * block : u64{width} * height * texel;
+    const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = bytes, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT, .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+    VmaAllocationCreateInfo alloc{};
+    alloc.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    alloc.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VkBuffer buffer{};
+    VmaAllocation allocation{};
+    VmaAllocationInfo info{};
+    if (vmaCreateBuffer(instance->GetAllocator(), &ci, &alloc, &buffer, &allocation, &info) != VK_SUCCESS || info.pMappedData == nullptr) {
+        return;
+    }
+    const vk::MemoryBarrier2 before{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands, .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+                                    .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands, .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite};
+    cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &before});
+    const vk::BufferImageCopy region{.bufferOffset = 0, .bufferRowLength = 0, .bufferImageHeight = 0,
+                                     .imageSubresource = {depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor, mip, layer, 1},
+                                     .imageOffset = {0, 0, 0}, .imageExtent = {width, height, 1}};
+    cmd.copyImageToBuffer(image, vk::ImageLayout::eGeneral, vk::Buffer{buffer}, region);
+    cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &before});
+    const u64 after = Stream::RecordingValue(); // this command buffer goes out with that submission
+    const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump";
+    const std::string file = (dir / fmt::format("{}_{}x{}_{}.bin", name, width, height, vk::to_string(format))).string();
+    std::thread([buffer, allocation, mapped = info.pMappedData, bytes, after, dir, file] {
+        Stream::Wait(after);
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        if (FILE* f = std::fopen(file.c_str(), "wb")) {
+            std::fwrite(mapped, 1, bytes, f);
+            std::fclose(f);
+        }
+        vmaDestroyBuffer(instance->GetAllocator(), buffer, allocation);
+        LOG_INFO(Render_Vulkan, "vkb image dump written: {}", file);
+    }).detach();
+}
+
+void DumpBuffer(vk::CommandBuffer cmd, vk::Buffer source, u64 offset, u64 size, const std::string& name) {
+    if (!source || size == 0 || size > (256ull << 20)) {
+        return;
+    }
+    const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = size, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT, .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+    VmaAllocationCreateInfo alloc{};
+    alloc.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    alloc.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VkBuffer buffer{};
+    VmaAllocation allocation{};
+    VmaAllocationInfo info{};
+    if (vmaCreateBuffer(instance->GetAllocator(), &ci, &alloc, &buffer, &allocation, &info) != VK_SUCCESS || info.pMappedData == nullptr) {
+        return;
+    }
+    const vk::MemoryBarrier2 barrier{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands, .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+                                     .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands, .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite};
+    cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &barrier});
+    cmd.copyBuffer(source, vk::Buffer{buffer}, vk::BufferCopy{offset, 0, size});
+    cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &barrier});
+    const u64 after = Stream::RecordingValue();
+    const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump";
+    const std::string file = (dir / fmt::format("{}_{}B.gpu", name, size)).string();
+    std::thread([buffer, allocation, mapped = info.pMappedData, size, after, dir, file] {
+        Stream::Wait(after);
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        if (FILE* f = std::fopen(file.c_str(), "wb")) {
+            std::fwrite(mapped, 1, size, f);
+            std::fclose(f);
+        }
+        vmaDestroyBuffer(instance->GetAllocator(), buffer, allocation);
+    }).detach();
+}
+
+// note 42: a staging texture's data (CopyResource into a usage-3 texture, then Map READ) comes from host buffers our copies fill. Each staging subresource has a ring
+// of three: the engine maps right after the copy, before the submission that carries it, so a Map reads the newest copy that is submitted (one frame older, as the
+// console's unified memory shows whatever the GPU has written by then)
+struct StagingCopy {
+    VkBuffer buffer{};
+    VmaAllocation allocation{};
+    void* mapped{};
+    u64 value{~0ull}; ///< the timeline value at which the copy is done; ~0 until recorded
+    u64 serial{};     ///< the copy's order among this subresource's copies (0 = never filled)
+};
+struct StagingRing {
+    std::array<StagingCopy, 3> copies{};
+    u32 width{}, height{}, texel{};
+    u64 serial{};
+};
+std::mutex staging_mutex;
+std::map<std::pair<u64, u32>, StagingRing> staging_copies;
+std::atomic<u64> c_staging_copies{0}, c_staging_reads{0}, c_staging_unhandled{0}, c_staging_unready{0}, c_staging_older{0};
+
+void StagingCopied(u64 texture_id, u32 sub) {
+    vk::Image image{};
+    vk::Format format{};
+    u32 width = 0, height = 0, mip = 0, layer = 0;
+    {
+        std::scoped_lock lock{mutex};
+        const auto i = images.find(texture_id);
+        if (i == images.end() || i->second.is_depth) {
+            c_staging_unhandled.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        const Image& img = i->second;
+        mip = sub % std::max(img.mips, 1u), layer = sub / std::max(img.mips, 1u);
+        image = img.image, format = img.format;
+        width = std::max(img.width >> mip, 1u), height = std::max(img.height >> mip, 1u);
+    }
+    const u32 texel = TexelBytes(format);
+    if (texel == 0) {
+        c_staging_unhandled.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    VkBuffer buffer{};
+    u32 index = 0;
+    u64 serial = 0;
+    {
+        std::scoped_lock lock{staging_mutex};
+        auto& ring = staging_copies[{texture_id, sub}];
+        if (ring.width != width || ring.height != height || ring.texel != texel) {
+            for (auto& c : ring.copies) {
+                if (c.buffer != VK_NULL_HANDLE) {
+                    if (c.value != ~0ull) {
+                        Stream::Wait(c.value);
+                    }
+                    vmaDestroyBuffer(instance->GetAllocator(), c.buffer, c.allocation);
+                }
+                c = {};
+            }
+            ring.width = width, ring.height = height, ring.texel = texel;
+        }
+        serial = ++ring.serial;
+        index = u32(serial % ring.copies.size());
+        auto& slot = ring.copies[index];
+        if (slot.buffer == VK_NULL_HANDLE) {
+            const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = u64{width} * height * texel, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                        .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+            VmaAllocationCreateInfo alloc{};
+            alloc.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+            alloc.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+            VmaAllocationInfo info{};
+            if (vmaCreateBuffer(instance->GetAllocator(), &ci, &alloc, &slot.buffer, &slot.allocation, &info) != VK_SUCCESS) {
+                slot = {};
+                c_staging_unhandled.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+            slot.mapped = info.pMappedData;
+        } else if (slot.value != ~0ull) {
+            Stream::Wait(slot.value); // three copies back: long done in practice
+        }
+        slot.value = ~0ull, slot.serial = serial;
+        buffer = slot.buffer;
+    }
+    Stream::Defer(Stream::Work::Copy, [image, buffer, width, height, mip, layer, index, serial, key = std::pair<u64, u32>{texture_id, sub}](vk::CommandBuffer cmd) {
+        Stream::Hazard(cmd, {Stream::ImageUse(image, false)});
+        const vk::BufferImageCopy region{.imageSubresource = {vk::ImageAspectFlagBits::eColor, mip, layer, 1}, .imageExtent = {width, height, 1}};
+        cmd.copyImageToBuffer(image, vk::ImageLayout::eGeneral, vk::Buffer{buffer}, region);
+        const vk::MemoryBarrier2 to_host{.srcStageMask = vk::PipelineStageFlagBits2::eCopy, .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+                                         .dstStageMask = vk::PipelineStageFlagBits2::eHost, .dstAccessMask = vk::AccessFlagBits2::eHostRead};
+        cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &to_host});
+        std::scoped_lock lock{staging_mutex};
+        if (const auto it = staging_copies.find(key); it != staging_copies.end() && it->second.copies[index].serial == serial) {
+            it->second.copies[index].value = Stream::RecordingValue(); // this command buffer goes out with that submission
+        }
+    });
+    c_staging_copies.fetch_add(1, std::memory_order_relaxed);
+}
+
+bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch) {
+    StagingCopy copy;
+    u32 width = 0, height = 0, texel = 0;
+    bool newest = true;
+    {
+        std::scoped_lock lock{staging_mutex};
+        const auto it = staging_copies.find({texture_id, sub});
+        if (it == staging_copies.end()) {
+            return false;
+        }
+        const StagingRing& ring = it->second;
+        const u64 submitted = Stream::LastValue();
+        const StagingCopy* best = nullptr;
+        for (const auto& c : ring.copies) {
+            if (c.buffer != VK_NULL_HANDLE && c.serial != 0 && c.value != ~0ull && c.value <= submitted && (best == nullptr || c.serial > best->serial)) {
+                best = &c;
+            }
+        }
+        if (best == nullptr) {
+            c_staging_unready.fetch_add(1, std::memory_order_relaxed); // nothing submitted yet (the first frames)
+            return false;
+        }
+        newest = best->serial == ring.serial;
+        copy = *best, width = ring.width, height = ring.height, texel = ring.texel;
+    }
+    if (!newest) {
+        c_staging_older.fetch_add(1, std::memory_order_relaxed);
+    }
+    Stream::Wait(copy.value);
+    const u32 row = width * texel;
+    for (u32 y = 0; y < height; ++y) {
+        std::memcpy(out + u64{y} * std::max(row_pitch, row), static_cast<const u8*>(copy.mapped) + u64{y} * row, row);
+    }
+    static std::mutex log_mutex;
+    static std::map<u32, u32> logged_by_size;
+    bool log_it = false;
+    {
+        std::scoped_lock lock{log_mutex};
+        u32& k = logged_by_size[static_cast<u32>(texture_id)];
+        log_it = (k++ % 50) == 0 && k < 1000; // every 50th read of each staging texture
+    }
+    if (const u64 n = c_staging_reads.fetch_add(1, std::memory_order_relaxed); log_it && texel == 4) {
+        const float* f = static_cast<const float*>(copy.mapped);
+        float lo = f[0], hi = f[0], sum = 0;
+        for (u32 i = 0; i < width * height; ++i) {
+            lo = std::min(lo, f[i]), hi = std::max(hi, f[i]), sum += f[i];
+        }
+        u32 zeros = 0;
+        for (u32 i = 0; i < width * height; ++i) {
+            zeros += f[i] == 0.0f ? 1 : 0;
+        }
+        LOG_WARNING(Render_Vulkan, "staging read {}: tex {} {}x{} {} min {} max {} mean {} zeros {} (as floats)", n, texture_id, width, height, newest ? "newest" : "older", lo, hi,
+                    sum / float(width * height), zeros);
+    }
+    return true;
+}
+
+std::string DescribeSampler(u64 object) {
+    if (object == 0) {
+        return "none";
+    }
+    const u64 d = object + 0x30;
+    return fmt::format("filter {:#x} address {},{},{} bias {} aniso {} compare {} lod {}..{}", RdObj<u32>(d, 0), RdObj<u32>(d, 4), RdObj<u32>(d, 8), RdObj<u32>(d, 12),
+                       RdObj<float>(d, 16), RdObj<u32>(d, 20), RdObj<u32>(d, 24), RdObj<float>(d, 44), RdObj<float>(d, 48));
+}
+
+vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare);
+vk::Sampler SamplerFor(u64 object, bool compare) {
+    const LookupTimer lookup_timer{2};
+    if (!device_ready || object == 0) {
+        return {};
+    }
+    const u64 id = RdObj<u64>(object, 0x10);
+    const u64 key = id * 2 + (compare ? 1 : 0); // note 40: a compare sampler only for the shaders that sample with a compare
+    SamplerMemo* memo = nullptr;
+    if (MemoOn()) {
+        if (!t_sampler_memo) {
+            t_sampler_memo = std::make_unique<std::array<SamplerMemo, MemoSize>>();
+        }
+        memo = &(*t_sampler_memo)[MemoSlot(key, 7)];
+        if (memo->key == key) {
+            c_memo_hits[2].fetch_add(1, std::memory_order_relaxed);
+            return memo->sampler;
+        }
+        c_memo_misses[2].fetch_add(1, std::memory_order_relaxed);
+    }
+    const vk::Sampler found = SamplerForLookup(object, id, key, compare);
+    if (memo != nullptr && found) {
+        *memo = {key, found}; // samplers are never destroyed: one per engine sampler id
+    }
+    return found;
+}
+vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
+    std::scoped_lock lock{mutex};
+    if (const auto it = samplers.find(key); it != samplers.end()) {
+        return it->second;
+    }
+    // note 40: the engine sampler's fields as its PS4 code turns them into the S# (native_image_desc.cpp DeriveSampler, proved equal to the descriptor words):
+    // the filter is the engine's own value (0 point, 0x7 and 0x10 trilinear, 0x8 anisotropic), the address modes are the console's numbering
+    // (0 wrap, 1 mirror, 2 clamp to the last texel, ...), the comparison function is D3D's (1 never .. 8 always), the border is the S#'s type 0 (transparent black)
+    const u64 d = object + 0x30;
+    const u32 filter = RdObj<u32>(d, 0);
+    const std::array<u32, 3> address{RdObj<u32>(d, 4), RdObj<u32>(d, 8), RdObj<u32>(d, 12)};
+    const float bias = RdObj<float>(d, 16);
+    const u32 aniso = RdObj<u32>(d, 20);
+    const u32 compare_func = RdObj<u32>(d, 24);
+    float min_lod = RdObj<float>(d, 44), max_lod = RdObj<float>(d, 48);
+    bool linear = true, mip_linear = true, anisotropic = false;
+    switch (filter) {
+    case 0x0:
+        linear = false, mip_linear = false;
+        break;
+    case 0x7:
+    case 0x10:
+        break;
+    case 0x8:
+        anisotropic = instance->IsAnisotropicFilteringSupported();
+        break;
+    default:
+        c_samplers_invalid.fetch_add(1, std::memory_order_relaxed); // an engine filter value not met before: trilinear
+        if (c_samplers_invalid.load(std::memory_order_relaxed) <= 8) {
+            LOG_WARNING(Render_Vulkan, "vkb sampler: engine filter value {:#x} not known, trilinear", filter);
+        }
+        break;
+    }
+    const auto address_mode = [](u32 mode) {
+        switch (mode) {
+        case 0: return vk::SamplerAddressMode::eRepeat;
+        case 1: return vk::SamplerAddressMode::eMirroredRepeat;
+        case 2: return vk::SamplerAddressMode::eClampToEdge;
+        case 3:
+        case 5:
+        case 7: c_sampler_mirror_once.fetch_add(1, std::memory_order_relaxed); return vk::SamplerAddressMode::eMirrorClampToEdge;
+        case 4:
+        case 6: return vk::SamplerAddressMode::eClampToBorder;
+        default: c_samplers_invalid.fetch_add(1, std::memory_order_relaxed); return vk::SamplerAddressMode::eRepeat;
+        }
+    };
+    if (compare_func < 1 || compare_func > 8) {
+        c_samplers_invalid.fetch_add(1, std::memory_order_relaxed);
+    }
+    const vk::SamplerCreateInfo ci{
+        .magFilter = linear ? vk::Filter::eLinear : vk::Filter::eNearest,
+        .minFilter = linear ? vk::Filter::eLinear : vk::Filter::eNearest,
+        .mipmapMode = mip_linear ? vk::SamplerMipmapMode::eLinear : vk::SamplerMipmapMode::eNearest,
+        .addressModeU = address_mode(address[0]),
+        .addressModeV = address_mode(address[1]),
+        .addressModeW = address_mode(address[2]),
+        .mipLodBias = bias,
+        .anisotropyEnable = anisotropic,
+        .maxAnisotropy = anisotropic ? std::clamp(static_cast<float>(aniso), 1.0f, instance->MaxSamplerAnisotropy()) : 1.0f,
+        .compareEnable = compare,
+        .compareOp = static_cast<vk::CompareOp>(compare_func >= 1 && compare_func <= 8 ? compare_func - 1 : 7),
+        .minLod = min_lod,
+        .maxLod = std::max(min_lod, max_lod),
+        .borderColor = vk::BorderColor::eFloatTransparentBlack,
+    };
+    const auto [result, sampler] = instance->GetDevice().createSampler(ci);
+    if (result != vk::Result::eSuccess) {
+        return {};
+    }
+    c_samplers_made.fetch_add(1, std::memory_order_relaxed);
+    samplers.emplace(key, sampler);
+    return sampler;
+}
+
+std::atomic<u64> g_display_texture{0}; ///< note 44: the engine texture id of the last image handed to the presenter
+bool DisplayImageAt(u64 address, DisplayImage& out) {
+    if (!On() || !device_ready) {
+        return false;
+    }
+    std::scoped_lock lock{mutex};
+    const auto at = image_at_address.find(address);
+    if (at == image_at_address.end()) {
+        c_display_missed.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    const auto i = images.find(at->second);
+    if (i == images.end() || i->second.is_depth) {
+        c_display_missed.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    Image& img = i->second;
+    if (img.layout != vk::ImageLayout::eGeneral) {
+        c_display_not_general.fetch_add(1, std::memory_order_relaxed); // never drawn into: the presenter's barrier starts from undefined, our tracking says general from here on
+        img.layout = vk::ImageLayout::eGeneral;
+    }
+    out = {img.image, img.format, img.width, img.height, img.mutable_format};
+    g_display_texture.store(at->second, std::memory_order_relaxed);
+    c_display_found.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+vk::Format ViewFormat(u64 view_id) {
+    std::scoped_lock lock{mutex};
+    const auto v = views.find(view_id);
+    return v != views.end() ? v->second.format : vk::Format::eUndefined;
+}
+
+bool AttachmentFor(u64 view_id, vk::Format format, vk::CommandBuffer cmd, Attachment& out) {
+    const LookupTimer lookup_timer{3};
+    std::scoped_lock lock{mutex};
+    const auto v = views.find(view_id);
+    if (v == views.end()) {
+        return false;
+    }
+    const auto i = images.find(v->second.texture_id);
+    if (i == images.end()) {
+        return false;
+    }
+    View& view = v->second;
+    Image& img = i->second;
+    vk::ImageView handle = view.view;
+    if (format != vk::Format::eUndefined && format != view.format) {
+        handle = vk::ImageView{};
+        for (const auto& [f, h] : view.formatted) {
+            if (f == format) {
+                handle = h;
+            }
+        }
+        if (!handle && !img.mutable_format) {
+            c_fixed_attachment_refused.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+        if (!handle) {
+            const u32 a = TexelBytes(format), b = TexelBytes(view.format);
+            if (img.is_depth || a == 0 || a != b) {
+                c_attach_refused.fetch_add(1, std::memory_order_relaxed);
+                return false;
+            }
+            const auto [result, made] = instance->GetDevice().createImageView({.image = img.image, .viewType = view.type, .format = format, .subresourceRange = view.range});
+            if (result != vk::Result::eSuccess) {
+                c_attach_refused.fetch_add(1, std::memory_order_relaxed);
+                return false;
+            }
+            view.formatted.emplace_back(format, made);
+            handle = made;
+            c_attach_views.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    const u32 mip = view.range.baseMipLevel;
+    out = {handle, {std::max(img.width >> mip, 1u), std::max(img.height >> mip, 1u)}, view.range.layerCount == VK_REMAINING_ARRAY_LAYERS ? img.layers : view.range.layerCount,
+           img.is_depth && HasStencil(img.format), img.image};
+    return true;
+}
+
+bool ClearColor(u64 view_id, const float* color) {
+    if (!On() || !device_ready) {
+        return false;
+    }
+    std::unique_lock lock{mutex};
+    const auto v = views.find(view_id);
+    const auto i = v != views.end() ? images.find(v->second.texture_id) : images.end();
+    if (i == images.end() || i->second.is_depth) {
+        c_clear_no_view.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    vk::ClearColorValue value{};
+    std::memcpy(value.float32.data(), color, 4 * sizeof(float));
+    vk::ImageSubresourceRange range = v->second.range;
+    range.aspectMask = vk::ImageAspectFlagBits::eColor;
+    const vk::Image clear_image = i->second.image;
+    lock.unlock();
+    Stream::Defer(Stream::Work::Clear, [image = clear_image, value, range](vk::CommandBuffer cmd) {
+        Stream::Hazard(cmd, {Stream::ImageUse(image, true)});
+        cmd.clearColorImage(image, vk::ImageLayout::eGeneral, value, range);
+    });
+    c_clears_color.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+bool ClearDepthStencil(u64 view_id, u32 flags, float depth, u32 stencil) {
+    if (!On() || !device_ready || (flags & 3) == 0) {
+        return false;
+    }
+    std::unique_lock lock{mutex};
+    const auto v = views.find(view_id);
+    const auto i = v != views.end() ? images.find(v->second.texture_id) : images.end();
+    if (i == images.end() || !i->second.is_depth) {
+        c_clear_no_view.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    vk::ImageSubresourceRange range = v->second.range;
+    range.aspectMask = {};
+    if ((flags & 1) != 0) {
+        range.aspectMask |= vk::ImageAspectFlagBits::eDepth;
+    }
+    if ((flags & 2) != 0 && HasStencil(i->second.format)) {
+        range.aspectMask |= vk::ImageAspectFlagBits::eStencil;
+    }
+    if (!range.aspectMask) {
+        return false;
+    }
+    const vk::Image clear_image = i->second.image;
+    lock.unlock();
+    Stream::Defer(Stream::Work::Clear, [image = clear_image, depth, stencil, range](vk::CommandBuffer cmd) {
+        Stream::Hazard(cmd, {Stream::ImageUse(image, true)});
+        cmd.clearDepthStencilImage(image, vk::ImageLayout::eGeneral, vk::ClearDepthStencilValue{depth, stencil}, range);
+    });
+    c_clears_depth.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+void TextureCpuWritten(u64 texture_id) {
+    if (!On() || !device_ready) {
+        return;
+    }
+    vk::Image image{};
+    vk::Format format{};
+    u32 mips = 0, layers = 0;
+    vk::ImageLayout layout{};
+    {
+        std::scoped_lock lock{mutex};
+        const auto it = images.find(texture_id);
+        if (it == images.end() || it->second.is_depth) {
+            c_reupload_no_image.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        Image& img = it->second;
+        if (img.layout == vk::ImageLayout::eUndefined) {
+            img.layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+            BumpViewEpoch(); // note 46: A1 memo answers may change
+        }
+        image = img.image, format = img.format, mips = img.mips, layers = img.layers, layout = img.layout;
+    }
+    c_reupload_wanted.fetch_add(1, std::memory_order_relaxed);
+    if (Upload::TextureContents(texture_id, image, format, mips, layers, layout)) {
+        c_reupload_done.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+bool CopyBuffer(u64 destination, u64 source, u64 bytes) {
+    if (!device_ready || bytes == 0) {
+        return false;
+    }
+    BufferWindow to, from;
+    if (!FindLocked(destination, bytes, to) || !FindLocked(source, bytes, from)) {
+        c_copy_unresolved.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    if (to.buffer == from.buffer && to.offset < from.offset + bytes && from.offset < to.offset + bytes) {
+        c_copy_overlap.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    Stream::NoteBytes(Stream::Work::CopyBuffer, bytes);
+    Stream::Defer(Stream::Work::CopyBuffer, [from, to, bytes](vk::CommandBuffer cmd) {
+        Stream::Hazard(cmd, {Stream::BufferUse(from.buffer, from.offset, bytes, false), Stream::BufferUse(to.buffer, to.offset, bytes, true)});
+        cmd.copyBuffer(from.buffer, to.buffer, vk::BufferCopy{from.offset, to.offset, bytes});
+        if (!to.device) {
+            Stream::NoteInPlaceWrite(to.buffer, to.offset, bytes);
+        }
+    });
+    if (!to.device) {
+        std::scoped_lock marks_lock{gpu_write_mutex};
+        gpu_write_pending.push_back({destination, bytes});
+    }
+    c_copies.fetch_add(1, std::memory_order_relaxed);
+    c_copy_bytes.fetch_add(bytes, std::memory_order_relaxed);
+    if (to.device || from.device) {
+        c_copies_device.fetch_add(1, std::memory_order_relaxed);
+    }
+    return true;
+}
+
+bool CopyFromGds(u64 gds_offset, u64 destination, u64 bytes) {
+    if (!device_ready || bytes == 0 || gds_offset + bytes > (64u << 10)) {
+        return false;
+    }
+    BufferWindow to;
+    if (!FindLocked(destination, bytes, to)) {
+        c_copy_unresolved.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    Stream::NoteBytes(Stream::Work::CopyGds, bytes);
+    Stream::Defer(Stream::Work::CopyGds, [gds_offset, to, bytes](vk::CommandBuffer cmd) {
+        Stream::Hazard(cmd, {Stream::BufferUse(Stream::GdsBuffer(), gds_offset, bytes, false), Stream::BufferUse(to.buffer, to.offset, bytes, true)});
+        cmd.copyBuffer(Stream::GdsBuffer(), to.buffer, vk::BufferCopy{gds_offset, to.offset, bytes});
+        if (!to.device) {
+            Stream::NoteInPlaceWrite(to.buffer, to.offset, bytes);
+        }
+    });
+    if (!to.device) {
+        std::scoped_lock marks_lock{gpu_write_mutex};
+        gpu_write_pending.push_back({destination, bytes});
+    }
+    c_copies.fetch_add(1, std::memory_order_relaxed);
+    c_copy_bytes.fetch_add(bytes, std::memory_order_relaxed);
+    return true;
+}
+
+bool FillBuffer(u64 destination, u64 bytes, u32 value) {
+    if (!device_ready || bytes == 0 || (destination & 3) != 0 || (bytes & 3) != 0) {
+        return false;
+    }
+    BufferWindow to;
+    if (!FindLocked(destination, bytes, to) || (to.offset & 3) != 0) {
+        c_fill_unresolved.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    Stream::Defer(Stream::Work::Clear, [to, bytes, value](vk::CommandBuffer cmd) {
+        Stream::Hazard(cmd, {Stream::BufferUse(to.buffer, to.offset, bytes, true)});
+        cmd.fillBuffer(to.buffer, to.offset, bytes, value);
+        if (!to.device) {
+            Stream::NoteInPlaceWrite(to.buffer, to.offset, bytes);
+        }
+    });
+    if (!to.device) {
+        std::scoped_lock marks_lock{gpu_write_mutex};
+        gpu_write_pending.push_back({destination, bytes});
+    }
+    c_fills.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+namespace {
+/// R5: the pipeline of the pattern fill (host shader fill_pattern.comp: destination[i] = source[i mod pattern], as the engine's compute copy with wrap)
+struct FillPipeline {
+    vk::DescriptorSetLayout set_layout{};
+    vk::PipelineLayout layout{};
+    vk::Pipeline pipeline{};
+};
+const FillPipeline& FillPatternPipeline() {
+    static FillPipeline p;
+    static std::once_flag once;
+    std::call_once(once, [] {
+        const vk::Device device = instance->GetDevice();
+        const std::array<vk::DescriptorSetLayoutBinding, 2> bindings{{
+            {.binding = 0, .descriptorType = vk::DescriptorType::eStorageBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute},
+            {.binding = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute},
+        }};
+        p.set_layout = device.createDescriptorSetLayout({.flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR, .bindingCount = 2, .pBindings = bindings.data()}).value;
+        const vk::PushConstantRange range{.stageFlags = vk::ShaderStageFlagBits::eCompute, .offset = 0, .size = 5 * sizeof(u32)};
+        p.layout = device.createPipelineLayout({.setLayoutCount = 1, .pSetLayouts = &p.set_layout, .pushConstantRangeCount = 1, .pPushConstantRanges = &range}).value;
+        const vk::ShaderModule module = VkbVulkan::CompileSPV(std::span<const u32>{FILL_PATTERN_COMP}, device);
+        const auto [result, pipeline] = device.createComputePipeline(
+            VK_NULL_HANDLE, {.stage = {.stage = vk::ShaderStageFlagBits::eCompute, .module = module, .pName = "main"}, .layout = p.layout});
+        device.destroyShaderModule(module);
+        if (result == vk::Result::eSuccess) {
+            p.pipeline = pipeline;
+        }
+    });
+    return p;
+}
+/// LEGACY(fill_doubling): TLG_LEGACY_FILL_DOUBLING=1 keeps the V5c fill (the pattern copied once, then doubled with about 20 barriers: 2 ms a frame, note 30)
+bool FillDoubling() {
+    static const bool on = [] { const char* e = std::getenv("TLG_LEGACY_FILL_DOUBLING"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+std::atomic<u64> c_pattern_fills_shader{0}, c_pattern_fills_in_place{0}, c_pattern_fill_mb_in_place{0}, c_pattern_fill_mb_device{0}, c_fill_skipped_test{0};
+} // namespace
+
+bool FillPattern(u64 destination, u64 bytes, u64 source, u32 dwords) {
+    if (!device_ready || bytes == 0 || dwords == 0 || dwords > 64 || (destination & 3) != 0 || (bytes & 3) != 0) {
+        return false;
+    }
+    const u64 first = std::min<u64>(dwords * 4ull, bytes);
+    BufferWindow to, from;
+    if (!FindLocked(destination, bytes, to) || !FindLocked(source, first, from)) {
+        c_fill_unresolved.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    if (to.buffer == from.buffer && to.offset < from.offset + first && from.offset < to.offset + bytes) {
+        c_copy_overlap.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    // note 49, kill experiment only: TLG_VKB_TEST_SKIP_HOST_FILLS=1 drops the pattern fills into host memory (the picture may be wrong); bounds what they cost
+    static const bool skip_host_fills = [] { const char* e = std::getenv("TLG_VKB_TEST_SKIP_HOST_FILLS"); return e != nullptr && e[0] == '1'; }();
+    if (skip_host_fills && !to.device) {
+        c_fill_skipped_test.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    Stream::NoteBytes(Stream::Work::Fill, bytes);
+    if (!to.device) {
+        FillReadersTarget(destination, bytes, 0, "pattern fill");
+    }
+    if (!to.device) {
+        // R5: what the in-place fill targets are (the first 8 distinct ones), log/vkb_fill_targets.txt
+        static std::mutex m;
+        static std::vector<u64> seen;
+        std::scoped_lock lock{m};
+        if (seen.size() < 8 && std::find(seen.begin(), seen.end(), destination) == seen.end()) {
+            seen.push_back(destination);
+            std::string text = fmt::format("fill {:#x} {} bytes, pattern {} dwords, source {:#x}: ", destination, bytes, dwords, source);
+            {
+                std::scoped_lock objects_lock{mutex};
+                auto it = watched.upper_bound(destination);
+                if (it != watched.begin() && destination >= std::prev(it)->first && destination < std::prev(it)->second.end) {
+                    const Watched& wb = std::prev(it)->second;
+                    text += fmt::format("engine buffer {:#x}..{:#x} id {} class {} usage {} bind {:#x} cpu_access {:#x} gpu_written {} state {} first_bind_submit {}", std::prev(it)->first,
+                                        wb.end, wb.id, wb.cls, wb.usage, wb.bind, wb.cpu_access, wb.gpu_written, static_cast<u32>(wb.state), wb.first_bind_submit);
+                } else {
+                    text += "no engine buffer known at this address";
+                }
+            }
+            if (FILE* f = std::fopen((Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_fill_targets.txt").string().c_str(), "a")) {
+                std::fputs(text.c_str(), f);
+                std::fputc('\n', f);
+                std::fclose(f);
+            }
+        }
+    }
+    const u64 align = std::max<u64>(instance->StorageMinAlignment(), 4);
+    const u64 source_base = from.offset & ~(align - 1), destination_base = to.offset & ~(align - 1);
+    if (!FillDoubling() && FillPatternPipeline().pipeline && ((from.offset - source_base) & 3) == 0 && ((to.offset - destination_base) & 3) == 0 && bytes / 4 <= 0xffffffffull) {
+        // one dispatch, as the engine's own shader: destination[i] = source[i mod pattern]
+        Stream::Defer(Stream::Work::Fill, [to, from, bytes, first, source_base, destination_base](vk::CommandBuffer cmd) {
+            Stream::Hazard(cmd, {Stream::BufferUse(from.buffer, from.offset, first, false), Stream::BufferUse(to.buffer, to.offset, bytes, true)}, Stream::Agent::Compute);
+            const FillPipeline& p = FillPatternPipeline();
+            const vk::DescriptorBufferInfo source_info{.buffer = from.buffer, .offset = source_base, .range = from.offset - source_base + first};
+            const vk::DescriptorBufferInfo destination_info{.buffer = to.buffer, .offset = destination_base, .range = to.offset - destination_base + bytes};
+            const std::array<vk::WriteDescriptorSet, 2> writes{{
+                {.dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &source_info},
+                {.dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &destination_info},
+            }};
+            const u32 count = static_cast<u32>(bytes / 4);
+            const u32 groups = (count + 255) / 256;
+            const u32 groups_x = std::min<u32>(groups, 65535), groups_y = (groups + groups_x - 1) / groups_x;
+            const std::array<u32, 5> push{static_cast<u32>((from.offset - source_base) / 4), static_cast<u32>((to.offset - destination_base) / 4),
+                                          static_cast<u32>(first / 4), count, groups_x};
+            cmd.bindPipeline(vk::PipelineBindPoint::eCompute, p.pipeline);
+            cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, p.layout, 0, writes);
+            cmd.pushConstants(p.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(push), push.data());
+            cmd.dispatch(groups_x, groups_y, 1);
+            if (!to.device) {
+                Stream::NoteInPlaceWrite(to.buffer, to.offset, bytes);
+            }
+        });
+        if (!to.device) {
+            std::scoped_lock marks_lock{gpu_write_mutex};
+            gpu_write_pending.push_back({destination, bytes});
+        }
+        c_pattern_fills.fetch_add(1, std::memory_order_relaxed);
+        c_pattern_fills_shader.fetch_add(1, std::memory_order_relaxed);
+        if (!to.device) {
+            c_pattern_fills_in_place.fetch_add(1, std::memory_order_relaxed);
+            c_pattern_fill_mb_in_place.fetch_add(bytes >> 20, std::memory_order_relaxed);
+        } else {
+            c_pattern_fill_mb_device.fetch_add(bytes >> 20, std::memory_order_relaxed);
+        }
+        return true;
+    }
+    Stream::Defer(Stream::Work::Fill, [to, from, bytes, first](vk::CommandBuffer cmd) {
+        Stream::Hazard(cmd, {Stream::BufferUse(from.buffer, from.offset, first, false), Stream::BufferUse(to.buffer, to.offset, bytes, true)}, Stream::Agent::Transfer);
+        cmd.copyBuffer(from.buffer, to.buffer, vk::BufferCopy{from.offset, to.offset, first});
+        const vk::MemoryBarrier2 step{.srcStageMask = vk::PipelineStageFlagBits2::eAllTransfer, .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+                                      .dstStageMask = vk::PipelineStageFlagBits2::eAllTransfer, .dstAccessMask = vk::AccessFlagBits2::eTransferRead | vk::AccessFlagBits2::eTransferWrite};
+        // the pattern doubles: [0, done) is copied after itself (the size stays a multiple of the pattern's)
+        for (u64 done = first; done < bytes;) {
+            const u64 n = std::min(done, bytes - done);
+            cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &step});
+            cmd.copyBuffer(to.buffer, to.buffer, vk::BufferCopy{to.offset, to.offset + done, n});
+            done += n;
+        }
+        if (!to.device) {
+            Stream::NoteInPlaceWrite(to.buffer, to.offset, bytes);
+        }
+    });
+    if (!to.device) {
+        std::scoped_lock marks_lock{gpu_write_mutex};
+        gpu_write_pending.push_back({destination, bytes});
+    }
+    c_pattern_fills.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+void PublishObjects() {
+    static std::atomic<u64> calls{0};
+    if ((calls.fetch_add(1, std::memory_order_relaxed) & 63) != 0) {
+        return;
+    }
+    DebugServer::Publish("vkb_objects", ObjectsReport());
+}
+
+nlohmann::json ObjectsReport() {
+    u64 live_images, live_views, pending;
+    nlohmann::json refused = nlohmann::json::object();
+    {
+        std::scoped_lock lock{mutex};
+        live_images = images.size(), live_views = views.size(), pending = doomed.size();
+        if (FillReadersOn()) { // note 49 census: textures whose memory overlaps a fill target
+            std::scoped_lock fr_lock{fr_mutex};
+            for (const auto& [id, im] : images) {
+                for (const auto& r : fr_ranges) {
+                    if (im.address != 0 && im.address < r.first + r.second && r.first < im.address + std::max<u64>(im.bytes, 1) && fr_images_seen.insert(id).second) {
+                        FillReadersLine(fmt::format("texture {} at {:#x}+{} {}x{}x{} {} mips {} layers {} (fill {:#x})", id, im.address, im.bytes, im.width, im.height, im.depth,
+                                                    vk::to_string(im.format), im.mips, im.layers, r.first));
+                    }
+                }
+            }
+        }
+        for (const auto& [pair, n] : refused_pairs) {
+            refused[pair] = n;
+        }
+    }
+    const u64 made = c_images_created.load();
+    return nlohmann::json(
+                         {{"display_texture", g_display_texture.load(std::memory_order_relaxed)},
+                          {"images_live", live_images},
+                          {"images_created", made},
+                          {"images_failed", c_images_failed.load()},
+                          {"images_with_no_vulkan_format", c_images_unmapped_format.load()},
+                          {"images_destroyed", c_images_destroyed.load()},
+                          {"image_mb_live", c_image_bytes.load() >> 20},
+                          {"image_create_us_mean", made ? static_cast<double>(c_image_ns.load()) / 1e3 / static_cast<double>(made) : 0.0},
+                          {"views_live", live_views},
+                          {"views_created", c_views_created.load()},
+                          {"views_failed", c_views_failed.load()},
+                          {"views_range_clamped", c_views_clamped.load()},
+                          {"views_of_a_texture_with_no_image", c_views_no_image.load()},
+                          {"views_of_buffers_no_object", c_views_buffer.load()},
+                          {"views_destroyed", c_views_destroyed.load()},
+                          {"destructions_pending", pending},
+                          {"device_buffer_check",
+                           {{"mode", DeviceBuffersMode()},
+                            {"classes", "0 not CPU-writable by description, 1 dynamic or CPU-writable, 2 staging, 3 no engine buffer at the address"},
+                            {"buffers", {c_watch_buffers[0].load(), c_watch_buffers[1].load(), c_watch_buffers[2].load()}},
+                            {"buffer_mb", {c_watch_bytes[0].load() >> 20, c_watch_bytes[1].load() >> 20, c_watch_bytes[2].load() >> 20}},
+                            {"in_place_binds", {c_watch_binds[0].load(), c_watch_binds[1].load(), c_watch_binds[2].load(), c_watch_binds[3].load()}},
+                            {"in_place_bind_mb", {c_watch_bind_bytes[0].load() >> 20, c_watch_bind_bytes[1].load() >> 20, c_watch_bind_bytes[2].load() >> 20,
+                                                  c_watch_bind_bytes[3].load() >> 20}},
+                            {"class0_changed_without_a_hooked_write", c_watch_mismatch.load()},
+                            {"class0_changed_after_our_gpu_write", c_watch_mismatch_gpu.load()},
+                            {"class0_changes_before_first_bind", c_watch_changed_before_bind.load()},
+                            {"class0_changes_after_first_bind", c_watch_changed_after_bind.load()},
+                            {"class0_changes_within_3_submits_of_first_bind", c_watch_changed_within_3.load()},
+                            {"class0_buffers_changed_after_bind", c_watch_buffers_changed_after_bind.load()},
+                            {"class0_buffers_changed_3_times_after_bind", c_watch_buffers_changed_often.load()},
+                            {"class0_updates_by_update_subresource", c_watch_cpu_updates.load()},
+                            {"hashed_mb", c_watch_hashed_mb.load() >> 20},
+                            {"watch_rounds", c_watch_rounds.load()},
+                            {"mode2", {{"device_copies_made", c_dev2_made.load()}, {"device_copy_mb_live", c_dev2_mb.load() >> 20}, {"binds_to_a_device_copy", c_dev2_binds.load()},
+                                       {"bound_mb_from_device_copies", c_dev2_bind_mb.load() >> 20}, {"changed_after_the_copy_back_in_place", c_dev2_unstable.load()},
+                                       {"changes_while_settling", c_dev2_settle_changes.load()}, {"gave_up_still_changing", c_dev2_gave_up.load()}, {"failed", c_dev2_failed.load()}}}}},
+                          {"pattern_fills", c_pattern_fills.load()}, {"pattern_fills_by_shader", c_pattern_fills_shader.load()}, {"pattern_fills_into_host_memory", c_pattern_fills_in_place.load()}, {"pattern_fill_mb_host_memory", c_pattern_fill_mb_in_place.load()}, {"pattern_fill_mb_device", c_pattern_fill_mb_device.load()}, {"test_host_fills_skipped", c_fill_skipped_test.load()},
+                          {"bind_census",
+                           {{"kinds", "compute descriptor, graphics descriptor, vertex buffer, index buffer"},
+                            {"binds_in_place", {c_census_binds[0][0].load(), c_census_binds[1][0].load(), c_census_binds[2][0].load(), c_census_binds[3][0].load()}},
+                            {"binds_device", {c_census_binds[0][1].load(), c_census_binds[1][1].load(), c_census_binds[2][1].load(), c_census_binds[3][1].load()}},
+                            {"in_place_bound_mb", {c_census_bytes[0].load() >> 20, c_census_bytes[1].load() >> 20, c_census_bytes[2].load() >> 20, c_census_bytes[3].load() >> 20}},
+                            {"in_place_binds_written", {c_census_written[0].load(), c_census_written[1].load(), c_census_written[2].load(), c_census_written[3].load()}},
+                            {"frames", c_census_frames.load()},
+                            {"unique_in_place_mb_per_frame", c_census_frames.load() ? static_cast<double>(c_census_unique_bytes.load()) / 1048576.0 / static_cast<double>(c_census_frames.load()) : 0.0},
+                            {"unique_in_place_ranges_per_frame", c_census_frames.load() ? static_cast<double>(c_census_unique_ranges.load()) / static_cast<double>(c_census_frames.load()) : 0.0},
+                            {"unique_mb_by_size_lt4k_lt64k_lt1m_ge1m", {c_census_bucket[0].load() >> 20, c_census_bucket[1].load() >> 20, c_census_bucket[2].load() >> 20,
+                                                                        c_census_bucket[3].load() >> 20}}}},
+                          {"host_cache_experiment", {{"hits", c_cache_hits.load()}, {"copies", c_cache_copies.load()}, {"arena_full", c_cache_full.load()},
+                                                     {"mb_copied", c_cache_bytes.load() >> 20}}},
+                          {"buffers_seen", c_buffers.load()},
+                          {"buffers_in_place", c_buffers_in_place.load()},
+                          {"buffers_not_in_place", c_buffers_not_in_place.load()},
+                          {"buffer_mb_in_place_seen", c_buffer_bytes.load() >> 20},
+                          {"in_place_imported_mb", host_import ? host_import->ImportedBytes() >> 20 : 0},
+                          {"in_place_failed_chunks", host_import ? host_import->FailedChunks() : 0},
+                          {"objects_before_the_device", c_too_early.load()},
+                          {"deletes_of_objects_with_no_vulkan_object", c_deleted_unknown.load()},
+                          {"contents_wanted", c_upload_wanted.load()},
+                          {"contents_uploaded", c_upload_done.load()},
+                          {"upload", Upload::Report()},
+                          {"device_buffers", {{"made", c_dev_buffers.load()}, {"failed", c_dev_failed.load()}, {"mb_live", c_dev_bytes.load() >> 20},
+                                              {"destroyed", c_dev_destroyed.load()}, {"replaced_at_same_memory", c_dev_replaced.load()},
+                                              {"no_initial_data", c_dev_no_initial.load()}, {"cpu_writes_copied", c_cpu_writes.load()},
+                                              {"cpu_write_kb", c_cpu_write_bytes.load() >> 10}}},
+                          {"other_view_types", {{"made", c_other_views.load()}, {"refused", c_other_view_refused.load()}, {"refused_pairs", refused}}},
+                          {"display", {{"presented_from_our_image", c_display_found.load()}, {"no_image_at_the_display_buffer", c_display_missed.load()},
+                                       {"never_drawn_into", c_display_not_general.load()}}},
+                          {"attachments", {{"format_views_made", c_attach_views.load()}, {"refused", c_attach_refused.load()}}},
+                          {"clears", {{"color", c_clears_color.load()}, {"depth_stencil", c_clears_depth.load()}, {"no_view", c_clear_no_view.load()}}},
+                          {"our_samplers", {{"made", c_samplers_made.load()}, {"invalid_description", c_samplers_invalid.load()}, {"min_max_reduction", c_sampler_minmax.load()},
+                                            {"border_rounded", c_sampler_border_rounded.load()}, {"mirror_once", c_sampler_mirror_once.load()}}},
+                          {"texture_updates", {{"wanted", c_reupload_wanted.load()}, {"uploaded", c_reupload_done.load()}, {"no_image", c_reupload_no_image.load()}}},
+                          {"texture_copies", {{"copies", c_tex_copies.load()}, {"no_image", c_tex_copy_no_image.load()}, {"mismatch", c_tex_copy_mismatch.load()}}},
+                          {"buffer_lookups", {{"range_leaves_a_device_buffer", c_find_straddle.load()}, {"not_in_place", c_find_none.load()}}},
+                          {"r7_census", R7CensusReport()},
+                          {"bind_by_object", BindByObjectReport()},
+                          {"targets_fixed_test", {{"on", TargetsFixed()}, {"targets", c_fixed_targets.load()}, {"views_forced_to_the_image_format", c_fixed_view_format_forced.load()},
+                                                  {"attachments_refused", c_fixed_attachment_refused.load()}}},
+                          {"staging_textures", {{"note", "note 42: copies into staging textures written back for the CPU's Map(READ)"}, {"copies", c_staging_copies.load()},
+                                                {"reads", c_staging_reads.load()}, {"not_ready", c_staging_unready.load()}, {"older", c_staging_older.load()}, {"unhandled", c_staging_unhandled.load()}}},
+                          {"static_at_first_bind", {{"on", StaticAtBindOn()}, {"made", c_static_at_bind.load()}, {"mb", c_static_at_bind_mb.load() >> 20},
+                                                    {"failed", c_static_at_bind_failed.load()}}},
+                          {"dynamic_device_buffers", {{"on", DynamicDeviceOn()}, {"made", c_dyn_device.load()}, {"unmap_uploads", c_dyn_unmaps.load()},
+                                                      {"unmap_upload_mb", c_dyn_unmap_mb.load() >> 20}, {"checks", c_dyn_checks.load()},
+                                                      {"changed_between_unmap_and_next_map", c_dyn_changed_outside.load()}}},
+                          {"buffer_maps", [] {
+                               nlohmann::json out = nlohmann::json::array();
+                               for (u32 u = 0; u < 4; ++u) {
+                                   for (u32 t = 0; t < 8; ++t) {
+                                       for (u32 p = 0; p < 2; ++p) {
+                                           if (const u64 n = c_map_count[u][t][p].load(); n != 0) {
+                                               out.push_back({{"usage", u}, {"type", t}, {"in_place", p == 1}, {"maps", n}, {"mb", c_map_bytes[u][t][p].load() >> 20}});
+                                           }
+                                       }
+                                   }
+                               }
+                               return out;
+                           }()},
+                          {"layout_at_creation_jobs_images_by_upload_in_batch", {true, c_layout_jobs.load(), c_layout_images.load(), c_layout_by_upload.load(), c_layout_in_batch.load()}},
+                          {"frame_ring_in_device_memory", {{"on", vram_ring_base.load() != 0}, {"base", vram_ring_base.load()}, {"binds", c_ring_vram_binds.load()},
+                                                           {"ranges_leaving_it", c_ring_vram_straddle.load()}}},
+                          {"in_place_sources", {{"note", "binds read in place (TLG_VKB_SOURCE_CENSUS=1): engine buffer static / dynamic / staging, frame ring, other"},
+                                                {"binds", {c_src_binds[0].load(), c_src_binds[1].load(), c_src_binds[2].load(), c_src_binds[3].load(), c_src_binds[4].load()}},
+                                                {"mb", {c_src_bytes[0].load() >> 20, c_src_bytes[1].load() >> 20, c_src_bytes[2].load() >> 20, c_src_bytes[3].load() >> 20,
+                                                        c_src_bytes[4].load() >> 20}},
+                                                {"ring_binds_by_size_1k_16k_256k_more", {c_src_ring_sizes[0].load(), c_src_ring_sizes[1].load(), c_src_ring_sizes[2].load(),
+                                                                                         c_src_ring_sizes[3].load()}},
+                                                {"ring", {{"base", frame_ring_base.load()}, {"mb", frame_ring_size.load() >> 20}}},
+                                                {"top_buffers", [] {
+                                                     std::vector<std::pair<u64, SourceStat>> v;
+                                                     {
+                                                         std::scoped_lock lock{mutex};
+                                                         v.assign(source_stats.begin(), source_stats.end());
+                                                     }
+                                                     std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.second.bytes > b.second.bytes; });
+                                                     nlohmann::json out = nlohmann::json::array();
+                                                     for (size_t i = 0; i < v.size() && i < 16; ++i) {
+                                                         const SourceStat& s = v[i].second;
+                                                         out.push_back({{"address", v[i].first}, {"size", s.size}, {"binds", s.binds}, {"bound_mb", s.bytes >> 20}, {"class", s.cls},
+                                                                        {"usage", s.usage}, {"bind_flags", s.bind}, {"cpu_access", s.cpu}});
+                                                     }
+                                                     return out;
+                                                 }()}}},
+                          {"buffer_copies", {{"copies", c_copies.load()}, {"of_device_buffers", c_copies_device.load()}, {"kb", c_copy_bytes.load() >> 10},
+                                             {"unresolved", c_copy_unresolved.load()}, {"overlapping", c_copy_overlap.load()}, {"fills", c_fills.load()},
+                                             {"fills_unresolved", c_fill_unresolved.load()}}}});
+}
+
+} // namespace Core::Vkb

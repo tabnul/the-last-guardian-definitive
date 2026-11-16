@@ -162,7 +162,32 @@ foreach(BPP IN ITEMS 8 16 32 64 96 128)
     add_host_shader(tiling.comp tiling_micro_${BPP}_comp BITS_PER_PIXEL=${BPP} IS_MACRO_TILED=0)
     add_host_shader(tiling.comp tiling_macro_${BPP}_comp BITS_PER_PIXEL=${BPP} IS_MACRO_TILED=1)
 endforeach()
-add_custom_target(host_shaders DEPENDS ${SHADER_HEADERS})
+# VKB: the engine-to-Vulkan backend's own host shaders (native/shadps4/video_core/host_shaders), included as
+# "native/shadps4/video_core/host_shaders/<name>.h" so they never meet theirs of the same name.
+set(VKB_SHADER_SRC ${CMAKE_CURRENT_SOURCE_DIR}/native/shadps4/video_core/host_shaders)
+set(VKB_SHADER_DIR ${SHADER_INCLUDE}/native/shadps4/video_core/host_shaders)
+file(MAKE_DIRECTORY ${VKB_SHADER_DIR})
+function(add_vkb_host_shader FILENAME SHADER_NAME)
+    set(OUT ${VKB_SHADER_DIR}/${SHADER_NAME}.h)
+    string(TOUPPER ${SHADER_NAME} SYMBOL)
+    set(DEFINES "")
+    foreach(D IN LISTS ARGN)
+        list(APPEND DEFINES "-D${D}")
+    endforeach()
+    add_custom_command(OUTPUT ${OUT}
+        COMMAND ${GLSLANG_COMPILER} --target-env vulkan1.3 -o ${OUT} --vn ${SYMBOL} ${DEFINES} ${VKB_SHADER_SRC}/${FILENAME}
+        COMMAND ${CMAKE_COMMAND} "-DHEADER_FILE=${OUT}" -P ${VKB_SHADER_SRC}/AddShaderHeaderInclude.cmake
+        DEPENDS ${VKB_SHADER_SRC}/${FILENAME} VERBATIM)
+    set(VKB_SHADER_HEADERS ${VKB_SHADER_HEADERS} ${OUT} PARENT_SCOPE)
+endfunction()
+add_vkb_host_shader(fill_pattern.comp fill_pattern_comp)
+add_vkb_host_shader(fs_tri.vert fs_tri_vert)
+add_vkb_host_shader(post_process.frag post_process_frag)
+foreach(BPP IN ITEMS 8 16 32 64 96 128)
+    add_vkb_host_shader(vkb_tiling.comp vkb_tiling_micro_${BPP}_comp BITS_PER_PIXEL=${BPP} IS_MACRO_TILED=0)
+    add_vkb_host_shader(vkb_tiling.comp vkb_tiling_macro_${BPP}_comp BITS_PER_PIXEL=${BPP} IS_MACRO_TILED=1)
+endforeach()
+add_custom_target(host_shaders DEPENDS ${SHADER_HEADERS} ${VKB_SHADER_HEADERS})
 
 file(GLOB_RECURSE VIDEO_CORE CONFIGURE_DEPENDS shadps4/video_core/*.cpp)
 file(GLOB_RECURSE RECOMPILER CONFIGURE_DEPENDS shadps4/shader_recompiler/*.cpp)
@@ -194,6 +219,9 @@ set(COMMON
 file(GLOB AVPLAYER CONFIGURE_DEPENDS shadps4/core/libraries/avplayer/*.cpp)
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswscale libswresample)
 file(GLOB SHIM_SOURCES CONFIGURE_DEPENDS shim/*.cpp shim/*/*.cpp)
+# VKB: the engine-to-Vulkan backend (TLG_VKB=1) and the native layer it stands on, in native/ (included as "native/<name>.h").
+file(GLOB_RECURSE NATIVE_CORE CONFIGURE_DEPENDS native/*.cpp)
+find_package(absl REQUIRED) # VKB: native code uses absl::flat_hash_map
 # Windows: a DLL cannot leave the runtime_* symbols for tlg-probe.exe to resolve, so the
 # library is static there and linked into the executable.
 if (WIN32)
@@ -201,7 +229,7 @@ if (WIN32)
 else()
     set(TLGGPU_KIND SHARED)
 endif()
-add_library(tlggpu ${TLGGPU_KIND} ${VIDEO_CORE} ${RECOMPILER} ${COMMON} ${SHIM_SOURCES}
+add_library(tlggpu ${TLGGPU_KIND} ${VIDEO_CORE} ${RECOMPILER} ${COMMON} ${SHIM_SOURCES} ${NATIVE_CORE}
     shadps4/core/libraries/gnmdriver/gnmdriver.cpp
     shadps4/core/libraries/videoout/driver.cpp shadps4/core/libraries/videoout/video_out.cpp
     shadps4/core/libraries/kernel/equeue.cpp ${AVPLAYER}
@@ -221,9 +249,11 @@ target_compile_definitions(tlggpu PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
     TLG_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf")
 set_source_files_properties(shim/tlg_overlay.cpp PROPERTIES
     OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf)
-target_include_directories(tlggpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include)
+target_include_directories(tlggpu PRIVATE shim shadps4 ${CMAKE_CURRENT_SOURCE_DIR} ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include)
+target_include_directories(tlggpu PRIVATE third_party/cpp-httplib) # VKB: the debug server
+target_compile_definitions(tlggpu PRIVATE TLG_PORT=1) # VKB: native code shared with the shadPS4 tree switches on this
 target_compile_definitions(tlggpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
-target_compile_options(tlggpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
+target_compile_options(tlggpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers -fms-extensions)
 # Runtime symbols (runtime_memory_*, runtime_process_*) resolve against tlg-probe.
 if (NOT WIN32)
     target_link_options(tlggpu PRIVATE -Wl,--allow-shlib-undefined)
@@ -231,7 +261,7 @@ endif()
 target_link_libraries(tlggpu PRIVATE ffx-vulkan::portable ffx-vulkan::fsr4-v07-vulkan
     ffx-vulkan::fsr3-vk-framegeneration-3.1.6)
 target_link_libraries(tlggpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
-    tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3 PkgConfig::ZSTD PkgConfig::FFMPEG miniz::miniz Zydis::Zydis sirit)
+    tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3 PkgConfig::ZSTD PkgConfig::FFMPEG miniz::miniz Zydis::Zydis sirit absl::flat_hash_map absl::hash)
 # xbyak is header-only: the distribution's copy when there is one (Fedora xbyak-devel), else the
 # submodule (MSYS2 and Ubuntu do not package it).
 find_path(XBYAK_SYSTEM_INCLUDE xbyak/xbyak.h)

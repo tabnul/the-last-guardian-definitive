@@ -1,0 +1,217 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#pragma once
+
+// G5c: the per-draw and per-dispatch plans the command processor thread makes and the raster thread executes (moved out of vk_pipeline_cache.h). Plain data: the pipelines and the
+// shader `Info` are only pointers (declared, not defined, here); the fixed state, the draw inputs and the extent hints are the by-design headers of the allowlist.
+//
+// `PlanPool` keeps the finished plans for reuse; `PlanDigest` is the hash of what a plan holds (diagnostics and the plan cache check).
+
+#include <array>
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <vector>
+
+#include <boost/container/small_vector.hpp>
+
+#include "common/types.h"
+#include "native/native_binding.h"
+#include "native/native_dispatch_inputs.h"
+#include "native/native_draw.h"
+#include "native/native_resources.h"
+#include "native/native_extent.h"
+#include "native/shadps4/video_core/amdgpu/regs.h"
+#include "native/shadps4/video_core/renderer_vulkan/vk_fixed_state.h"
+
+namespace VkbShader {
+struct Info;
+}
+
+namespace VkbVulkan {
+class GraphicsPipeline;
+class ComputePipeline;
+} // namespace VkbVulkan
+
+namespace Core::NativePlan {
+
+using VkbVulkan::DrawInputs;
+using VkbVulkan::FixedState;
+using VkbVulkan::ComputePipeline;
+using VkbVulkan::GraphicsPipeline;
+
+/// Mirrors of `VkbShader::NUM_USER_DATA_REGS` and `VkbVulkan::MaxShaderStages` (the host checks them with static_asserts in vk_pipeline_cache.h).
+constexpr u32 UserDataRegs = 16;
+constexpr u32 StageCount = 6;
+
+/// A read-only buffer of a stage that the command processor thread copied into the constant ring (documents/tlg/pc-port-draw-pipeline-architecture.md, T1).
+struct RingBinding {
+    u32 index{};      ///< index in the stage's buffer list
+    u32 size{};
+    u64 offset{};     ///< offset in the ring buffer
+    VAddr address{};  ///< the guest address it was copied from (0 for the flattened user data)
+    bool snapshot{};  ///< N5d: the bytes are the writer's snapshot, not what guest memory held when the command processor looked
+    bool formatted{}; ///< N5f: a formatted (texel) buffer: the raster thread checks at bind time that no image or metadata surface covers the range
+    bool hook{};      ///< F1 1a (TLG_HOOK_RING=2): `offset` is in the hook ring (the frame ring copy filled at the writes), not in the constant ring
+};
+
+constexpr u32 GeometryVertex = 0xFFFFFFFDu; ///< RingBinding::index of a vertex range in DrawPlan::geometry_ring
+constexpr u32 GeometryIndex = 0xFFFFFFFEu;  ///< and of the index range
+
+/// R2 (native back end): a shader buffer binding the command processor resolved from the record's engine object: the raster thread binds it from the object's
+/// arena when the object is synchronized at the stamped generation (no buffer cache request, no record lookup). The stamp is taken when the command processor
+/// plans the operation, after the game wrote the frame's data: an object the raster thread synchronizes at its first use in the frame serves the later uses.
+struct ResolvedBuffer {
+    Core::NativeResources::ImmutableBuffer* object{}; ///< null: not resolved (the raster thread takes the full path)
+    VAddr address{};
+    u32 size{};
+    u32 generation{};
+    bool no_object{}; ///< the lookup by address found no engine object (the raster thread need not look again while the immutable epoch holds)
+    /// Rows ahead census (`TLG_ROW_AHEAD_CENSUS=1`, design review 53/54): the engine id, range and row version the front saw for this binding when it planned the draw
+    /// (every buffer binding with a record entry, written and texel ones too)
+    u64 ahead_id{};
+    VAddr ahead_address{};
+    u64 ahead_size{};
+    u64 ahead_version{};
+    /// Rows ahead shadow (`TLG_ROWS_AHEAD=1`): the row the front found in the shared row table for this binding
+    bool plan_found{};
+    const void* plan_buffer{};
+    u64 plan_offset{}, plan_epoch{}, plan_version{}, plan_flags{}, plan_clock{};
+    /// Note 194 (`TLG_FRONT_DECIDE`): what the front decided for the executor. `ring_slot`: the stage's ring copy of this binding (an index into `StagePlan::ring`;
+    /// RingNone: none; RingUndecided: the raster thread looks itself). `front_looked`: `front_h` is the engine record of `ahead_id` (the immutable record, else the large one,
+    /// `front_large`), looked up at the two epochs beside it (the raster thread takes it while both epochs hold, as its own per-thread lookups would answer the same).
+    static constexpr u8 RingUndecided = 0xff, RingNone = 0xfe;
+    u8 ring_slot{RingUndecided};
+    bool front_looked{};
+    bool front_large{};
+    Core::NativeResources::ImmutableBuffer* front_h{};
+    u64 front_immutable_epoch{}, front_large_epoch{};
+};
+
+/// Per-draw state of one shader stage, captured by the command processor thread when it looks the
+/// pipeline up (cp_split_mode). `info` is the raster thread's own copy of the stage's Info: the
+/// shared one is rewritten by the next lookup while this draw is still being recorded.
+struct StagePlan {
+    boost::container::small_vector<RingBinding, 8> ring; ///< T1: filled by the command processor thread, read by the raster thread
+    boost::container::small_vector<ResolvedBuffer, 8> resolved; ///< R2: by the stage's buffer index (empty: none resolved)
+    u64 resolved_epoch{}; ///< R2: the immutable epoch the objects were looked up at
+    /// R3 step 2: by the stage's image index, where the record holds the image's descriptor words: (binding index << 8) | dword offset in it,
+    /// ImageNoEntry (the record has none) or ImageUnknown (not resolved: the raster thread looks itself)
+    boost::container::small_vector<u32, 8> image_words;
+    static constexpr u32 ImageUnknown = ~0u, ImageNoEntry = ~0u - 1;
+    VkbShader::Info* info{};
+    std::array<u32, UserDataRegs> user_data{};
+    u32 user_data_count{};
+    boost::container::small_vector<u32, 64> flat;
+    bool flat_skipped{}; ///< N3b: every descriptor of the stage comes from the record's binding list; the flat user data was not built (flat is empty)
+    VAddr pgm_base{};
+};
+
+/// Note 161: what a plan's fixed state points at before a draw ever set it (the copy started as a default state too).
+inline const FixedState g_no_fixed_state{};
+
+struct DrawPlan {
+    const GraphicsPipeline* pipeline{}; ///< Null if the pipeline lookup failed.
+    /// R3.3 (note 161, `TLG_PLAN_POINTERS=2`): the fixed state of the draw, the record's cached state (the cache never frees or changes an entry). A plan taken from the pool
+    /// and not given a state (the game's own operations) keeps its last pointer, as the copy kept its last bytes.
+    const FixedState* fixed{&g_no_fixed_state};
+    FixedState fixed_copy{}; ///< LEGACY(plan_pointers): the copy (`TLG_PLAN_POINTERS=0` and 1); `fixed` points at it then
+    const FixedState* fixed_source{}; ///< note 154 shadow: the cached state the copy was made from
+    DrawInputs inputs{};
+    bool executed{}; ///< the draw was executed from a record: no register based classification
+    u8 op_class{0xff}; ///< not 0xff: one of the game's own transition operations (Rasterizer::DrawClass) that the raster thread performs from this plan, no pipeline
+    bool depth_copy{}, stencil_copy{};
+    std::array<Core::TargetExtent, VkbAmdGpu::NUM_COLOR_BUFFERS> cb_extent{}; ///< the extent hints of the targets when the draw was recorded
+    Core::TargetExtent db_extent{};
+    std::array<u64, 18> target_resources{}; ///< E3: engine resource ids behind the bound color views and the depth view when the draw was recorded
+    std::array<StagePlan, StageCount> stages{};
+    u64 ring_end{}; ///< T1: the constant ring position after this plan's copies
+    u64 lean_key{}; ///< track L: the template key the command processor thread made (0: none made, the raster thread makes it)
+    u64 native_seq{}; ///< the record the plan was made from (0: planned from the registers); diagnostics
+    const void* hook_inputs{}; ///< note 185: the published inputs copy a hook plan was made from (a newer copy for the key makes the front refresh the inputs)
+    const void* hook_entry{};  ///< note 185: the published exec entry a hook plan was made from (a newer one makes the front plan the draw itself)
+    /// NativeDraw v2: the descriptors of the record in the user data of its stages; the native binder reads them by (stage, flat offset)
+    std::array<Core::NativeDraw::RecordBinding, Core::NativeDraw::MaxRecordBindings> bindings{};
+    u32 binding_count{};
+    bool bindings_complete{};
+    bool any_flat_skipped{}; ///< N3b: a stage of the plan has no flat user data, the binder must serve the draw
+    /// N3c: the immutable engine buffer of each kind 1 binding, resolved by the engine's id when the plan was made (null: none); valid while `handle_epoch` is the
+    /// current `Core::NativeResources::ImmutableEpoch()`
+    std::array<Core::NativeResources::ImmutableBuffer*, Core::NativeDraw::MaxRecordBindings> handles{};
+    u64 handle_epoch{};
+    bool has_handles{};
+    /// N6.2: the immutable engine buffers named by the record's vertex and index buffer ids (valid while `handle_epoch` is the immutable epoch)
+    std::array<Core::NativeResources::ImmutableBuffer*, Core::NativeDraw::MaxGeometryIds> geometry_handles{};
+    u32 geometry_handle_count{};
+    bool has_geometry_handles{};
+    /// Note 117: the record's vertex and index buffer ids themselves (own memory by id reads them at the bind, with no epoch)
+    std::array<u64, Core::NativeDraw::MaxGeometryIds> geometry_ids{};
+    u32 geometry_id_count{};
+    /// N5g: vertex ranges (`index` = GeometryVertex) and the index range (`GeometryIndex`) the command processor copied into the constant ring
+    boost::container::small_vector<RingBinding, 4> geometry_ring;
+};
+
+struct DispatchPlan {
+    const ComputePipeline* pipeline{}; ///< Null if the pipeline lookup failed.
+    Core::NativeDispatch::DispatchInputs cs{};  ///< The compute program of this dispatch: the rasterizer reads it from here.
+    VkbAmdGpu::BorderColorBuffer ta_bc_base{}; ///< The custom border colour table the dispatch's samplers use.
+    StagePlan stage{};
+    u64 ring_end{}; ///< T1: the constant ring position after this plan's copies
+    u64 lean_key{}; ///< track L: the template key the command processor thread made (0: none made, the raster thread makes it)
+    u64 native_seq{}; ///< B2: the record this dispatch was planned from (the registry audit names its resources by it)
+    /// B9: the typed bindings of that record (the descriptors in the dispatch's user data, with the engine ids); complete when none was dropped
+    std::array<Core::NativeDraw::RecordBinding, Core::NativeDraw::MaxRecordBindings> bindings{};
+    u32 binding_count{};
+    bool bindings_complete{};
+    Core::NativeDraw::MapUpload map_upload{}; ///< note 173: valid when `map_upload.seq == native_seq`
+};
+
+
+/// Hash of what a plan holds (pipeline, class, per stage: info, program base, user data, flat user data).
+[[nodiscard]] u64 PlanDigest(const DrawPlan& plan);
+[[nodiscard]] u64 PlanDigest(const DispatchPlan& plan);
+/// Back to the empty state (kept capacity).
+void ResetStage(StagePlan& stage);
+
+/// Counters of the constant ring front (command processor thread) and of its use (raster thread); `RingUse::Take` reads and clears them.
+struct RingStats {
+    u64 queued{}, written_buffers{}, offered{}, taken{}, bytes{};
+    u64 no_sharp{}, written{}, formatted{}, too_large{}, immutable{}, gpu_modified{}, pending_write{}, ring_full{};
+    u64 bound{};
+    u64 verified{}, differing{};
+};
+
+/// Raster thread: the plan the next draw or dispatch runs from, for its ring bindings (set before recording, cleared after), and the ring counters.
+struct RingUse {
+    const DrawPlan* draw = nullptr;
+    const DispatchPlan* dispatch = nullptr;
+    std::atomic<u64> queued{0}, written_buffers{0}, offered{0}, taken{0}, bytes{0};
+    std::atomic<u64> no_sharp{0}, written{0}, formatted{0}, too_large{0}, immutable{0}, gpu_modified{0}, pending_write{0}, full{0}, bound{0};
+
+    void Begin(const DrawPlan* d, const DispatchPlan* c) noexcept {
+        draw = d;
+        dispatch = c;
+    }
+    /// The ring binding of the buffer `index` of the stage whose Info is `info` in the current plan (null: none).
+    [[nodiscard]] const RingBinding* Find(const VkbShader::Info* info, u32 index) const noexcept;
+    /// The ring copy of a vertex or index range of the current draw (null: none).
+    [[nodiscard]] const RingBinding* FindGeometry(VAddr address, u64 size, u32 kind) const noexcept;
+    /// The ring position after the current plan's copies (0: none); clears the current plan.
+    u64 End() noexcept;
+    [[nodiscard]] RingStats Take() noexcept;
+};
+
+/// Finished plans, reused by the next planning (thread safe: the raster thread gives back, the command processor thread takes).
+class PlanPool {
+public:
+    [[nodiscard]] std::unique_ptr<DrawPlan> TakeDraw();
+    [[nodiscard]] std::unique_ptr<DispatchPlan> TakeDispatch();
+    void Recycle(std::unique_ptr<DrawPlan>&& plan);
+    void Recycle(std::unique_ptr<DispatchPlan>&& plan);
+
+private:
+    std::mutex mutex;
+    std::vector<std::unique_ptr<DrawPlan>> draws;
+    std::vector<std::unique_ptr<DispatchPlan>> dispatches;
+};
+
+} // namespace Core::NativePlan

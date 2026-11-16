@@ -1,0 +1,165 @@
+// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+#include <array>
+#include <string>
+#include "native/native_primitive.h"
+#include "native/native_target_inputs.h"
+#include "native/shadps4/video_core/amdgpu/regs.h"
+#include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
+
+namespace VkbVulkan {
+
+/// The stencil operations of one face (was defined beside the old scheduler's dynamic state)
+struct StencilOps {
+    vk::StencilOp fail_op{};
+    vk::StencilOp pass_op{};
+    vk::StencilOp depth_fail_op{};
+    vk::CompareOp compare_op{};
+
+    bool operator==(const StencilOps& other) const {
+        return fail_op == other.fail_op && pass_op == other.pass_op && depth_fail_op == other.depth_fail_op && compare_op == other.compare_op;
+    }
+};
+
+
+/// Blend state of one colour target, in Vulkan terms (no padding: compared and hashed bytewise as part of a pipeline key).
+struct BlendTarget {
+    vk::BlendFactor src_color{};
+    vk::BlendFactor dst_color{};
+    vk::BlendFactor src_alpha{};
+    vk::BlendFactor dst_alpha{};
+    vk::BlendOp color_op{};
+    vk::BlendOp alpha_op{};
+    u32 enable{};
+
+    bool operator==(const BlendTarget&) const = default;
+};
+
+/// The fixed-function state of a draw as Vulkan wants it: viewports, scissors, depth, stencil, culling, blend constants.
+/// Nothing in it is an AMD register field. The native path builds it straight from the game's state objects; the rasterizer reads
+/// only this. Values that depend on the device (depth range limits, primitive restart support) are applied where the
+/// state is committed.
+struct FixedState {
+    /// The viewport transform the shaders receive as push constants (screen space to normalized coordinates).
+    struct ViewportTransform {
+        float x_offset{};
+        float x_scale{1.f};
+        float y_offset{};
+        float y_scale{1.f};
+    };
+
+    u32 viewport_count{};
+    bool viewport_empty{}; ///< no viewport was described: the single placeholder viewport is bound
+    bool clip_disabled{};  ///< the viewport covers the whole render space (the shader works in screen coordinates)
+    ViewportTransform transform{};
+    std::array<vk::Viewport, VkbAmdGpu::NUM_VIEWPORTS> viewports{};
+    std::array<vk::Rect2D, VkbAmdGpu::NUM_VIEWPORTS> scissors{};
+
+    bool depth_target{}; ///< a depth target is bound
+    bool depth_test{};
+    bool depth_write{};
+    bool depth_clear{}; ///< the draw clears the depth target (the render pass state; no depth write then)
+    vk::CompareOp depth_compare{};
+    bool depth_bounds_test{};
+    float depth_bounds_min{};
+    float depth_bounds_max{};
+    bool depth_bias{};
+    float depth_bias_constant{};
+    float depth_bias_clamp{};
+    float depth_bias_slope{};
+
+    bool stencil_target{}; ///< a stencil target is bound
+    bool stencil_test{};
+    bool stencil_clear{}; ///< the draw clears the stencil target (the write masks are zero then)
+    StencilOps stencil_front_ops{};
+    StencilOps stencil_back_ops{};
+    std::array<u32, 2> stencil_reference{};    ///< front, back
+    std::array<u32, 2> stencil_write_mask{};   ///< front, back
+    std::array<u32, 2> stencil_compare_mask{}; ///< front, back
+
+    bool primitive_restart{};
+    u32 primitive_restart_index{};
+    Core::NativePrimitive::Kind primitive_type{};
+    bool list_topology{};       ///< point, line or triangle list: restart needs the list restart feature
+    bool patch_list_topology{}; ///< patch, quad or rect list (tessellation): restart needs the patch list feature
+    bool rasterizer_discard{};
+    vk::CullModeFlags cull_mode{};
+    vk::FrontFace front_face{};
+    float line_width{};
+    std::array<float, 4> blend_constants{};
+
+    // what a pipeline is built with
+    bool color_enabled{};                                       ///< false: the draw writes no colour target
+    std::array<u8, VkbAmdGpu::NUM_COLOR_BUFFERS> target_write_mask{}; ///< R, G, B, A bits per colour target
+    std::array<BlendTarget, VkbAmdGpu::NUM_COLOR_BUFFERS> blend{};
+    u8 alpha_not_exported{}; ///< bit per colour target: the pixel shader does not write alpha
+    bool logic_op_enabled{};
+    vk::LogicOp logic_op{};
+    vk::PolygonMode polygon_mode{};
+    bool depth_clamp{};
+    bool depth_clip{};
+    bool negative_one_to_one{}; ///< clip space -w..w (otherwise 0..w)
+    bool provoking_first{};
+    u8 user_clip_plane_mask{}; ///< user clip planes the vertex stage lowers
+    bool degamma{};            ///< the colour targets want gamma correction on write
+
+    /// True when no colour target is written (every write mask is empty).
+    bool NoColorTargets() const {
+        for (const u8 mask : target_write_mask) {
+            if (mask != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// True when the first target's blend state reads the second pixel shader output.
+    bool DualSourceBlending() const {
+        const auto& b = blend[0];
+        const auto second = [](vk::BlendFactor f) {
+            return f == vk::BlendFactor::eSrc1Color || f == vk::BlendFactor::eOneMinusSrc1Color ||
+                   f == vk::BlendFactor::eSrc1Alpha || f == vk::BlendFactor::eOneMinusSrc1Alpha;
+        };
+        return b.enable && (second(b.src_color) || second(b.dst_color) || second(b.src_alpha) ||
+                            second(b.dst_alpha));
+    }
+};
+
+/// What a draw reads besides its fixed-function state: the render target and depth target descriptions (they keep the AMD
+/// surface layout because the memory behind them does), the clear values of the render pass and the draw arguments. Taken from the
+/// register state when the draw is planned and carried in the plan, so the raster thread does not read the register mirror for it.
+struct DrawInputs {
+    /// G1b: the target descriptions are plain numbers (`Core::NativeTarget`); only the producers (native_draw_inputs, native_target_desc, native_target_inputs) know the register layout.
+    /// `raw_targets` holds the record's register words they work on; `NativeTarget::DecodeAll` makes the plain members from it. F6b removes the raw words.
+    Core::NativeTarget::RawTargetWords raw_targets;
+    Core::NativeTarget::ColorTarget color_buffers[VkbAmdGpu::NUM_COLOR_BUFFERS];
+    Core::NativeTarget::DepthTarget depth_buffer;
+    Core::NativeTarget::DepthTargetView depth_view;
+    Core::NativeTarget::DepthTargetControl depth_control;
+    VkbAmdGpu::Address depth_htile_data_base;
+    VkbAmdGpu::DepthRenderControl depth_render_control;
+    float depth_clear;
+    u32 stencil_clear;
+    u32 num_indices;
+    VkbAmdGpu::VgtNumInstances num_instances;
+    u32 index_offset;
+    u32 vgt_instance_step_rate_0;
+    u32 vgt_instance_step_rate_1;
+    VkbAmdGpu::IndexBufferBase index_base_address;
+    VkbAmdGpu::IndexBufferType index_buffer_type;
+    u32 max_index_size;
+    VkbAmdGpu::BorderColorBuffer ta_bc_base;
+    std::array<VkbAmdGpu::ClipUserData, VkbAmdGpu::NUM_CLIP_PLANES> clip_user_data;
+};
+
+/// The state of a draw whose registers hold their defaults (the base the native path starts from; F3.6: written out, no register image behind it).
+const FixedState& DefaultFixedState();
+
+/// Sets the topology dependent fields: list / patch classification and culling (only primitives that have faces are
+/// culled; `cull_mode` is what the rasterizer state asks for).
+void SetFixedStateTopology(FixedState& out, Core::NativePrimitive::Kind type, vk::CullModeFlags cull_mode);
+
+} // namespace VkbVulkan

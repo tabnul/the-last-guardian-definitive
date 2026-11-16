@@ -1,0 +1,240 @@
+// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <functional>
+#include <string>
+#include <thread>
+
+#include "common/types.h"
+
+namespace Core::FrameTimeline {
+
+/// Diagnostics (study): timestamps of the events that make up a frame, from any thread, in one ring read by the debug server (/timeline).
+enum Type : u32 {
+    FirstHook = 1,    ///< the first draw / dispatch hook after a submit (render thread)
+    Submit = 2,       ///< sceGnmSubmit*: arg = time of the last hook before it
+    SubmitFlip = 3,   ///< sceGnmSubmitAndFlip*: arg = time of the last hook before it
+    FlipCp = 4,       ///< VideoOutDriver::SubmitFlip entry: arg = 1 for an end of pipe flip
+    FlipPrepared = 5, ///< SubmitFlipInternal done (frame prepared, request queued)
+    PresentStart = 6, ///< the present thread takes the request (a vblank tick)
+    PresentEnd = 7,   ///< the present thread is done with the flip
+    CpWait = 8,       ///< the command processor waited on a memory label: arg = duration ns | site << 56, timestamp = end of the wait
+    FlipWait = 9,     ///< the command processor slept on the flip label (WaitFlipDone): arg = duration ns, timestamp = end of the wait
+    GameWait = 10,    ///< a guest thread blocked: arg = duration ns | kind << 56 (1 condition variable, 2 semaphore, 3 sleep, 4 event queue), arg2 = the object
+    CpIdleQueued = 12, ///< the command processor queued the GpuIdle signal (it parsed everything of the submit)
+    RasterIdleSignal = 13, ///< the raster thread executed the GpuIdle signal (all queued operations before it are done)
+    SubmitDone = 15,   ///< sceGnmSubmitDone / sceGnmRequestFlipAndSubmitDone: arg = 1 if the submission lock was set, +2 if the GPU was idle
+    DingDongWait = 16, ///< sceGnmDingDong waited for the submission lock: arg = duration ns
+    StreamPublish = 14, ///< a span of the command buffer was handed to the command processor while the frame is recorded: arg = dwords
+    EopParsed = 17,    ///< the command processor parsed an end of pipe event of the graphics queue (arg = label address)
+    EopSignaled = 18,  ///< the end of pipe signal ran: arg = ns from the parse to the start on the raster thread, arg2 = ns from there to the signal
+    GameSignal = 11,  ///< a guest thread signalled: arg = kind (5 condition variable signal, 6 broadcast, 7 semaphore post), arg2 = the object
+    // Capture only (documents/tlg/frame-timeline-capture-design.md): the types below are recorded while a capture runs.
+    StageSpan = 20,   ///< a span on a stage thread, written when it ends: arg = duration ns | stage << 56, arg2 = detail (see CaptureStage)
+    GpuCommandBuffer = 21, ///< a command buffer ran on the GPU: ts = end (CPU clock), arg = duration ns, arg2 = submission tick
+    GpuPass = 22,     ///< a render pass or dispatch ran on the GPU: ts = end (CPU clock), arg = duration ns | kind << 56, arg2 = draws | width << 24 | height << 44
+    ThreadCpu = 23,   ///< sampler (1 kHz): arg = CPU cycles the thread named in `thread` ran since the previous sample, taken at ts; cycles / cycles_per_ns (in the .json) = ns
+    GuestSpan = 25,   ///< a timed guest function (spans file): ts = end, arg = duration ns | span id << 48, arg2 = start ns
+    GuestSpanInfo = 26, ///< written just before a GuestSpan of a job: arg = the job's function (Ghidra address), arg2 = its setup function
+    GpuClockSync = 24, ///< calibration: arg = GPU timestamp ticks, ts = the CPU clock at the same moment, arg2 = timestamp period (ns * 1000)
+    // Task manager study (documents/tlg/light-scene-cap-plan.md section 8): hooks on the engine's task manager poll (FUN_01e4b060) and node dispatch (FUN_01e4a6f0).
+    SchedPoll = 27,   ///< the manager polled its waiting list: arg = nodes waiting | nodes with all dependencies finished << 16 | (ready list not empty) << 32, arg2 = first finished node
+    AscKick = 29,     ///< sceGnmDingDong of a compute queue: arg = virtual queue id, arg2 = ns spent waiting for the submission lock and the GPU to be idle, ts = when the buffer was handed over
+    CpResume = 30,    ///< the command processor resumed a queue's task: arg = queue index | done << 8, arg2 = how long it ran before it yielded or finished, ts = end
+    FenceSignaled = 31, ///< a guest fence landed (the label write ran): arg = ns from the parse to the start on the raster thread | queue << 48 | fence kind << 56, arg2 = ns from there to the signal, ts = after the write
+    LabelWrite = 32,  ///< a guest label write by a command stream ran (CpWriteData, or the write held behind a fence): arg = first dword | queue << 32 | (1 << 48 if the held-fence path), arg2 = address, ts = at the write
+    ResourceHash = 34, ///< capture only, resource audit: content hash of a read-only buffer used by queue 1 when it was bound: arg = address, arg2 = XXH64 of the guest memory
+    ResourceUse = 33, ///< capture only, resource audit: a buffer / image bound by the raster thread: arg = address | class << 48 (queue index, 0 graphics) | kind << 56 | written << 63, arg2 = size (core/resource_audit.h)
+    GameWaitSite = 35, ///< written right after a GameWait of the same thread: arg = the guest call site (return address of the blocking import), arg2 = the object
+    // Debugger mode (Shift+F5, documents/tlg/native plan/engine/frame-walk.md): capture only
+    ResourceStale = 36, ///< the byte audit: a read found other bytes than the memory held at the game's submit of its record: arg = address of the first differing 128 byte chunk, arg2 = differing chunks << 32 | submit index
+    ThumbFrame = 37,  ///< present thread: a thumbnail of a presented frame was queued: arg = thumbnail id (matches thumbs.bin), arg2 = presented frame count
+    GlitchMark = 38,  ///< the owner pressed F6 / F7: arg = presented frame count, arg2 = mode (1 full, 2 light)
+    WriterHit = 39,   ///< a data breakpoint armed by the byte audit fired: arg = written address, arg2 = instruction rva (Ghidra address) | first return address << 32
+    SchedNode = 28,   ///< a node: arg = node pointer, arg2 = 1 finished waiting node seen by a poll, 2 dispatch: 2 | state << 8 | pending << 16 | flags << 32
+};
+
+/// The stages of StageSpan (arg >> 56).
+enum CaptureStage : u32 {
+    StageFrontOp = 1,      ///< front: one operation planned and pushed (arg2: 1 draw, 2 dispatch)
+    StageFrontQueueFull = 2, ///< front: waited for room in the raster queue
+    StageFrontDrain = 3,   ///< front: waited for queued memory writes (DrainRasterWrites)
+    StageRasterOp = 4,     ///< raster: one draw / dispatch / closure (arg2: 1 draw, 2 dispatch, 3 closure)
+    StageRasterIdle = 5,   ///< raster: waited for work
+    StageRasterPass = 6,   ///< raster: the draws of one render pass (arg2 = draw count)
+    StageEncoderReplay = 7, ///< encoder: replayed a command list into a command buffer
+    StageEncoderSubmit = 8, ///< encoder: queue submit
+    StageEncoderIdle = 9,  ///< encoder: waited for work
+    StageRasterHandoffWait = 10, ///< raster: waited for the encoder's queue to have room
+};
+
+struct Event {
+    std::atomic<u64> ns{};
+    std::atomic<u64> arg{};
+    std::atomic<u64> arg2{};
+    std::atomic<u32> type{};
+    std::atomic<u32> thread{};
+};
+
+#ifdef _WIN32
+extern "C" __declspec(dllimport) unsigned long __stdcall GetCurrentThreadId();
+extern "C" __declspec(dllimport) int __stdcall QueryThreadCycleTime(void* thread, unsigned long long* cycles);
+#endif
+
+constexpr u32 RingSize = 65536;
+inline std::array<Event, RingSize> ring{};
+inline std::atomic<u64> head{};
+inline std::atomic<u64> last_hook_ns{};
+inline std::atomic<bool> armed{};
+
+/// The capture buffer: while a capture runs every event is also appended here (a plain record, 32 bytes). Filled by any thread, read after the capture stops.
+struct CapEvent {
+    u64 ns;
+    u64 arg;
+    u64 arg2;
+    u32 type;
+    u32 thread;
+};
+inline std::atomic<bool> capture_active{};
+inline CapEvent* capture_events = nullptr;
+inline u64 capture_capacity = 0;
+inline std::atomic<u64> capture_count{};
+/// Ring mode (the frame walk, Shift+F5): the buffer keeps the newest events; the oldest are overwritten, so a stop shows the last seconds, not the first.
+inline std::atomic<bool> capture_ring{};
+inline void CaptureAppend(Type type, u64 arg, u64 ns, u64 arg2, u32 thread) {
+    const u64 at = capture_count.fetch_add(1, std::memory_order_relaxed);
+    if (capture_ring.load(std::memory_order_relaxed)) [[unlikely]] {
+        if (capture_capacity != 0) {
+            capture_events[at % capture_capacity] = {ns, arg, arg2, static_cast<u32>(type), thread};
+        }
+        return;
+    }
+    if (at < capture_capacity) {
+        capture_events[at] = {ns, arg, arg2, static_cast<u32>(type), thread};
+    }
+}
+/// Start a capture of `seconds` seconds into the file timeline_<tag>.bin (and .json) in the log directory. False if one is running.
+/// `ring`: the capture runs until StopCapture and keeps the newest events (the file then has the last events in time order, "ring": true in the .json).
+bool StartCapture(u32 seconds, const std::string& tag, bool ring = false);
+/// True while a capture runs or is being written (after StopCapture it turns false when the file is complete).
+bool CaptureRunning();
+/// Path (without extension) of the last capture file written, empty if none.
+std::string CaptureLastFile();
+/// A short JSON text: whether a capture runs, events so far, the last file written.
+std::string CaptureStatus();
+/// Stop a running capture now (it is written as if its time had run out). False when none runs.
+bool StopCapture();
+/// Name of a guest span id, written into the capture file (see guest_hooks.cpp, the spans file).
+void RegisterSpan(u32 id, const std::string& name);
+/// Names for the capture file: an object (a guest wait object, a stage) gets a text.
+void CaptureNote(u64 id, const char* text);
+
+inline u64 Now() {
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+/// CPU cycles the calling thread has run so far (not time spent blocked or descheduled).
+inline u64 ThreadCycles() {
+#ifdef _WIN32
+    unsigned long long cycles = 0;
+    QueryThreadCycleTime(reinterpret_cast<void*>(static_cast<intptr_t>(-2)), &cycles);
+    return cycles;
+#else
+    return 0;
+#endif
+}
+
+inline u32 ThreadId() {
+#ifdef _WIN32
+    return GetCurrentThreadId();
+#else
+    return static_cast<u32>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+#endif
+}
+
+inline void Record(Type type, u64 arg, u64 ns, u64 arg2 = 0) {
+    const u32 thread = ThreadId();
+    auto& e = ring[head.fetch_add(1, std::memory_order_relaxed) & (RingSize - 1)];
+    e.type.store(0, std::memory_order_relaxed);
+    e.ns.store(ns, std::memory_order_relaxed);
+    e.arg.store(arg, std::memory_order_relaxed);
+    e.arg2.store(arg2, std::memory_order_relaxed);
+    e.thread.store(thread, std::memory_order_relaxed);
+    e.type.store(type, std::memory_order_release);
+    if (capture_active.load(std::memory_order_relaxed)) [[unlikely]] {
+        CaptureAppend(type, arg, ns, arg2, thread);
+    }
+}
+
+inline void Mark(Type type, u64 arg = 0) {
+    Record(type, arg, Now());
+}
+
+/// One draw / dispatch hook on the render thread.
+inline void Hook() {
+    last_hook_ns.store(Now(), std::memory_order_relaxed);
+    if (armed.load(std::memory_order_relaxed) && armed.exchange(false)) {
+        Record(FirstHook, 0, last_hook_ns.load(std::memory_order_relaxed), ThreadCycles());
+    }
+}
+
+inline void Submitted(Type type) {
+    Record(type, last_hook_ns.load(std::memory_order_relaxed), Now(), ThreadCycles());
+    armed.store(true, std::memory_order_relaxed);
+}
+
+/// An event with a duration, written when it ends.
+struct Span {
+    explicit Span(Type type_, u64 site_ = 0) : type{type_}, site{site_}, start{Now()} {}
+    ~Span() {
+        const u64 end = Now();
+        Record(type, (end - start) | (site << 56), end);
+    }
+    Type type;
+    u64 site;
+    u64 start;
+};
+
+/// A blocking call of a guest thread; only waits of at least 100 us are recorded.
+struct WaitSpan {
+    WaitSpan(u64 kind_, const void* object_) : kind{kind_}, object{reinterpret_cast<u64>(object_)}, start{Now()} {}
+    ~WaitSpan() {
+        const u64 end = Now();
+        if (end - start >= 100'000) {
+            Record(GameWait, (end - start) | (kind << 56), end, object);
+        }
+    }
+    u64 kind;
+    u64 object;
+    u64 start;
+};
+
+/// A span on a stage thread (capture only): written when it ends, only if it lasted `min_ns` or more. `detail` can be set until then.
+struct StageScope {
+    StageScope(CaptureStage stage_, u64 detail_ = 0, u64 min_ns_ = 5'000)
+        : active{capture_active.load(std::memory_order_relaxed)}, stage{stage_}, detail{detail_}, min_ns{min_ns_}, start{active ? Now() : 0} {}
+    ~StageScope() {
+        if (active) {
+            const u64 end = Now();
+            if (end - start >= min_ns) {
+                Record(StageSpan, (end - start) | (u64(stage) << 56), end, detail);
+            }
+        }
+    }
+    bool active;
+    CaptureStage stage;
+    u64 detail;
+    u64 min_ns;
+    u64 start;
+};
+
+inline void Signal(u64 kind, const void* object) {
+    Record(GameSignal, kind, Now(), reinterpret_cast<u64>(object));
+}
+
+} // namespace Core::FrameTimeline

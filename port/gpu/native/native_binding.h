@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// NativeDraw v2 (documents/tlg/native-renderer-plan.md, N2 / N3): the descriptors a draw's record put into the user data of its stages, with where they sit.
+// The binder of the rasterizer takes a shader resource by (stage, flat user data offset) and reads its descriptor words here instead of from the flat user data.
+
+#pragma once
+
+#include "common/types.h"
+
+namespace Core::NativeDraw {
+
+constexpr u32 MaxGeometryIds = 9; // N6.2: the engine ids of the vertex buffers of a draw (up to 8) and of its index buffer
+constexpr u32 MaxRecordBindings = 64; // N6.1: the entries of the descriptor tables are in the list too
+
+struct RecordBinding {
+    u8 stage;    ///< 0 vertex, 1 pixel
+    u8 kind;     ///< 1 buffer descriptor (V#), 2 image descriptor (T#), 3 sampler (S#)
+    u16 offset;  ///< flat user data index of the first dword; 0xffff: an entry of a table behind a user data register (`table_sgpr`)
+    u16 slot;    ///< the engine slot the object was found in (for a table entry: its index in the table)
+    u16 dwords;
+    u8 table_sgpr;    ///< table entry: the user data register that points to the table (0xff: not a table entry)
+    u8 entry_dwords;  ///< table entry: dwords per entry of the table (8 resource table, 4 sampler / constant buffer table)
+    u16 table_base;   ///< async context entries (entry_dwords 0xfe): the dword index in the staging table where the table `table_sgpr` points to starts (a shader load at `src` of that table is index `table_base + src`)
+    u64 id;      ///< the engine's unique id of the resource (the registry's key)
+    u64 view_id; ///< E2: the engine's unique id of the view object the descriptor was built from (0: the descriptor was built from the resource itself)
+    u32 words[8];
+    u64 typed_address; ///< note 176 (R3.4b): a buffer binding's address from the engine's objects (valid when `typed_ok`)
+    u32 typed_size;    ///< ... and its size in bytes
+    u32 typed_ok;      ///< 1: the hook computed the two from the engine's view or constant buffer (TLG_TYPED_BUFFERS != 0)
+};
+
+} // namespace Core::NativeDraw

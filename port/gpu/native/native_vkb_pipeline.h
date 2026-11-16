@@ -1,0 +1,151 @@
+// SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+// VKB: the backend's own graphics pipeline (our vk_graphics_pipeline from tlg-pc-port-hayato, moved to VkbVulkan::Vkb);
+// their renderer keeps video_core/renderer_vulkan/vk_graphics_pipeline.h.
+
+#include "native/native_primitive.h"
+
+#include <boost/container/static_vector.hpp>
+#include <xxhash.h>
+
+#include "native/native_desc.h"
+#include "native/shadps4/shader_recompiler/frontend/fetch_shader.h"
+#include "native/shadps4/video_core/amdgpu/regs_color.h"
+#include "native/shadps4/video_core/amdgpu/regs_depth.h"
+#include "native/shadps4/video_core/amdgpu/regs_primitive.h"
+#include "native/shadps4/video_core/renderer_vulkan/vk_fixed_state.h"
+#include "native/vkb_core/pipeline_common.h"
+
+namespace VideoCore {
+class BufferCache;
+class TextureCache;
+} // namespace VideoCore
+
+namespace VkbVulkan {
+class Instance;
+class Scheduler;
+class DescriptorHeap;
+} // namespace VkbVulkan
+
+namespace VkbVulkan::Vkb {
+
+static constexpr u32 MaxShaderStages = static_cast<u32>(VkbShader::SwStage::NumLogicalStages);
+static constexpr u32 MaxVertexBufferCount = 32;
+
+template <typename T>
+using VertexInputs = boost::container::static_vector<T, MaxVertexBufferCount>;
+
+struct GraphicsPipelineKey {
+    std::array<size_t, MaxShaderStages> stage_hashes;
+    std::array<vk::Format, MaxVertexBufferCount> vertex_buffer_formats;
+    u32 patch_control_points;
+    u32 num_color_attachments;
+    std::array<VkbShader::PsColorBuffer, VkbAmdGpu::NUM_COLOR_BUFFERS> color_buffers;
+    std::array<BlendTarget, VkbAmdGpu::NUM_COLOR_BUFFERS> blend;
+    std::array<vk::ColorComponentFlags, VkbAmdGpu::NUM_COLOR_BUFFERS> write_masks;
+    vk::LogicOp logic_op;
+    vk::PolygonMode polygon_mode;
+    u8 alpha_not_exported;
+    u8 logic_op_enable;
+    u8 num_samples;
+    u8 depth_samples;
+    std::array<u8, VkbAmdGpu::NUM_COLOR_BUFFERS> color_samples;
+    u32 mrt_mask;
+    struct {
+        Core::NativeTarget::DepthTarget::ZFormat z_format : 2;
+        Core::NativeTarget::DepthTarget::StencilFormat stencil_format : 1;
+        u32 depth_clamp_enable : 1;
+    };
+    struct {
+        Core::NativePrimitive::Kind prim_type : 5;
+        u32 negative_one_to_one : 1;
+        u32 provoking_first : 1;
+        u32 depth_clip_enable : 1;
+    };
+
+    GraphicsPipelineKey() {
+        std::memset(this, 0, sizeof(*this));
+    }
+
+    bool operator==(const GraphicsPipelineKey& key) const noexcept {
+        return std::memcmp(this, &key, sizeof(key)) == 0;
+    }
+
+    void Serialize(Serialization::Archive& ar) const;
+    bool Deserialize(Serialization::Archive& ar);
+};
+
+class GraphicsPipeline : public Pipeline {
+public:
+    struct SerializationSupport {
+        VertexInputs<vk::VertexInputAttributeDescription> vertex_attributes{};
+        VertexInputs<vk::VertexInputBindingDescription> vertex_bindings{};
+        VertexInputs<vk::VertexInputBindingDivisorDescriptionEXT> divisors{};
+        vk::PipelineMultisampleStateCreateInfo multisampling{};
+        std::vector<u32> tcs{};
+        std::vector<u32> tes{};
+        std::vector<u32> fragment{};
+
+        void Serialize(Serialization::Archive& ar) const;
+        bool Deserialize(Serialization::Archive& ar);
+    };
+
+    GraphicsPipeline(const Instance& instance, Scheduler& scheduler, DescriptorHeap& desc_heap,
+                     const VkbShader::Profile& profile, const GraphicsPipelineKey& key,
+                     vk::PipelineCache pipeline_cache,
+                     std::span<const VkbShader::Info*, MaxShaderStages> stages,
+                     std::span<const VkbShader::RuntimeInfo, MaxShaderStages> runtime_infos,
+                     const VkbShader::Gcn::FetchShaderData* fetch_shader,
+                     std::span<const vk::ShaderModule> modules, SerializationSupport& sdata,
+                     bool preloading, vk::Format depth_format_override = vk::Format::eUndefined);
+    ~GraphicsPipeline();
+
+    const VkbShader::Gcn::FetchShaderData& GetFetchShader() const noexcept {
+        return fetch_shader;
+    }
+
+    const GraphicsPipelineKey& GetGraphicsKey() const {
+        return key;
+    }
+
+    /// Gets the attributes and bindings for vertex inputs.
+    template <typename Attribute, typename Binding>
+    void GetVertexInputs(VertexInputs<Attribute>& attributes, VertexInputs<Binding>& bindings,
+                         VertexInputs<vk::VertexInputBindingDivisorDescriptionEXT>& divisors,
+                         VertexInputs<Core::NativeDesc::BufferDesc>& guest_buffers, u32 step_rate_0,
+                         u32 step_rate_1) const;
+
+private:
+    void BuildDescSetLayout(bool preloading);
+
+private:
+    GraphicsPipelineKey key;
+    VkbShader::Gcn::FetchShaderData fetch_shader{};
+};
+
+struct ClipDistanceShaderKey {
+    std::array<std::tuple<u8, u8>, 8> clip_locations;
+
+    bool operator==(const ClipDistanceShaderKey& key) const noexcept {
+        return std::memcmp(this, &key, sizeof(key)) == 0;
+    }
+};
+
+} // namespace VkbVulkan::Vkb
+
+template <>
+struct std::hash<VkbVulkan::Vkb::GraphicsPipelineKey> {
+    std::size_t operator()(const VkbVulkan::Vkb::GraphicsPipelineKey& key) const noexcept {
+        return XXH3_64bits(&key, sizeof(key));
+    }
+};
+
+template <>
+struct std::hash<VkbVulkan::Vkb::ClipDistanceShaderKey> {
+    std::size_t operator()(const VkbVulkan::Vkb::ClipDistanceShaderKey& key) const noexcept {
+        return XXH3_64bits(&key, sizeof(key));
+    }
+};

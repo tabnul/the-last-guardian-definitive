@@ -1,0 +1,149 @@
+// SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+// VKB: the backend's own copy (from tlg-pc-port-hayato renderer_vulkan/liverpool_to_vk.h); their renderer keeps video_core/renderer_vulkan/liverpool_to_vk.h.
+
+#include "native/native_primitive.h"
+#include "native/native_target_inputs.h"
+#include <span>
+#include "common/assert.h"
+#include "native/ps4_data_layout/pixel_format.h"
+#include "native/shadps4/video_core/amdgpu/regs_color.h"
+#include "native/shadps4/video_core/amdgpu/regs_depth.h"
+#include "native/shadps4/video_core/amdgpu/regs_primitive.h"
+#include "native/shadps4/video_core/amdgpu/regs_vertex.h"
+#include "native/shadps4/video_core/amdgpu/resource.h"
+#include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
+
+namespace VkbVulkan::Vkb::LiverpoolToVK {
+
+vk::StencilOp StencilOp(VkbAmdGpu::StencilFunc op);
+
+vk::CompareOp CompareOp(Core::NativeTarget::CompareFunc func);
+
+bool IsPrimitiveCulled(Core::NativePrimitive::Kind type);
+
+vk::PrimitiveTopology PrimitiveType(Core::NativePrimitive::Kind type);
+
+vk::PolygonMode PolygonMode(VkbAmdGpu::PolygonMode mode);
+
+vk::CullModeFlags CullMode(VkbAmdGpu::CullMode mode);
+
+vk::FrontFace FrontFace(VkbAmdGpu::FrontFace mode);
+
+vk::BlendFactor BlendFactor(VkbAmdGpu::BlendControl::BlendFactor factor);
+
+bool IsDualSourceBlendFactor(VkbAmdGpu::BlendControl::BlendFactor factor);
+
+vk::BlendOp BlendOp(VkbAmdGpu::BlendControl::BlendFunc func);
+
+void NormalizeMinMaxBlend(vk::BlendOp& op, vk::BlendFactor& src, vk::BlendFactor& dst,
+                          Ps4Layout::NumberFormat format);
+
+vk::LogicOp LogicOp(VkbAmdGpu::ColorControl::LogicOp logic_op);
+
+vk::SamplerAddressMode ClampMode(VkbAmdGpu::ClampMode mode);
+
+vk::CompareOp DepthCompare(VkbAmdGpu::DepthCompare comp);
+
+vk::Filter Filter(VkbAmdGpu::Filter filter);
+
+vk::SamplerReductionMode FilterMode(VkbAmdGpu::FilterMode mode);
+
+vk::SamplerMipmapMode MipFilter(VkbAmdGpu::MipFilter filter);
+
+vk::BorderColor BorderColor(VkbAmdGpu::BorderColor color);
+
+vk::ComponentSwizzle ComponentSwizzle(Ps4Layout::CompSwizzle comp_swizzle);
+
+vk::ComponentMapping ComponentMapping(Ps4Layout::CompMapping comp_mapping);
+
+struct SurfaceFormatInfo {
+    Ps4Layout::DataFormat data_format;
+    Ps4Layout::NumberFormat number_format;
+    vk::Format vk_format;
+    vk::FormatFeatureFlags2 flags;
+};
+std::span<const SurfaceFormatInfo> SurfaceFormats();
+
+struct DepthFormatInfo {
+    Core::NativeTarget::DepthTarget::ZFormat z_format;
+    Core::NativeTarget::DepthTarget::StencilFormat stencil_format;
+    vk::Format vk_format;
+    vk::FormatFeatureFlags2 flags;
+};
+std::span<const DepthFormatInfo> DepthFormats();
+
+vk::Format DepthFormat(Core::NativeTarget::DepthTarget::ZFormat z_format,
+                       Core::NativeTarget::DepthTarget::StencilFormat stencil_format);
+
+vk::ClearValue ColorBufferClearValue(const Core::NativeTarget::ColorTarget& color_buffer);
+
+vk::SampleCountFlagBits NumSamples(u32 num_samples, vk::SampleCountFlags supported_flags);
+
+// Table 8.13 Data and Image Formats [Sea Islands Series Instruction Set Architecture]
+constexpr size_t amd_gpu_data_format_bit_size = 6;   // All values are under 64
+constexpr size_t amd_gpu_number_format_bit_size = 4; // All values are under 16
+constexpr size_t surface_format_table_size =
+    (1u << amd_gpu_data_format_bit_size) * (1u << amd_gpu_number_format_bit_size);
+
+extern const std::array<vk::Format, surface_format_table_size> surface_format_table;
+
+constexpr size_t GetSurfaceFormatTableIndex(Ps4Layout::DataFormat data_format,
+                                            Ps4Layout::NumberFormat num_format) {
+    DEBUG_ASSERT(u32(data_format) < 1 << amd_gpu_data_format_bit_size);
+    DEBUG_ASSERT(u32(num_format) < 1 << amd_gpu_number_format_bit_size);
+    size_t result = static_cast<size_t>(num_format) |
+                    (static_cast<size_t>(data_format) << amd_gpu_number_format_bit_size);
+    return result;
+}
+
+constexpr vk::Format SurfaceFormat(Ps4Layout::DataFormat data_format,
+                                   Ps4Layout::NumberFormat num_format) noexcept {
+    vk::Format result = surface_format_table[GetSurfaceFormatTableIndex(data_format, num_format)];
+    bool found =
+        result != vk::Format::eUndefined || data_format == Ps4Layout::DataFormat::FormatInvalid;
+    ASSERT_MSG(found, "Unknown data_format={} and num_format={}", static_cast<u32>(data_format),
+               static_cast<u32>(num_format));
+    return result;
+}
+
+static inline bool IsFormatDepthCompatible(vk::Format fmt) {
+    switch (fmt) {
+    // 32-bit float compatible
+    case vk::Format::eD32Sfloat:
+    case vk::Format::eR32Sfloat:
+    case vk::Format::eR32Uint:
+    // 16-bit unorm compatible
+    case vk::Format::eD16Unorm:
+    case vk::Format::eR16Unorm:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static inline bool IsFormatStencilCompatible(vk::Format fmt) {
+    switch (fmt) {
+    // 8-bit uint compatible
+    case vk::Format::eS8Uint:
+    case vk::Format::eR8Uint:
+    case vk::Format::eR8Unorm:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static inline vk::Format PromoteFormatToDepth(vk::Format fmt) {
+    if (fmt == vk::Format::eR32Sfloat || fmt == vk::Format::eR32Uint) {
+        return vk::Format::eD32Sfloat;
+    } else if (fmt == vk::Format::eR16Unorm) {
+        return vk::Format::eD16Unorm;
+    }
+    UNREACHABLE_MSG("Unexpected depth format {}", vk::to_string(fmt));
+}
+
+} // namespace VkbVulkan::Vkb::LiverpoolToVK

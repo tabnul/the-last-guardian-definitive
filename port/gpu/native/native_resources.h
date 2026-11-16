@@ -1,0 +1,170 @@
+// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+#include <array>
+#include <atomic>
+#include <string>
+#include <utility>
+#include <vector>
+#include <nlohmann/json_fwd.hpp>
+#include "common/types.h"
+
+// What the native resource model knows about the game's GPU memory: the engine allocates every buffer and texture from two
+// heaps of its own (garlic: write combined GPU memory, onion: CPU coherent memory). The census scans those heaps once a
+// second and attributes the backend's buffer requests, uploads, image refreshes and CPU write faults to the allocation they
+// fall in. It answers which resources the GPU reads, how big they are, who rewrites them and how often (debug server
+// endpoint /resources, `?start=1` turns it on).
+namespace Core::NativeResources {
+
+/// How a buffer request was answered.
+enum class BufferPath : u8 {
+    StreamCopy,  ///< read-only, small: copied into the stream buffer
+    StreamReuse, ///< the same copy as earlier in the command buffer
+    Memo,        ///< large or written, answered from the per-command-buffer memo
+    Arena,       ///< large or written, looked up in the arenas (`uploaded` bytes were copied from guest memory)
+};
+
+extern bool census_enabled;
+
+/// The engine created a buffer (called after JsBuffer creation, the object is complete).
+void NoteBufferObject(u64 object);
+/// The engine is initializing a texture (called before the initialization; the object is read on the next scan).
+void NoteTextureObject(u64 object);
+/// The engine destroys a buffer. Returns true when the immutable registry held an entry for it.
+bool NoteBufferDestroyed(u64 object);
+
+void NoteBufferRequest(VAddr address, u32 size, bool written, BufferPath path, u64 uploaded);
+/// An image was (re)uploaded from guest memory.
+void NoteImageUpload(VAddr address, u64 size, bool from_gpu_memory);
+/// B1 census: an image the texture cache registers, against the engine resource at its address (0 engine texture with the same size, 1 engine texture of
+/// another size, 2 engine buffer, 3 no engine resource at that address); `render_target` / `depth`: how the cache made it
+void NoteImageCensus(VAddr address, u32 width, u32 height, bool render_target, bool depth);
+[[nodiscard]] nlohmann::json ImageCensus();
+/// The CPU wrote tracked memory.
+void NoteCpuWrite(VAddr address, u64 size);
+/// F1 marks by id shadow (`TLG_ID_MARKS`): when set on this thread, `NoteCpuWrite` appends the id of every buffer whose generation it bumps and whether it was synchronized then.
+extern thread_local std::vector<std::pair<u64, bool>>* t_bump_capture;
+
+/// An engine buffer with Usage IMMUTABLE: the engine writes its contents once, at creation, and never again. Once the backend
+/// has synchronized the whole buffer with the GPU, requests for it need no tracker query and no copy. A CPU write fault on the
+/// range (the page protection stays as the safety net) or the destruction of the buffer drops that state.
+struct ImmutableBuffer {
+    u64 begin{};
+    u64 end{};
+    u64 object{};
+    u64 id{}; ///< the engine's unique id of the buffer (JsResource +0x10): the key of the native handles (N3c)
+    std::atomic<bool> alive{true};
+    std::atomic<bool> synced{false};
+    std::atomic<u32> generation{0}; ///< bumped by every CPU write to the range
+    std::atomic<u64> hash{0};       ///< hash of the guest memory at the first check after the synchronization (0: not taken yet)
+    std::atomic<u32> requests{0};
+    /// R1 (native back end): where the object is resident on the GPU since its last synchronization, written by the raster thread before `synced` (release):
+    /// the buffer cache's arena (a `VideoCore::Buffer`), its guest base address and the arena epoch it was found at
+    std::atomic<const void*> resident_buffer{nullptr};
+    std::atomic<u64> resident_base{0};
+    std::atomic<u64> resident_epoch{~u64{0}};
+    std::atomic<u32> gpu_writes{0}; ///< R1b: bumped when a GPU write (a written storage buffer, a copy or fill) covers bytes of the object
+    /// R1b (raster thread only): the object's own copy in the stream ring, made once per generation for a default / dynamic buffer: valid while the generation,
+    /// `gpu_writes` and the ring's wrap count are the ones it was made at
+    u64 copy_offset{~u64{0}};
+    u64 copy_wraps{};
+    u32 copy_generation{};
+    u32 copy_gpu_writes{};
+    u8 usage{1}; ///< 1 immutable (the engine writes it once); 0 default and 2 dynamic only with `TLG_RESIDENT_BUFFERS` (C1, see below)
+    /// Design review 81 (`TLG_DROP_DIRTY_APPLIES`): set when an announced write marked the whole of this buffer's range dirty, cleared when an upload takes its dirty bytes.
+    /// While set, a further write of the light constants or scene slots changes nothing a reader sees (the next reader uploads the bytes from guest memory anyway).
+    std::atomic<bool> dirty_pending{false};
+    /// Design review 83 (`TLG_OWN_IMMUTABLE`): the placed Vulkan buffer (`VideoCore::Buffer`) that holds this buffer's bytes, set when it was synchronized into one,
+    /// cleared before that buffer is dropped. With `synced`, a read binding of the buffer by its id is bound from it: no row, no lookup by address, no epoch.
+    std::atomic<const void*> own{nullptr};
+    /// Design review 85 (`TLG_OWN_MUTABLE`): the buffer's dirty set holds bytes inside it that no upload took yet (announced CPU writes). Kept with the set under the
+    /// buffer cache's dirty mutex: set by every add, recomputed by every subtraction. A mutable buffer is bound from `own` only while this is clear.
+    std::atomic<bool> cpu_dirty{true};
+    /// Design review 87 (`TLG_OWN_CLOSE`): `own` was found by the lazy resolution (the placed block that holds the whole buffer), not by a placement or a synchronization
+    /// that set it; and the placement version of the last resolution that found none (no new lookup until placements change).
+    std::atomic<bool> own_new{false};
+    std::atomic<u64> own_tried{0};
+    /// Note 122 (`TLG_OWN_EXACT_END`): the buffer's exact end (`begin` + its byte width; `end` is rounded up to 4 bytes), and whether `own` was found only by it (a block that
+    /// ends at the exact end, short of the rounded one)
+    u64 bytes_end{};
+    std::atomic<bool> own_exact{false};
+};
+
+/// C1 / C3: resident engine buffers (`TLG_RESIDENT_BUFFERS=1`). The residency of the immutable buffers (a buffer synchronized once is read from the arena with no tracker query)
+/// is extended to the engine's `default` and `dynamic` usage buffers up to `TLG_RESIDENT_CAP` bytes (default 262144) that the GPU does not write. They are found by the engine id
+/// of the record's binding (no address walk), and a request is answered from the arena while nothing announced a write and no CPU write fault touched the page of the buffer
+/// since the last synchronization: the generation of the buffer is bumped by `NoteCpuWrite` (the whole 4 KiB page, as the page protection is per page) and by `NoteAnnouncedWrite`.
+/// `TLG_RESIDENT_VERIFY=N` (default 64): every Nth answer without a synchronization is checked with one (nothing may have to be uploaded: else the answer would have been stale).
+bool ResidentBuffersEnabled();
+u32 ResidentCap();
+/// An engine writer announced a write of [address, address + size): the resident buffers on those pages are not synchronized any more.
+void NoteAnnouncedWrite(VAddr address, u64 size);
+/// R1b: the GPU writes [address, address + size) (byte exact): the copies of the engine buffers it touches are stale.
+void NoteGpuWritten(VAddr address, u64 size);
+/// Counters (0 answered without a synchronization, 1 synchronized (first use or after a write), 2 verify run, 3 verify run that found something to upload (stale answer),
+/// 4 request left to the normal path because the GPU modified the range, 5 buffer registered, 6 written by an announcement, 7 dropped by a CPU write fault).
+void NoteResident(u32 what);
+std::array<u64, 8> TakeResidentCounters();
+
+/// True when native_sdk_strip bit 65536 is set.
+bool ImmutableResidencyEnabled();
+/// The live immutable buffer that contains [address, address + size), or null.
+ImmutableBuffer* FindImmutable(VAddr address, u32 size);
+/// Diagnostic: why the lookup by address misses `handle` (a live handle that contains the request): is it in the map, who shadows it.
+std::string ExplainImmutableMiss(const ImmutableBuffer* handle, VAddr address);
+/// N3c: the live immutable buffer of the engine id `id` that contains [address, address + size) (size 0: the id alone), or null. Per thread cache by id, valid while
+/// `ImmutableEpoch` does not change (a buffer was registered or destroyed). The pointer is only good for the epoch read together with it.
+ImmutableBuffer* FindImmutableById(u64 id);
+/// Note 117 (`TLG_OWN_LARGE`): the record of a live default or dynamic engine buffer above the resident cap, or null. Not in the address map, the handles or the residency:
+/// only the own-memory path and its upkeep (own pointer, `cpu_dirty`) read it.
+ImmutableBuffer* FindLargeById(u64 id);
+/// Note 194: the epoch `FindLargeById` answers are valid for (bumped by every add and removal of a large record).
+u64 LargeEpoch();
+/// The registry's record, else the large record (the own-memory upkeep: placement, drop, dirty notes).
+ImmutableBuffer* FindOwnRecordById(u64 id);
+u64 ImmutableEpoch();
+/// N3c counters of the handle path (0 handle used, 1 handle stale because the epoch changed, 2 the id names no immutable buffer, 3 the request is outside the
+/// handle's range, 4 verify mode: the handle differs from the address lookup).
+void NoteHandle(u32 what);
+/// The backend synchronized the whole buffer; `generation` is the one read before it started.
+void ImmutableSynced(ImmutableBuffer& buffer, u32 generation);
+/// Every 4096th request: true when the guest memory no longer matches what was synchronized (the state is dropped).
+bool ImmutableCheck(ImmutableBuffer& buffer);
+/// Counters of the residency: hits answered without a copy, whole buffer synchronizations, drops by CPU writes.
+void NoteImmutableHit();
+void NoteImmutableSync();
+
+/// Image to image copies of the engine's CopyResource: done natively, or refused (reason: 0 no source image, 1 no destination
+/// image, 2 the two images do not have the same layout).
+void NoteImageCopy(bool done, u32 reason);
+/// True when native_sdk_strip bit 131072 is set.
+bool ImageCopyEnabled();
+/// A memory fill of an image: done as an image clear, or refused (reason: 0 no image there, 1 the image is not a plain colour
+/// image of the fill's size, 2 the pattern is not one texel or the format is not handled).
+void NoteImageClear(bool done, u32 reason);
+
+/// Usage of a JsBuffer / JsTexture object (0 default, 1 immutable, 2 dynamic, 3 staging), ~0u when it cannot be read.
+u32 ResourceUsage(u64 object);
+
+/// The usage class (0 unknown, else 1 + (kind - 1) * 4 + usage) of the heap block that contains `address`, from the census snapshot.
+u32 UsageClassOf(VAddr address);
+/// "buffer/dynamic" and the like.
+std::string UsageClassNameOf(u32 usage_class);
+/// The heap block (census snapshot) that contains `address`: its start and size. False when the census is off or the address is in no block.
+bool BlockContaining(VAddr address, u64* start, u64* size);
+/// The engine's frame allocator window (census), false when unknown.
+bool FrameRing(u64* base, u64* size);
+/// The heap block around `address`: class, begin and size ("unknown" when the census is off or the address is in no block).
+std::string DescribeAddress(VAddr address);
+
+void Start();
+nlohmann::json Report();
+
+/// `TLG_GARLIC_LOG=1` (diagnostic, branch native-v3-writers): at every present one row of user/log/garlic_ring.csv: the frame allocator's (`AllocFrameGarlic`) state next to the frame gate's
+/// progress. Allocator (`*(JsDevice + 0x10238)`): ring size, bump offset, frame counter (+8), the three segment indices (+0xc, +0x10, +0x14); the engine frame counter (JsDevice + 0x10240); the gate:
+/// frames submitted, end of pipe interrupts, frames the raster thread finished. Shows when the game releases ring space against when the GPU is done with it.
+void GarlicLogRow(u64 tick);
+
+} // namespace Core::NativeResources

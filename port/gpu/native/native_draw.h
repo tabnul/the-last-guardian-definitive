@@ -1,0 +1,475 @@
+// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+#include "native/native_sync.h"
+
+#include <atomic>
+#include <cstring>
+#include <vector>
+#include <nlohmann/json_fwd.hpp>
+
+#include <array>
+#include <memory>
+#include <string>
+#include "common/types.h"
+#include "native/native_binding.h"
+
+// Host functions called from the guest at chosen game functions (hook mode "call", see guest_hooks.h).
+//
+// The game's render layer (JsDeviceContext) is a D3D11-style object model; every draw goes through
+// PrepareDraw. These handlers read the context's object pointers at the draw entry points. The first
+// handlers only measure (how much of the draw state changes from one draw to the next); the native path
+// builds on the same reading code. Layout of the context and the objects: documents/tlg/spike/js_ctx_state.h.
+namespace VkbVulkan {
+struct FixedState;
+}
+
+namespace Core::NativeTargetDesc {
+struct TargetSet;
+}
+
+namespace Core::NativeDraw {
+
+/// Register groups of the draw state: the group of a register is fixed by its index in the PS4 register file. The registers of a record are stored by group.
+enum RegisterGroup : u32 {
+    GroupOther,
+    GroupArguments,
+    GroupVsProgram,
+    GroupVsUserData,
+    GroupPsProgram,
+    GroupPsUserData,
+    GroupInterpolants,
+    GroupTargets,
+};
+constexpr u32 NumRegisterGroups = 8;
+
+/// Address of the host function registered under `name` (a PS4_SYSV_ABI function taking
+/// (a0..a5, return address) and returning non-zero when it handled the call and the guest function must
+/// be skipped), or 0.
+u64 FindHandler(const std::string& name);
+
+/// Runtime address of the eboot image (callers are classified by their Ghidra address).
+/// Draw count of a record whose draw packet is not known yet (matches any count).
+constexpr u32 UnknownDrawCount = 0xfffffffe;
+
+/// Cumulative counters of the native path (read by the debug server's /native endpoint; the log lines use their own).
+struct LiveCounters {
+    std::atomic<u64> gfx_tags{}, gfx_exec{};
+    std::atomic<u64> compute_tags{}, compute_exec{};
+    std::atomic<u64> asc_exec{}, asc_packet{}, asc_no_record{}, fill_exec{}, mode_switch_exec{}, asc_barrier_exec{}, clear_exec{}, asc_begin_stripped{}, counter_readback{}, async_copy_exec{}, device_begin_stripped{};
+    /// synchronization packets taken out of the stream: scratch barrier units (label, end of shader event, wait on the label,
+    /// cache acquire), stand-alone cache acquires and no-op events
+    /// draws of a shader without a fetch object yet (`native_sdk_strip` bit 2147483648): the game's draw function ran, the record was built again afterwards
+    /// the texture map helper's upload dispatch (`map_native`): calls seen, records patched into the tag, refused, executed
+    /// compute program audit (`cs_audit`): record dispatches seen, those whose program (queue state plus record) differs from the record alone on a zeroed program, and the dwords that differ
+    /// command buffers that are not pure (they run from their entries only) and the packets of them that were not executed
+    std::atomic<u64> packet_path_skipped_buffers{}, packet_path_skipped_packets{};
+    /// register values the native records apply to the command processor's draw state (OverlaySet): offered, not covered by any member, equal to the held value, changed
+    std::array<std::atomic<u32>, 65536> overlay_changed_by_index{};
+    std::atomic<u64> overlay_group_checked{}, overlay_group_violations{};
+    /// cp_group_sig: groups skipped because their identity was already applied, groups applied, skipped groups checked against the record, and violations (by group)
+    /// cp_stage_key: draws whose pipeline came from the record's key, draws that went the full way and stored a key, draws without a key, full lookups of
+    /// keyed draws (audits) and the ones that differed
+    std::atomic<u64> stage_key_hits{}, stage_key_misses{}, stage_key_uncached{}, stage_key_audits{}, stage_key_violations{};
+    /// draws whose pipeline and stages came from the typed path alone (PlanGraphicsTyped, the cached stage key); the counters above only count the learning path
+    std::atomic<u64> stage_key_typed_hits{};
+    /// cp_exec_inputs: draws planned from the record alone, draws that could not be (no cached inputs or pipeline yet), draws planned both ways and compared, and the ones that differed
+    std::atomic<u64> exec_typed{}, exec_fallback{};
+    std::atomic<u64> draw_args_typed{}; ///< E1b: draws whose arguments came from the record's typed values
+    std::array<std::atomic<u64>, 12> fixed_null{}; ///< why Fixed::Build gave no fixed state (by exit point)
+    std::array<std::atomic<u64>, 3> plan_null{};   ///< why PlanExecDraw gave no plan: 0 stale surface / clip, 1 inputs not learned yet, 2 pipeline plan failed
+    /// why a draw was not planned from its record: 0 the switches are not all on, 1 the record has no key (not typed, no fixed state), 2 the command processor is not split,
+    /// 3 a fixed-state verify draw, 4 no cached render target inputs or pipeline for its keys yet, 5 a fast clear eliminate that could not be planned
+    /// (index 8: F3.2, a hull, domain or geometry shader is bound; the draw is refused)
+    std::array<std::atomic<u64>, 9> exec_reason{};
+    /// of the typed ones: fast clear eliminates and inline draws (the count came with the draw packet)
+    std::atomic<u64> exec_fast_clear{}, exec_inline{}, exec_inline_seen{};
+    /// F3 planning counters (F3.5: the register-image alternatives are gone, the slots stay): 0 key targets from the plan's inputs, 2 colour export formats from the pixel shader's environment,
+    /// 4 stage set from the shader environment, 6 translator input from the environment, 8 program and user data of a stage from the environment and the record's words, 9 a stage whose
+    /// program was not found, 10 inputs of the plan made from the record
+    std::array<std::atomic<u64>, 12> key_targets{};
+    /// F3.3: draws whose inputs still carry register-only words (clip planes, border colour base, index offset): checked, and not zero
+    std::atomic<u64> reg_only_checked{}, reg_only_nonzero{};
+    /// F3.5: learning draws planned from the record with an empty register block, and draws refused because they cannot be (no typed user data, no native fixed state, another stage bound)
+    std::atomic<u64> plan_register_free{}, plan_refused{};
+    /// draws and clears planned by the command processor
+    std::atomic<u64> state_planned{};
+    std::atomic<u64> overlay_offered{}, overlay_unmapped{}, overlay_same{}, overlay_changed{}, overlay_records{};
+    std::atomic<u64> cs_audit_dispatches{}, cs_audit_differing{};
+    std::array<std::atomic<u64>, 128> cs_audit_dword{};
+    std::atomic<u64> map_tried{}, map_patched{}, map_refused{}, map_exec{};
+    std::atomic<u64> fetch_rebuild_tried{}, fetch_rebuilt{}, fetch_rebuild_refused{}, fetch_rebuild_exec{};
+    std::atomic<u64> sync_units_stripped{}, sync_acquires_stripped{}, sync_events_stripped{}, barrier_calls_skipped{};
+    /// sync records (`native_sdk_strip` bit 2097152): packets turned into tags, by kind (1 graphics end-of-pipe, 2 release memory, 3 wait, 4 write data)
+    /// and by place (the hook of FUN_02480d60, the sweep when the next tag is written, the submit of a command buffer); packets the
+    /// hook left as written; tags the command processor executed, by kind
+    std::array<std::atomic<u64>, 9> sync_converted{}, sync_exec{}; ///< by SyncKind (NativeDraw: none, eop, release, wait, write, event, inert, dma, query)
+    std::atomic<u64> sync_converted_hook{}, sync_converted_sweep{}, sync_converted_submit{}, fence_packets_kept{};
+    /// direct submission, step 3a (bit 4194304): graphics buffers whose entry list was built, pure / mixed ones, entries listed, entries the walk
+    /// found in the list, entries that differ or are missing, buffers whose non-entry packets differ between list and walk, buffers whose list is incomplete (not compared)
+    std::atomic<u64> direct_built{}, direct_pure{}, direct_mixed{}, direct_entries{}, direct_matched{}, direct_entry_mismatch{}, direct_purity_mismatch{}, direct_incomplete{}, direct_executed{}, direct_executed_asc{};
+    std::atomic<u64> track_native{}, track_fce{}, track_game_second{}, track_game_depth{};
+    /// fixed-function state of native draws: used from the engine's objects, compared with the registers, and the compares that differed
+    std::atomic<u64> fixed_native{};
+};
+LiveCounters& Live();
+
+/// The engine's JsDevice (0 until known).
+u64 EngineDevice();
+
+/// The number the next record will get (records are numbered in the order the game's hooks create them, across all contexts).
+u64 NextSeq();
+
+void SetImageBase(VAddr base);
+/// Load address of the game's main module (0 until known).
+VAddr ImageBase();
+/// Phase 0b: is the compute program (code address >> 8, the figure the dispatch census lists) the game shader `file` / `entry` (the table of /stats `shader_names`)?
+[[nodiscard]] bool IsShaderEntry(u64 program, const char* file, const char* entry);
+/// Census (TLG_LIFE_CENSUS=1): an engine object was deleted by the game's delayed delete; `age` = game frame - the object's stamp (negative: never stamped). Joins with the creation census (who made it, how many game frames ago).
+void LifeDeleted(u64 object, s64 age);
+/// Census (TLG_LIFE_CENSUS=1): the raster thread binds an immutable / resident engine buffer for a draw; counts the object's stamp age (game frame - [object + 0x2c]) so the buffers the game never stamped (and so frees at once) can be told from the stamped ones.
+void LifeBound(u64 object, u64 id, bool by_plan_handle);
+/// Census: a record's plan handle named `dead_object`, which the game deleted before the raster thread used it (stale bind). `address_found_other`: the lookup by address now finds another live engine buffer there (the memory was reused: the draw would read the new buffer's content).
+void LifeStaleBind(u64 dead_object, bool address_found_other);
+/// C4 (update audit): announces the scene's per object constant slots the engine wrote since the last call (see `SceneSlotWrites`); called at the start of a frame.
+void FlushSceneSlotAnnouncements();
+/// True on a thread that is running a guarded record build: a fault there is handled by the builder, not fatal.
+bool IsGuarded();
+/// N6.3i: runs `fn(argument)` with the same fault guard as the record builder; false when it faulted.
+bool GuardedCall(void (*fn)(void*), void* argument);
+/// N6.3i (cascade generator): issues `DrawIndexedCommon(ctx, count, first, 0, 1)` as the depth pass loop does at its call site, through the draw hook (the tag, then the engine's function).
+void IssueIndexedDraw(u64 ctx, u64 count, u64 first, u64 site_ghidra, u64 a4, u64 a3 = 0);
+
+/// Native at the source S2b (`TLG_NDD=1`, shadow): what the native draw description of a generator's draw holds for the raster thread, by the record number of the draw.
+/// `key`: the draw's identity from the description alone (shaders, fixed state, input layout, targets, every binding with a frame ring constant by its size only, the
+/// vertex and index buffer ids); `moving`: the frame ring constants' addresses and sizes (what changes every draw).
+struct NddShadow {
+    static constexpr u32 MaxMoving = 24;
+    u64 seq{};
+    u64 key{};
+    u32 moving_count{};
+    bool moving_overflow{};
+    std::array<u64, MaxMoving> moving_address{};
+    std::array<u32, MaxMoving> moving_size{};
+    u32 count{};
+    u32 first{};
+    /// S2c: per stage (0 vertex, 1 pixel) the input type whose pointer the hook puts in each user data register (0: none; 18 fetch shader, 23 vertex table, 26 global table,
+    /// 27 extended user data, 19 / 21 / 22 resource / sampler / constant buffer tables), and the vertex buffer table the description builds itself (4 dwords per element)
+    std::array<std::array<u8, 16>, 2> ud_pointer{};
+    static constexpr u32 MaxVertexElements = 16;
+    u32 vertex_sgpr{0xff};
+    u32 vertex_count{};
+    std::array<std::array<u32, 4>, MaxVertexElements> vertex_words{};
+};
+[[nodiscard]] bool NddShadowOn() noexcept;
+/// Native at the source S3 (`TLG_NDD=2`, real): a generator's indexed draw whose description key the front has a stored plan for goes as a native tag (no record, no planning).
+/// The tag's kind; its words: k1 the key, k2 index count | first index << 32, k3 the base vertex, seq the description's number.
+constexpr u32 NddTagKind = 14;
+[[nodiscard]] u32 NddMode() noexcept;
+/// Front thread: the key has a stored plan (published once, never taken back)
+void NddPublish(u64 key) noexcept;
+[[nodiscard]] bool NddPublished(u64 key) noexcept;
+/// Front thread: the native draw of description `seq` was taken (the record ring's flow control)
+void NddConsumed(u64 seq) noexcept;
+/// S3 counters (front side), reported with the hook's in `ndd_s3`
+void NddNoteFront(u32 what) noexcept;
+enum NddFront : u32 { NfOps = 0, NfNoPlan, NfStored, NfIneligible, NfNoDescription, NfIneligibleFirst };
+/// The description of record `seq` (null: none, or overwritten since)
+[[nodiscard]] const NddShadow* NddShadowFor(u64 seq) noexcept;
+/// Same for `DrawIndexedIndirect(ctx, argument buffer object, byte offset)` at the loop's indirect call site.
+void IssueIndirectDraw(u64 ctx, u64 buffer, u64 offset, u64 site_ghidra);
+/// A7 (decal generator): the inlined `DrawIndexAuto` of the decal loop (`FUN_01c71680`, call site 0x01c727a7): `PrepareDraw(ctx, 0, 1)` through the draw hook, then, when the tag did not take the
+/// draw over, what the loop does with the game's packet path. The caller has set `ctx + 0x4724` (instances) and `ctx + 0x479c` (first vertex 0) and made the index buffer call.
+void IssueInlineAutoDraw(u64 ctx, u32 count, u64 site_ghidra);
+/// True when the draw hook acts on an inlined auto draw of `count` vertices (the loop's draw then reaches `NoteLoopDraw`); otherwise the game's own path runs it.
+[[nodiscard]] bool InlineAutoDrawTagged(u32 count);
+/// B3 (skinning generator): `Dispatch(ctx, x, y, z)` as the loop makes it at its call site (return address `site_ghidra`), through the dispatch hook: the tag, then the engine's
+/// function unless the tag took the dispatch over. `fenced`: the context's fenced dispatch (virtual + 0x50) instead of the plain one (virtual + 0x58).
+void IssueDispatch(u64 ctx, u64 x, u64 y, u64 z, bool fenced, u64 site_ghidra, bool async = false);
+/// The engine's indirect dispatch (`FUN_0248dec0`): the group counts are read by the GPU from `buffer + offset`.
+void IssueDispatchIndirect(u64 ctx, u64 buffer, u64 offset, u64 site_ghidra);
+
+/// V3a of the engine-to-Vulkan backend (native_vkb_compute.cpp): the user data a shader's input usage table describes, built for the recompiler's compile (once per variant), never per draw.
+/// `tags`: every slot's descriptor dwords are a tag instead (`UserLayout::TagOf` reads it back), so the shader's own table walk tells which slot each resource it reads is.
+struct UserLayout {
+    std::array<u32, 16> sgpr{};
+    std::vector<std::unique_ptr<std::vector<u32>>> tables; ///< the tables the pointers in `sgpr` point to (stable storage)
+    u32 unsupported_types{}; ///< bit per input type the builder does not know
+    /// A tag: 0x5a000000 | kind << 20 | slot << 8 (kind 1 resource, 2 sampler, 3 constant buffer, 4 unordered access, 5 element of the vertex buffer table)
+    [[nodiscard]] static bool TagOf(u32 word, u32& kind, u32& slot) noexcept {
+        if ((word & 0xff0000ffu) != 0x5a000000u) {
+            return false;
+        }
+        kind = (word >> 20) & 0xf;
+        slot = (word >> 8) & 0xfff;
+        return kind >= 1 && kind <= 5;
+    }
+};
+/// `stage` as the engine numbers it (5 compute); `inputs_offset`: where the usage table starts in the Gnm block (0x28 vertex / compute, 0x3c pixel)
+void BuildUserLayout(u64 ctx, u32 stage, u64 shader, u32 inputs_offset, bool tags, UserLayout& out);
+/// The same for the async compute context `jcc` (JsComputeContext): its shader's offset table (`cs_obj + 0x130`) places every slot's descriptor in a user data register or in the
+/// staging table (`jcc + 0x138`), as MakeAscRecord does; the table pointers, the global table, the counter range and the immediate go into their registers.
+/// `unsupported_types` bit 31: a layout the builder does not know.
+void BuildAsyncLayout(u64 jcc, bool tags, UserLayout& out);
+/// V4: the fixed-function state of the draw the device context `ctx` is about to make, from its blend, rasterizer and depth-stencil objects, topology and viewport (cached per state;
+/// null when one is missing or holds a value Vulkan has no equivalent for)
+[[nodiscard]] const VkbVulkan::FixedState* FixedStateOf(u64 ctx);
+/// V4: the fetch shader of the vertex shader `vs` with the bound input layout (its fetch object, + 0x30 its code), 0 when there is none
+[[nodiscard]] u64 FetchObjectOf(u64 ctx, u64 vs);
+/// V4: element `element` of the bound input layout as the vertex buffer table describes it (the engine's V#, decoded): where its data starts, how many bytes the buffer has from
+/// there, the stride, the console data and number format numbers. False: no layout, no such element, or no buffer in its slot.
+struct VertexElement {
+    u64 buffer{};  ///< R7 (note 56): the engine buffer object in the vertex slot
+    u64 start{};   ///< R7: the element's byte offset in that buffer (slot offset + element offset)
+    u64 address{};
+    u64 bytes{};
+    u32 stride{};
+    u32 data_format{};
+    u32 num_format{};
+};
+bool VertexElementOf(u64 ctx, u32 element, VertexElement& out);
+/// Census of the draws the generators issue (`TLG_GEN_CENSUS=1`): kind 0 indexed, 1 indirect; calls, ticks in the tag, ticks in the engine draw function, draws the tag took over.
+void TagCensusRead(std::array<u64, 5>& ticks, u64& calls);
+void UserDataCensusRead(u64& scan_ticks, u64& fill_ticks, u64& tables, u64& slots);
+/// N7 groundwork: the shader input table audit of the generated draws (native_draw.cpp, AuditBindings).
+void InputTableAuditRead(nlohmann::json& out);
+void MergeCensusRead(std::array<u64, 6>& values);
+/// A1 (`TLG_SITE_CENSUS=1`, also on with `TLG_GEN_CENSUS=1`): the draws the hook tagged, by the call site that made them (ghidra return address): draws, generated ones (issued by one of the
+/// generators), draws executed natively from their record, the kinds seen. Written into `out` ranked by draws.
+void DrawSiteCensusRead(nlohmann::json& out);
+/// A5.2 (`TLG_NATIVE_LIST=1`, verify `TLG_NATIVE_LIST_VERIFY=N`, default 64): the state half of a record (the register groups of the targets, the fixed function state, the vertex and pixel
+/// program, the target extents, the flags) is taken from a package built at the first sight of the engine's state key instead of being synthesized again; counters.
+void NativeListRead(nlohmann::json& out);
+void RecordCacheCensusRead(u64& lookups, u64& hits_1m, u64& hits_64k);
+void MakeRecordCensusRead(std::array<u64, 6>& ticks, u64& calls);
+void IssueCensusRead(u32 kind, u64& calls, u64& tag_ticks, u64& original_ticks, u64& taken_by_tag);
+
+/// N6.3e (shadow generator): builds the record of a draw from `ctx`, which may be a private copy of the device context patched from the snapshot instead of the live one. Returns
+/// the record number, 0 when the build faulted. The record is not tagged into any command stream and nothing refers to it.
+u64 ShadowBuildRecord(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3);
+/// Compares two records (the one built from the live context and the one built from the shadow context) and appends one line per difference: registers (except the pointers to the
+/// per draw tables), bindings, geometry ids, the descriptor key, flags and extents. Returns the number of differences.
+u32 CompareRecords(u64 seq_a, u64 seq_b, std::vector<std::string>& differences);
+
+/// Raster thread: compares the register state recorded for tagged draw `seq` with the raster thread's register file
+/// (`reg_array`, index = register dword offset) and counts the differences (shadow mode).
+void VerifyRecord(u64 seq, const u32* reg_array);
+
+/// Index base of the compute program registers in a record: dword `d` of the compute program is index `ComputeRegisterBase + d`.
+constexpr u32 ComputeRegisterBase = 0xE000;
+
+/// Raster thread: the same comparison for a dispatch; `cs_dwords` is the compute program the dispatch runs with.
+void VerifyComputeRecord(u64 seq, const u32* cs_dwords);
+
+struct ExecRegister {
+    u32 index; ///< index in the register file (dword offset)
+    u32 value;
+};
+
+/// A draw the game's render layer did not write as command packets: the registers its objects describe and the
+/// draw arguments.
+/// E1b (played 2026-10-31): the arguments of a draw as typed values, set by the record builder where it also emits the argument registers (still used by the draws that
+/// are not planned from their record) (VGT_NUM_INDICES, VGT_NUM_INSTANCES,
+/// the index buffer base, type and maximum size). `mask` says which of them the record set; the others keep what the plan's cached inputs hold.
+struct DrawArgs {
+    static constexpr u32 NumIndices = 1, NumInstances = 2, IndexBase = 4, IndexType = 8, MaxIndexSize = 16;
+    u32 mask{};
+    u32 num_indices{};
+    u32 num_instances{};
+    u32 index_base_lo{}; ///< the address's low 32 bits, bit 0 cleared
+    u32 index_base_hi{}; ///< the address's bits 32 to 39
+    u32 index_type{};    ///< the engine's index type word (index width and swap mode)
+    u32 max_index_size{};
+};
+
+struct ExecDraw {
+    static constexpr u32 MaxRegisters = 320;
+    u64 seq{}; ///< the record this draw was taken from (diagnostics: the native registry audit)
+    /// NativeDraw v2: the descriptors of the record in the user data of the two stages (graphics records); `bindings_complete` when none was dropped
+    std::array<RecordBinding, MaxRecordBindings> bindings;
+    u32 binding_count{};
+    bool bindings_complete{};
+    bool bindings_overflow{}; ///< the list did not fit (MaxRecordBindings)
+    /// N6.2: the engine ids of the buffers the draw reads as vertex or index data (the engine's vertex buffer slots of the input layout, the index buffer view)
+    std::array<u64, MaxGeometryIds> geometry_ids{};
+    u32 geometry_id_count{};
+    std::array<ExecRegister, MaxRegisters> regs;
+    /// A5.3: the state package the register groups of a typed draw come from. The groups the package holds are not copied into `regs` until `MaterializeRegs` (the plan of a
+    /// draw whose inputs are cached reads only the arguments group); `group_begin`, `group_sig`, `inputs_key` and `stage_key` are complete.
+    const void* lazy{};
+    u32 count{};
+    /// The first `grouped` registers are stored by group (group g is regs[group_begin[g]] to regs[group_begin[g + 1]]), the rest always applies.
+    /// `group_sig[g]` identifies what the group's values come from (the engine's objects); 0: no identity, always apply.
+    u32 grouped{};
+    std::array<u16, NumRegisterGroups + 1> group_begin{};
+    std::array<u64, NumRegisterGroups> group_sig{};
+    /// Identity of everything the shader variants and the pipeline of the draw depend on besides the fixed-function state: the group identities and the
+    /// descriptor fields the stage specializations compare. 0: unknown, the pipeline is looked up from the registers.
+    u64 stage_key{};
+    /// Hash of the values of the register groups the render target inputs of the plan come from (targets, other state, vertex program), made when the record
+    /// was built. 0: unknown.
+    u64 inputs_key{};
+    /// Typed per draw inputs (TakeExecDraw with `typed`): the user data registers of the vertex and pixel stage, a bit per dword of the stage that the record writes.
+    /// They are not among `regs`.
+    bool typed{};
+    u16 vs_user_data_mask{}, ps_user_data_mask{};
+    std::array<u32, 16> vs_user_data{}, ps_user_data{};
+    u32 kind{};        ///< 0 = indexed, 1 = auto
+    u32 start_index{}; ///< indexed draws
+    u64 args_addr{};   ///< indirect draws (kind 2)
+    u64 extra_addr{};  ///< copy records (kind 10): the source address
+    u32 offset{};
+    u32 vertex_sgpr{};
+    u32 instance_sgpr{};
+    std::array<u32, 8> cb_extent{}; ///< render target extent hints (the game's trailing NOP of a target bind)
+    u32 cb_extent_mask{};           ///< bit per slot whose hint is set by this draw
+    std::array<u64, 18> target_resources{}; ///< E3: engine ids of the resources behind the bound render target views (0..7) and the depth view (8); 0: none
+    const Core::NativeTargetDesc::TargetSet* native_targets{}; ///< E7 (TLG_TARGET_DESC_USE): the description of the targets the record's draw, depth clear or eliminate uses (null: none made)
+    u32 db_extent{};
+    bool has_extents{};
+    u32 a1{}; ///< kind 6 (buffer fill): number of dwords; start_index holds the value, args_addr the destination
+    bool cb_extents_only{}; ///< fast clear eliminate: only the render target extents change
+    u64 fill_destination{}; ///< dispatches of the device's fill shader: the pattern fill it performs (0: not one)
+    u32 fill_bytes{};
+    u32 fill_dwords{}; ///< dwords of the pattern (at most 4)
+    std::array<u32, 4> fill_pattern{};
+    u64 copy_destination{}; ///< dispatches of the device's buffer copy shader: the memory copy it performs (null: not one)
+    u64 copy_source{};
+    u32 copy_bytes{};
+    DrawArgs args{}; ///< E1b
+    bool other_stage{}; ///< F3.2: a hull, domain or geometry shader is bound in the device context (ctx +0x4678 / +0x4680 / +0x4688)
+    std::array<u64, 2> shader_ids{}; ///< note 179: the engine ids of the vertex and pixel shader objects (0: none)
+    u64 hook_pipeline{};   ///< note 183 shadow: the pipeline the hook found for the record's keys (0: none)
+    u8 hook_plan_state{};  ///< note 183: 0 not looked up, 1 found at the hook, 2 not published yet at the hook
+    u8 ud_skipped{};     ///< note 179: bit per stage (0 vertex, 1 pixel) whose descriptor user data the hook did not write (rebuilt from the bindings by RebuildSkippedUserData)
+    u8 ud_would_skip{};  ///< note 179 shadow: bit per stage the real mode would skip
+    u64 vs_gnm{}, ps_gnm{}, fetch_object{}; ///< E1c: the Gnm blocks of the draw's vertex and pixel shader objects and the input layout's fetch object (0: unknown)
+    const VkbVulkan::FixedState* fixed{}; ///< draws: the fixed-function state built from the engine's objects (null: from the registers)
+    u32 dst_usage{~0u};                ///< copy and counter read-back records: Usage of the destination resource (3 staging)
+};
+
+/// A5.3: copies the registers a lazy draw holds in its state package into `regs` (a draw that needs the full register list: a plan cache miss, the register image, the audits).
+void MaterializeRegs(ExecDraw& draw);
+
+/// Command processor: the index / vertex count the record's draw was called with (0xffffffff when the record is gone).
+u32 RecordDrawCount(u64 seq);
+
+/// One line that describes the tag at `header` and the record it names (kind, mode, calling function as a Ghidra address, operands). Used by the entry dump.
+std::string DescribeEntry(const void* header);
+/// Submit time: the synchronization packets of the command buffer (and of the indirect buffers it calls) become tags.
+void PrepareSubmittedBuffer(const u32* dcb, u32 dwords);
+/// Command processor: when the no-op `tag` stands for a synchronization packet, writes that packet into `packet` and returns its
+/// opcode (0x47, 0x49, 0x3c, 0x37); 0 for any other no-op.
+u32 RestoreSyncTag(const u32* tag, std::array<u32, 8>& packet, bool count_execution = true);
+/// F1.2: reads a sync tag (typed, or the older packet-words kind) into a record; returns the opcode-like code (0x47, 0x49, 0x3c, 0x37, 0x50, 0x46, 0x69) or 0
+u32 ReadSyncTag(const u32* tag, Core::NativeSync::SyncRecord& record, bool count_execution = true);
+/// The Ghidra address of the call that made record `seq` (0 when the record is gone).
+u64 RecordCaller(u64 seq);
+/// Diagnostics: the index of the first register of the record with this value (0xffffffff none) and the number of registers the record carries in `count`.
+u32 RecordRegisterWith(u64 seq, u32 value, u32* count);
+/// Diagnostics: the vertex / pixel user data registers the record writes (values in `vs` / `ps`), returned as masks vs | ps << 16 (0xffffffff: record gone).
+u32 RecordUserData(u64 seq, u32* vs, u32* ps);
+
+/// Command processor: the record of a draw the hook executed natively. False when the record was overwritten.
+bool TakeExecDraw(u64 seq, ExecDraw& out, bool typed = false);
+/// For the log when `TakeExecDraw` finds no record: what the slot holds and how far records were made and consumed.
+std::string DescribeMissingRecord(u64 seq);
+/// B9: the typed bindings of a dispatch record (kind 3). Fills `out` (up to `max` entries), sets `count`; returns true when the list is complete (none dropped, at least one).
+bool TakeDispatchBindings(u64 seq, RecordBinding* out, u32 max, u32& count);
+/// Note 173 (plan R2.17): the Map upload copy of a record (the engine's linear scratch the CPU filled, copied into texture `resource_id`, mip 0, at (0, 0)).
+struct MapUpload {
+    u64 seq{};          ///< the record it belongs to (0: none)
+    u64 scratch{};      ///< the scratch's address (rows of `pitch` texels)
+    u64 resource_id{};  ///< the texture's engine id
+    u32 width{}, height{}, bytes{}, pitch{};
+    u64 destination{};  ///< the texture's memory (its T#'s base), which the destination image must be at
+};
+/// Note 179 (plan R3.4c, `TLG_SKIP_USER_DATA`: 0 off until the owner's play, 1 shadow, 2 real): a shader object (engine id, Gnm block) whose stage the planner found covered by
+/// the record's binding list; the hook then skips that stage's descriptor user data (the constant update engine's emulation).
+[[nodiscard]] u32 SkipUserDataMode() noexcept;
+/// Note 183 (plan R3.4d-1, `TLG_HOOK_PLAN`): the front publishes each typed plan's pipeline by (stage key, fixed state); the hook looks its record's keys up at
+/// record time, and the front compares. 0 hook asked, 1 found at the hook, 2 compared the same, 3 different (must be 0), 4 not yet published at the hook, 5 published
+/// Note 185 (`TLG_HOOK_PLAN`: 0 off, 1 shadow, 2 real): the hook makes the whole typed plan of an executed draw at record time, from the published read-only copies (note 184),
+/// and leaves it in the record; the front takes it instead of planning (2) or compares it with its own plan (1).
+/// 6 made at the hook, 7 not made (keys not published), 8 used by the front, 9 compared the same, 10 different (must be 0), 11 a stage made again from the front's user data,
+/// 12 dropped (the pipeline epoch or the exec entry moved), 13 not used (the front did not plan the draw from its record), 14 recycled when the slot was reused,
+/// 15 inputs refreshed at the front (a newer published copy of the key's inputs)
+[[nodiscard]] u32 HookPlanMode() noexcept;
+void PublishHookPlan(u64 stage_key, u64 fixed, u64 pipeline) noexcept;
+void NoteHookPlan(u32 what) noexcept;
+[[nodiscard]] std::array<u64, 16> HookPlanCounts() noexcept;
+/// Note 186 (plan R3.4d-2, `TLG_COMPACT_TAKE`: 0 off, 1 shadow, 2 real): a draw the hook planned is taken from its record as a compact command: the header fields, the
+/// typed user data and the geometry ids; no binding list copy, no register grouping, no inputs hash (the hook made them). False: not a draw record (take it the full way).
+bool TakeExecDrawCompact(u64 seq, ExecDraw& out);
+[[nodiscard]] u32 CompactTakeMode() noexcept;
+/// Note 186: RebuildSkippedUserData from the record's own binding list (in place, no copy).
+void RebuildSkippedUserDataFromRecord(u64 seq, u8 ud_skipped, std::array<u32, 16>& vs, std::array<u32, 16>& ps);
+/// Note 186 shadow: the fields the front reads of a compact take against the full take. 0 compared, 1 COMPACT_TAKE_DIFFERS_MUST_BE_0, 2 real compact takes, 3 real fell back
+void CompareCompactTake(const ExecDraw& full, const ExecDraw& compact) noexcept;
+void NoteCompactTake(u32 what) noexcept;
+[[nodiscard]] std::array<u64, 4> CompactTakeCounts() noexcept;
+/// The planner the hook calls (the rasterizer, thread safe): a plan (owned by the caller) or null; `epoch` gets the pipeline epoch it was made under.
+using HookPlanner = void* (*)(const ExecDraw& draw, std::span<const u32, 16> vs, std::span<const u32, 16> ps, u32 draw_class, u64* epoch);
+using HookPlanRecycler = void (*)(void* plan);
+void SetHookPlanner(HookPlanner planner, HookPlanRecycler recycler) noexcept;
+/// The plan the hook made for record `seq`; ownership passes to the caller (null: none).
+[[nodiscard]] void* TakeHookPlan(u64 seq, u64& epoch) noexcept;
+/// Note 192 (`TLG_PLANNER_THREAD`: 0 the game's thread plans at the tag, 1 the planner thread does): TakeHookPlan, waiting a short while for a plan the planner thread is still making.
+[[nodiscard]] void* TakeHookPlanWaiting(u64 seq, u64& epoch) noexcept;
+[[nodiscard]] u32 PlannerThreadMode() noexcept;
+[[nodiscard]] nlohmann::json PlannerThreadReport();
+void RecycleHookPlan(void* plan) noexcept;
+void NoteCoveredShader(u64 id, u64 gnm) noexcept;
+/// Note 179: the front rebuilds the skipped descriptor user data of `draw` (stages in `ud_skipped`) from its binding list into the stage's user data registers; descriptor tables go
+/// into a front-thread arena.
+void RebuildSkippedUserData(const ExecDraw& draw, std::array<u32, 16>& vs, std::array<u32, 16>& ps);
+/// Note 179 counters: 0 shaders published covered, 1 stages skipped at the hook, 2 shadow stages the real mode would skip, 3 stages rebuilt at the front,
+/// 4 a skipped (or would-skip) stage the planner did not find covered (must be 0), 5 a covered id seen with another Gnm block (not skipped)
+void NoteSkipUserData(u32 what) noexcept;
+[[nodiscard]] std::array<u64, 6> SkipUserDataCounts() noexcept;
+/// Note 173: true and `out` when record `seq` is a Map upload copy.
+bool TakeMapUpload(u64 seq, MapUpload& out);
+/// The call site (ghidra address) that made the record `seq`; 0 when the record was recycled.
+u64 RecordCallerGhidra(u64 seq);
+/// Note 154 shadow: 0 the record slot of `seq` still holds that record and the same `n` bindings, 1 the slot was reused, 2 other bindings, 3 no record.
+u32 RecordBindingsState(u64 seq, const RecordBinding* b, u32 n);
+
+/// The constants of a synthesized compute record live in the table arena, in host memory. The GPU reads buffer data through guest addresses
+/// below 2^40 and the guest memory backing, so the descriptor of such a constant buffer holds an address in a window of unused guest
+/// addresses; CopyFromArenaWindow answers reads of it.
+bool CopyFromArenaWindow(u64 address, u8* dest, u64 size);
+/// The range lies in that window (it is not a mapping of the runtime: no clamping to a mapping).
+bool IsArenaWindow(u64 address, u64 size);
+
+/// The record is a copy into a staging resource: the image it writes is returned to guest memory (explicit readback of an image).
+bool RecordReadsBack(u64 seq);
+
+/// The first register of the user data of the vertex / pixel stage in the register file (16 dwords each).
+constexpr u32 VsUserDataRegister = 0x2C00 + 0x4c;
+constexpr u32 PsUserDataRegister = 0x2C00 + 0x0c;
+
+/// The register effect of a constant command packet sequence of the emulated Gnm driver (the hardware default state the game
+/// sends at the start of every command buffer): the writes in order, parsed once. A tag record names the template; the
+/// command processor applies the writes in place of the packets.
+struct StateWrite {
+    enum Kind : u8 { Context, Sh, Uconfig, NumInstances, ClearState, IndexType };
+    u8 kind;
+    u32 reg;   ///< register offset within its range
+    u32 value;
+};
+struct StateTemplate {
+    std::vector<StateWrite> writes;
+};
+
+/// The template of `prefix` followed by `sequence` (both packet dwords); the same pointers always give the same template.
+/// Null when the packets contain anything but register writes, clear state and no-ops.
+const StateTemplate* HardwareStateTemplate(const u32* prefix, u32 prefix_dwords, const u32* sequence, u32 sequence_dwords);
+
+/// The template of a small indirect buffer that holds nothing but register writes, clear state and padding (the game records its
+/// default state once and submits it every frame). Cached by the content; null for anything else.
+const StateTemplate* IndirectStateTemplate(const u32* packets, u32 dwords);
+
+
+} // namespace Core::NativeDraw
