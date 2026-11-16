@@ -103,7 +103,9 @@ printf '%s\r\n' 'Put libSceNgs2.sprx from your PS4 firmware (/system/common/lib)
 if [[ ${GITHUB_REF:-} == refs/tags/v* ]]; then echo "$GITHUB_REF_NAME" > "$dest/VERSION"
 elif [[ -n ${GITHUB_SHA:-} ]]; then printf 'v%s-%s\n' "$(date -u +%Y.%m.%d)" "${GITHUB_SHA::7}" > "$dest/VERSION"; fi
 bash packaging/check_package.sh "$dest"
-if [[ ! -f "$dest/VERSION" ]]; then git rev-parse --short HEAD > "$dest/VERSION"; fi
+# A local build (no CI): the same vYYYY.MM.DD-<commit> form, so every build shows its own version.
+if [[ ! -f "$dest/VERSION" ]]; then printf 'v%s-%s
+' "$(date -u +%Y.%m.%d)" "$(git rev-parse --short=7 HEAD)" > "$dest/VERSION"; fi
 # Line 2: the full commit, printed at the top of every game log (tlg_run.build_info).
 commit=${GITHUB_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}
 if [[ -n $commit ]]; then echo "commit $commit" >> "$dest/VERSION"; fi
