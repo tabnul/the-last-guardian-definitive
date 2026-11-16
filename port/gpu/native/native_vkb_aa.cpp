@@ -22,6 +22,7 @@
 #include "common/logging/log.h"
 #include "ffx_vk_portable.h"
 #include "native/native_vkb_dlss_glue.h"
+#include "native/native_vkb_stream.h"
 #include "native/native_vkb_objects.h"
 #include "native/shadps4/video_core/host_shaders/vkb_aa_motion_comp.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_instance.h"
@@ -106,20 +107,29 @@ FfxVkPortableImage Describe(VkImage image, VkFormat format, u32 w, u32 h, VkImag
 }
 
 // F1d (DLAA): the motion in pixels (vkb_aa_motion.comp), views of the inputs (by image), the conversion pipeline
-std::array<VkImage, 2> motion_pxs{};
-std::array<VmaAllocation, 2> motion_px_allocs{};
-std::array<vk::ImageView, 2> motion_px_views{};
-u32 px_index = 0; ///< the motion image of this run (the presenter may still read the other one, F2)
+/// F2: the motion and depth copies rotate over this many frames, each published with the timeline value of its command buffer; the presenter takes the newest whose
+/// value the GPU has passed (the frame being flipped; the recorder may already record the next ones into other slots). Upstream records frame generation on the frame's
+/// own scheduler; ours is the presenter's, so this stands in for that order.
+constexpr u32 FgSlots = 4;
+std::array<VkImage, FgSlots> motion_pxs{};
+std::array<VmaAllocation, FgSlots> motion_px_allocs{};
+std::array<vk::ImageView, FgSlots> motion_px_views{};
+u32 px_index = 0; ///< the slot of this run
 VkImage motion_px = VK_NULL_HANDLE;
 vk::ImageView motion_px_view{}, output_view{};
 // F2: the newest frame's inputs for frame generation
 std::mutex fg_mutex;
-FgInputs fg_inputs{};
+struct FgSlot {
+    FgInputs inputs{};
+    u64 value = 0;  ///< the stream timeline value the slot's commands go out with
+    u64 serial = 0; ///< 0: empty
+};
+std::array<FgSlot, FgSlots> fg_slots{};
 u64 fg_serial = 0, fg_taken = 0;
 // F2: our copy of the scene depth (double-buffered with the motion): the presenter reads only images the AA owns, the backend frees the game's (loading)
-std::array<VkImage, 2> depth_copies{};
-std::array<VmaAllocation, 2> depth_copy_allocs{};
-std::array<vk::ImageView, 2> depth_copy_views{};
+std::array<VkImage, FgSlots> depth_copies{};
+std::array<VmaAllocation, FgSlots> depth_copy_allocs{};
+std::array<vk::ImageView, FgSlots> depth_copy_views{};
 vk::Format depth_copy_format{};
 u32 depth_copy_w = 0, depth_copy_h = 0;
 vk::DescriptorSetLayout motion_set_layout{};
@@ -140,7 +150,11 @@ vk::ImageView ViewOf(VkImage image, vk::Format format, vk::ImageAspectFlags aspe
 }
 
 void DestroyDepthCopies() {
-    for (u32 i = 0; i < 2; ++i) {
+    {
+        std::scoped_lock fg_lock{fg_mutex};
+        fg_slots = {};
+    }
+    for (u32 i = 0; i < FgSlots; ++i) {
         if (depth_copies[i] != VK_NULL_HANDLE) {
             instance->GetDevice().destroyImageView(depth_copy_views[i]);
             vmaDestroyImage(instance->GetAllocator(), depth_copies[i], depth_copy_allocs[i]);
@@ -167,7 +181,7 @@ bool EnsureDepthCopies(u32 w, u32 h, vk::Format format) {
                                .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
                                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
     const VmaAllocationCreateInfo alloc{.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
-    for (u32 i = 0; i < 2; ++i) {
+    for (u32 i = 0; i < FgSlots; ++i) {
         if (vmaCreateImage(instance->GetAllocator(), &ci, &alloc, &depth_copies[i], &depth_copy_allocs[i], nullptr) != VK_SUCCESS) {
             return false;
         }
@@ -200,13 +214,13 @@ bool EnsureDlaa(u32 w, u32 h) {
         motion_pipeline = pipeline;
     }
     if (motion_pxs[0] != VK_NULL_HANDLE && dl_w == w && dl_h == h) {
-        px_index ^= 1;
+        px_index = (px_index + 1) % FgSlots;
         motion_px = motion_pxs[px_index], motion_px_view = motion_px_views[px_index];
         return true;
     }
     if (motion_pxs[0] != VK_NULL_HANDLE) {
         IdleDevice(device);
-        for (u32 i = 0; i < 2; ++i) {
+        for (u32 i = 0; i < FgSlots; ++i) {
             device.destroyImageView(motion_px_views[i]);
             vmaDestroyImage(instance->GetAllocator(), motion_pxs[i], motion_px_allocs[i]);
             motion_pxs[i] = VK_NULL_HANDLE;
@@ -224,7 +238,7 @@ bool EnsureDlaa(u32 w, u32 h) {
                                .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
                                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
     const VmaAllocationCreateInfo alloc{.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
-    for (u32 i = 0; i < 2; ++i) {
+    for (u32 i = 0; i < FgSlots; ++i) {
         if (vmaCreateImage(instance->GetAllocator(), &ci, &alloc, &motion_pxs[i], &motion_px_allocs[i], nullptr) != VK_SUCCESS) {
             return false;
         }
@@ -233,6 +247,10 @@ bool EnsureDlaa(u32 w, u32 h) {
     }
     px_index = 0;
     motion_px = motion_pxs[0], motion_px_view = motion_px_views[0];
+    {
+        std::scoped_lock fg_lock{fg_mutex};
+        fg_slots = {};
+    }
     dl_w = w, dl_h = h;
     return true;
 }
@@ -524,9 +542,10 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
             cmd.copyImage(d.image, vk::ImageLayout::eGeneral, copy, vk::ImageLayout::eGeneral, region);
             Barrier(cmd);
             std::scoped_lock fg_lock{fg_mutex};
-            fg_inputs = {.depth = copy, .motion = vk::Image{motion_px}, .depth_view = depth_copy_views[px_index], .motion_view = motion_px_view, .depth_format = d.format,
-                         .width = w, .height = h, .reset = reset};
-            ++fg_serial;
+            fg_slots[px_index] = {.inputs = {.depth = copy, .motion = vk::Image{motion_px}, .depth_view = depth_copy_views[px_index], .motion_view = motion_px_view,
+                                             .depth_format = d.format, .width = w, .height = h, .reset = reset},
+                                  .value = Core::Vkb::Stream::RecordingValue(),
+                                  .serial = ++fg_serial};
         }
     }
     if (Chosen() == Kind::Dlaa) {
@@ -612,12 +631,19 @@ void NoteFg(bool made, bool presented, bool failed) {
 }
 
 bool TakeFgInputs(FgInputs& out) {
+    const u64 done = Core::Vkb::Stream::CompletedValue();
     std::scoped_lock lock{fg_mutex};
-    if (fg_serial == fg_taken) {
+    const FgSlot* best = nullptr;
+    for (const FgSlot& slot : fg_slots) {
+        if (slot.serial > fg_taken && slot.value != 0 && slot.value <= done && (best == nullptr || slot.serial > best->serial)) {
+            best = &slot;
+        }
+    }
+    if (best == nullptr) {
         return false;
     }
-    fg_taken = fg_serial;
-    out = fg_inputs;
+    fg_taken = best->serial;
+    out = best->inputs;
     return true;
 }
 
