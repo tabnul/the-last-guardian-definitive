@@ -77,15 +77,31 @@ std::atomic<bool> move_bar_open{false};
 ImTextureData* move_icons = nullptr; // TlgFunIcons atlas, made on first use (present thread)
 // tlg: controller combos (tlg.ini pad_combo_*). pad_mask = buttons held now (PadCombo bits).
 u32 pad_mask = 0;
-int capture_slot = -1;  // Controls tab: the combo being set (0 quit, 1 menu, 2 QA menu, 3 photo mode), -1 = none
+int capture_slot = -1;  // Controls tab: the combo being set (0 quit, 1 menu, 2 QA menu, 3 photo mode,
+                        // 4.. one photo mode button, PhotoSlots), -1 = none
 u32 capture_mask = 0;   // buttons pressed during the capture
 u32 capture_ignore = 0; // buttons already held when the capture started (the click on "Set")
 std::atomic<bool> screenshot_requested{false}; // Cross in photo mode / Print Screen (TakeScreenshotRequest)
 std::atomic<bool> pause_menu_open{false}; // the game's own pause menu is open (PauseMenuUI.lua)
 std::atomic<int64_t> quit_hold_start{0}; // steady ms when the quit combo was complete, 0 = not held
 constexpr int64_t QuitHoldMs = 2000;     // fixed: the quit combo is always a 2 second hold
+// Photo mode buttons (tlg.ini pad_photo_*): one button each, capture slots 4 and up.
+constexpr int PhotoSlotFirst = 4;
+struct PhotoSlot { std::atomic<u32> TlgSettings::Values::*member; u32 fallback; };  // label: TlgFun::PhotoButtonNames
+const PhotoSlot PhotoSlots[] = {
+    {&TlgSettings::Values::photo_shot, TlgSettings::PadCross},
+    {&TlgSettings::Values::photo_up, TlgSettings::PadR2},
+    {&TlgSettings::Values::photo_down, TlgSettings::PadL2},
+    {&TlgSettings::Values::photo_fast, TlgSettings::PadR1},
+    {&TlgSettings::Values::photo_slow, TlgSettings::PadL1},
+    {&TlgSettings::Values::photo_help, TlgSettings::PadOptions},
+};
+constexpr int PhotoSlotCount = int(std::size(PhotoSlots));
+static_assert(std::size(PhotoSlots) == std::size(TlgFun::PhotoButtonNames));
+bool photo_help_hidden = false; // the photo button help was hidden with its button (until shown again)
 std::atomic<u32>* ComboSlot(int slot) {
     auto& s = TlgSettings::Get();
+    if (slot >= PhotoSlotFirst) return &(s.*PhotoSlots[slot - PhotoSlotFirst].member);
     return slot == 0 ? &s.combo_quit : slot == 1 ? &s.combo_menu : slot == 2 ? &s.combo_qa : &s.combo_photo;
 }
 
@@ -1063,6 +1079,43 @@ void ControlsTab() {
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextDisabled("%s", TR("Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu."));
     ImGui::PopTextWrapPos();
+    ImGui::SeparatorText(TR("Photo mode"));
+    if (BeginRows("##photobuttons")) {
+        CheckRow(TR("Invert look up / down"), s.photo_invert_y,
+                 TR("Pushing the right stick forward looks down, as in a plane."), d.photo_invert_y);
+        for (int i = 0; i < PhotoSlotCount; ++i) {
+            const int slot = PhotoSlotFirst + i;
+            Row(TR(TlgFun::PhotoButtonNames[i]));
+            if (capture_slot == slot) {
+                ImGui::TextUnformatted(TR("Press a button..."));
+                ImGui::SameLine();
+                if (ImGui::SmallButton(TR("Cancel"))) {
+                    capture_slot = -1;
+                }
+            } else {
+                const u32 button = ComboSlot(slot)->load();
+                ImGui::TextUnformatted(TlgSettings::ComboLabel(button).c_str());
+                ImGui::SameLine();
+                if (ImGui::SmallButton(TR("Set"))) {
+                    capture_slot = slot;
+                    capture_mask = 0;
+                    capture_ignore = pad_mask;
+                }
+                if (button != PhotoSlots[i].fallback) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton(TR("Default"))) {
+                        ComboSlot(slot)->store(PhotoSlots[i].fallback);
+                        dirty = true;
+                    }
+                }
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextDisabled("%s", TR("One button each. Left stick flies, right stick looks around. The buttons only count while photo mode is on."));
+    ImGui::PopTextWrapPos();
     ImGui::SeparatorText(TR("Keyboard and mouse layout"));
     if (BeginRows("##layout")) {
         InfoRow(TR("Move / camera"), TR("WASD / mouse or arrow keys"));
@@ -1447,7 +1500,7 @@ void FunTab() {
         TlgFun::PhotoMode(photo);
         if (photo) SetOpen(false);
     }
-    Help(TR("The world stands still and you fly the camera to take a picture. Left stick: fly. Right stick: look around. L2 / R2: down / up. Hold R1: fast, hold L1: slow. Cross or Print Screen: save a screenshot to user/screenshots. L3 + R3, F9 (or this menu) turns it on and off. A jump turns it off."));
+    Help(TR("The world stands still and you fly the camera to take a picture. Left stick: fly. Right stick: look around. The other buttons are set on the Controls tab and shown on screen in photo mode. Print Screen also saves a screenshot to user/screenshots. F9 (or this menu) turns it on and off. A jump turns it off."));
     ImGui::BeginDisabled(photo);
     int freeze = int(TlgFun::PhotoModeFreeze());
     const char* freeze_names[] = {TR(TlgFun::PhotoFreezeNames[0]), TR(TlgFun::PhotoFreezeNames[1])};
@@ -2219,13 +2272,21 @@ void PhotoHelpBox() {
     ImGui::TextUnformatted(TR("Photo mode"));
     ImGui::Separator();
     // Key column as wide as its longest text (packs translate it) plus a clear gap.
-    const std::string exit_keys = TlgSettings::ComboLabel(TlgSettings::Get().combo_photo.load()) + " / F9";
+    // The buttons as set (Controls tab, tlg.ini pad_photo_*).
+    const auto& st = TlgSettings::Get();
+    const auto key = [](u32 bits) { return TlgSettings::ComboLabel(bits); };
+    const std::string shot_keys = key(st.photo_shot) + " / " + TR("Print Screen");
+    const std::string up_down = key(st.photo_down) + " / " + key(st.photo_up);
+    const std::string fast_slow = std::string(TR("Hold")) + " " + key(st.photo_fast) + " / " + key(st.photo_slow);
+    const std::string help_key = key(st.photo_help);
+    const std::string exit_keys = key(st.combo_photo) + " / F9";
     const std::pair<const char*, const char*> rows[] = {
-        {TR("Cross / Print Screen"), TR("Screenshot")},
+        {shot_keys.c_str(), TR("Screenshot")},
         {TR("Left stick"), TR("Fly")},
         {TR("Right stick"), TR("Look around")},
-        {"L2 / R2", TR("Down / up")},
-        {TR("Hold R1 / L1"), TR("Fast / slow")},
+        {up_down.c_str(), TR("Down / up")},
+        {fast_slow.c_str(), TR("Fast / slow")},
+        {help_key.c_str(), TR("Hide this help")},
         {exit_keys.c_str(), TR("Exit photo mode")},
     };
     float key_w = 0.0f;
@@ -2237,6 +2298,52 @@ void PhotoHelpBox() {
         ImGui::TextUnformatted(r.second);
     }
     ImGui::End();
+}
+
+// tlg: the photo mode buttons, once per presented frame. They are read from what the game reads
+// (game_buttons: controller, keyboard and mouse after the remaps, so keyboard players keep the
+// same keys), with the raw controller (pad_mask) only for buttons the game has no bit for
+// (Share, PS). Screenshot and help act on a press; up/down/fast/slow and the invert setting go
+// to the camera tick when they change. Our menu open counts as nothing held.
+std::atomic<u32> game_buttons{0};
+u32 GameBit(u32 sdl_bit) {
+    using namespace TlgSettings;
+    switch (sdl_bit) {
+    case PadCross: return 0x4000; case PadCircle: return 0x2000; case PadSquare: return 0x8000;
+    case PadTriangle: return 0x1000; case PadOptions: return 0x8; case PadL3: return 0x2;
+    case PadR3: return 0x4; case PadL1: return 0x400; case PadR1: return 0x800; case PadL2: return 0x100;
+    case PadR2: return 0x200; case PadUp: return 0x10; case PadDown: return 0x40; case PadLeft: return 0x80;
+    case PadRight: return 0x20; case PadTouchpad: return 0x100000; default: return 0;
+    }
+}
+void PhotoPadSync() {
+    static int sent = -1; // last state sent, -1 = none (photo mode off)
+    static u32 last_actions = ~0u; // shot / help pressed last frame (~0 = wait for a release first)
+    if (!TlgFun::PhotoModeOn()) {
+        sent = -1;
+        last_actions = ~0u;
+        return;
+    }
+    const auto& s = TlgSettings::Get();
+    const u32 game = game_buttons;
+    const auto held = [&](u32 bit) {
+        if (menu_open || !bit) return false;
+        const u32 g = GameBit(bit);
+        return g ? (game & g) != 0 : (pad_mask & bit) != 0;
+    };
+    // The press that turned photo mode on is not a screenshot: wait until both are let go.
+    const u32 actions = (held(s.photo_shot) ? 1u : 0u) | (held(s.photo_help) ? 2u : 0u);
+    const u32 pressed = last_actions == ~0u ? 0 : actions & ~last_actions;
+    last_actions = last_actions == ~0u && actions ? ~0u : actions;
+    if (pressed & 1) screenshot_requested = true;
+    if (pressed & 2) photo_help_hidden = !photo_help_hidden;
+    const bool up = held(s.photo_up), down = held(s.photo_down), fast = held(s.photo_fast),
+               slow = held(s.photo_slow), inv = s.photo_invert_y;
+    const int now = up | down << 1 | fast << 2 | slow << 3 | inv << 4;
+    if (now != sent) {
+        sent = now;
+        TlgFun::PhotoPad(up, down, fast, slow, inv);
+    }
 }
 
 void NoticeBox() {
@@ -2574,7 +2681,9 @@ bool PadEvent(const SDL_Event& event) {
         capture_mask |= pad_mask & ~capture_ignore;
         if (!pad_mask && capture_mask) {
             // All released: two or more buttons make the new combo; a single button keeps waiting.
-            if (__builtin_popcount(capture_mask) >= 2) {
+            // A photo mode button is exactly one button; more keeps waiting.
+            const int count = __builtin_popcount(capture_mask);
+            if (capture_slot >= PhotoSlotFirst ? count == 1 : count >= 2) {
                 ComboSlot(capture_slot)->store(capture_mask);
                 std::printf("Settings: controller combo %d set to %s\n", capture_slot,
                             TlgSettings::ComboText(capture_mask).c_str());
@@ -2608,11 +2717,6 @@ bool PadEvent(const SDL_Event& event) {
     // The default QA combo stays in the game's Lua (works with keyboard keys too).
     if (s.combo_qa != TlgSettings::PadComboQa && completes(s.combo_qa)) {
         TlgFun::ToggleQaMenu();
-        return true;
-    }
-    // Cross in photo mode: a screenshot (the menu is closed: photo mode closes it).
-    if (bit == TlgSettings::PadCross && !menu_open && TlgFun::PhotoModeOn()) {
-        screenshot_requested = true;
         return true;
     }
     if (completes(s.combo_photo)) {
@@ -2879,6 +2983,10 @@ bool Visible() {
                            TlgFun::PhotoModeOn());
 }
 
+void SetGameButtons(u32 buttons) {
+    game_buttons = buttons;
+}
+
 bool CapturesInput() {
     return menu_open || text_entry_active || choice_active || message_active;
 }
@@ -3037,7 +3145,8 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     if (NoticeActive() && !menu_open) {
         NoticeBox();
     }
-    if (TlgFun::PhotoModeOn() && !menu_open && !loading) {
+    PhotoPadSync();
+    if (TlgFun::PhotoModeOn() && !menu_open && !loading && !photo_help_hidden) {
         PhotoHelpBox();
     }
     if (pause_menu_open && !menu_open && !quit_hold_start) {

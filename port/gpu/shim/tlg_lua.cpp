@@ -1416,7 +1416,9 @@ bool FreeCameraOn() {
 // Photo mode (tlg_fun.h). Our own fly camera: the developers' editor camera (_default_camera,
 // the one their PC editor flies with WASD), placed where the game camera was and moved by our tick
 // from the pad: left stick flies in the look direction, right stick looks around, L2/R2 down/up,
-// R1 fast, L1 slow. The engine's FixCamera (the Free camera above) could not turn and kept the boy
+// R1 fast, L1 slow (defaults: the buttons are settings, tlg.ini pad_photo_*; tlg_overlay.cpp reads
+// them and sends the held state through PhotoPad, so the tick reads p.up/dn/fast/slow/inv, no
+// fixed PadButton). The engine's FixCamera (the Free camera above) could not turn and kept the boy
 // as its target (user test 2026-11-14). The editor camera does not read the pad itself.
 // Angles are degrees (the game's scripts compare ToEuler() values with 90 and 180), X = pitch,
 // Y = yaw. Moves set the camera position directly in world space (EntityMove went
@@ -1455,9 +1457,10 @@ constexpr std::string_view PhotoOnLua =
     "   local rx,ry=dz(pd.RX*pd.RMag),dz(pd.RY*pd.RMag)\n"
     "   if not p.said and (math.abs(ly)>0.8 or math.abs(ry)>0.8) then p.said=true "
     "L('fun photo stick ly='..tostring(ly)..' ry='..tostring(ry)) end\n"
-    "   local sp=3 if MS.PadGetHold(PadButton.R1) then sp=12 elseif MS.PadGetHold(PadButton.L1) then sp=0.6 end\n"
+    "   local sp=3 if p.fast then sp=12 elseif p.slow then sp=0.6 end\n"
     "   p.yaw=p.yaw-rx*100*t\n"
-    "   p.pitch=math.max(-85,math.min(85,p.pitch-ry*70*t))\n"
+    "   local iy=1 if p.inv then iy=-1 end\n"
+    "   p.pitch=math.max(-85,math.min(85,p.pitch-iy*ry*70*t))\n"
     "   c.rotation=Vector(p.pitch,p.yaw,0)\n"
     "   local d=sp*t\n"
     "   if lx~=0 or ly~=0 then local y=math.rad(p.yaw) local cy,sy=math.cos(y),math.sin(y)\n"
@@ -1466,12 +1469,7 @@ constexpr std::string_view PhotoOnLua =
     "   if p.lq and (p.logs or 0)<40 and p.n%15==0 and (lx~=0 or ly~=0) then p.logs=(p.logs or 0)+1 "
     "L('fun photo move yaw='..tostring(p.yaw)..' euler='..tostring(e.X)..','..tostring(e.Y)..','..tostring(e.Z)..' lx='..tostring(lx)..' ly='..tostring(ly)..' dx='..tostring(q.X-p.lq.X)..' dz='..tostring(q.Z-p.lq.Z)) end\n"
     "   p.lq=q\n"
-    "   local function held(b) local ok,v=pcall(MS.PadGetHold,b) return ok and v and true or false end\n"
-    "   local function trig(k) local ok,v=pcall(function() return pd[k] end) if ok and type(v)=='number' then return v end return 0 end\n"
-    "   local r2,l2=held(PadButton.R2),held(PadButton.L2) local tr,tl=trig('R2'),trig('L2')\n"
-    "   if (r2 or l2 or tr>0.3 or tl>0.3 or held(PadButton.R1)) and (p.tlogs or 0)<5 and p.n%15==0 then p.tlogs=(p.tlogs or 0)+1 "
-    "L('fun photo trig R2='..tostring(r2)..' L2='..tostring(l2)..' aR2='..tostring(tr)..' aL2='..tostring(tl)) end\n"
-    "   local up=0 if r2 or tr>0.3 then up=up+1 end if l2 or tl>0.3 then up=up-1 end\n"
+    "   local up=0 if p.up then up=up+1 end if p.dn then up=up-1 end\n"
     "   p.y=p.y+up*d c.position=Vector(p.x,p.y,p.z)\n"
     "  end)\n"
     "  if not ok then p.dead=true L('fun photo tick error: '..tostring(e)) end\n"
@@ -1502,6 +1500,12 @@ void PhotoMode(bool on) {
     if (!on) free_cam = false; // leaving gives the normal camera back, whatever was on before
     FunQueue("\ndo local ok,e=pcall(function()\n" + code +
              "end) if not ok then L('fun error: '..tostring(e)) end end\n");
+}
+
+void PhotoPad(bool up, bool down, bool fast, bool slow, bool invert_y) {
+    const auto b = [](bool v) { return v ? "true" : "false"; };
+    FunQueue(std::string("local p=_TLG_PHOTO if p then p.up=") + b(up) + " p.dn=" + b(down) + " p.fast=" + b(fast) +
+             " p.slow=" + b(slow) + " p.inv=" + b(invert_y) + " end");
 }
 
 bool PhotoModeOn() {

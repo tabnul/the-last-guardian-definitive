@@ -50,6 +50,9 @@ void SetPauseMenu(bool open);
 /// The menu is open or a text entry is shown: the game's input is held neutral.
 bool CapturesInput();
 
+/// Pad thread: the buttons the game reads now (PS4 pad bits), for the photo mode buttons.
+void SetGameButtons(u32 buttons);
+
 /// Window thread: the game's text dialog (sceImeDialog). Shown as a box on screen until
 /// `active` is false; typing goes to the window (sdl_window), the box only displays it.
 void SetTextEntry(bool active, const std::string& prompt, const std::string& text);
