@@ -414,6 +414,9 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     const auto current_limit = [&] {
         const auto& s = TlgSettings::Get();
         if (fixed_limit) return EmulatorSettings.GetFrameLimit();
+        // merge plan M6: the fork's Lua fixes set this lock (shim/tlg_lua.cpp): 30 while the game's slow motion runs (s06 tail catch, s10 falling
+        // bridge; above 30 FPS the catch can be missed and the game waits forever) and the credits' rate. Their VideoOut obeys it first; so does ours.
+        if (const u32 credits = s.credits_fps_lock) return credits;
         const u32 limit = u32(TlgGraphics::PresentLimit(s.fps_limit, s.applied_engine_fps));
         return limit || !fast_vblank ? limit : EmulatorSettings.GetFrameLimit();
     };

@@ -300,13 +300,6 @@
       "expect": "554889e541574156"
     },
     {
-      "name": "AppMemoryInit",
-      "ghidra": "0x1dd39d0",
-      "mode": "call",
-      "handler": "garlic_pool_pro",
-      "expect": "554889e541574156"
-    },
-    {
       "name": "JobRun",
       "ghidra": "0x1e4baf0",
       "mode": "call",

@@ -5,7 +5,7 @@
 #   -Windowed: a real window (the presenter runs; /marker?mode=1 saves frame_presented.png in the marker's folder); -Keep: the game keeps running at the end
 #   -Save: a key of "saves" in paths.local.json (spears, heaviest, ...) or a backup folder name
 # Heaviest save: read the scene at 3,200 presents or later (its load stalls; engine-vulkan-backend note 78), e.g. -Presents 2300 -Settle 6 -Endpoints "sleep,status,..." -Between 6.
-#   vkb_run.ps1 -Tag t1 -Save heaviest -Presents 2300 -Settle 6 -Endpoints "sleep,status,stats,marker?mode=1,sleep" -Between 6 -Extra "TLG_VKB=1,TLG_GARLIC_POOL_PRO=0,TLG_GARLIC_POOL_MB=0,TLG_DMEM_MB=5056,TLG_VBLANK_HZ=0"
+#   vkb_run.ps1 -Tag t1 -Save heaviest -Presents 2300 -Settle 6 -Endpoints "sleep,status,stats,marker?mode=1,sleep" -Between 6 -Extra "TLG_VKB=1"
 . "$PSScriptRoot\dev_paths.ps1"
 Stop-Game
 Start-Sleep 2

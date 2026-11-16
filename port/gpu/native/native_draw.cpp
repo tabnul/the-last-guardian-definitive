@@ -7368,13 +7368,6 @@ u64 PS4_SYSV_ABI RingDiscover(u64 allocator, u64 a1, u64 a2, u64 a3, u64 a4, u64
     return finish();
 }
 
-/// The game's memory setup (FUN_01dd39d0). Our old port ran it as on a PS4 Pro (a 3328 MB Garlic pool, sceKernelIsNeoMode answered yes) and could rewrite the pool size
-/// immediate at 01dd3a46 (TLG_GARLIC_POOL_MB). In the tabnul fork their eboot patch sizes the same heap at the same immediate (scripts/tlg_patches.py, GARLIC_SIZE: 2816 + 1248 MB,
-/// up to 5120 MB), so the hook only lets the game's function run; how the backend's memory settings and their heap patch go together is merge plan step M6.
-u64 PS4_SYSV_ABI GarlicPoolPro(u64, u64, u64, u64, u64, u64, u64) {
-    return 0; // the original runs
-}
-
 u64 PS4_SYSV_ABI TagIndexed(u64 ctx, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
     return Tag(ctx, a1, a2, a3, ret, 0, (a4 & 0xff) != 0, false, a4, a5);
 }
@@ -11442,9 +11435,6 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "tag_indexed") {
         return reinterpret_cast<u64>(&TagIndexed);
-    }
-    if (name == "garlic_pool_pro") {
-        return reinterpret_cast<u64>(&GarlicPoolPro);
     }
     if (name == "tag_auto") {
         return reinterpret_cast<u64>(&TagAuto);
