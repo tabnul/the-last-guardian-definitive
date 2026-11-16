@@ -828,10 +828,25 @@ bool CutHints(std::string& patched, std::string_view name) {
         patched.replace(c, 2, On);
         return true;
     };
+    // False when the line holding `at` sits where Lua takes no statement: the code line above it ends
+    // in '{' or ','. s09 lists its lines as notes at the top of a state table, before the real call.
+    const auto statement = [&](size_t at) {
+        size_t line = patched.rfind('\n', at) + 1;
+        while (line > 0) {
+            const size_t prev = line >= 2 ? patched.rfind('\n', line - 2) + 1 : 0;
+            std::string_view text(patched.data() + prev, line - 1 - prev);
+            text = text.substr(0, text.find("--"));
+            const size_t last = text.find_last_not_of(" \t\r");
+            if (last != std::string_view::npos) return text[last] != '{' && text[last] != ',';
+            line = prev;
+        }
+        return true;
+    };
     int done = 0;
     for (const std::string_view id : Ids) {
         size_t at = patched.find(id);
-        while (at != std::string::npos && (at == 0 || (patched[at - 1] != '"' && patched[at - 1] != '\''))) {
+        while (at != std::string::npos &&
+               (at == 0 || (patched[at - 1] != '"' && patched[at - 1] != '\'') || !statement(at))) {
             at = patched.find(id, at + 1);
         }
         if (at == std::string::npos) continue;
