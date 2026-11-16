@@ -176,7 +176,7 @@ Settings that made no visible difference were left out; see
 | RX 9070 XT | SteamOS, Windows 11 | | 60-100 |
 | RX 9060 XT | SteamOS, Windows 11 | 1920x1080, FSR 4 AA | mostly above 60 |
 | RX 6600 | SteamOS | 1920x1080, FSR 3.1 AA, 60 FPS cap | mostly 60 |
-| RX 580 | Windows | 1920x1080 | unknown |
+| RX 580 | Windows | 1920x1080 | steady 30 (capped) in the starting area; not measured further |
 | Steam Deck | SteamOS | 1280x800 | works, but under 20 in heavy scenes |
 
 <details>
