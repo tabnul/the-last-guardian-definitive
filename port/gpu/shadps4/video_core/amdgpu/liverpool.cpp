@@ -490,7 +490,12 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
         }
         case PM4ItOpcode::DumpConstRam: {
             // tlg: earlier draws on the recording thread may still read constants here.
-            if (rasterizer) {
+            // exp (perf/deck-40fps): TLG_EXP_CONSTRAM_NODRAIN=1 dumps without waiting.
+            static const bool exp_no_drain = [] {
+                const char* env = std::getenv("TLG_EXP_CONSTRAM_NODRAIN");
+                return env && *env == '1';
+            }();
+            if (rasterizer && !exp_no_drain) {
                 rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonConstRam);
             }
             const auto* dump_const = reinterpret_cast<const PM4DumpConstRam*>(header);
@@ -1434,7 +1439,13 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
     size_t acb_size = acb.size_bytes();
     while (!acb.empty()) {
         ProcessCommands();
-        if (rasterizer) {
+        // exp (perf/deck-40fps): TLG_EXP_COMPUTE_LAZY=1 waits only before packets that use
+        // the caches or write guest memory (below, once the opcode is known).
+        static const bool exp_lazy = [] {
+            const char* env = std::getenv("TLG_EXP_COMPUTE_LAZY");
+            return env && *env == '1';
+        }();
+        if (rasterizer && !exp_lazy) {
             rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCompute); // tlg: compute work uses the caches
         }
 
@@ -1478,6 +1489,37 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         }
 
         const PM4ItOpcode opcode = header->type3.opcode;
+        if (rasterizer && exp_lazy) {
+            bool needs_drain = true;
+            switch (opcode) {
+            case PM4ItOpcode::Nop:
+            case PM4ItOpcode::IndirectBuffer: // its packets wait themselves
+            case PM4ItOpcode::AcquireMem:
+            case PM4ItOpcode::Rewind:
+            case PM4ItOpcode::SetQueueReg:
+            case PM4ItOpcode::MemSemaphore:
+            case PM4ItOpcode::WaitRegMem:
+            case PM4ItOpcode::EventWrite:
+                needs_drain = false;
+                break;
+            case PM4ItOpcode::DmaData:
+                needs_drain =
+                    reinterpret_cast<const PM4DmaData*>(header)->dst_addr_lo != 0x3022C;
+                break;
+            case PM4ItOpcode::SetShReg: {
+                // The compute program state is this queue's own; other registers are shared.
+                const auto* set_data = reinterpret_cast<const PM4CmdSetData*>(header);
+                needs_drain = !(set_data->reg_offset >= 0x200 &&
+                                set_data->reg_offset <= (0x200 + sizeof(ComputeProgram) / 4));
+                break;
+            }
+            default:
+                break;
+            }
+            if (needs_drain) {
+                rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCompute);
+            }
+        }
         NoteGuestSync(opcode, header, rasterizer);
 
         const auto* it_body = reinterpret_cast<const u32*>(header) + 1;

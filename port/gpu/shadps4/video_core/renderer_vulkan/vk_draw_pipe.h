@@ -111,8 +111,13 @@ public:
         const u32 slot = reason < NumReasons ? reason : ReasonRasterizer;
         ++drains_by_reason[slot];
         const u64 start = __rdtsc();
+        // exp (perf/deck-40fps): TLG_EXP_DRAIN_SPIN=N spins N times before sleeping (4096).
+        static const u32 spin_limit = [] {
+            const char* env = std::getenv("TLG_EXP_DRAIN_SPIN");
+            return env ? static_cast<u32>(std::max(0, std::atoi(env))) : 4096u;
+        }();
         for (u32 spins = 0; consumed.load(std::memory_order_acquire) != head; ++spins) {
-            if (spins < 4096) {
+            if (spins < spin_limit) {
                 __builtin_ia32_pause();
             } else if (SleepInDrain()) {
                 SleepUntilDrained();

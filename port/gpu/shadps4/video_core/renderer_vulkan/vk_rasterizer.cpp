@@ -1256,6 +1256,23 @@ void Rasterizer::RunDrawPacket(void* context, const u8* data, u32 size) {
     stage_regs = &regs;
     self.pipe_cb_extent = packet.cb_extent;
     self.pipe_db_extent = packet.db_extent;
+    // exp (perf/deck-40fps): ceiling measurement, the picture is wrong on purpose.
+    // TLG_EXP_SKIP_DRAWS=1 drops every direct draw but the display pass; =2 dispatches too.
+    static const int exp_skip = [] {
+        const char* env = std::getenv("TLG_EXP_SKIP_DRAWS");
+        return env ? std::atoi(env) : 0;
+    }();
+    if (exp_skip && packet.kind != PacketKind::Special && !indirect &&
+        (cs ? exp_skip >= 2
+            : !(regs.color_buffers[0] &&
+                FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address())))) {
+        Shader::Info::num_ud_snapshots = 0;
+        self.num_ring_stages = 0;
+        if (self.constant_ring) {
+            self.constant_ring->Stamp(packet.ring_end);
+        }
+        return;
+    }
     if (packet.kind == PacketKind::Special) {
         // A draw FilterDraw handles (fast clear elimination, resolve, depth copy, skip).
         FrameCapture::Poll();
