@@ -1576,6 +1576,8 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_input_timing(segments, ns);
     if (gpu_enabled) install_bind_guard(segments, ns);
     if (gpu_enabled) install_reinit_lock(segments, ns);
+    if (gpu_enabled) tlggpu_install_hooks((uintptr_t)image, size); /* VKB: the engine-to-Vulkan backend's hooks (TLG_VKB=1 only) */
+    runtime_pad_set_image((uintptr_t)image, size); /* VKB: TLG_AUTO_START */
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
 #endif

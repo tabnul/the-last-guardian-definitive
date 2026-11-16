@@ -39,6 +39,10 @@ void runtime_mutex_report(void);
 uintptr_t runtime_memory_resolve(const char *name);
 void runtime_memory_report(void);
 int runtime_memory_is_mapped(uintptr_t address, uint64_t size);
+/* VKB: the game image, for TLG_AUTO_START (the pad reads the title menu state) */
+void runtime_pad_set_image(uintptr_t image, uint64_t size);
+/* VKB: the backing view's window of a guest range (the engine-to-Vulkan backend's host import) */
+int runtime_memory_backing_window(uintptr_t address, uint64_t size, void **base, uint64_t *offset, uint64_t *section_bytes);
 const char *runtime_import_name(const char *name);
 uintptr_t runtime_rwlock_resolve(const char *name);
 void runtime_rwlock_report(void);
