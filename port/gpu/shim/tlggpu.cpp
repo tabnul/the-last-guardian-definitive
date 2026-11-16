@@ -31,6 +31,7 @@
 #include "core/libraries/libs.h"
 #include "native/native_timeline.h" // VKB
 #include "native/native_vkb.h" // VKB
+#include "native/native_renderdoc.h" // VKB: TLG_RENDERDOC
 #include "native/native_hooks.h" // VKB
 #include "native/native_debug_server.h" // VKB
 #include "native/native_dev_keys.h" // VKB
@@ -394,6 +395,7 @@ extern "C" int tlggpu_init(const TlgGpuConfig* config) {
         std::unique_lock lock{g_window_mutex};
         g_window_cv.wait(lock, [] { return g_window_ready; });
     }
+    VideoCore::LoadRenderDoc(); // TLG_RENDERDOC=1 (native/native_renderdoc.cpp): before either renderer makes its Vulkan instance
     Core::Loader::SymbolsResolver resolver;
     if (Core::Vkb::On()) {
         // VKB: the engine-to-Vulkan backend (TLG_VKB=1, merge plan M3 (4)): our Gnm and VideoOut take the game's calls and our presenter

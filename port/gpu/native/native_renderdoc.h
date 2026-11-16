@@ -9,6 +9,8 @@
 
 namespace VideoCore {
 
+/// TLG_RENDERDOC=1: loads renderdoc.dll before any Vulkan instance exists (called at start-up, for either renderer)
+void LoadRenderDoc();
 /// Counts a present; a capture asked for with RenderDocCaptureNext starts at the next one.
 void NoteRenderDocPresent(u64 index);
 /// TLG_RENDERDOC=1: RenderDoc captures the next frame; false when RenderDoc is not loaded.

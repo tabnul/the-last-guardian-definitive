@@ -22,9 +22,6 @@
 #include "core/emulator_settings.h"
 #include "sdl_window.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
-namespace VideoCore {
-void LoadRenderDoc(); // VKB debug: native/native_renderdoc.cpp
-}
 #include "video_core/renderer_vulkan/vk_dlss.h"
 
 #ifdef __APPLE__
@@ -261,7 +258,6 @@ std::vector<const char*> GetInstanceLayers(bool enable_validation, bool enable_c
 vk::UniqueInstance CreateInstance(Frontend::WindowSystemType window_type, bool enable_validation,
                                   bool enable_crash_diagnostic) {
     LOG_INFO(Render_Vulkan, "Creating vulkan instance");
-    VideoCore::LoadRenderDoc(); // VKB debug: TLG_RENDERDOC=1 (native/native_renderdoc.cpp), before the instance so its layer is in
 
 #if defined(__APPLE__)
     // Initialize the environment with the path to the included ICD, so that the loader will
