@@ -330,13 +330,11 @@ void MemoryStopReport() {
                     "buffer arena pieces), driver allows %u\n",
                     blocks + backing, blocks, backing, limits.maxMemoryAllocationCount);
     }
-    std::printf("Memory at stop: buffer arenas %llu alive reserving %llu MiB, %llu freed after "
-                "a migration; %llu MiB filled; %llu sparse binds since the start\n",
+    std::printf("Memory at stop: buffer arenas %llu alive reserving %llu MiB; "
+                "%llu MiB filled; %llu sparse binds since the start\n",
                 static_cast<unsigned long long>(
                     TlgStats::arena_live_count.load(std::memory_order_relaxed)),
                 mib(TlgStats::arena_live_bytes.load(std::memory_order_relaxed)),
-                static_cast<unsigned long long>(
-                    TlgStats::arena_freed_count.load(std::memory_order_relaxed)),
                 mib(TlgStats::arena_resident_bytes.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(
                     TlgStats::arena_binds_total.load(std::memory_order_relaxed)));

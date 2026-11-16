@@ -1379,30 +1379,6 @@ void TextureCache::RefreshImage(Image& image) {
 
     scheduler.EndRendering();
 
-    // tlg (issue #79): the RX 580 on Windows stops with ErrorOutOfHostMemory in the first frame
-    // that detiles a Thin2DThin 64-bit texture. Every detile gets a log line; Debug > Flags
-    // "Separate texture unpack" (TLG_DETILE_SEPARATE=1) also sends each detile + upload as its
-    // own submission and waits for it, so the log shows whether that submission alone fails.
-    static const bool detile_separate = [] {
-        const char* v = std::getenv("TLG_DETILE_SEPARATE");
-        return v && v[0] == '1';
-    }();
-    const bool detile = image.info.props.is_tiled;
-    if (detile) {
-        static u64 detile_count = 0;
-        LOG_INFO(Render_Vulkan,
-                 "Detile #{}: {} KiB at {:#x}, {}x{}x{}, {} mips, {} layers, {} bits, tile mode {}, "
-                 "{}, {} copies{}",
-                 ++detile_count, image.info.guest_size >> 10, image.info.guest_address,
-                 image.info.size.width, image.info.size.height, image.info.size.depth,
-                 image.info.resources.levels, image.info.resources.layers, image.info.num_bits,
-                 static_cast<u32>(image.info.tile_mode), vk::to_string(image.info.pixel_format),
-                 image_copies.size(), detile_separate ? ", separate" : "");
-        if (detile_separate) {
-            scheduler.Finish();
-        }
-    }
-
     const auto [in_buffer, in_offset] =
         buffer_cache.ObtainBufferForImage(image.info.guest_address, image.info.guest_size);
     const auto [buffer, offset] = tile_manager.DetileImage(in_buffer, in_offset, image.info);
@@ -1411,10 +1387,6 @@ void TextureCache::RefreshImage(Image& image) {
     }
 
     runtime.UploadImage(&image, buffer, image_copies);
-    if (detile && detile_separate) {
-        scheduler.Finish();
-        LOG_INFO(Render_Vulkan, "Detile: done");
-    }
     image.pack_key = ~0ull; // tlg: the texture pack hashes it again on the next sample
 }
 
