@@ -192,6 +192,8 @@ def main():
     # ---- stage spans
     sp = ev[ev['type'] == T_STAGE]
     print('\n== stage threads (ms per frame, and percent of the capture)')
+    if not len(sp):
+        print("   (none: these are the PS4 path's front / raster / encoder stages; under the Vulkan backend the threads are in the frames table below)")
     for st in sorted(set(int(a) >> 56 for a in sp['arg'])):
         sel = sp[(sp['arg'] >> 56) == st]
         total = int(np.sum(sel['arg'] & ((1 << 56) - 1)))

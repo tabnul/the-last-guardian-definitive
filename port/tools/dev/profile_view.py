@@ -20,12 +20,15 @@ import timeline_report as tr  # noqa: E402
 
 STEP_NS = 100_000_000
 COLORS = {'raster thread': '#d9534f', 'command processor': '#f0ad4e', 'encoder thread': '#5bc0de', 'game render thread': '#5cb85c', 'game workers (sum / cores)': '#9370db',
-          'GPU busy': '#337ab7'}
+          'GPU busy': '#337ab7',
+          # the Vulkan backend's threads
+          'render (ps4render)': '#5cb85c', 'submit thread': '#8a8a8a', 'resolver (vkb:Recorder)': '#f0ad4e', 'recorders (sum)': '#d9534f', 'present': '#5bc0de',
+          'completion': '#e8e070', 'workers (sum / cores)': '#9370db'}
 
 
 def series_svg(title, xs, lines, y_max, unit, guides=(), width=1100, height=220):
     """lines: list of (name, values) over xs (seconds)"""
-    left, right, top, bottom = 50, 170, 24, 28
+    left, right, top, bottom = 50, 280, 24, 28  # the legend on the right
     w, h = width - left - right, height - top - bottom
     x_max = max(xs[-1], 1e-6) if len(xs) else 1
     sx = lambda x: left + x / x_max * w
@@ -74,25 +77,42 @@ def main():
     xs = (np.arange(steps) + 0.5) * STEP_NS / 1e9
     cpu = ev[ev['type'] == tr.T_CPU]
     # the Vulkan backend's threads when it ran (the game's render thread captures, the recorder resolves, the recording threads record), else the PS4 path's stages
-    if any(n.startswith('vkb:') for n in names.values()):
-        groups = {'game render thread (ps4render)': ['ps4render'], 'game submit thread': ['ps4render_submi'], 'recorder (vkb:Recorder)': ['vkb:Recorder'],
-                  'recording threads (vkb:Record1/2, sum)': ['vkb:Record1', 'vkb:Record2'], 'present thread': ['tlg:Present', 'shadPS4:PresentThread'],
-                  'completion thread (vkb:Completion)': ['vkb:Completion']}
+    backend = any(n.startswith('vkb:') for n in names.values())
+    if backend:
+        groups = {'render (ps4render)': ['ps4render'], 'submit thread': ['ps4render_submi', 'ps4render_submitDone'], 'resolver (vkb:Recorder)': ['vkb:Recorder'],
+                  'recorders (sum)': ['vkb:Record1', 'vkb:Record2'], 'present': ['tlg:Present', 'shadPS4:PresentThread'], 'completion': ['vkb:Completion']}
     else:
         groups = {'raster thread': ['shadPS4:GpuRaster'], 'command processor': ['shadPS4:GpuCommandProcessor'], 'encoder thread': ['shadPS4:GpuEncoder'],
                   'game render thread': ['ps4render']}
     cpu_lines = []
-    idx = np.clip(((cpu['ns'].astype(np.int64) - t0) // STEP_NS).astype(np.int64), 0, steps - 1)
+
+    def busy_of(ids):
+        # a CPU sample holds the cycles since the same thread's previous sample; the sampler reaches a thread every few hundred ms, so its cycles are spread
+        # over that interval (one step each made the line jump between 0 and 100 %)
+        out = np.zeros(steps)
+        for tid in ids:
+            sel = cpu[cpu['thread'] == tid]
+            if len(sel) < 2:
+                continue
+            ns = np.sort(sel['ns'].astype(np.int64))
+            order = np.argsort(sel['ns'].astype(np.int64), kind='stable')
+            cyc = sel['arg'][order].astype(np.float64)
+            for a, b, c in zip(ns[:-1], ns[1:], cyc[1:]):
+                if b <= a:
+                    continue
+                per_ns = c / cyc_ns / (b - a)
+                s0, s1 = max(int((a - t0) // STEP_NS), 0), min(int((b - t0) // STEP_NS), steps - 1)
+                for k in range(s0, s1 + 1):
+                    lo, hi = max(a, t0 + k * STEP_NS), min(b, t0 + (k + 1) * STEP_NS)
+                    if hi > lo:
+                        out[k] += per_ns * (hi - lo)
+        return out / STEP_NS * 100
+
     for label, thread_names in groups.items():
-        ids = [t for t, n in names.items() if n in thread_names]
-        mask = np.isin(cpu['thread'], ids)
-        busy = np.bincount(idx[mask], weights=cpu['arg'][mask].astype(np.float64), minlength=steps) / cyc_ns / STEP_NS * 100
-        cpu_lines.append((label, busy))
+        cpu_lines.append((label, busy_of([t for t, n in names.items() if n in thread_names])))
     worker_ids = [t for t, n in names.items() if n.startswith('workerThread')]
     if worker_ids:
-        mask = np.isin(cpu['thread'], worker_ids)
-        busy = np.bincount(idx[mask], weights=cpu['arg'][mask].astype(np.float64), minlength=steps) / cyc_ns / STEP_NS * 100 / len(worker_ids)
-        cpu_lines.append(('game workers (sum / cores)', busy))
+        cpu_lines.append(('workers (sum / cores)' if backend else 'game workers (sum / cores)', busy_of(worker_ids) / len(worker_ids)))
 
     # GPU busy per 100 ms step (passes and dispatches)
     gp = ev[ev['type'] == tr.T_GPU_PASS]
@@ -103,7 +123,7 @@ def main():
     gpu = np.bincount(gidx, weights=w_dur.astype(np.float64), minlength=steps) / STEP_NS * 100
 
     # the limit: the busiest pipeline thread
-    means = {name: float(np.mean(v)) for name, v in cpu_lines if name != 'game workers (sum / cores)'}
+    means = {name: float(np.mean(v)) for name, v in cpu_lines if 'workers' not in name}
     limit = max(means, key=means.get) if means else '?'
 
     # text report
