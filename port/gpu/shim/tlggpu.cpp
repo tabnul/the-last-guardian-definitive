@@ -312,6 +312,12 @@ u32 TimelineWaitKind(const char* kind) {
     if (!std::strncmp(kind, "mutex", 5)) return 5;
     return 6;
 }
+// The capture's object id. Semaphores (ids), files (descriptors) and sleeps (microseconds) give small numbers, not pointers: they get the wait kind in
+// the top byte, so a semaphore and a file of the same number keep their own name and signals (a semaphore post is kind 7, its waits kind 2).
+u64 TimelineObjectId(u32 wait_kind, const void* object) {
+    const u64 id = reinterpret_cast<u64>(object);
+    return id < (u64(1) << 32) ? id | (u64(wait_kind) << 56) : id;
+}
 void TimelineWaitBegin() {
     timeline_wait_start = Core::FrameTimeline::capture_active.load(std::memory_order_relaxed) ? Core::FrameTimeline::Now() : 0;
 }
@@ -324,14 +330,16 @@ void TimelineWaitEnd(const char* kind, const void* object, const char* name, uin
     if (end - start < 50'000) {
         return;
     }
-    const u64 id = reinterpret_cast<u64>(object);
-    Core::FrameTimeline::Record(Core::FrameTimeline::GameWait, (end - start) | (u64(TimelineWaitKind(kind)) << 56), end, id);
+    const u32 wait_kind = TimelineWaitKind(kind);
+    const u64 id = TimelineObjectId(wait_kind, object);
+    Core::FrameTimeline::Record(Core::FrameTimeline::GameWait, (end - start) | (u64(wait_kind) << 56), end, id);
     Core::FrameTimeline::Record(Core::FrameTimeline::GameWaitSite, static_cast<u64>(caller), end, id); // the stall profiler pairs this with the wait above
     Core::FrameTimeline::CaptureNote(id, name && name[0] ? name : (kind ? kind : ""));
 }
 void TimelineSignal(int kind, const void* object) {
     if (Core::FrameTimeline::capture_active.load(std::memory_order_relaxed)) {
-        Core::FrameTimeline::Signal(static_cast<u64>(kind), object);
+        const u64 id = TimelineObjectId(kind == 7 ? 2 : 1, object);
+        Core::FrameTimeline::Record(Core::FrameTimeline::GameSignal, static_cast<u64>(kind), Core::FrameTimeline::Now(), id);
     }
 }
 } // namespace
