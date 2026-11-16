@@ -14,7 +14,9 @@ Start-Sleep 3
 $e = [ordered]@{
     TLG_DEBUG_SERVER_PORT = $DebugPort; TLG_GAME_DIR = $Cfg.game_dir
     MSYS2_ROOT = $Cfg.msys2_root   # the runner puts its clang64in (SDL3, FFmpeg, libc++) on the game's PATH
-    TLG_FPS = "120"; TLG_VBLANK_HZ = "120"; TLG_ENGINE_FPS = "120"
+    # owner default: 120 fps at 4K. The fork's runner has no "120" mode: unlocked (its uncapped eboot patches) held to 120 by the 120 Hz vblank;
+    # 3840x2160 is its native resolution patch. The launcher's own settings apply when the game starts from the launcher.
+    TLG_FPS = "unlocked"; TLG_VBLANK_HZ = "120"; TLG_ENGINE_FPS = "120"; TLG_RESOLUTION = "3840x2160"
     TLG_GARLIC_POOL_PRO = "1"; TLG_DMEM_MB = "8192"; TLG_GARLIC_POOL_MB = "4096"
     TLG_FRAMES_IN_FLIGHT = "1"   # depth 1
 }
