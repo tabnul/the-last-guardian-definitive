@@ -257,5 +257,7 @@ struct Stamps {
 [[nodiscard]] nlohmann::json Report();
 /// note 87: debugger mode's GPU submissions with their slowest passes (the slowest since debugger mode started, the newest); the frame walk freeze writes it (gpu_passes.json).
 [[nodiscard]] nlohmann::json GpuPassReport();
+/// note 90: debugger mode: a pass of 20 ms or more arms its pixel shader; the next draw with it dumps everything it uses (once per shader per recording). True once.
+[[nodiscard]] bool TakeSlowPsArm(u64 ps_hash);
 
 } // namespace Core::Vkb::Stream

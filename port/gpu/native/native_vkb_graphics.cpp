@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "native/native_vkb_shader_dump.h"
+#include "native/native_framewalk.h"
 #include "native/native_debug_server.h"
 #include "native/native_marker.h"
 #include "native/native_vkb_graphics.h"
@@ -549,6 +551,7 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
         spv = VkbShader::Backend::SPIRV::EmitSPIRV(profile, out.runtime, program, binding);
     }
     out.module = VkbVulkan::CompileSPV(spv, instance->GetDevice());
+    Core::Vkb::ShaderDump::Keep(stage == 0 ? Core::Vkb::ShaderDump::Stage::Vertex : Core::Vkb::ShaderDump::Stage::Pixel, out.info->pgm_hash, spv, params.code); // note 89
     // the slot map: the same layout with a tag per slot, flattened by the shader's own table walker
     Core::NativeDraw::UserLayout tagged;
     Core::NativeDraw::BuildUserLayout(ctx, stage, shader, inputs_offset, true, tagged);
@@ -904,6 +907,7 @@ struct DrawJob final : Stream::Job {
     }
     std::vector<std::pair<u64, std::string>> dump_views;
     bool dump_buffers{};
+    std::string dump_prefix; ///< note 90: debugger mode's slow-pass dump goes to vkb_image_dump/<prefix>
     boost::container::small_vector<Stream::Use, 64> uses;
     boost::container::small_vector<Stream::Use, 9> attachment_uses;
     Stream::Pass pass{};
@@ -1580,32 +1584,38 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     // images (inputs in0.., the color targets out0.., the depth target depth) right after the draw, once
     auto& dump_views = job->dump_views;
     bool& dump_buffers = job->dump_buffers;
+    job->dump_prefix.clear();
     {
         static const u64 dump_ps = [] { const char* e = std::getenv("TLG_VKB_IMAGE_DUMP_PS"); return e != nullptr ? std::strtoull(e, nullptr, 16) : 0ull; }();
         static const u64 dump_at = [] { const char* e = std::getenv("TLG_VKB_IMAGE_DUMP_AT"); return e != nullptr ? std::strtoull(e, nullptr, 10) : 2600ull; }();
         static const u64 dump_nth = [] { const char* e = std::getenv("TLG_VKB_IMAGE_DUMP_NTH"); return e != nullptr ? std::strtoull(e, nullptr, 10) : 0ull; }();
         static std::atomic<u64> seen{0};
-        if (dump_ps != 0 && v.has_ps && v.ps.info && v.ps.info->pgm_hash == dump_ps && Core::Vkb::GraphicsSubmits() >= dump_at && seen.fetch_add(1) == dump_nth) {
+        // note 90: in debugger mode a slow pass's pixel shader is armed (Stream::TakeSlowPsArm); its next draw is dumped the same way into vkb_image_dump/debugger/,
+        // which the freeze moves into its folder (slow_draws/)
+        const bool debugger_dump = Core::FrameWalk::DebuggerMode() && v.has_ps && v.ps.info && Stream::TakeSlowPsArm(v.ps.info->pgm_hash);
+        const std::string prefix = debugger_dump ? fmt::format("debugger/ps_{:016x}/", v.ps.info->pgm_hash) : std::string{};
+        job->dump_prefix = prefix;
+        if (debugger_dump || (dump_ps != 0 && v.has_ps && v.ps.info && v.ps.info->pgm_hash == dump_ps && Core::Vkb::GraphicsSubmits() >= dump_at && seen.fetch_add(1) == dump_nth)) {
             for (const Stage* st : {&v.vs, &v.ps}) {
                 for (u32 i = 0; i < st->images.size(); ++i) {
                     const Source& src = st->images[i];
                     const u64 object = src.cls == Source::Class::Slot && src.kind == 1 ? SlotObject(ctx, st->index, 1, src.slot) : 0;
                     if (object != 0) {
-                        dump_views.push_back({Rd<u64>(object, 0x10), fmt::format("{}_in{}_slot{}", st == &v.ps ? "ps" : "vs", i, src.slot)});
+                        dump_views.push_back({Rd<u64>(object, 0x10), fmt::format("{}{}_in{}_slot{}", prefix, st == &v.ps ? "ps" : "vs", i, src.slot)});
                     }
                 }
             }
             const auto targets = TargetViews(ctx);
             for (u32 cb = 0; cb < v.key.num_color_attachments; ++cb) {
                 if (targets[cb] != 0) {
-                    dump_views.push_back({Rd<u64>(targets[cb], 0x10), fmt::format("out{}", cb)});
+                    dump_views.push_back({Rd<u64>(targets[cb], 0x10), fmt::format("{}out{}", prefix, cb)});
                 }
             }
             if (const u64 dsv = Rd<u64>(ctx, CtxDepthStencilView); dsv != 0) {
-                dump_views.push_back({Rd<u64>(dsv, 0x10), "depth"});
+                dump_views.push_back({Rd<u64>(dsv, 0x10), prefix + "depth"});
             }
             // and the buffers: the guest bytes now (at the draw call), the GPU's copy after the draw
-            const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump";
+            const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump" / prefix;
             std::error_code ec;
             std::filesystem::create_directories(dir, ec);
             b.guest.resize(b.buffers.size());
@@ -1997,14 +2007,39 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
     } else {
         cmd.draw(static_cast<u32>(a1), instances, static_cast<u32>(a2), 0);
     }
-    if (!dump_views.empty()) {
+    if (!dump_views.empty() || dump_buffers) {
         Stream::BreakPass(cmd);
         for (const auto& [id, name] : dump_views) {
             Core::Vkb::DumpView(cmd, id, name);
         }
         for (u32 i = 0; dump_buffers && i < b.buffers.size(); ++i) {
             if (b.buffers[i].range != VK_WHOLE_SIZE) {
-                Core::Vkb::DumpBuffer(cmd, b.buffers[i].buffer, b.buffers[i].offset, b.buffers[i].range, fmt::format("g{}", i));
+                Core::Vkb::DumpBuffer(cmd, b.buffers[i].buffer, b.buffers[i].offset, b.buffers[i].range, fmt::format("{}g{}", dump_prefix, i));
+            }
+        }
+        if (!dump_prefix.empty()) { // note 90: what the draw was and how it bound its buffers (binding order = the shader's buffer bindings, vertex stage first)
+            nlohmann::json bufs = nlohmann::json::array();
+            for (u32 i = 0; i < b.buffers.size(); ++i) {
+                const auto guest = i < b.guest.size() ? b.guest[i] : std::pair<u64, u64>{};
+                bufs.push_back({{"index", i}, {"offset", b.buffers[i].offset}, {"range", b.buffers[i].range == VK_WHOLE_SIZE ? -1.0 : static_cast<double>(b.buffers[i].range)},
+                                {"guest_address", fmt::format("{:#x}", guest.first)}, {"guest_size", guest.second}});
+            }
+            std::string push_hex;
+            const auto* pb = reinterpret_cast<const u8*>(&push);
+            for (size_t i = 0; i < sizeof(push); ++i) {
+                push_hex += fmt::format("{:02x}", pb[i]);
+            }
+            const nlohmann::json meta{{"ps", fmt::format("{:016x}", ps_hash)}, {"kind", kind}, {"a1", a1}, {"a2", a2}, {"instances", instances}, {"buffers", bufs},
+                                      {"push_data_hex", push_hex},
+                                      {"note", "debugger mode slow-pass draw (note 90): ps_/vs_inN = input images, outN = colour targets, depth; gN_*.gpu = buffer N as the GPU "
+                                               "had it right after the draw, gN_<address>_*.raw = the guest bytes at the draw call; images as raw texels (vkb_dump_png.py)"}};
+            const auto path = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump" / dump_prefix / "draw.json";
+            std::error_code ec;
+            std::filesystem::create_directories(path.parent_path(), ec);
+            if (FILE* f = std::fopen(path.string().c_str(), "wb")) {
+                const std::string text = meta.dump(1);
+                std::fwrite(text.data(), 1, text.size(), f);
+                std::fclose(f);
             }
         }
     }
@@ -2066,6 +2101,9 @@ void Draw(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
     if (!it->second->ok) {
         c_skip_not_compiled.fetch_add(1, std::memory_order_relaxed);
         return;
+    }
+    if (Core::FrameWalk::DebuggerMode()) [[unlikely]] { // note 89: the shaders of the scene for the freeze
+        Core::Vkb::ShaderDump::NoteDraw(it->second->vs.info ? it->second->vs.info->pgm_hash : 0, it->second->has_ps && it->second->ps.info ? it->second->ps.info->pgm_hash : 0);
     }
     static const bool no_draw_record = [] { const char* e = std::getenv("TLG_VKB_NO_DRAW_RECORD"); return e != nullptr && *e == '1'; }(); // kill experiment: variant found, nothing recorded
     // note 62 bound: TLG_VKB_NO_DRAW_RECORD_AFTER=N: the same kill experiment from graphics submit N on (after the load, which the plain switch does not survive)

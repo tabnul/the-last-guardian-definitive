@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "native/native_vkb_shader_dump.h"
+#include "native/native_framewalk.h"
 #include "native/native_debug_server.h"
 #include "native/native_marker.h"
 #include "native/native_vkb_compute.h"
@@ -336,6 +338,7 @@ void Compile(u64 ctx, u64 shader, Variant& v) {
     }
     const vk::Device device = instance->GetDevice();
     v.module = VkbVulkan::CompileSPV(spv, device);
+    Core::Vkb::ShaderDump::Keep(v.async ? Core::Vkb::ShaderDump::Stage::AsyncCompute : Core::Vkb::ShaderDump::Stage::Compute, v.info->pgm_hash, spv, params.code); // note 89
     // our layout: the module's ABI (storage buffers, then images, then samplers; one push-descriptor set; the push data block)
     u32 index = 0;
     boost::container::small_vector<vk::DescriptorSetLayoutBinding, 32> bindings;
@@ -890,6 +893,9 @@ void Dispatch(u64 ctx, u32 x, u32 y, u32 z, u64 indirect_address) {
         c_skip_not_compiled.fetch_add(1, std::memory_order_relaxed);
         return;
     }
+    if (Core::FrameWalk::DebuggerMode() && it->second->info) [[unlikely]] { // note 89: the shaders of the scene for the freeze
+        Core::Vkb::ShaderDump::NoteDispatch(it->second->info->pgm_hash, it->second->async);
+    }
     static const bool no_record = [] { const char* e = std::getenv("TLG_VKB_NO_RECORD"); return e != nullptr && *e == '1'; }(); // kill experiment: compile only (V3a)
     // note 71 bound only: TLG_VKB_TEST_SKIP_HASHES=hex,... skips the device-context dispatches of those shaders (the async ones: TLG_VKB_TEST_SKIP_ASYNC_HASHES); the picture is wrong
     static const std::vector<u64> skip_device = [] {
@@ -946,6 +952,9 @@ void DispatchAsync(u64 jcc, u32 x, u32 y, u32 z) {
     if (!it->second->ok) {
         c_skip_not_compiled.fetch_add(1, std::memory_order_relaxed);
         return;
+    }
+    if (Core::FrameWalk::DebuggerMode() && it->second->info) [[unlikely]] { // note 89: the shaders of the scene for the freeze
+        Core::Vkb::ShaderDump::NoteDispatch(it->second->info->pgm_hash, it->second->async);
     }
     // note 39 bound only: TLG_VKB_TEST_SKIP_ASYNC_HASHES=hex,hex,... skips the async dispatches of those shaders (the picture is wrong)
     static const std::vector<u64> skip_hashes = [] {

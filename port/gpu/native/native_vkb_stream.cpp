@@ -1604,6 +1604,11 @@ std::deque<GpuSubmission> gpu_recent;  ///< newest last (under the stamp lock)
 std::vector<GpuSubmission> gpu_worst;  ///< slowest first
 u64 gpu_noted = 0;
 bool gpu_was_debugging = false;
+/// note 90: pixel shaders of slow passes waiting for their dump, and the ones already dumped in this recording (under arm_mutex)
+std::mutex arm_mutex;
+std::vector<u64> armed_ps, dumped_ps;
+std::atomic<u32> armed_count{0};
+constexpr double SlowPassArmMs = 20.0;
 
 void NoteGpuPassesLocked(const Submitted& s, const std::vector<u64>& ns) {
     const bool on = Core::FrameWalk::DebuggerMode();
@@ -1611,6 +1616,9 @@ void NoteGpuPassesLocked(const Submitted& s, const std::vector<u64>& ns) {
         gpu_was_debugging = on;
         if (on) {
             gpu_recent.clear(), gpu_worst.clear(), gpu_noted = 0; // a new recording starts empty
+            std::scoped_lock arm_lock{arm_mutex};
+            armed_ps.clear(), dumped_ps.clear();
+            armed_count.store(0, std::memory_order_relaxed);
         }
     }
     if (!on || s.lean || s.count == 0 || s.segments.empty() || s.count > ns.size()) {
@@ -1637,6 +1645,16 @@ void NoteGpuPassesLocked(const Submitted& s, const std::vector<u64>& ns) {
         }
     }
     std::sort(rec.top.begin(), rec.top.end(), [](const GpuPass& a, const GpuPass& b) { return a.ms > b.ms; });
+    for (const GpuPass& p : rec.top) { // note 90: arm the slow passes' pixel shaders for a full draw dump
+        if (p.ms >= SlowPassArmMs && p.ps != 0) {
+            std::scoped_lock arm_lock{arm_mutex};
+            if (std::ranges::find(armed_ps, p.ps) == armed_ps.end() && std::ranges::find(dumped_ps, p.ps) == dumped_ps.end()) {
+                armed_ps.push_back(p.ps);
+                armed_count.fetch_add(1, std::memory_order_relaxed);
+                LOG_WARNING(Render_Vulkan, "vkb: debugger mode: pass of {:.1f} ms, pixel shader {:#x} armed: its next draw dumps its images and buffers", p.ms, p.ps);
+            }
+        }
+    }
     if (rec.top.size() > PassesKept) {
         rec.top.resize(PassesKept);
     }
@@ -1680,6 +1698,21 @@ void TimelineSubmissionLocked(const Submitted& s, const std::vector<u64>& ns) {
     }
 }
 } // namespace
+
+bool TakeSlowPsArm(u64 ps_hash) {
+    if (armed_count.load(std::memory_order_relaxed) == 0) {
+        return false;
+    }
+    std::scoped_lock lock{arm_mutex};
+    const auto it = std::ranges::find(armed_ps, ps_hash);
+    if (it == armed_ps.end()) {
+        return false;
+    }
+    armed_ps.erase(it);
+    armed_count.fetch_sub(1, std::memory_order_relaxed);
+    dumped_ps.push_back(ps_hash);
+    return true;
+}
 
 nlohmann::json GpuPassReport() {
     std::scoped_lock lock{stamp_mutex};

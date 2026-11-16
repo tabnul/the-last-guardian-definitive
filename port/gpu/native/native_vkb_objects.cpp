@@ -2205,7 +2205,7 @@ void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
     std::thread([buffer, allocation, mapped = info.pMappedData, bytes, after, dir, file] {
         Stream::Wait(after);
         std::error_code ec;
-        std::filesystem::create_directories(dir, ec);
+        std::filesystem::create_directories(std::filesystem::path(file).parent_path(), ec);
         if (FILE* f = std::fopen(file.c_str(), "wb")) {
             std::fwrite(mapped, 1, bytes, f);
             std::fclose(f);
@@ -2240,7 +2240,7 @@ void DumpBuffer(vk::CommandBuffer cmd, vk::Buffer source, u64 offset, u64 size, 
     std::thread([buffer, allocation, mapped = info.pMappedData, size, after, dir, file] {
         Stream::Wait(after);
         std::error_code ec;
-        std::filesystem::create_directories(dir, ec);
+        std::filesystem::create_directories(std::filesystem::path(file).parent_path(), ec);
         if (FILE* f = std::fopen(file.c_str(), "wb")) {
             std::fwrite(mapped, 1, size, f);
             std::fclose(f);

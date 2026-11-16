@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "native/native_vkb_shader_dump.h"
 #include "native/native_vkb_stream.h"
 #include "native/native_framewalk.h"
 #include "native/native_vkb.h"
@@ -120,6 +121,11 @@ void StartRecording() {
         recording_ring = true;
         ByteAudit::Reset();
         ByteAudit::SetActive(true);
+        Core::Vkb::ShaderDump::Reset(); // note 89
+        { // note 90: the slow-pass draw dumps of the previous recording
+            std::error_code ec;
+            std::filesystem::remove_all(LogDir() / "vkb_image_dump" / "debugger", ec);
+        }
         if (thumb_hooks.enable != nullptr) {
             thumb_hooks.enable(true);
         }
@@ -194,6 +200,18 @@ void FreezeWorker() {
             // no debugger mode before the freeze: nothing to add
         } else {
             WriteText(dir / "byte_audit.json", ByteAudit::Report());
+            (void)Core::Vkb::ShaderDump::Write(dir / "shaders"); // note 89: every shader used while recording
+            { // note 90: the slow-pass draw dumps of this recording (written by their own threads once the GPU had them)
+                std::error_code ec;
+                const auto from = LogDir() / "vkb_image_dump" / "debugger";
+                if (std::filesystem::exists(from, ec)) {
+                    std::filesystem::rename(from, dir / "slow_draws", ec);
+                    if (ec) {
+                        std::filesystem::copy(from, dir / "slow_draws", std::filesystem::copy_options::recursive, ec);
+                        std::filesystem::remove_all(from, ec);
+                    }
+                }
+            }
             if (thumb_hooks.dump != nullptr) {
                 thumbs = thumb_hooks.dump((dir / "thumbs.bin").string());
             }
