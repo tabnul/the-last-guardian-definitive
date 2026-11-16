@@ -149,6 +149,7 @@
  "Show overlay (F10)",
  "The performance overlay in a corner of the screen.",
  "What to show",
+ "1% low (slowest frames, last 10 s)",
  "Frametime",
  "GPU (name and use)",
  "CPU (game)",

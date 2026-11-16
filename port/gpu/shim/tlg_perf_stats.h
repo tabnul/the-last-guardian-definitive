@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <string>
 
 namespace Vulkan {
@@ -32,13 +33,17 @@ enum Item : unsigned {
     Cpu = 1u << 4,
     Ram = 1u << 5,
     Vram = 1u << 6,
-    AllItems = (1u << 7) - 1,
+    Low1 = 1u << 7, ///< 1% low: the frame rate of the slowest 1% of the frames in the last 10 s
+    AllItems = (1u << 8) - 1,
 };
 // tlg: the game renders natively (no upscaler), so the defaults show GPU load and VRAM instead.
-inline constexpr unsigned DefaultItems = Fps | FrameTime | Gpu | Vram;
+inline constexpr unsigned DefaultItems = Fps | Low1 | FrameTime | Gpu | Vram;
+/// The overlay's order of the items (the menu's checkboxes and the text)
+inline constexpr unsigned ItemOrder[] = {Fps, Low1, FrameTime, Upscaler, Gpu, Cpu, Ram, Vram};
 
 struct Sample {
     float fps = 0.0f, frame_ms = 0.0f;
+    float low1_fps = -1.0f; ///< -1: not enough frames yet
     std::string upscaler;
     std::string gpu_name;
     float gpu_percent = -1.0f, cpu_percent = -1.0f;
@@ -74,6 +79,14 @@ inline std::string Format(const Sample& s, unsigned mask, bool row) {
     };
     if (mask & Fps) {
         std::snprintf(part, sizeof(part), "%.0f FPS", s.fps);
+        add();
+    }
+    if (mask & Low1) {
+        if (s.low1_fps < 0.0f) {
+            std::snprintf(part, sizeof(part), "1%% low n/a");
+        } else {
+            std::snprintf(part, sizeof(part), "1%% low %.0f FPS", s.low1_fps);
+        }
         add();
     }
     if (mask & FrameTime) {
@@ -114,6 +127,15 @@ inline std::string Format(const Sample& s, unsigned mask, bool row) {
 
 /// Starts the sampling thread the first time; later calls do nothing.
 void Start(const Vulkan::Instance& instance);
+
+/// VKB: the device figures the sampler reads, for a presenter without a Vulkan::Instance (the engine-to-Vulkan backend, TLG_VKB=1)
+struct Device {
+    std::string name;
+    std::function<bool()> can_report_memory;
+    std::function<uint64_t()> memory_used;   ///< bytes of device-local memory in use
+    std::function<uint64_t()> memory_budget; ///< the driver's budget of those heaps now
+};
+void Start(Device device);
 /// The latest CPU, RAM, GPU and VRAM values (the caller fills FPS, frametime and upscaler).
 Sample Latest();
 

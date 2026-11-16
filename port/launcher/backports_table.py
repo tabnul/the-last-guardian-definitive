@@ -204,6 +204,8 @@ MENU = [
           'Shows RAM used by the game and total.'),
     _menu('Overlay', 'overlay_vram', 'bool', '1', 'Overlay: VRAM',
           'Shows video memory used and available.'),
+    _menu('Overlay', 'overlay_low1', 'bool', '1', 'Overlay: 1% low',
+          'Shows the 1% low: the frame rate of the slowest 1% of the frames in the last 10 seconds.'),
     _menu('Overlay', 'overlay_scale', 'int', '100', 'Overlay font size',
           'Size of the overlay text.', lo=50, hi=300, unit='%'),
     _menu('Overlay', 'overlay_corner', 'choice', '1', 'Overlay corner',

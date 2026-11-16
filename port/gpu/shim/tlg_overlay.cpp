@@ -3,6 +3,7 @@
 #include "../../src/runtime_menu.h"
 
 #include <algorithm>
+#include <deque>
 #include <atomic>
 #include <cfloat>
 #include <chrono>
@@ -401,17 +402,66 @@ const char* UpscalerLabel(int upscaler) {
 
 
 const Vulkan::Instance* overlay_instance = nullptr; // for the overlay's measurements
+std::mutex stats_device_mutex;
+std::optional<TlgPerfStats::Device> stats_device; // VKB: the same without a Vulkan::Instance
+
+// 1% low: the present intervals of the last 10 s; the slowest 1% of them, averaged, as a frame rate (recomputed twice a second)
+std::deque<std::pair<std::chrono::steady_clock::time_point, float>> low1_frames;
+std::mutex low1_mutex;
+float low1_fps = -1.0f;
+std::chrono::steady_clock::time_point low1_computed{};
+
+void NoteFrameTime(std::chrono::steady_clock::time_point now, float ms) {
+    std::scoped_lock lock{low1_mutex};
+    low1_frames.emplace_back(now, ms);
+    while (!low1_frames.empty() && now - low1_frames.front().first > std::chrono::seconds(10)) {
+        low1_frames.pop_front();
+    }
+    if (now - low1_computed < std::chrono::milliseconds(500)) {
+        return;
+    }
+    low1_computed = now;
+    if (low1_frames.size() < 100) {
+        low1_fps = -1.0f; // under 100 frames there is no slowest 1%
+        return;
+    }
+    std::vector<float> times;
+    times.reserve(low1_frames.size());
+    for (const auto& frame : low1_frames) {
+        times.push_back(frame.second);
+    }
+    const size_t slowest = std::max<size_t>(1, times.size() / 100);
+    std::nth_element(times.begin(), times.begin() + slowest, times.end(), std::greater<float>());
+    double sum = 0.0;
+    for (size_t i = 0; i < slowest; ++i) {
+        sum += times[i];
+    }
+    low1_fps = sum > 0.0 ? float(1000.0 * double(slowest) / sum) : -1.0f;
+}
+
+float Low1Fps() {
+    std::scoped_lock lock{low1_mutex};
+    return low1_fps;
+}
 
 // The performance overlay's text with the current settings (also the menu's preview).
 std::string OverlayText() {
     namespace P = TlgPerfStats;
     const auto& s = TlgSettings::Get();
     const unsigned items = s.overlay_items;
-    if ((items & (P::Gpu | P::Cpu | P::Ram | P::Vram)) && overlay_instance) {
-        P::Start(*overlay_instance);
+    if (items & (P::Gpu | P::Cpu | P::Ram | P::Vram)) {
+        if (overlay_instance) {
+            P::Start(*overlay_instance);
+        } else {
+            std::scoped_lock lock{stats_device_mutex};
+            if (stats_device) {
+                P::Start(*stats_device);
+            }
+        }
     }
     P::Sample sample = P::Latest();
     sample.fps = frame_ms_avg > 0.0f ? 1000.0f / frame_ms_avg : 0.0f;
+    sample.low1_fps = Low1Fps();
     sample.frame_ms = frame_ms_avg;
     sample.upscaler = UpscalerLabel(s.upscaler);
     return P::Format(sample, items, s.overlay_layout == 0);
@@ -949,10 +999,11 @@ void OverlayTab() {
     ImGui::SeparatorText(TR("What to show"));
     if (ImGui::BeginTable("##overlay_items", 2, ImGuiTableFlags_SizingStretchProp)) {
         ImGui::TableNextColumn();
-        static const char* const names[] = {"FPS", TR("Frametime"), "Upscaler", TR("GPU (name and use)"), TR("CPU (game)"),
-                                            TR("RAM (game / total)"), TR("VRAM (used / available)")};
-        for (unsigned item = 0; item < 7; ++item) {
-            const unsigned bit = 1u << item;
+        // in TlgPerfStats::ItemOrder
+        static const char* const names[] = {"FPS", TR("1% low (slowest frames, last 10 s)"), TR("Frametime"), "Upscaler", TR("GPU (name and use)"),
+                                            TR("CPU (game)"), TR("RAM (game / total)"), TR("VRAM (used / available)")};
+        for (unsigned item = 0; item < std::size(TlgPerfStats::ItemOrder); ++item) {
+            const unsigned bit = TlgPerfStats::ItemOrder[item];
             bool on = (s.overlay_items & bit) != 0;
             if (ImGui::Checkbox(names[item], &on)) {
                 s.overlay_items = on ? (s.overlay_items | bit) : (s.overlay_items & ~bit);
@@ -2252,6 +2303,11 @@ void Init(const Device& device, vk::Format format, u32 image_count) { // VKB
     InitImGui(device, format, image_count);
 }
 
+void SetStatsDevice(TlgPerfStats::Device device) { // VKB
+    std::scoped_lock lock{stats_device_mutex};
+    stats_device = std::move(device);
+}
+
 static bool InitImGui(const Device& device, vk::Format format, u32 image_count) {
     std::scoped_lock lock{imgui_mutex};
     if (initialized) {
@@ -2939,6 +2995,7 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     last_present = now;
     if (ms > 0.0f && ms < 1000.0f) {
         frame_ms_avg = frame_ms_avg == 0.0f ? ms : frame_ms_avg * 0.95f + ms * 0.05f;
+        NoteFrameTime(now, ms);
     }
     ConfirmRestart();
     QuitHoldTick();

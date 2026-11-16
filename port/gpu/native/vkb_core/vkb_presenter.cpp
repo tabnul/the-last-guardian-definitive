@@ -93,6 +93,13 @@ Presenter::Presenter(Frontend::WindowSDL& window_)
                                         .queue_family = instance.GetGraphicsQueueFamilyIndex(),
                                         .queue = instance.GetGraphicsQueue()},
                      swapchain.GetSurfaceFormat().format, num_images);
+    // the performance overlay's GPU name and video memory (their renderer hands its Vulkan::Instance instead)
+    TlgOverlay::SetStatsDevice(TlgPerfStats::Device{
+        .name = std::string(instance.GetModelName()),
+        .can_report_memory = [this] { return instance.CanReportMemoryUsage(); },
+        .memory_used = [this] { return uint64_t(instance.GetDeviceMemoryUsage()); },
+        .memory_budget = [this] { return uint64_t(instance.GetDeviceMemoryBudgetNow()); },
+    });
     // The backend's objects, pipelines and streams reach this device from here on (they wait for it: Core::Vkb::Device::Ready)
     Core::Vkb::Device::Init(instance, frame_scheduler);
     LOG_INFO(Render_Vulkan, "Engine-to-Vulkan backend: presenter ready ({} swapchain images)", num_images);

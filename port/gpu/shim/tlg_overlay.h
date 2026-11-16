@@ -18,6 +18,8 @@ namespace Vulkan {
 class Instance;
 }
 
+#include "tlg_perf_stats.h"
+
 namespace TlgOverlay {
 
 /// Present thread, once: the ImGui context and its Vulkan backend.
@@ -34,6 +36,8 @@ struct Device {
     vk::Queue queue{};
 };
 void Init(const Device& device, vk::Format format, u32 image_count);
+/// VKB: the GPU name and video memory figures of the performance overlay under such a presenter
+void SetStatsDevice(TlgPerfStats::Device device);
 
 /// Window thread, for every SDL event: true when the menu consumed it.
 bool HandleEvent(const SDL_Event& event);

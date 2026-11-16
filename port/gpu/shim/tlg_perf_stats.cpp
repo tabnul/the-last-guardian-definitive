@@ -90,7 +90,7 @@ private:
     std::vector<unsigned char> buffer;
 };
 
-void Run(const Vulkan::Instance* instance) {
+void Run(Device device) {
     GpuUsage gpu;
     FILETIME created, ended, kernel, user, now;
     uint64_t last_process = 0, last_wall = 0;
@@ -98,7 +98,7 @@ void Run(const Vulkan::Instance* instance) {
     constexpr double GiB = 1024.0 * 1024.0 * 1024.0;
     while (true) {
         Sample s;
-        s.gpu_name = std::string(instance->GetModelName());
+        s.gpu_name = device.name;
         GetSystemTimeAsFileTime(&now);
         if (GetProcessTimes(GetCurrentProcess(), &created, &ended, &kernel, &user)) {
             const uint64_t process = Ticks(kernel) + Ticks(user), wall = Ticks(now);
@@ -116,9 +116,9 @@ void Run(const Vulkan::Instance* instance) {
         if (GlobalMemoryStatusEx(&system)) {
             s.ram_total_gb = double(system.ullTotalPhys) / GiB;
         }
-        if (instance->CanReportMemoryUsage()) {
-            s.vram_used_gb = double(instance->GetDeviceMemoryUsage()) / GiB;
-            s.vram_total_gb = double(instance->GetDeviceMemoryBudgetNow()) / GiB;
+        if (device.can_report_memory && device.can_report_memory()) {
+            s.vram_used_gb = double(device.memory_used()) / GiB;
+            s.vram_total_gb = double(device.memory_budget()) / GiB;
         }
         s.gpu_percent = gpu.Percent();
         {
@@ -182,7 +182,7 @@ uint64_t ProcessTicks() { // utime + stime in clock ticks
     return utime + stime;
 }
 
-void Run(const Vulkan::Instance* instance) {
+void Run(Device device) {
     GpuUsage gpu;
     const unsigned cores = std::max(1u, std::thread::hardware_concurrency());
     const long hz = sysconf(_SC_CLK_TCK), page = sysconf(_SC_PAGESIZE);
@@ -191,7 +191,7 @@ void Run(const Vulkan::Instance* instance) {
     auto last_wall = std::chrono::steady_clock::now();
     while (true) {
         Sample s;
-        s.gpu_name = std::string(instance->GetModelName());
+        s.gpu_name = device.name;
         const uint64_t process = ProcessTicks();
         const auto wall = std::chrono::steady_clock::now();
         if (last_process && hz > 0) {
@@ -207,9 +207,9 @@ void Run(const Vulkan::Instance* instance) {
         }
         struct sysinfo info{};
         if (sysinfo(&info) == 0) s.ram_total_gb = double(info.totalram) * double(info.mem_unit) / GiB;
-        if (instance->CanReportMemoryUsage()) {
-            s.vram_used_gb = double(instance->GetDeviceMemoryUsage()) / GiB;
-            s.vram_total_gb = double(instance->GetDeviceMemoryBudgetNow()) / GiB;
+        if (device.can_report_memory && device.can_report_memory()) {
+            s.vram_used_gb = double(device.memory_used()) / GiB;
+            s.vram_total_gb = double(device.memory_budget()) / GiB;
         }
         s.gpu_percent = gpu.Percent();
         {
@@ -226,7 +226,17 @@ void Run(const Vulkan::Instance* instance) {
 void Start(const Vulkan::Instance& instance) {
     // ponytail: never joined; a thread that ended while the game ran crashed in ntdll
     // (vk_pipeline_serialization.cpp, StopWarmUp). It sleeps between samples.
-    std::call_once(started, [&] { std::thread(Run, &instance).detach(); });
+    std::call_once(started, [&] {
+        Device device{.name = std::string(instance.GetModelName()),
+                      .can_report_memory = [&instance] { return instance.CanReportMemoryUsage(); },
+                      .memory_used = [&instance] { return uint64_t(instance.GetDeviceMemoryUsage()); },
+                      .memory_budget = [&instance] { return uint64_t(instance.GetDeviceMemoryBudgetNow()); }};
+        std::thread(Run, std::move(device)).detach();
+    });
+}
+
+void Start(Device device) { // VKB
+    std::call_once(started, [&] { std::thread(Run, std::move(device)).detach(); });
 }
 
 namespace {
