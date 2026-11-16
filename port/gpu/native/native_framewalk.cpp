@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "native/native_vkb_stream.h"
 #include "native/native_framewalk.h"
 #include "native/native_vkb.h"
 
@@ -188,6 +189,7 @@ void FreezeWorker() {
         WriteText(dir / "flight.json", Flight::Report(Flight::RingEvents, false, FlightMs));
         WriteText(dir / "counters.json", DebugServer::CountersSnapshot().dump(1));
         WriteText(dir / "vkb_frames.json", Core::Vkb::FrameSnapshots().dump()); // note 44
+        WriteText(dir / "gpu_passes.json", Core::Vkb::Stream::GpuPassReport().dump(1)); // note 87: debugger mode GPU submissions and their slowest passes
         if (timeline.empty()) {
             // no debugger mode before the freeze: nothing to add
         } else {

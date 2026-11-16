@@ -255,5 +255,7 @@ struct Stamps {
 [[nodiscard]] std::vector<Stamps> FinishedStamps();
 
 [[nodiscard]] nlohmann::json Report();
+/// note 87: debugger mode's GPU submissions with their slowest passes (the slowest since debugger mode started, the newest); the frame walk freeze writes it (gpu_passes.json).
+[[nodiscard]] nlohmann::json GpuPassReport();
 
 } // namespace Core::Vkb::Stream

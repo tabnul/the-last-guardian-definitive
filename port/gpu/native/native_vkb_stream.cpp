@@ -3,6 +3,7 @@
 
 #include "native/native_flight.h"
 #include "native/native_timeline.h"
+#include "native/native_framewalk.h"
 #include "native/native_vkb_stream.h"
 #include "native/native_vkb.h"
 
@@ -33,6 +34,12 @@
 #endif
 
 namespace Core::Vkb::Stream {
+namespace {
+u64 SteadyNs() {
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+} // namespace
+bool StampsForcedFull();
 
 namespace {
 
@@ -308,6 +315,7 @@ struct Rec {
     bool stat_open = false;
     u32 stamp_count = 0;
     bool stamping = false; ///< the current command buffer has a free pool
+    bool lean = true;      ///< the current command buffer's stamps are lean (decided at its begin: full with TLG_VKB_STAMPS=1 or in debugger mode, note 87)
     u64 generation = 0;
     std::vector<Segment> segments; ///< the current command buffer's: where each run of one kind of work begins (its timestamp)
     Work current_work = Work::Count;
@@ -348,6 +356,7 @@ struct Submitted {
     u32 pool, count;
     std::vector<Segment> segments; ///< closed by the stamp at index count - 1 (written at the submit)
     std::vector<PassStamp> passes;
+    bool lean = true;
 };
 constexpr u32 WorkKinds = static_cast<u32>(Work::Count);
 constexpr const char* WorkNames[WorkKinds] = {"draws", "dispatches", "copies_texture", "clears", "other", "uploads_first_bind", "copies_buffer", "copies_gds", "fills",
@@ -422,6 +431,7 @@ vk::CommandBuffer Begin() {
                 t_rec->current.resetQueryPool(stat_pools[pool], 0, MaxPassStats);
             }
         }
+        t_rec->lean = !StampsForcedFull() && !Core::FrameWalk::DebuggerMode(); // note 87: debugger mode records full GPU stamps (one relaxed load otherwise)
         t_rec->stamp_count = 0;
         t_rec->stat_count = 0;
         t_rec->stat_open = false;
@@ -888,7 +898,7 @@ u64 SubmitLocked() {
         const u32 pool = static_cast<u32>(t_rec->generation % StampPools);
         std::scoped_lock stamp_lock{stamp_mutex};
         if (t_rec->stamp_count != 0) {
-            stamped.push_back({value, t_rec->generation, pool, t_rec->stamp_count, std::move(t_rec->segments), std::move(t_rec->pass_stamps)}); // its pool is freed once read
+            stamped.push_back({value, t_rec->generation, pool, t_rec->stamp_count, std::move(t_rec->segments), std::move(t_rec->pass_stamps), t_rec->lean}); // its pool is freed once read
         } else {
             pool_busy[pool] = false;
         }
@@ -1316,18 +1326,22 @@ void NoteBytes(Work work, u64 bytes) {
 u32 Stamp(vk::CommandBuffer cmd) {
     return StampsLean() ? ~0u : StampLocked(cmd);
 }
-bool StampsLean() {
+bool StampsForcedFull() {
     // R5 (note 31): lean by default; the detailed meters (per kind, per pass, per dispatch) cost about 0.9 ms of GPU a frame (+9 fps without them).
-    // TLG_VKB_STAMPS=1 (or TLG_VKB_PASS_STATS=1 / TLG_VKB_PASS_DUMP=1, which need them) turns them back on.
+    // TLG_VKB_STAMPS=1 (or TLG_VKB_PASS_STATS=1 / TLG_VKB_PASS_DUMP=1, which need them) turns them on for the whole run.
     static const bool on = [] {
         for (const char* name : {"TLG_VKB_STAMPS", "TLG_VKB_PASS_STATS", "TLG_VKB_PASS_DUMP"}) {
             if (const char* e = std::getenv(name); e != nullptr && e[0] == '1') {
-                return false;
+                return true;
             }
         }
-        return true;
+        return false;
     }();
     return on;
+}
+bool StampsLean() {
+    // note 87: decided per command buffer at its begin (full with TLG_VKB_STAMPS=1, and while debugger mode records)
+    return t_rec->lean;
 }
 
 void NoteInPlaceWrite(vk::Buffer buffer, u64 offset, u64 size) {
@@ -1569,6 +1583,77 @@ void TimelineGpuPass(u64 kind, u64 begin, u64 end, u64 detail) {
         FrameTimeline::Record(FrameTimeline::GpuPass, (end - begin) | (kind << 56), GpuToCpuNs(end), detail);
     }
 }
+/// note 87: GPU passes in debugger mode (Shift+F5 until the freeze). Every command buffer begun then has full stamps (per pass, per dispatch run; about 0.9 ms of
+/// GPU a frame, accepted while recording), so the freeze's timeline holds every pass, and this keeps per submission its GPU time, its slowest passes and its
+/// dispatch time: the newest RecentSubmissions and the WorstSubmissions slowest since debugger mode started. The freeze writes them (gpu_passes.json).
+/// Off debugger mode nothing here runs: the stamps stay lean.
+constexpr size_t RecentSubmissions = 600, WorstSubmissions = 16, PassesKept = 8;
+struct GpuPass {
+    double ms;
+    u8 kind;
+    u32 width, height, draws, colors, format, flags;
+    u64 ps;
+};
+struct GpuSubmission {
+    u64 at_ns, value;
+    double ms, dispatch_ms;
+    u32 passes, dispatch_runs;
+    std::vector<GpuPass> top;
+};
+std::deque<GpuSubmission> gpu_recent;  ///< newest last (under the stamp lock)
+std::vector<GpuSubmission> gpu_worst;  ///< slowest first
+u64 gpu_noted = 0;
+bool gpu_was_debugging = false;
+
+void NoteGpuPassesLocked(const Submitted& s, const std::vector<u64>& ns) {
+    const bool on = Core::FrameWalk::DebuggerMode();
+    if (on != gpu_was_debugging) {
+        gpu_was_debugging = on;
+        if (on) {
+            gpu_recent.clear(), gpu_worst.clear(), gpu_noted = 0; // a new recording starts empty
+        }
+    }
+    if (!on || s.lean || s.count == 0 || s.segments.empty() || s.count > ns.size()) {
+        return;
+    }
+    const u64 first = ns[s.segments.front().stamp], end = ns[s.count - 1];
+    if (end < first) {
+        return;
+    }
+    GpuSubmission rec{.at_ns = SteadyNs(), .value = s.value, .ms = static_cast<double>(end - first) / 1e6, .dispatch_ms = 0, .passes = static_cast<u32>(s.passes.size()),
+                      .dispatch_runs = 0, .top = {}};
+    for (size_t i = 0; i < s.segments.size(); ++i) {
+        if (s.segments[i].work == Work::Dispatch) {
+            const u64 a = ns[s.segments[i].stamp], b = i + 1 < s.segments.size() ? ns[s.segments[i + 1].stamp] : end;
+            if (b >= a) {
+                rec.dispatch_ms += static_cast<double>(b - a) / 1e6;
+                ++rec.dispatch_runs;
+            }
+        }
+    }
+    for (const PassStamp& p : s.passes) {
+        if (p.begin < s.count && p.end < s.count && ns[p.end] >= ns[p.begin]) {
+            rec.top.push_back({static_cast<double>(ns[p.end] - ns[p.begin]) / 1e6, p.kind, p.width, p.height, p.draws, p.colors, p.format, p.flags, p.ps});
+        }
+    }
+    std::sort(rec.top.begin(), rec.top.end(), [](const GpuPass& a, const GpuPass& b) { return a.ms > b.ms; });
+    if (rec.top.size() > PassesKept) {
+        rec.top.resize(PassesKept);
+    }
+    ++gpu_noted;
+    if (gpu_worst.size() < WorstSubmissions || rec.ms > gpu_worst.back().ms) {
+        gpu_worst.push_back(rec);
+        std::sort(gpu_worst.begin(), gpu_worst.end(), [](const GpuSubmission& a, const GpuSubmission& b) { return a.ms > b.ms; });
+        if (gpu_worst.size() > WorstSubmissions) {
+            gpu_worst.pop_back();
+        }
+    }
+    gpu_recent.push_back(std::move(rec));
+    if (gpu_recent.size() > RecentSubmissions) {
+        gpu_recent.pop_front();
+    }
+}
+
 void TimelineSubmissionLocked(const Submitted& s, const std::vector<u64>& ns) {
     if (!gpu_clock.valid || s.count == 0 || s.segments.empty() || s.count > ns.size()) {
         return;
@@ -1579,7 +1664,7 @@ void TimelineSubmissionLocked(const Submitted& s, const std::vector<u64>& ns) {
         return;
     }
     FrameTimeline::Record(FrameTimeline::GpuCommandBuffer, end - first, GpuToCpuNs(end), s.value);
-    if (StampsLean()) {
+    if (s.lean) {
         TimelineGpuPass(GpuKindSubmission, first, end, s.value);
         return;
     }
@@ -1595,6 +1680,31 @@ void TimelineSubmissionLocked(const Submitted& s, const std::vector<u64>& ns) {
     }
 }
 } // namespace
+
+nlohmann::json GpuPassReport() {
+    std::scoped_lock lock{stamp_mutex};
+    const u64 now = SteadyNs();
+    const auto one = [&](const GpuSubmission& r) {
+        nlohmann::json passes = nlohmann::json::array();
+        for (const GpuPass& p : r.top) {
+            passes.push_back({{"ms", p.ms}, {"kind", p.kind == 0 ? "depth" : p.kind == 1 ? "color" : "gbuffer"}, {"size", fmt::format("{}x{}", p.width, p.height)},
+                              {"draws", p.draws}, {"colors", p.colors}, {"format", p.format}, {"flags", p.flags}, {"ps", fmt::format("{:016x}", p.ps)}});
+        }
+        return nlohmann::json{{"seconds_before_the_report", static_cast<double>(now - r.at_ns) / 1e9}, {"timeline_value", r.value}, {"gpu_ms", r.ms}, {"passes", r.passes},
+                              {"dispatch_ms", r.dispatch_ms}, {"dispatch_runs", r.dispatch_runs}, {"slowest_passes", passes}};
+    };
+    nlohmann::json worst = nlohmann::json::array(), recent = nlohmann::json::array();
+    for (const GpuSubmission& r : gpu_worst) {
+        worst.push_back(one(r));
+    }
+    for (const GpuSubmission& r : gpu_recent) {
+        recent.push_back(one(r));
+    }
+    return {{"note", "debugger mode (Shift+F5 .. freeze): every submission of the frame stream with full GPU stamps; worst = the slowest since debugger mode started, "
+                     "recent = the newest (oldest first). Per submission its GPU ms, dispatch time and its slowest passes (kind, size, draws, ps = pixel shader hash; "
+                     "flags: 1 depth, 2 stencil, 4 depth test, 8 stencil test, 16 depth bounds, 32 depth write). The timeline of the freeze has every pass as well."},
+            {"submissions_noted", gpu_noted}, {"worst", worst}, {"recent", recent}};
+}
 
 std::vector<Stamps> FinishedStamps() {
     std::scoped_lock lock{mutex};
@@ -1636,6 +1746,7 @@ std::vector<Stamps> FinishedStamps() {
         if (capture) {
             TimelineSubmissionLocked(s, r.ns);
         }
+        NoteGpuPassesLocked(s, r.ns);
         static const bool dump = [] { const char* e = std::getenv("TLG_VKB_PASS_DUMP"); return e != nullptr && e[0] == '1'; }();
         static u64 dump_seen = 0;
         static u32 dump_left = 6; // the submissions of about one frame, after 9,000 timed ones (gameplay)
@@ -1748,7 +1859,7 @@ nlohmann::json Report() {
         last["gpu_busy_pct_of_the_window"] = work_last_window_span_ns ? 100.0 * static_cast<double>(work_last_window_total_ns) / static_cast<double>(work_last_window_span_ns) : 0.0;
         last["window_ms"] = static_cast<double>(work_last_window_span_ns) / 1e6;
         work["note"] = "GPU ms per timed submission of the frame stream, by kind of work (timestamps where the kind changes); last_window: the newest 500 finished submissions";
-        work["stamps"] = StampsLean() ? "lean: the total and busy share are right; the whole submission counts as its first kind (TLG_VKB_STAMPS=1 for the split by kind)" : "full";
+        work["stamps"] = StampsForcedFull() ? "full (TLG_VKB_STAMPS=1)" : Core::FrameWalk::DebuggerMode() ? "full (debugger mode)" : "lean: the total and busy share are right; the whole submission counts as its first kind (TLG_VKB_STAMPS=1 or debugger mode for the split by kind)";
         work["timed_submissions"] = work_submits, work["whole_run"] = all, work["last_window"] = last;
     }
     return {{"occlusion", {{"begun", c_q_begun.load()}, {"ended", c_q_ended.load()}, {"seen", c_q_seen.load()}, {"hidden", c_q_hidden.load()},
