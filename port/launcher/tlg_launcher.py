@@ -202,6 +202,7 @@ TEXT = {
                       'and left out at start: upscaling, anti-aliasing, frame generation, HDR, sharpening, presets, '
                       'texture packs, shadow resolution, LOD bias, anisotropic filtering and the memory switches.'),
     'renderer_note': 'Greyed options are not available with the Vulkan backend yet.',
+    'renderer_disabled': 'disabled',
     'gpu_auto': 'Automatic (most video memory)',
     'gpu_hint': ('Which graphics card runs the game. On a PC with two cards, '
                  'pick the integrated one to test a weak-GPU problem. Automatic takes the card with the most video memory.'),
@@ -1203,12 +1204,53 @@ class Launcher:
         (merge plan M3 (7)); they come back as the backend gets each feature."""
         self.__dict__.setdefault('their_widgets', []).extend(w for w in widgets if w is not None)
 
+    @staticmethod
+    def grid_row_of(widget):
+        """(grid container, row) of the row a widget sits in: its own grid cell, or that of the packed frame it is in."""
+        while widget is not None:
+            try:
+                info = widget.grid_info()
+            except tk.TclError:
+                return None
+            if info:
+                return widget.master, int(info['row'])
+            if not widget.winfo_manager():
+                return None
+            widget = widget.master  # packed or placed in a frame: the frame's row
+        return None
+
+    def show_disabled_labels(self, on):
+        """One 'disabled' label at the end of each row of greyed options (owner, 2026-11-16)."""
+        for label in getattr(self, 'disabled_labels', {}).values():
+            try:
+                label.destroy()
+            except tk.TclError:
+                pass
+        self.disabled_labels = {}
+        if not on:
+            return
+        for widget in getattr(self, 'their_widgets', []):
+            place = self.grid_row_of(widget)
+            if place is None or place in self.disabled_labels:
+                continue
+            master, row = place
+            # after the last column the row uses (its help mark included)
+            last = 0
+            for slave in master.grid_slaves(row=row):
+                info = slave.grid_info()
+                last = max(last, int(info['column']) + int(info.get('columnspan', 1)))
+            label = ttk.Label(master, text=self.t('renderer_disabled'), foreground=ACCENT)
+            label.grid(row=row, column=last, sticky='w', padx=(8, 0))
+            self.disabled_labels[place] = label
+
     def apply_renderer(self):
         """Greys the default renderer's options while the backend is picked (the rows' own rules apply otherwise)."""
         if not tlg_run.backend_on(self.settings):
             note = getattr(self, 'renderer_note', None)
             if note is not None and note.winfo_exists():
                 note.grid_remove()
+            if getattr(self, 'disabled_labels', None):
+                self.show_disabled_labels(False)
             return
         alive = []
         for widget in getattr(self, 'their_widgets', []):
@@ -1220,6 +1262,7 @@ class Launcher:
                 continue
             alive.append(widget)
         self.their_widgets = alive
+        self.show_disabled_labels(True)
         note = getattr(self, 'renderer_note', None)
         if note is not None and note.winfo_exists():
             note.grid()
