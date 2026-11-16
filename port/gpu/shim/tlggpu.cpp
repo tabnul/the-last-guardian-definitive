@@ -506,9 +506,8 @@ int* PS4_SYSV_ABI __Error() {
 }
 } // namespace Libraries::Kernel
 
-// RenderDoc capture hooks: not used by the port.
+// RenderDoc capture hooks: not used by the port (LoadRenderDoc is native/native_renderdoc.cpp: TLG_RENDERDOC=1).
 namespace VideoCore {
-void LoadRenderDoc() {}
 void StartCapture() {}
 void EndCapture() {}
 void TriggerCapture() {}

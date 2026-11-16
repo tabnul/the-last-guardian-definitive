@@ -3,6 +3,7 @@
 
 #include "native/vkb_core/vkb_device.h"
 #include "native/native_vkb_objects.h"
+#include "native/native_tsharp_watch.h"
 #include "native/native_vkb_util.h"
 
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
@@ -326,6 +327,13 @@ Image* MakeImage(const Object& texture) {
     img.cube_compatible = img.type == vk::ImageType::e2D && img.layers % 6 == 0 && img.width == img.height;
     img.address = texture.address;
     img.cube = (texture.misc & MiscTextureCube) != 0 && img.cube_compatible;
+    // debug (tint hunt, 2026-11-16): TLG_VKB_WATCH_VOLUMES=1 arms a hardware write watch near the end of the first probe volumes' memory (36 x 36 x N 3D textures), to find the
+    // engine code that fills them after we copied them (the hits go to the log: "write watch")
+    static const bool watch_volumes = [] { const char* e = std::getenv("TLG_VKB_WATCH_VOLUMES"); return e != nullptr && e[0] == '1'; }();
+    if (watch_volumes && img.type == vk::ImageType::e3D && img.width == 36 && texture.address != 0) {
+        const u64 at = texture.address + static_cast<u64>(img.width) * img.height * img.depth * 8 * 15 / 16;
+        Core::NativeTsharpWatch::ArmRotating(at, "vkb probe volume"); // the newest four volumes
+    }
     u32 samples = 1;
     if (texture.kind == Kind::Texture2D && texture.object != 0) {
         samples = *reinterpret_cast<const u32*>(texture.object + 0x180 + 5 * 4); // SampleCount
@@ -2672,6 +2680,23 @@ void TextureCpuWritten(u64 texture_id) {
     if (Upload::TextureContents(texture_id, image, format, mips, layers, layout)) {
         c_reupload_done.fetch_add(1, std::memory_order_relaxed);
     }
+}
+
+u32 ReuploadVolumes() {
+    // debug (tint hunt, 2026-11-16): every 3D texture gets its contents again from the engine's memory (the probe volumes are filled by a CPU path no hook sees)
+    std::vector<u64> ids;
+    {
+        std::scoped_lock lock{mutex};
+        for (const auto& [id, img] : images) {
+            if (img.type == vk::ImageType::e3D && !img.is_depth) {
+                ids.push_back(id);
+            }
+        }
+    }
+    for (const u64 id : ids) {
+        TextureCpuWritten(id);
+    }
+    return static_cast<u32>(ids.size());
 }
 
 bool CopyBuffer(u64 destination, u64 source, u64 bytes) {

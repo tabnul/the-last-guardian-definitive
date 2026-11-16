@@ -23,6 +23,7 @@
 #include "native/native_debug_server.h"
 #include "native/native_vkb.h"
 #include "native/native_vkb_compute.h"
+#include "native/native_vkb_objects.h"
 #include "native/native_log.h"
 #include "native/native_wait_registers.h"
 #include "native/native_config.h"
@@ -680,6 +681,15 @@ void RegisterBuiltins() {
                  const u64 mode = ParseNumber(params, "mode", 1);
                  return nlohmann::json{{"folder", Core::Marker::RequestForTest(mode == 2 ? 2 : 1)}, {"markers_written", Core::Marker::Written()}};
              });
+    Register("/vkb_reupload_volumes", "debug: every 3D texture of the backend uploaded again from the engine's memory", [](const Params&) {
+        return nlohmann::json{{"volumes", Core::Vkb::ReuploadVolumes()}};
+    });
+    Register("/renderdoc", "?capture=1: RenderDoc captures the next frame (TLG_RENDERDOC=1); without arguments: the state", [](const Params& params) {
+        if (params.contains("capture")) {
+            VideoCore::RenderDocCaptureNext();
+        }
+        return nlohmann::json::parse(VideoCore::RenderDocState());
+    });
     Register("/vkb_dump_frame", "(debug, TLG_VKB=1) ?submits=8&min_width=960&max=48: over the next graphics submissions every dispatch dumps each image at least min_width wide "
                                 "it reads or writes, once per image, right after the dispatch (log/vkb_image_dump: fdNNN_*.bin, frame_dump.txt lists them in order)",
              [](const Params& params) {
