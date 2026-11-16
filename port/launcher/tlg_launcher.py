@@ -1259,7 +1259,9 @@ class Launcher:
             child.destroy()
         self.building = False
         root = self.root
-        root.title(TITLE)
+        if not hasattr(self, 'version'):
+            self.version = update_check.shown_version(tlg_run.PORT_DIR)
+        root.title(f'{TITLE} — {self.version}' if self.version else TITLE)
         self.load_art()
         self.home = tk.Canvas(root, highlightthickness=0, bd=0, background=BG,
                               width=HOME_SIZE[0], height=HOME_SIZE[1])
@@ -2048,6 +2050,9 @@ class Launcher:
         c.tag_bind('music', '<Enter>', lambda _: (c.itemconfig(music, fill=ACCENT), c.configure(cursor='hand2')))
         c.tag_bind('music', '<Leave>', lambda _: (c.itemconfig(music, fill=DIM), c.configure(cursor='')))
         c.tag_bind('music', '<Button-1>', lambda _: self.toggle_music(music))
+        # This build's version (VERSION file, written by every package build), bottom right.
+        if getattr(self, 'version', ''):
+            c.create_text(width - 12, height - 10, anchor='se', fill=DIM, font=(SERIF, 8), text=self.version)
         # A newer release on GitHub (update_check.py): one clickable line above the status.
         if getattr(self, 'update_found', None):
             tag, url = self.update_found
