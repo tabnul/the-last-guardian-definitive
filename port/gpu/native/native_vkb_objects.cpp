@@ -149,6 +149,8 @@ struct Image {
     u64 address{};          ///< the engine texture's memory (V4c: the display buffers)
     u64 bytes{};
     u64 guest_bytes{}; ///< the engine texture's memory size (+0x38): a file read into it gives the image new contents (MemoryLoaded)
+    bool size_tried{};  ///< guest_bytes derived from the description once (note 84)
+    bool gpu_written{}; ///< a render target or UAV: its contents live in our image only (the engine's memory under it is stale), never uploaded from a file read
     vk::ImageLayout layout{vk::ImageLayout::eUndefined}; ///< after its upload (V2b); render targets stay undefined until V4 writes them
     bool mutable_format{true}; ///< R5 test TLG_VKB_TARGETS_FIXED=1: false for color render targets made without MUTABLE_FORMAT (views in its own format only)
 };
@@ -329,6 +331,7 @@ Image* MakeImage(const Object& texture) {
     img.cube_compatible = img.type == vk::ImageType::e2D && img.layers % 6 == 0 && img.width == img.height;
     img.address = texture.address;
     img.guest_bytes = texture.bytes;
+    img.gpu_written = (texture.bind & (BindRenderTarget | BindUnorderedAccess)) != 0;
     img.cube = (texture.misc & MiscTextureCube) != 0 && img.cube_compatible;
     // debug (tint hunt, 2026-11-16): TLG_VKB_WATCH_VOLUMES=1 arms a hardware write watch near the end of the first probe volumes' memory (36 x 36 x N 3D textures), to find the
     // engine code that fills them after we copied them (the hits go to the log: "write watch")
@@ -2700,11 +2703,31 @@ u32 MemoryLoaded(u64 address, u64 bytes) {
         return 0;
     }
     c_loaded_reads.fetch_add(1, std::memory_order_relaxed);
+    // note 84: a texture whose engine object gives no memory size (the probe volumes: +0x38 is 0) gets it from its description, once (outside the lock)
+    std::vector<u64> unsized;
+    {
+        std::scoped_lock lock{mutex};
+        for (const auto& [id, img] : images) {
+            if (img.guest_bytes == 0 && !img.gpu_written && !img.is_depth && img.address != 0 && !img.size_tried) {
+                unsized.push_back(id);
+            }
+        }
+    }
+    for (const u64 id : unsized) {
+        const u64 size = Upload::GuestSize(id);
+        std::scoped_lock lock{mutex};
+        if (const auto it = images.find(id); it != images.end()) {
+            it->second.guest_bytes = size;
+            it->second.size_tried = true;
+        }
+    }
     boost::container::small_vector<u64, 4> ids;
     {
         std::scoped_lock lock{mutex};
         for (const auto& [id, img] : images) {
-            if (img.address != 0 && !img.is_depth && img.address < address + bytes && address < img.address + std::max(img.guest_bytes, img.bytes)) {
+            // note 84: only textures the engine fills (a render target's or UAV's contents are ours alone: the stale memory under it overwrote them, the false
+            // colour of 2026-11-16), and only over the engine's own memory size (our image can be larger)
+            if (img.address != 0 && !img.is_depth && !img.gpu_written && img.guest_bytes != 0 && img.address < address + bytes && address < img.address + img.guest_bytes) {
                 ids.push_back(id);
             }
         }
@@ -2713,7 +2736,7 @@ u32 MemoryLoaded(u64 address, u64 bytes) {
         TextureCpuWritten(id);
     }
     c_loaded_textures.fetch_add(ids.size(), std::memory_order_relaxed);
-    // buffers (plan D4): a static buffer's device copy made at its first bind (R3d) and a GPU-written buffer's device buffer (V2f) over the range get the read's bytes,
+    // buffers (plan D4): a static buffer's device copy made at its first bind (R3d) over the range gets the read's bytes,
     // copied in the stream at this point (the read is complete: its completion called us)
     struct Copy {
         u64 guest, bytes;
@@ -2736,11 +2759,7 @@ u32 MemoryLoaded(u64 address, u64 bytes) {
                 }
             }
         }
-        if (auto it = device_buffers.upper_bound(address); it != device_buffers.begin()) {
-            for (--it; it != device_buffers.end() && it->first < address + bytes; ++it) {
-                add(it->first, it->second.end, it->second.buffer);
-            }
-        }
+        // (not the GPU-written device buffers of V2f: their contents are ours alone, note 84)
     }
     for (const Copy& c : copies) {
         const BufferWindow src = SourceWindow(c.guest, c.bytes);

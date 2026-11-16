@@ -57,9 +57,7 @@ bool HostImport::ImportChunk(u32 index, Chunk& chunk, u8* backing_base, u64 sect
     const vk::BufferCreateInfo buffer_info{
         .pNext = &external_info,
         .size = chunk.bytes,
-        // VKB: index, vertex and constant buffers are bound from the engine's memory in place too (validation 08784)
-        .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndirectBuffer |
-                 vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eUniformBuffer,
+        .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndirectBuffer,
         .sharingMode = vk::SharingMode::eExclusive,
     };
     auto buffer = device.createBuffer(buffer_info);
