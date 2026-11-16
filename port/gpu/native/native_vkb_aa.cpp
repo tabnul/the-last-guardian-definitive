@@ -13,25 +13,34 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <map>
 
 #include <nlohmann/json.hpp>
 #include <vk_mem_alloc.h>
 
 #include "common/logging/log.h"
 #include "ffx_vk_portable.h"
+#include "native/native_vkb_dlss_glue.h"
 #include "native/native_vkb_objects.h"
+#include "native/shadps4/video_core/host_shaders/vkb_aa_motion_comp.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_instance.h"
 
 namespace Core::Vkb::Aa {
 namespace {
 
-enum class Kind : u32 { Off, Fsr3 };
+enum class Kind : u32 { Off, Fsr3, Dlaa };
 
 Kind Chosen() {
     static const Kind k = [] {
         const char* e = std::getenv("TLG_VKB_AA");
         if (e != nullptr && (std::strcmp(e, "fsr3") == 0 || std::strcmp(e, "1") == 0)) {
             return Kind::Fsr3;
+        }
+        if (e != nullptr && std::strcmp(e, "dlaa") == 0) {
+            if (Core::Vkb::DlssGlue::Wanted()) {
+                return Kind::Dlaa;
+            }
+            LOG_WARNING(Render_Vulkan, "vkb aa: DLAA asked for, but tlg_dlss.dll / nvngx_dlss.dll are not next to the executable: AA off");
         }
         return Kind::Off;
     }();
@@ -86,6 +95,81 @@ FfxVkPortableImage Describe(VkImage image, VkFormat format, u32 w, u32 h, VkImag
     return out;
 }
 
+// F1d (DLAA): the motion in pixels (vkb_aa_motion.comp), views of the inputs (by image), the conversion pipeline
+VkImage motion_px = VK_NULL_HANDLE;
+VmaAllocation motion_px_alloc = nullptr;
+vk::ImageView motion_px_view{}, output_view{};
+std::map<std::pair<VkImage, u32>, vk::ImageView> views; ///< (image, format) -> view
+vk::DescriptorSetLayout motion_set_layout{};
+vk::PipelineLayout motion_layout{};
+vk::Pipeline motion_pipeline{};
+u32 dl_w = 0, dl_h = 0;
+
+vk::ImageView ViewOf(VkImage image, vk::Format format, vk::ImageAspectFlags aspect) {
+    const auto key = std::make_pair(image, static_cast<u32>(format));
+    if (const auto it = views.find(key); it != views.end()) {
+        return it->second;
+    }
+    const auto [r, view] = instance->GetDevice().createImageView(
+        {.image = vk::Image{image}, .viewType = vk::ImageViewType::e2D, .format = format, .subresourceRange = {aspect, 0, 1, 0, 1}});
+    if (r != vk::Result::eSuccess) {
+        return {};
+    }
+    views.emplace(key, view);
+    return view;
+}
+
+bool EnsureDlaa(u32 w, u32 h) {
+    const vk::Device device = instance->GetDevice();
+    if (!motion_pipeline) {
+        const std::array<vk::DescriptorSetLayoutBinding, 2> bindings{{
+            {.binding = 0, .descriptorType = vk::DescriptorType::eSampledImage, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute},
+            {.binding = 1, .descriptorType = vk::DescriptorType::eStorageImage, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute},
+        }};
+        motion_set_layout = device.createDescriptorSetLayout({.flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+                                                              .bindingCount = static_cast<u32>(bindings.size()), .pBindings = bindings.data()}).value;
+        const vk::PushConstantRange range{.stageFlags = vk::ShaderStageFlagBits::eCompute, .offset = 0, .size = 8};
+        motion_layout = device.createPipelineLayout({.setLayoutCount = 1, .pSetLayouts = &motion_set_layout, .pushConstantRangeCount = 1, .pPushConstantRanges = &range}).value;
+        const std::span<const u32> code{VKB_AA_MOTION_COMP};
+        const vk::ShaderModule module = device.createShaderModule({.codeSize = code.size_bytes(), .pCode = code.data()}).value;
+        const auto [r, pipeline] = device.createComputePipeline({}, {.stage = {.stage = vk::ShaderStageFlagBits::eCompute, .module = module, .pName = "main"}, .layout = motion_layout});
+        device.destroyShaderModule(module);
+        if (r != vk::Result::eSuccess) {
+            LOG_ERROR(Render_Vulkan, "vkb aa: motion pipeline failed");
+            return false;
+        }
+        motion_pipeline = pipeline;
+    }
+    if (motion_px != VK_NULL_HANDLE && dl_w == w && dl_h == h) {
+        return true;
+    }
+    if (motion_px != VK_NULL_HANDLE) {
+        (void)device.waitIdle();
+        device.destroyImageView(motion_px_view);
+        vmaDestroyImage(instance->GetAllocator(), motion_px, motion_px_alloc);
+        motion_px = VK_NULL_HANDLE;
+    }
+    const VkImageCreateInfo ci{.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                               .imageType = VK_IMAGE_TYPE_2D,
+                               .format = VK_FORMAT_R16G16_SFLOAT,
+                               .extent = {w, h, 1},
+                               .mipLevels = 1,
+                               .arrayLayers = 1,
+                               .samples = VK_SAMPLE_COUNT_1_BIT,
+                               .tiling = VK_IMAGE_TILING_OPTIMAL,
+                               .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                               .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                               .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
+    const VmaAllocationCreateInfo alloc{.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
+    if (vmaCreateImage(instance->GetAllocator(), &ci, &alloc, &motion_px, &motion_px_alloc, nullptr) != VK_SUCCESS) {
+        return false;
+    }
+    motion_px_view = device.createImageView({.image = vk::Image{motion_px}, .viewType = vk::ImageViewType::e2D, .format = vk::Format::eR16G16Sfloat,
+                                             .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}}).value;
+    dl_w = w, dl_h = h;
+    return true;
+}
+
 void DestroyContext() {
     if (context != nullptr) {
         (void)instance->GetDevice().waitIdle();
@@ -93,16 +177,24 @@ void DestroyContext() {
         context = nullptr;
     }
     if (output != VK_NULL_HANDLE) {
+        if (output_view) {
+            instance->GetDevice().destroyImageView(output_view);
+            output_view = vk::ImageView{};
+        }
         vmaDestroyImage(instance->GetAllocator(), output, output_alloc);
         output = VK_NULL_HANDLE, output_alloc = nullptr;
     }
 }
 
 bool EnsureContext(u32 w, u32 h) {
-    if (context != nullptr && ctx_w == w && ctx_h == h) {
+    if ((context != nullptr || (Chosen() == Kind::Dlaa && output != VK_NULL_HANDLE)) && ctx_w == w && ctx_h == h) {
         return true;
     }
     DestroyContext();
+    if (Chosen() == Kind::Dlaa) {
+        goto make_output; // DLAA has its own feature (DlssGlue); only the output image is shared
+    }
+    {
     FfxVkPortableDeviceInfo device_info{};
     device_info.structSize = sizeof(device_info);
     device_info.instance = instance->GetInstance();
@@ -129,6 +221,8 @@ bool EnsureContext(u32 w, u32 h) {
         context = nullptr;
         return false;
     }
+    }
+make_output:
     const VkImageCreateInfo ci{.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
                                .imageType = VK_IMAGE_TYPE_2D,
                                .format = VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -143,13 +237,19 @@ bool EnsureContext(u32 w, u32 h) {
     const VmaAllocationCreateInfo alloc{.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
     if (vmaCreateImage(instance->GetAllocator(), &ci, &alloc, &output, &output_alloc, nullptr) != VK_SUCCESS) {
         LOG_ERROR(Render_Vulkan, "vkb aa: output image failed");
-        ffxVkPortableUpscaleContextDestroy(context);
-        context = nullptr;
+        if (context != nullptr) {
+            ffxVkPortableUpscaleContextDestroy(context);
+            context = nullptr;
+        }
         return false;
     }
+    output_view = instance->GetDevice().createImageView({.image = vk::Image{output}, .viewType = vk::ImageViewType::e2D, .format = vk::Format::eR16G16B16A16Sfloat,
+                                                         .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}}).value;
     ctx_w = w, ctx_h = h;
     frame_id = 0;
-    LOG_INFO(Render_Vulkan, "vkb aa: FSR 3.1 native AA {}x{} on the game's motion vectors", w, h);
+    if (Chosen() == Kind::Fsr3) {
+        LOG_INFO(Render_Vulkan, "vkb aa: FSR 3.1 native AA {}x{} on the game's motion vectors", w, h);
+    }
     return true;
 }
 
@@ -295,7 +395,7 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
         }
         return;
     }
-    if (!EnsureContext(w, h)) {
+    if (!EnsureContext(w, h) || (Chosen() == Kind::Dlaa && !EnsureDlaa(w, h))) {
         failed = true;
         c_failed.fetch_add(1, std::memory_order_relaxed);
         return;
@@ -320,6 +420,42 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
                                               .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}};
     cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &out_barrier});
 
+    static const float sharpness = [] { const char* e = std::getenv("TLG_VKB_AA_SHARPNESS"); return e != nullptr ? static_cast<float>(std::atof(e)) : 0.5f; }();
+    if (Chosen() == Kind::Dlaa) {
+        // the game's motion as DLSS reads it: render pixels, previous - current (vkb_aa_motion.comp)
+        const vk::DescriptorImageInfo game_info{.imageView = ViewOf(m.image, m.format, vk::ImageAspectFlagBits::eColor), .imageLayout = vk::ImageLayout::eGeneral};
+        const vk::DescriptorImageInfo px_info{.imageView = motion_px_view, .imageLayout = vk::ImageLayout::eGeneral};
+        const std::array<vk::WriteDescriptorSet, 2> writes{{
+            {.dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &game_info},
+            {.dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &px_info},
+        }};
+        const vk::ImageMemoryBarrier2 px_barrier{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands, .srcAccessMask = vk::AccessFlagBits2::eNone,
+                                                 .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader, .dstAccessMask = vk::AccessFlagBits2::eShaderWrite,
+                                                 .oldLayout = vk::ImageLayout::eUndefined, .newLayout = vk::ImageLayout::eGeneral, .image = vk::Image{motion_px},
+                                                 .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}};
+        cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &px_barrier});
+        cmd.bindPipeline(vk::PipelineBindPoint::eCompute, motion_pipeline);
+        cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, motion_layout, 0, writes);
+        const std::array<float, 2> size{static_cast<float>(w), static_cast<float>(h)};
+        cmd.pushConstants(motion_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(size), size.data());
+        cmd.dispatch((w + 7) / 8, (h + 7) / 8, 1);
+        Barrier(cmd);
+        using Core::Vkb::DlssGlue::Image;
+        const Image color{s.image, ViewOf(s.image, s.format, vk::ImageAspectFlagBits::eColor), s.format, vk::ImageAspectFlagBits::eColor, w, h};
+        const Image dimg{d.image, ViewOf(d.image, d.format, vk::ImageAspectFlagBits::eDepth), d.format, vk::ImageAspectFlagBits::eDepth, w, h};
+        const Image mimg{vk::Image{motion_px}, motion_px_view, vk::Format::eR16G16Sfloat, vk::ImageAspectFlagBits::eColor, w, h};
+        const Image oimg{vk::Image{output}, output_view, vk::Format::eR16G16B16A16Sfloat, vk::ImageAspectFlagBits::eColor, w, h};
+        ++frame_id; // the history counter both paths share (a reset only after a gap)
+        if (!Core::Vkb::DlssGlue::Run(instance->GetDevice(), cmd, color, dimg, mimg, oimg, jitter[0], jitter[1], reset, frame_ms, std::min(std::max(sharpness, 0.0f), 1.0f))) {
+            LOG_ERROR(Render_Vulkan, "vkb aa: DLAA failed; AA off");
+            failed = true;
+            c_failed.fetch_add(1, std::memory_order_relaxed);
+            Barrier(cmd);
+            return;
+        }
+        goto copy_back;
+    }
+    {
     FfxVkPortableUpscaleDispatchInfo info{};
     info.structSize = sizeof(info);
     info.commandBuffer = cmd;
@@ -345,7 +481,6 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
     info.cameraFar = 3000.0f;
     info.cameraVerticalFovRadians = 1.0f;
     info.viewSpaceToMeters = 1.0f;
-    static const float sharpness = [] { const char* e = std::getenv("TLG_VKB_AA_SHARPNESS"); return e != nullptr ? static_cast<float>(std::atof(e)) : 0.5f; }();
     info.sharpness = std::min(std::max(sharpness, 0.0f), 1.0f);
     info.enableSharpening = sharpness > 0.0f ? VK_TRUE : VK_FALSE;
     info.reset = reset ? VK_TRUE : VK_FALSE;
@@ -367,6 +502,8 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
         c_failed.fetch_add(1, std::memory_order_relaxed);
         return;
     }
+    }
+copy_back:
     Barrier(cmd);
     // the result replaces the scene colour (B10G11R11: no alpha to keep); both images stay in GENERAL (note 66)
     const vk::ImageBlit region{.srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
@@ -380,7 +517,7 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
 
 nlohmann::json Report() {
     return {{"on", On()},
-            {"kind", Chosen() == Kind::Fsr3 ? "fsr3" : "off"},
+            {"kind", Chosen() == Kind::Fsr3 ? "fsr3" : Chosen() == Kind::Dlaa ? "dlaa" : "off"},
             {"size", fmt::format("{}x{}", ctx_w, ctx_h)},
             {"motion_passes", c_motion_passes.load()},
             {"runs", c_runs.load()},
