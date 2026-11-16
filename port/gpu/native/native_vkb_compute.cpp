@@ -294,6 +294,33 @@ void Compile(u64 ctx, u64 shader, Variant& v) {
             return;
         }
         spv = VkbShader::Backend::SPIRV::EmitSPIRV(profile, runtime, program, binding);
+        // debug (tint hunt, 2026-11-16): TLG_VKB_DUMP_SPV=<shader hashes, hex, comma separated> writes each variant's module to log/vkb_spv/cs_<hash>_<n>.spv (compare with the
+        // fork renderer's TLG_DUMP_SHADERS=1 dumps)
+        static const std::vector<u64> dump_spv = [] { // comma separated hashes
+            std::vector<u64> out;
+            if (const char* e = std::getenv("TLG_VKB_DUMP_SPV")) {
+                for (const char* p = e; *p != 0;) {
+                    char* end = nullptr;
+                    const u64 h = std::strtoull(p, &end, 16);
+                    if (end == p) {
+                        break;
+                    }
+                    out.push_back(h);
+                    p = *end == ',' ? end + 1 : end;
+                }
+            }
+            return out;
+        }();
+        if (std::ranges::find(dump_spv, v.info->pgm_hash) != dump_spv.end()) {
+            static std::atomic<u32> dumped{0};
+            const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_spv";
+            std::error_code ec;
+            std::filesystem::create_directories(dir, ec);
+            if (FILE* f = std::fopen((dir / fmt::format("cs_{:08x}_{}.spv", v.info->pgm_hash, dumped.fetch_add(1))).string().c_str(), "wb")) {
+                std::fwrite(spv.data(), sizeof(u32), spv.size(), f);
+                std::fclose(f);
+            }
+        }
         if (Core::Vkb::FlatCensus::On()) { // note 77 census (debug)
             Core::Vkb::FlatCensus::Note(program, gnm, 0x28, v.async ? "cs_async" : "cs", v.info->pgm_hash);
         }
