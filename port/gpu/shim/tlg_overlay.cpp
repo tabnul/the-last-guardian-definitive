@@ -2106,9 +2106,18 @@ void SaveProgressBox(SaveClock::time_point now) {
 
 void SaveToastBox(SaveClock::time_point now) {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    // 4-11: our dev tools under the Vulkan backend (native/native_dev_keys.h); before these, any of them read "Game saved"
     const char* text = toast_kind == 2 ? TR("Save loaded")
                        : toast_kind == 3 ? TR("Save deleted")
-                                         : TR("Game saved");
+                       : toast_kind == 4 ? TR("Screenshot saved")
+                       : toast_kind == 5 ? TR("Recording 5 seconds...")
+                       : toast_kind == 6 ? TR("Video saved")
+                       : toast_kind == 7 ? TR("Marker saved")
+                       : toast_kind == 8 ? TR("Light marker saved")
+                       : toast_kind == 9 ? TR("Debugger mode on (F6 marks, F5 freezes)")
+                       : toast_kind == 10 ? TR("Frozen (F5 resumes)")
+                       : toast_kind == 11 ? TR("Resumed")
+                                          : TR("Game saved");
     const float in = std::chrono::duration<float>(now - toast_since).count();
     const float out = std::chrono::duration<float>(toast_until - now).count();
     const float alpha = std::clamp(std::min(in / 0.15f, out / 0.4f), 0.0f, 1.0f);
@@ -2981,6 +2990,13 @@ void SaveProgress(int kind, int active, int percent, const char* text) {
 void SaveToast(int kind) {
     std::scoped_lock lock{imgui_mutex};
     const auto now = SaveClock::now();
+    if (kind >= 4) {
+        // VKB: our dev tools (native/native_dev_keys: F12 / Shift+F12 capture, F6 / F7 markers, F5 / Shift+F5 frame walk): their own toast at once
+        toast_kind = kind;
+        toast_since = now;
+        toast_until = now + std::chrono::milliseconds(kind == 5 ? 5000 : kind == 10 ? 8000 : 2600);
+        return;
+    }
     // A dialog's "saved" and the save's own unmount come together: one toast.
     if (now < toast_until + std::chrono::seconds(3)) {
         toast_until = std::max(toast_until, now + std::chrono::milliseconds(2600));
