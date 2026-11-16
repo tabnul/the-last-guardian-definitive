@@ -272,6 +272,14 @@ void WindowSDL::MouseTest() {
 // mode. Window thread only (SDL). The swapchain follows the size events.
 void WindowSDL::ApplyDisplayMode(int mode) {
     display_mode = mode;
+    // VKB: headless (TLG_HEADLESS=1) the window stays hidden and windowed: switching to fullscreen and raising it would show it on the desktop
+    static const bool headless = [] {
+        const char* env = std::getenv("TLG_HEADLESS");
+        return env && *env && std::strcmp(env, "0") != 0;
+    }();
+    if (headless) {
+        return;
+    }
     if (mode == TlgGraphics::Windowed) {
         SDL_SetWindowFullscreen(window, false);
     } else {
