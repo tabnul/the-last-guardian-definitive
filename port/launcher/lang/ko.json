@@ -465,7 +465,26 @@
     "pad.photo_press": "버튼을 누르세요…",
     "pad.photo_note": "항목마다 버튼 하나, 사진 모드에서만. 왼쪽 스틱으로 날고 오른쪽 스틱으로 둘러봅니다. 키보드: 같은 버튼의 키. Print Screen으로도 스크린샷을 찍습니다.",
     "launcher.shadow_lite": "가벼운 그림자",
-    "launcher.shadow_lite_hint": "게임의 그림자 레이어 네 개 중 카메라에 가장 가까운 것을 뺍니다. 게임도 일부 지역에서 직접 그렇게 합니다. 오래된 CPU와 Steam Deck에서 FPS가 몇 % 오르고, 카메라 가까운 그림자가 조금 부드러워집니다. 끔은 출시 그대로입니다."
+    "launcher.shadow_lite_hint": "게임의 그림자 레이어 네 개 중 카메라에 가장 가까운 것을 뺍니다. 게임도 일부 지역에서 직접 그렇게 합니다. 오래된 CPU와 Steam Deck에서 FPS가 몇 % 오르고, 카메라 가까운 그림자가 조금 부드러워집니다. 끔은 출시 그대로입니다.",
+    "launcher.preset_view": "프리셋 설정 보기…",
+    "launcher.preset_view_title": "프리셋 설정: {name}",
+    "launcher.preset_view_hint": "이 프리셋이 정하는 모든 설정입니다. \"현재\"는 지금 값이며, 표시된 줄은 이 프리셋을 고르면 바뀝니다.",
+    "launcher.preset_view_setting": "설정",
+    "launcher.preset_view_value": "프리셋",
+    "launcher.preset_view_now": "현재",
+    "launcher.preset_view_none": "현재 설정은 어떤 프리셋과도 맞지 않습니다. 목록에서 프리셋을 고르면 무엇을 설정하는지 보입니다.",
+    "launcher.preset_about_0": "출시 당시 그대로의 게임: DLAA 없음, 추가 샤프닝 없음, 원본 텍스처와 효과.",
+    "launcher.preset_about_1": "이 포트의 기본값: DLAA, 샤프닝, 더 선명한 텍스처, 부드러운 풀과 색 조정, 전체 그림자.",
+    "launcher.preset_about_2": "오래되거나 성능이 낮은 PC용: 그림자 거리를 절반으로, 가벼운 그림자를 쓴 Stock 모습에 4코어 CPU용 설정 두 가지(그리기 도우미 끔, 그리기 파이프라인에서 compute 켬)를 더한 것. 해상도와 FPS는 유지됩니다.",
+    "launcher.preset_about_3": "Low-end PC에 1280x800, 30 FPS, 업스케일 없음, DLAA 없음, 프레임 생성 끔을 더한 것(실험적: 어떻게 돌아가는지 알려 주세요).",
+    "launcher.preset_about_own": "직접 저장한 프리셋.",
+    "launcher.preset_about_custom": "현재 설정은 어떤 프리셋과도 맞지 않습니다.",
+    "launcher.pk_dlaa": "DLAA",
+    "launcher.pk_smaa": "SMAA",
+    "launcher.pk_sharpness": "샤프닝 강도",
+    "launcher.pk_dof": "피사계 심도",
+    "launcher.pk_draw_helpers": "그리기 도우미",
+    "launcher.pk_compute_pipe": "그리기 파이프라인에서 compute"
   },
   "items": {
     "menu:sharpen": {

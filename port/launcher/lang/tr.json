@@ -465,7 +465,26 @@
     "pad.photo_press": "bir tuşa bas…",
     "pad.photo_note": "Her biri için bir tuş, yalnızca fotoğraf modunda. Sol çubuk uçurur, sağ çubuk etrafa baktırır. Klavye: aynı tuşların klavye karşılıkları; Print Screen de ekran görüntüsü alır.",
     "launcher.shadow_lite": "Hafif gölgeler",
-    "launcher.shadow_lite_hint": "Oyunun dört gölge katmanından kameraya en yakın olanı çıkarır; oyun bazı bölgelerde bunu zaten kendisi yapar. Eski CPU'larda ve Steam Deck'te birkaç % daha fazla FPS; kameraya yakın gölgeler biraz yumuşar. Kapalı, oyunun çıktığı hâlidir."
+    "launcher.shadow_lite_hint": "Oyunun dört gölge katmanından kameraya en yakın olanı çıkarır; oyun bazı bölgelerde bunu zaten kendisi yapar. Eski CPU'larda ve Steam Deck'te birkaç % daha fazla FPS; kameraya yakın gölgeler biraz yumuşar. Kapalı, oyunun çıktığı hâlidir.",
+    "launcher.preset_view": "Ön ayar ayarlarını göster…",
+    "launcher.preset_view_title": "Ön ayar ayarları: {name}",
+    "launcher.preset_view_hint": "Bu ön ayarın tüm ayarları. \"Şimdi\" mevcut değerindir; işaretli satırlar bu ön ayarı seçince değişir.",
+    "launcher.preset_view_setting": "Ayar",
+    "launcher.preset_view_value": "Ön ayar",
+    "launcher.preset_view_now": "Şimdi",
+    "launcher.preset_view_none": "Ayarların hiçbir ön ayarla eşleşmiyor. Ne ayarladığını görmek için listeden bir ön ayar seç.",
+    "launcher.preset_about_0": "Oyunun çıktığı hali: DLAA yok, ek keskinleştirme yok, orijinal dokular ve efektler.",
+    "launcher.preset_about_1": "Portun varsayılanları: DLAA, keskinleştirme, daha keskin dokular, akıcı çimen ve renk ayarları, tam gölgeler.",
+    "launcher.preset_about_2": "Eski veya zayıf PC'ler için: gölgeleri yarı mesafede ve hafif gölgelerle Stock görünümü, artı 4 çekirdekli işlemciler için iki ayar (çizim yardımcıları kapalı, çizim hattında compute açık). Çözünürlüğünü ve FPS'ini korur.",
+    "launcher.preset_about_3": "Low-end PC artı 1280x800, 30 FPS, ölçekleme yok, DLAA yok ve kare üretimi kapalı (deneysel: nasıl çalıştığını bize bildir).",
+    "launcher.preset_about_own": "Kendi kaydettiğin ön ayar.",
+    "launcher.preset_about_custom": "Ayarların hiçbir ön ayarla eşleşmiyor.",
+    "launcher.pk_dlaa": "DLAA",
+    "launcher.pk_smaa": "SMAA",
+    "launcher.pk_sharpness": "Keskinleştirme gücü",
+    "launcher.pk_dof": "Alan derinliği",
+    "launcher.pk_draw_helpers": "Çizim yardımcıları",
+    "launcher.pk_compute_pipe": "Çizim hattında compute"
   },
   "items": {
     "menu:sharpen": {

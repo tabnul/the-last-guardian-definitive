@@ -437,6 +437,30 @@ TEXT = {
     'preset_recommended': 'Recommended (default)',
     'preset_lowend': 'Low-end PC',
     'preset_custom': 'Custom',
+    'preset_view': 'View preset settings…',
+    'preset_view_title': 'Preset settings: {name}',
+    'preset_view_hint': ('Every setting this preset sets. "Now" is your current value; the marked rows change '
+                         'when you pick this preset.'),
+    'preset_view_setting': 'Setting',
+    'preset_view_value': 'Preset',
+    'preset_view_now': 'Now',
+    'preset_view_none': 'Your settings match no preset. Pick a preset in the list to see what it sets.',
+    'preset_about_0': 'The game as shipped: no DLAA, no extra sharpening, the original textures and effects.',
+    'preset_about_1': ('The port\'s defaults: DLAA, sharpening, sharper textures, smooth grass and colour '
+                       'adjustments, full shadows.'),
+    'preset_about_2': ('For older or weaker PCs: the Stock look with shadows at half distance and Lite shadows, '
+                       'plus two settings for 4-core CPUs (draw helpers off, compute in the draw pipeline on). '
+                       'Keeps your resolution and FPS.'),
+    'preset_about_3': ('Low-end PC plus 1280x800, 30 FPS, no upscaling, no DLAA and frame generation off '
+                       '(experimental: tell us how it runs).'),
+    'preset_about_own': 'Your own saved preset.',
+    'preset_about_custom': 'Your settings match no preset.',
+    'pk_dlaa': 'DLAA',
+    'pk_smaa': 'SMAA',
+    'pk_sharpness': 'Sharpening strength',
+    'pk_dof': 'Depth of field',
+    'pk_draw_helpers': 'Draw helpers',
+    'pk_compute_pipe': 'Compute in the draw pipeline',
     'shadow_hint': ("Draws the shadow maps at 2x or 4x the game's 2048x2048 (default: Game). The main gain is much "
                     'less shimmer of tree and leaf shadows, with any anti-aliasing. '
                     '8192 costs about 8 FPS and up to about 2 GB of video memory (4096 about a quarter of that). With 8 GB of video memory or less keep Game: running out causes stutter and crashes.'),
@@ -650,6 +674,13 @@ EFFECTS = {'ssao': (100, 0, 400), 'bloom': (100, 0, 400), 'ssr': (100, 0, 400), 
            'boy_wind': (100, 0, 200),
            'tree_wind': (100, 0, 200), 'trico_feathers': (100, 0, 400),
            'fov': (70, 50, 110, '°')}
+# The preset settings window (preset_view_dialog): names that are not pk_/effect_/the key itself,
+# the on/off keys, and keys a preset carries that the player has no row for (FSR 1 is gone, the
+# AA row is the launcher's own memory).
+PRESET_KEY_TEXT = {'preset': 'quality', 'frame_generation': 'fg_mode', 'sharpen': 'sharpening'}
+PRESET_BOOL_KEYS = ('dlaa', 'smaa', 'sharpen', 'grass_smooth', 'shadow_lite', 'draw_helpers', 'compute_pipe',
+                    'color_adjust', 'frame_generation')
+PRESET_HIDDEN_KEYS = ('fsr1', 'aa_row')
 
 
 def open_tip(parent, text, wraplength, place, tip):
@@ -2220,14 +2251,20 @@ class Launcher:
         """The in-game menu's graphics presets (preset_share.game_presets): every look setting and the
         texture pack at once, written to tlg.ini."""
         ttk.Label(parent, text=self.t('graphics_preset')).grid(row=row + 1, column=0, sticky='w')
-        self.preset_box = ttk.Combobox(parent, state='readonly', width=28)
-        self.preset_box.grid(row=row + 1, column=1, sticky='w', padx=6, pady=2)
+        pick = ttk.Frame(parent)
+        pick.grid(row=row + 1, column=1, sticky='w', padx=6, pady=2)
+        self.preset_box = ttk.Combobox(pick, state='readonly', width=28)
+        self.preset_box.pack(side='left')
         self.preset_box.bind('<<ComboboxSelected>>', lambda _: self.preset_picked())
+        # What the preset in the box does: one line here, every value behind the button.
+        ttk.Button(pick, text=self.t('preset_view'), command=self.preset_view_dialog).pack(side='left', padx=(6, 0))
+        self.preset_about = ttk.Label(parent, text='', foreground=MUTED, wraplength=420, justify='left')
+        self.preset_about.grid(row=row + 2, column=0, columnspan=3, sticky='w', pady=(0, 4))
         # Save as preset: the current tlg.ini under a name, the same file the in-game menu writes
         # (an existing preset with the name is replaced).
-        ttk.Label(parent, text=self.t('preset_save')).grid(row=row + 2, column=0, sticky='w')
+        ttk.Label(parent, text=self.t('preset_save')).grid(row=row + 3, column=0, sticky='w')
         save = ttk.Frame(parent)
-        save.grid(row=row + 2, column=1, sticky='w', padx=6, pady=2)
+        save.grid(row=row + 3, column=1, sticky='w', padx=6, pady=2)
         name = tk.StringVar()
         ttk.Entry(save, textvariable=name, width=20).pack(side='left')
 
@@ -2323,6 +2360,95 @@ class Launcher:
         self.preset_box.configure(values=names, postcommand=self.refresh_preset)
         current = preset_share.current_preset(self.presets, ini, self.settings)
         self.preset_box.set(names[current] if current >= 0 else self.t('preset_custom'))
+        self.preset_shown = current
+        if getattr(self, 'preset_about', None):
+            self.preset_about.configure(text=self.preset_about_text(current))
+
+    def preset_about_text(self, index):
+        """One line on what preset `index` (launcher_presets) does; -1 = no preset fits."""
+        if index < 0:
+            return self.t('preset_about_custom')
+        if index <= preset_share.DECK_INDEX:
+            return self.t(f'preset_about_{index}')
+        return self.t('preset_about_own')
+
+    def preset_key_label(self, key):
+        """The name a preset value has in the launcher (or the in-game menu), else its tlg.ini key."""
+        for name in (PRESET_KEY_TEXT.get(key), 'pk_' + key, 'effect_' + key, key):
+            if name and name in TEXT:
+                return self.t(name)
+        return key
+
+    def preset_value_text(self, key, value):
+        """A tlg.ini or settings.json value as the launcher's rows show it."""
+        value = str(value)
+        if key in PRESET_BOOL_KEYS:
+            return self.t('mark_on' if value not in ('0', '') else 'mark_off')
+        if key in EFFECTS:
+            unit = EFFECTS[key][3] if len(EFFECTS[key]) > 3 else '%'
+            return f'{value}{unit}'
+        if key == 'dof':
+            return f'{value}%'
+        if key == 'shadow_scale':
+            return {'1': self.t('shadow_game'), '2': '4096', '4': '8192'}.get(value, value)
+        if key == 'aniso':
+            return self.t('aniso_game') if value in ('0', '') else f'{value}x'
+        if key == 'lod_bias':
+            try:
+                return f'{int(value) * 0.25:+.2f}'
+            except ValueError:
+                return value
+        if key == 'texture_pack':
+            return self.t('texture_pack_off') if value == 'off' else value
+        if key == 'preset':
+            keys = tlg_run.PRESET_KEYS
+            return self.t(keys[int(value)]) if value.isdigit() and int(value) < len(keys) else value
+        if key == 'upscaler':
+            return self.t('up_off') if value == 'off' else value.upper()
+        if key == 'frame_rate':
+            return self.t('fps_' + value) if 'fps_' + value in TEXT else value
+        return value
+
+    def preset_view_dialog(self):
+        """Every value the preset in the box sets, next to the value now (tlg.ini, settings.json)."""
+        index = self.preset_box.current()
+        if index < 0:
+            index = getattr(self, 'preset_shown', -1)
+        win = tk.Toplevel(self.root)
+        win.transient(self.root)
+        win.configure(background=BG)
+        frame = ttk.Frame(win, padding=12)
+        frame.pack(fill='both', expand=True)
+        if index < 0:
+            win.title(self.t('graphics_preset'))
+            ttk.Label(frame, text=self.t('preset_view_none'), wraplength=420, justify='left').grid(row=0, column=0)
+            ttk.Button(frame, text=self.t('close'), command=win.destroy).grid(row=1, column=0, pady=(10, 0))
+            return
+        name = self.preset_label(index, self.presets[index][0])
+        win.title(self.t('preset_view_title', name=name))
+        ttk.Label(frame, text=self.preset_about_text(index), wraplength=460, justify='left').grid(
+            row=0, column=0, columnspan=4, sticky='w')
+        ttk.Label(frame, text=self.t('preset_view_hint'), foreground=MUTED, wraplength=460, justify='left').grid(
+            row=1, column=0, columnspan=4, sticky='w', pady=(4, 8))
+        for column, key in enumerate(('preset_view_setting', 'preset_view_value', 'preset_view_now')):
+            ttk.Label(frame, text=self.t(key), foreground=MUTED).grid(row=2, column=column + 1, sticky='w', padx=(0, 16))
+        ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
+        rows = [(key, value, ini.get(key, preset_share.GAME_RECOMMENDED.get(key, '')))
+                for key, value in self.presets[index][1].items() if key not in PRESET_HIDDEN_KEYS]
+        if index == preset_share.DECK_INDEX:
+            rows += [(key, value, self.settings.get(key, '')) for key, value in preset_share.DECK_SETTINGS.items()]
+        rows.sort(key=lambda r: preset_share.game_preset_matches({r[0]: r[2]}, {r[0]: r[1]}))  # changes first
+        for row, (key, value, now) in enumerate(rows, start=3):
+            changes = not preset_share.game_preset_matches({key: now}, {key: value})
+            colour = ACCENT if changes else ''
+            ttk.Label(frame, text='●' if changes else '', foreground=ACCENT).grid(row=row, column=0, sticky='w')
+            ttk.Label(frame, text=self.preset_key_label(key), foreground=colour).grid(
+                row=row, column=1, sticky='w', padx=(0, 16))
+            ttk.Label(frame, text=self.preset_value_text(key, value), foreground=colour).grid(
+                row=row, column=2, sticky='w', padx=(0, 16))
+            ttk.Label(frame, text=self.preset_value_text(key, now)).grid(row=row, column=3, sticky='w')
+        ttk.Button(frame, text=self.t('close'), command=win.destroy).grid(
+            row=len(rows) + 3, column=0, columnspan=4, pady=(10, 0))
 
     def preset_picked(self):
         index = self.preset_box.current()

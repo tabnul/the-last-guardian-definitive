@@ -458,7 +458,26 @@
     "pad.photo_press": "pulsa un botón…",
     "pad.photo_note": "Un botón cada uno, solo en el modo foto. El stick izquierdo vuela, el derecho mira alrededor. Teclado: las teclas de los mismos botones; Impr Pant también hace una captura.",
     "launcher.shadow_lite": "Sombras ligeras",
-    "launcher.shadow_lite_hint": "Omite la más cercana de las cuatro capas de sombra del juego, como hace el propio juego en algunas zonas. Unos pocos % más de FPS en CPU antiguas y en Steam Deck; las sombras cerca de la cámara quedan algo más suaves. Desactivado es como se lanzó."
+    "launcher.shadow_lite_hint": "Omite la más cercana de las cuatro capas de sombra del juego, como hace el propio juego en algunas zonas. Unos pocos % más de FPS en CPU antiguas y en Steam Deck; las sombras cerca de la cámara quedan algo más suaves. Desactivado es como se lanzó.",
+    "launcher.preset_view": "Ver los ajustes del preajuste…",
+    "launcher.preset_view_title": "Ajustes del preajuste: {name}",
+    "launcher.preset_view_hint": "Todos los ajustes de este preajuste. «Ahora» es tu valor actual; las filas marcadas cambian si eliges este preajuste.",
+    "launcher.preset_view_setting": "Ajuste",
+    "launcher.preset_view_value": "Preajuste",
+    "launcher.preset_view_now": "Ahora",
+    "launcher.preset_view_none": "Tus ajustes no coinciden con ningún preajuste. Elige un preajuste en la lista para ver qué ajusta.",
+    "launcher.preset_about_0": "El juego tal como salió: sin DLAA, sin nitidez extra, las texturas y efectos originales.",
+    "launcher.preset_about_1": "Los valores por defecto del port: DLAA, nitidez, texturas más nítidas, hierba fluida y ajustes de color, sombras completas.",
+    "launcher.preset_about_2": "Para PC antiguos o modestos: el aspecto Stock con sombras a media distancia y sombras ligeras, más dos ajustes para CPU de 4 núcleos (ayudantes de dibujo desactivados, compute en la canalización de dibujo activado). Mantiene tu resolución y FPS.",
+    "launcher.preset_about_3": "Low-end PC más 1280x800, 30 FPS, sin escalado, sin DLAA y generación de fotogramas desactivada (experimental: cuéntanos cómo va).",
+    "launcher.preset_about_own": "Tu propio preajuste guardado.",
+    "launcher.preset_about_custom": "Tus ajustes no coinciden con ningún preajuste.",
+    "launcher.pk_dlaa": "DLAA",
+    "launcher.pk_smaa": "SMAA",
+    "launcher.pk_sharpness": "Intensidad de nitidez",
+    "launcher.pk_dof": "Profundidad de campo",
+    "launcher.pk_draw_helpers": "Ayudantes de dibujo",
+    "launcher.pk_compute_pipe": "Compute en la canalización de dibujo"
   },
   "items": {
     "menu:sharpen": {

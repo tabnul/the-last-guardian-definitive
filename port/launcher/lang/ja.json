@@ -458,7 +458,26 @@
     "pad.photo_press": "ボタンを押してください…",
     "pad.photo_note": "1つにつき1ボタン、フォトモード中だけ。左スティックで移動、右スティックで見回します。キーボード：同じボタンのキー。Print Screen でもスクリーンショットを撮れます。",
     "launcher.shadow_lite": "軽量シャドウ",
-    "launcher.shadow_lite_hint": "ゲームの4つの影レイヤーのうち、カメラに最も近いものを省きます。ゲーム自体も一部のエリアでそうしています。古いCPUやSteam DeckでFPSが数%上がり、カメラ近くの影が少しやわらかくなります。オフは発売時のままです。"
+    "launcher.shadow_lite_hint": "ゲームの4つの影レイヤーのうち、カメラに最も近いものを省きます。ゲーム自体も一部のエリアでそうしています。古いCPUやSteam DeckでFPSが数%上がり、カメラ近くの影が少しやわらかくなります。オフは発売時のままです。",
+    "launcher.preset_view": "プリセットの設定を見る…",
+    "launcher.preset_view_title": "プリセットの設定: {name}",
+    "launcher.preset_view_hint": "このプリセットが設定するすべての項目です。「現在」は今の値で、印の付いた行はこのプリセットを選ぶと変わります。",
+    "launcher.preset_view_setting": "設定",
+    "launcher.preset_view_value": "プリセット",
+    "launcher.preset_view_now": "現在",
+    "launcher.preset_view_none": "今の設定はどのプリセットとも一致しません。リストからプリセットを選ぶと、その内容が表示されます。",
+    "launcher.preset_about_0": "発売時のままのゲーム: DLAAなし、追加のシャープ化なし、オリジナルのテクスチャとエフェクト。",
+    "launcher.preset_about_1": "このポートの標準: DLAA、シャープ化、より鮮明なテクスチャ、なめらかな草と色調整、影はフル。",
+    "launcher.preset_about_2": "古いPCや性能の低いPC向け: 影の距離を半分にしてライトな影にしたStockの見た目に、4コアCPU向けの2つの設定(描画ヘルパーオフ、描画パイプラインでのcomputeオン)を加えたもの。解像度とFPSはそのままです。",
+    "launcher.preset_about_3": "Low-end PCに加えて1280x800、30 FPS、アップスケールなし、DLAAなし、フレーム生成オフ(実験的: 動作の様子を教えてください)。",
+    "launcher.preset_about_own": "自分で保存したプリセット。",
+    "launcher.preset_about_custom": "今の設定はどのプリセットとも一致しません。",
+    "launcher.pk_dlaa": "DLAA",
+    "launcher.pk_smaa": "SMAA",
+    "launcher.pk_sharpness": "シャープ化の強さ",
+    "launcher.pk_dof": "被写界深度",
+    "launcher.pk_draw_helpers": "描画ヘルパー",
+    "launcher.pk_compute_pipe": "描画パイプラインでのcompute"
   },
   "items": {
     "menu:sharpen": {

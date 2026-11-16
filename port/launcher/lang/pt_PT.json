@@ -465,7 +465,26 @@
     "pad.photo_press": "prima um botão…",
     "pad.photo_note": "Um botão para cada, só no modo fotografia. O manípulo esquerdo voa, o direito olha em redor. Teclado: as teclas dos mesmos botões; Print Screen também tira uma captura.",
     "launcher.shadow_lite": "Sombras leves",
-    "launcher.shadow_lite_hint": "Deixa de fora a mais próxima das quatro camadas de sombra do jogo, como o próprio jogo faz em algumas zonas. Alguns % a mais de FPS em CPUs antigos e no Steam Deck; as sombras perto da câmara ficam um pouco mais suaves. Desligado é como foi lançado."
+    "launcher.shadow_lite_hint": "Deixa de fora a mais próxima das quatro camadas de sombra do jogo, como o próprio jogo faz em algumas zonas. Alguns % a mais de FPS em CPUs antigos e no Steam Deck; as sombras perto da câmara ficam um pouco mais suaves. Desligado é como foi lançado.",
+    "launcher.preset_view": "Ver as definições da predefinição…",
+    "launcher.preset_view_title": "Definições da predefinição: {name}",
+    "launcher.preset_view_hint": "Todas as definições desta predefinição. \"Agora\" é o teu valor atual; as linhas marcadas mudam se escolheres esta predefinição.",
+    "launcher.preset_view_setting": "Definição",
+    "launcher.preset_view_value": "Predefinição",
+    "launcher.preset_view_now": "Agora",
+    "launcher.preset_view_none": "As tuas definições não correspondem a nenhuma predefinição. Escolhe uma predefinição na lista para ver o que define.",
+    "launcher.preset_about_0": "O jogo tal como saiu: sem DLAA, sem nitidez extra, as texturas e efeitos originais.",
+    "launcher.preset_about_1": "As predefinições do port: DLAA, nitidez, texturas mais nítidas, relva fluida e ajustes de cor, sombras completas.",
+    "launcher.preset_about_2": "Para PCs antigos ou mais fracos: o aspeto Stock com sombras a meia distância e sombras leves, mais duas definições para CPUs de 4 núcleos (ajudantes de desenho desligados, compute no pipeline de desenho ligado). Mantém a tua resolução e FPS.",
+    "launcher.preset_about_3": "Low-end PC mais 1280x800, 30 FPS, sem upscaling, sem DLAA e geração de fotogramas desligada (experimental: diz-nos como corre).",
+    "launcher.preset_about_own": "A tua predefinição guardada.",
+    "launcher.preset_about_custom": "As tuas definições não correspondem a nenhuma predefinição.",
+    "launcher.pk_dlaa": "DLAA",
+    "launcher.pk_smaa": "SMAA",
+    "launcher.pk_sharpness": "Força da nitidez",
+    "launcher.pk_dof": "Profundidade de campo",
+    "launcher.pk_draw_helpers": "Ajudantes de desenho",
+    "launcher.pk_compute_pipe": "Compute no pipeline de desenho"
   },
   "items": {
     "menu:sharpen": {

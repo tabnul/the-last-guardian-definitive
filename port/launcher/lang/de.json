@@ -458,7 +458,26 @@
     "pad.photo_press": "Taste drücken…",
     "pad.photo_note": "Je eine Taste, nur im Fotomodus. Linker Stick fliegt, rechter Stick schaut umher. Tastatur: die Tasten derselben Knöpfe; Druck macht auch einen Screenshot.",
     "launcher.shadow_lite": "Leichte Schatten",
-    "launcher.shadow_lite_hint": "Lässt die nächste der vier Schattenebenen des Spiels weg, wie es das Spiel in manchen Gebieten selbst tut. Ein paar % mehr FPS auf älteren CPUs und dem Steam Deck; Schatten nah an der Kamera werden etwas weicher. Aus ist wie ausgeliefert."
+    "launcher.shadow_lite_hint": "Lässt die nächste der vier Schattenebenen des Spiels weg, wie es das Spiel in manchen Gebieten selbst tut. Ein paar % mehr FPS auf älteren CPUs und dem Steam Deck; Schatten nah an der Kamera werden etwas weicher. Aus ist wie ausgeliefert.",
+    "launcher.preset_view": "Preset-Einstellungen ansehen…",
+    "launcher.preset_view_title": "Preset-Einstellungen: {name}",
+    "launcher.preset_view_hint": "Alle Einstellungen dieses Presets. „Jetzt“ ist dein aktueller Wert; die markierten Zeilen ändern sich, wenn du dieses Preset wählst.",
+    "launcher.preset_view_setting": "Einstellung",
+    "launcher.preset_view_value": "Preset",
+    "launcher.preset_view_now": "Jetzt",
+    "launcher.preset_view_none": "Deine Einstellungen passen zu keinem Preset. Wähle ein Preset in der Liste, um zu sehen, was es einstellt.",
+    "launcher.preset_about_0": "Das Spiel wie ausgeliefert: kein DLAA, keine zusätzliche Schärfung, die originalen Texturen und Effekte.",
+    "launcher.preset_about_1": "Die Standardwerte des Ports: DLAA, Schärfung, schärfere Texturen, flüssiges Gras und Farbanpassungen, volle Schatten.",
+    "launcher.preset_about_2": "Für ältere oder schwächere PCs: der Stock-Look mit Schatten auf halber Distanz und leichten Schatten, dazu zwei Einstellungen für 4-Kern-CPUs (Zeichenhelfer aus, Compute in der Zeichen-Pipeline an). Behält deine Auflösung und FPS.",
+    "launcher.preset_about_3": "Low-end PC plus 1280x800, 30 FPS, kein Upscaling, kein DLAA und Frame Generation aus (experimentell: sag uns, wie es läuft).",
+    "launcher.preset_about_own": "Dein eigenes gespeichertes Preset.",
+    "launcher.preset_about_custom": "Deine Einstellungen passen zu keinem Preset.",
+    "launcher.pk_dlaa": "DLAA",
+    "launcher.pk_smaa": "SMAA",
+    "launcher.pk_sharpness": "Schärfungsstärke",
+    "launcher.pk_dof": "Tiefenschärfe",
+    "launcher.pk_draw_helpers": "Zeichenhelfer",
+    "launcher.pk_compute_pipe": "Compute in der Zeichen-Pipeline"
   },
   "items": {
     "menu:sharpen": {

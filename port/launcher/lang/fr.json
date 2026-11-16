@@ -458,7 +458,26 @@
     "pad.photo_press": "appuyez sur un bouton…",
     "pad.photo_note": "Un bouton chacun, seulement en mode photo. Le stick gauche vole, le stick droit regarde autour. Clavier : les touches des mêmes boutons ; Impr. écran prend aussi une capture.",
     "launcher.shadow_lite": "Ombres allégées",
-    "launcher.shadow_lite_hint": "Supprime la plus proche des quatre couches d'ombre du jeu, comme le jeu le fait lui-même dans certaines zones. Quelques % de FPS en plus sur les CPU anciens et le Steam Deck ; les ombres proches de la caméra deviennent un peu plus douces. Désactivé est comme à la sortie."
+    "launcher.shadow_lite_hint": "Supprime la plus proche des quatre couches d'ombre du jeu, comme le jeu le fait lui-même dans certaines zones. Quelques % de FPS en plus sur les CPU anciens et le Steam Deck ; les ombres proches de la caméra deviennent un peu plus douces. Désactivé est comme à la sortie.",
+    "launcher.preset_view": "Voir les réglages du préréglage…",
+    "launcher.preset_view_title": "Réglages du préréglage : {name}",
+    "launcher.preset_view_hint": "Tous les réglages de ce préréglage. « Actuel » est ta valeur actuelle ; les lignes marquées changent si tu choisis ce préréglage.",
+    "launcher.preset_view_setting": "Réglage",
+    "launcher.preset_view_value": "Préréglage",
+    "launcher.preset_view_now": "Actuel",
+    "launcher.preset_view_none": "Tes réglages ne correspondent à aucun préréglage. Choisis un préréglage dans la liste pour voir ce qu'il règle.",
+    "launcher.preset_about_0": "Le jeu tel que sorti : pas de DLAA, pas de netteté en plus, les textures et effets d'origine.",
+    "launcher.preset_about_1": "Les valeurs par défaut du portage : DLAA, netteté, textures plus nettes, herbe fluide et réglages de couleur, ombres complètes.",
+    "launcher.preset_about_2": "Pour les PC anciens ou modestes : l'aspect Stock avec les ombres à mi-distance et les ombres allégées, plus deux réglages pour les processeurs 4 cœurs (aides au rendu désactivées, compute dans le pipeline de rendu activé). Garde ta résolution et tes FPS.",
+    "launcher.preset_about_3": "Low-end PC plus 1280x800, 30 FPS, pas d'upscaling, pas de DLAA et génération d'images désactivée (expérimental : dis-nous comment ça tourne).",
+    "launcher.preset_about_own": "Ton propre préréglage enregistré.",
+    "launcher.preset_about_custom": "Tes réglages ne correspondent à aucun préréglage.",
+    "launcher.pk_dlaa": "DLAA",
+    "launcher.pk_smaa": "SMAA",
+    "launcher.pk_sharpness": "Force de la netteté",
+    "launcher.pk_dof": "Profondeur de champ",
+    "launcher.pk_draw_helpers": "Aides au rendu",
+    "launcher.pk_compute_pipe": "Compute dans le pipeline de rendu"
   },
   "items": {
     "menu:sharpen": {

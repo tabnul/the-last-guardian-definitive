@@ -458,7 +458,26 @@
     "pad.photo_press": "请按一个按键…",
     "pad.photo_note": "每项一个按键，仅在拍照模式中。左摇杆飞行，右摇杆环顾。键盘：相同按键对应的键；Print Screen 也会截图。",
     "launcher.shadow_lite": "轻量阴影",
-    "launcher.shadow_lite_hint": "去掉游戏四层阴影中离镜头最近的一层,游戏自己在某些区域也这样做。在较旧的 CPU 和 Steam Deck 上 FPS 高几个百分点;镜头附近的阴影会稍微柔和一些。关闭为发售时的原样。"
+    "launcher.shadow_lite_hint": "去掉游戏四层阴影中离镜头最近的一层,游戏自己在某些区域也这样做。在较旧的 CPU 和 Steam Deck 上 FPS 高几个百分点;镜头附近的阴影会稍微柔和一些。关闭为发售时的原样。",
+    "launcher.preset_view": "查看预设设置…",
+    "launcher.preset_view_title": "预设设置：{name}",
+    "launcher.preset_view_hint": "此预设设置的所有项目。“当前”是你现在的值；选择此预设后，带标记的行会改变。",
+    "launcher.preset_view_setting": "设置",
+    "launcher.preset_view_value": "预设",
+    "launcher.preset_view_now": "当前",
+    "launcher.preset_view_none": "你的设置与任何预设都不匹配。在列表中选择一个预设即可查看它会设置什么。",
+    "launcher.preset_about_0": "游戏原版：无 DLAA，无额外锐化，原始纹理和效果。",
+    "launcher.preset_about_1": "本移植版的默认值：DLAA、锐化、更清晰的纹理、流畅的草地和色彩调整、完整阴影。",
+    "launcher.preset_about_2": "适合较旧或较弱的电脑：Stock 画面，阴影距离减半并使用轻量阴影，另加两个针对 4 核 CPU 的设置（绘制助手关闭，绘制管线中的 compute 开启）。保留你的分辨率和 FPS。",
+    "launcher.preset_about_3": "Low-end PC 加上 1280x800、30 FPS、不放大、无 DLAA、关闭帧生成（实验性：请告诉我们运行情况）。",
+    "launcher.preset_about_own": "你自己保存的预设。",
+    "launcher.preset_about_custom": "你的设置与任何预设都不匹配。",
+    "launcher.pk_dlaa": "DLAA",
+    "launcher.pk_smaa": "SMAA",
+    "launcher.pk_sharpness": "锐化强度",
+    "launcher.pk_dof": "景深",
+    "launcher.pk_draw_helpers": "绘制助手",
+    "launcher.pk_compute_pipe": "绘制管线中的 compute"
   },
   "items": {
     "menu:sharpen": {

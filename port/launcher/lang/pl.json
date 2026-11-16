@@ -465,7 +465,26 @@
     "pad.photo_press": "naciśnij przycisk…",
     "pad.photo_note": "Po jednym przycisku, tylko w trybie zdjęć. Lewa gałka lata, prawa rozgląda się. Klawiatura: klawisze tych samych przycisków; Print Screen też robi zrzut ekranu.",
     "launcher.shadow_lite": "Lekkie cienie",
-    "launcher.shadow_lite_hint": "Pomija najbliższą z czterech warstw cieni gry, tak jak gra sama robi w niektórych miejscach. Kilka % więcej FPS na starszych procesorach i Steam Decku; cienie blisko kamery są trochę bardziej miękkie. Wył. to gra jak w dniu premiery."
+    "launcher.shadow_lite_hint": "Pomija najbliższą z czterech warstw cieni gry, tak jak gra sama robi w niektórych miejscach. Kilka % więcej FPS na starszych procesorach i Steam Decku; cienie blisko kamery są trochę bardziej miękkie. Wył. to gra jak w dniu premiery.",
+    "launcher.preset_view": "Pokaż ustawienia presetu…",
+    "launcher.preset_view_title": "Ustawienia presetu: {name}",
+    "launcher.preset_view_hint": "Wszystkie ustawienia tego presetu. „Teraz” to Twoja obecna wartość; zaznaczone wiersze zmienią się po wybraniu tego presetu.",
+    "launcher.preset_view_setting": "Ustawienie",
+    "launcher.preset_view_value": "Preset",
+    "launcher.preset_view_now": "Teraz",
+    "launcher.preset_view_none": "Twoje ustawienia nie pasują do żadnego presetu. Wybierz preset z listy, aby zobaczyć, co ustawia.",
+    "launcher.preset_about_0": "Gra w wersji wydanej: bez DLAA, bez dodatkowego wyostrzania, oryginalne tekstury i efekty.",
+    "launcher.preset_about_1": "Domyślne ustawienia portu: DLAA, wyostrzanie, ostrzejsze tekstury, płynna trawa i korekta kolorów, pełne cienie.",
+    "launcher.preset_about_2": "Dla starszych lub słabszych PC: wygląd Stock z cieniami na połowie odległości i lekkimi cieniami, plus dwa ustawienia dla procesorów 4-rdzeniowych (pomocnicy rysowania wyłączeni, compute w potoku rysowania włączony). Zachowuje rozdzielczość i FPS.",
+    "launcher.preset_about_3": "Low-end PC plus 1280x800, 30 FPS, bez skalowania, bez DLAA i z wyłączonym generowaniem klatek (eksperymentalne: daj znać, jak działa).",
+    "launcher.preset_about_own": "Twój własny zapisany preset.",
+    "launcher.preset_about_custom": "Twoje ustawienia nie pasują do żadnego presetu.",
+    "launcher.pk_dlaa": "DLAA",
+    "launcher.pk_smaa": "SMAA",
+    "launcher.pk_sharpness": "Siła wyostrzania",
+    "launcher.pk_dof": "Głębia ostrości",
+    "launcher.pk_draw_helpers": "Pomocnicy rysowania",
+    "launcher.pk_compute_pipe": "Compute w potoku rysowania"
   },
   "items": {
     "menu:sharpen": {

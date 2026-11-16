@@ -465,7 +465,26 @@
     "pad.photo_press": "premi un tasto…",
     "pad.photo_note": "Un tasto ciascuno, solo in modalità foto. La levetta sinistra vola, la destra guarda intorno. Tastiera: i tasti degli stessi pulsanti; Stamp fa anche uno screenshot.",
     "launcher.shadow_lite": "Ombre leggere",
-    "launcher.shadow_lite_hint": "Toglie il più vicino dei quattro livelli d'ombra del gioco, come fa il gioco stesso in alcune zone. Qualche % di FPS in più su CPU vecchie e su Steam Deck; le ombre vicine alla telecamera diventano un po' più morbide. No è come all'uscita."
+    "launcher.shadow_lite_hint": "Toglie il più vicino dei quattro livelli d'ombra del gioco, come fa il gioco stesso in alcune zone. Qualche % di FPS in più su CPU vecchie e su Steam Deck; le ombre vicine alla telecamera diventano un po' più morbide. No è come all'uscita.",
+    "launcher.preset_view": "Mostra le impostazioni del preset…",
+    "launcher.preset_view_title": "Impostazioni del preset: {name}",
+    "launcher.preset_view_hint": "Tutte le impostazioni di questo preset. \"Ora\" è il tuo valore attuale; le righe segnate cambiano se scegli questo preset.",
+    "launcher.preset_view_setting": "Impostazione",
+    "launcher.preset_view_value": "Preset",
+    "launcher.preset_view_now": "Ora",
+    "launcher.preset_view_none": "Le tue impostazioni non corrispondono a nessun preset. Scegli un preset nella lista per vedere cosa imposta.",
+    "launcher.preset_about_0": "Il gioco come è uscito: niente DLAA, niente nitidezza extra, texture ed effetti originali.",
+    "launcher.preset_about_1": "I valori predefiniti del port: DLAA, nitidezza, texture più nitide, erba fluida e regolazioni del colore, ombre complete.",
+    "launcher.preset_about_2": "Per PC vecchi o meno potenti: l'aspetto Stock con ombre a metà distanza e ombre leggere, più due impostazioni per CPU a 4 core (aiutanti di disegno disattivati, compute nella pipeline di disegno attivo). Mantiene risoluzione e FPS.",
+    "launcher.preset_about_3": "Low-end PC più 1280x800, 30 FPS, nessun upscaling, niente DLAA e frame generation disattivata (sperimentale: facci sapere come va).",
+    "launcher.preset_about_own": "Il tuo preset salvato.",
+    "launcher.preset_about_custom": "Le tue impostazioni non corrispondono a nessun preset.",
+    "launcher.pk_dlaa": "DLAA",
+    "launcher.pk_smaa": "SMAA",
+    "launcher.pk_sharpness": "Intensità nitidezza",
+    "launcher.pk_dof": "Profondità di campo",
+    "launcher.pk_draw_helpers": "Aiutanti di disegno",
+    "launcher.pk_compute_pipe": "Compute nella pipeline di disegno"
   },
   "items": {
     "menu:sharpen": {

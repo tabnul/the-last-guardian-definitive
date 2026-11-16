@@ -465,7 +465,26 @@
     "pad.photo_press": "druk op een knop…",
     "pad.photo_note": "Eén knop per actie, alleen in fotomodus. Linkerstick vliegt, rechterstick kijkt rond. Toetsenbord: de toetsen van dezelfde knoppen; Print Screen maakt ook een screenshot.",
     "launcher.shadow_lite": "Lichte schaduwen",
-    "launcher.shadow_lite_hint": "Laat de dichtstbijzijnde van de vier schaduwlagen van de game weg, zoals de game zelf in sommige gebieden doet. Een paar % meer FPS op oudere cpu's en de Steam Deck; schaduwen dicht bij de camera worden iets zachter. Uit is zoals uitgebracht."
+    "launcher.shadow_lite_hint": "Laat de dichtstbijzijnde van de vier schaduwlagen van de game weg, zoals de game zelf in sommige gebieden doet. Een paar % meer FPS op oudere cpu's en de Steam Deck; schaduwen dicht bij de camera worden iets zachter. Uit is zoals uitgebracht.",
+    "launcher.preset_view": "Preset-instellingen bekijken…",
+    "launcher.preset_view_title": "Preset-instellingen: {name}",
+    "launcher.preset_view_hint": "Alle instellingen van deze preset. \"Nu\" is je huidige waarde; de gemarkeerde rijen veranderen als je deze preset kiest.",
+    "launcher.preset_view_setting": "Instelling",
+    "launcher.preset_view_value": "Preset",
+    "launcher.preset_view_now": "Nu",
+    "launcher.preset_view_none": "Je instellingen passen bij geen enkele preset. Kies een preset in de lijst om te zien wat die instelt.",
+    "launcher.preset_about_0": "Het spel zoals uitgebracht: geen DLAA, geen extra verscherping, de originele textures en effecten.",
+    "launcher.preset_about_1": "De standaard van de port: DLAA, verscherping, scherpere textures, vloeiend gras en kleuraanpassingen, volledige schaduwen.",
+    "launcher.preset_about_2": "Voor oudere of zwakkere pc's: de Stock-look met schaduwen op halve afstand en lichte schaduwen, plus twee instellingen voor cpu's met 4 cores (tekenhulpen uit, compute in de tekenpijplijn aan). Houdt je resolutie en FPS.",
+    "launcher.preset_about_3": "Low-end PC plus 1280x800, 30 FPS, geen upscaling, geen DLAA en frame generation uit (experimenteel: laat ons weten hoe het loopt).",
+    "launcher.preset_about_own": "Je eigen opgeslagen preset.",
+    "launcher.preset_about_custom": "Je instellingen passen bij geen enkele preset.",
+    "launcher.pk_dlaa": "DLAA",
+    "launcher.pk_smaa": "SMAA",
+    "launcher.pk_sharpness": "Sterkte verscherping",
+    "launcher.pk_dof": "Scherptediepte",
+    "launcher.pk_draw_helpers": "Tekenhulpen",
+    "launcher.pk_compute_pipe": "Compute in de tekenpijplijn"
   },
   "items": {
     "menu:sharpen": {

@@ -456,7 +456,26 @@
     "pad.photo_press": "pressione um botão…",
     "pad.photo_note": "Um botão para cada, só no modo foto. O analógico esquerdo voa, o direito olha ao redor. Teclado: as teclas dos mesmos botões; Print Screen também tira uma captura.",
     "launcher.shadow_lite": "Sombras leves",
-    "launcher.shadow_lite_hint": "Deixa de fora a mais próxima das quatro camadas de sombra do jogo, como o próprio jogo faz em algumas áreas. Alguns % a mais de FPS em CPUs antigas e no Steam Deck; as sombras perto da câmera ficam um pouco mais suaves. Desligado é como foi lançado."
+    "launcher.shadow_lite_hint": "Deixa de fora a mais próxima das quatro camadas de sombra do jogo, como o próprio jogo faz em algumas áreas. Alguns % a mais de FPS em CPUs antigas e no Steam Deck; as sombras perto da câmera ficam um pouco mais suaves. Desligado é como foi lançado.",
+    "launcher.preset_view": "Ver as configurações do preset…",
+    "launcher.preset_view_title": "Configurações do preset: {name}",
+    "launcher.preset_view_hint": "Todas as configurações deste preset. \"Agora\" é o seu valor atual; as linhas marcadas mudam se você escolher este preset.",
+    "launcher.preset_view_setting": "Configuração",
+    "launcher.preset_view_value": "Preset",
+    "launcher.preset_view_now": "Agora",
+    "launcher.preset_view_none": "Suas configurações não batem com nenhum preset. Escolha um preset na lista para ver o que ele define.",
+    "launcher.preset_about_0": "O jogo como foi lançado: sem DLAA, sem nitidez extra, as texturas e efeitos originais.",
+    "launcher.preset_about_1": "Os padrões do port: DLAA, nitidez, texturas mais nítidas, grama fluida e ajustes de cor, sombras completas.",
+    "launcher.preset_about_2": "Para PCs antigos ou mais fracos: o visual Stock com sombras na metade da distância e sombras leves, mais duas configurações para CPUs de 4 núcleos (ajudantes de desenho desligados, compute no pipeline de desenho ligado). Mantém sua resolução e FPS.",
+    "launcher.preset_about_3": "Low-end PC mais 1280x800, 30 FPS, sem upscaling, sem DLAA e geração de quadros desligada (experimental: conte como roda).",
+    "launcher.preset_about_own": "Seu próprio preset salvo.",
+    "launcher.preset_about_custom": "Suas configurações não batem com nenhum preset.",
+    "launcher.pk_dlaa": "DLAA",
+    "launcher.pk_smaa": "SMAA",
+    "launcher.pk_sharpness": "Força da nitidez",
+    "launcher.pk_dof": "Profundidade de campo",
+    "launcher.pk_draw_helpers": "Ajudantes de desenho",
+    "launcher.pk_compute_pipe": "Compute no pipeline de desenho"
   },
   "items": {
     "menu:sharpen": {
