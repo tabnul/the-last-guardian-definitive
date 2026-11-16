@@ -3,8 +3,11 @@
 // The engine-to-Vulkan backend's presenter (merge note 5). From the old port's vk_presenter.cpp: its backend path (PrepareFrame with the display image of
 // Core::Vkb::DisplayImageAt, note 42 sRGB view, note 69 own frame scheduler), the blank and last frames, the frame pool and Present; without the old renderer.
 
+#include "native/native_vkb_dlss_glue.h"
+#include "native/native_vkb_aa.h"
 #include "native/vkb_core/vkb_presenter.h"
 
+#include <thread>
 #include <algorithm>
 #include <limits>
 #include "common/assert.h"
@@ -129,6 +132,12 @@ bool Presenter::MustKeepDrawing() {
 
 void Presenter::RecreateFrame(Frame* frame, u32 width, u32 height) {
     const vk::Device device = instance.GetDevice();
+    if (frame->fg_image) { // F2: made again at the new size on its next use
+        device.destroyImageView(frame->fg_view);
+        vmaDestroyImage(instance.GetAllocator(), frame->fg_image, frame->fg_allocation);
+        frame->fg_image = vk::Image{}, frame->fg_view = vk::ImageView{}, frame->fg_allocation = nullptr;
+    }
+    frame->fg_ready = false;
     if (frame->image_view) {
         device.destroyImageView(frame->image_view);
     }
@@ -285,6 +294,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VkbVideoOut::BufferAttributeGrou
         .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
     };
     cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &back});
+    RecordFrameGeneration(frame, cmdbuf); // F2
 
     frame->ready_semaphore = frame_scheduler.GetMasterSemaphore()->Handle();
     frame->ready_tick = frame_scheduler.CurrentTick();
@@ -414,6 +424,42 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             swapchain.Recreate(window.GetWidth(), window.GetHeight());
         }
     }
+    // F2: the generated image now, the real frame half a frame later (their presenter's pacing)
+    const auto flip_time = std::chrono::steady_clock::now();
+    if (frame->fg_ready && !is_reusing_frame) {
+        const float gap_ms = std::chrono::duration<float, std::milli>(flip_time - fg_last_flip).count();
+        if (gap_ms > 0.0f && gap_ms < 100.0f) {
+            fg_interval_ms += (gap_ms - fg_interval_ms) * 0.1f;
+        }
+        if (PresentImage(frame, frame->fg_image, false, is_reusing_frame)) {
+            Core::Vkb::Aa::NoteFg(false, true, false);
+            const auto target = std::chrono::steady_clock::now() +
+                                std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<float, std::milli>(fg_interval_ms * 0.5f));
+            while (std::chrono::steady_clock::now() < target) {
+                std::this_thread::yield();
+            }
+            if (++fg_presented % 600 == 0) {
+                LOG_INFO(Render_Vulkan, "vkb frame generation: {} generated, {:.1f} ms a game frame", fg_presented, fg_interval_ms);
+            }
+        }
+    }
+    if (!is_reusing_frame) {
+        fg_last_flip = flip_time;
+    }
+    frame->fg_ready = false;
+    if (!PresentImage(frame, frame->image, true, is_reusing_frame)) {
+        free_frame();
+        return;
+    }
+    Core::FrameTimeline::Mark(Core::FrameTimeline::PresentEnd, is_reusing_frame ? 1 : 0);
+    TlgCapture::Poll(present_scheduler); // copies of earlier frames the GPU finished go to the writer
+    free_frame();
+    if (!is_reusing_frame && is_game_frame) {
+        DebugState.IncFlipFrameNum();
+    }
+}
+
+bool Presenter::PresentImage(Frame* frame, vk::Image source, bool real, bool is_reusing_frame) {
     if (!swapchain.AcquireNextImage()) {
         {
             std::scoped_lock queue_lock{Scheduler::submit_mutex};
@@ -421,13 +467,14 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         }
         if (!swapchain.AcquireNextImage()) {
             LOG_WARNING(Render_Vulkan, "Skipping frame!");
-            free_frame();
-            return;
+            return false;
         }
     }
     // reset here, not in GetRenderFrame: a skipped frame would leave the fence unsignalled and the next GetRenderFrame waiting forever
-    const vk::Result reset_result = instance.GetDevice().resetFences(frame->present_done);
-    ASSERT_MSG(reset_result == vk::Result::eSuccess, "Unexpected error resetting present done fence: {}", vk::to_string(reset_result));
+    if (real) {
+        const vk::Result reset_result = instance.GetDevice().resetFences(frame->present_done);
+        ASSERT_MSG(reset_result == vk::Result::eSuccess, "Unexpected error resetting present done fence: {}", vk::to_string(reset_result));
+    }
 
     const vk::Image swapchain_image = swapchain.Image();
     const vk::CommandBuffer cmdbuf = present_scheduler.CommandBuffer();
@@ -451,7 +498,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             .newLayout = vk::ImageLayout::eTransferSrcOptimal,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = frame->image,
+            .image = source,
             .subresourceRange = ColorRange,
         },
     };
@@ -459,10 +506,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     cmdbuf.clearColorImage(swapchain_image, vk::ImageLayout::eTransferDstOptimal, vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}}, ColorRange);
     const vk::MemoryBarrier clear_done{.srcAccessMask = vk::AccessFlagBits::eTransferWrite, .dstAccessMask = vk::AccessFlagBits::eTransferWrite};
     cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion, clear_done, {}, {});
-    cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image, vk::ImageLayout::eTransferDstOptimal,
+    cmdbuf.blitImage(source, vk::ImageLayout::eTransferSrcOptimal, swapchain_image, vk::ImageLayout::eTransferDstOptimal,
                      BlitFit(frame->width, frame->height, extent.width, extent.height), vk::Filter::eLinear);
     // F12 / Shift+F12, the glitch marker and the frame walk: a copy of the game frame, before the overlay (native/native_capture.h)
-    if (!is_reusing_frame) {
+    if (real && !is_reusing_frame) {
         // photo mode's Cross and the menu's Print Screen ask the overlay for a picture; under ours it is our capture (user/screenshots)
         if (TlgOverlay::TakeScreenshotRequest()) {
             TlgCapture::RequestScreenshot();
@@ -489,7 +536,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             .newLayout = vk::ImageLayout::eGeneral,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = frame->image,
+            .image = source,
             .subresourceRange = ColorRange,
         },
     };
@@ -514,7 +561,9 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     info.AddWait(swapchain.GetImageAcquiredSemaphore());
     info.AddWait(frame->ready_semaphore, frame->ready_tick);
     info.AddSignal(swapchain.GetPresentReadySemaphore());
-    info.fence = frame->present_done;
+    if (real) {
+        info.fence = frame->present_done;
+    }
     present_scheduler.Flush(info);
     {
         std::scoped_lock submit_lock{Scheduler::submit_mutex};
@@ -522,12 +571,86 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             swapchain.Recreate(window.GetWidth(), window.GetHeight());
         }
     }
-    Core::FrameTimeline::Mark(Core::FrameTimeline::PresentEnd, is_reusing_frame ? 1 : 0);
-    TlgCapture::Poll(present_scheduler); // copies of earlier frames the GPU finished go to the writer
-    free_frame();
-    if (!is_reusing_frame && is_game_frame) {
-        DebugState.IncFlipFrameNum();
+    return true;
+}
+
+void Presenter::RecordFrameGeneration(Frame* frame, vk::CommandBuffer cmdbuf) {
+    frame->fg_ready = false;
+    if (!Core::Vkb::DlssGlue::FgWanted() || fg_failed) {
+        return;
     }
+    if (fg_state < 0) {
+        fg_state = Core::Vkb::DlssGlue::FgAvailable() ? 1 : 0;
+        LOG_INFO(Render_Vulkan, "vkb frame generation (DLSS): {}", fg_state ? "available" : "not available");
+    }
+    Core::Vkb::Aa::FgInputs inputs{};
+    if (!fg_state || !Core::Vkb::Aa::TakeFgInputs(inputs)) {
+        return; // no new game frame since the last one (menus, loading), or no AA running (TLG_VKB_AA)
+    }
+    const vk::Device device = instance.GetDevice();
+    const vk::Format format = swapchain.GetSurfaceFormat().format;
+    if (!frame->fg_image) {
+        const VkImageCreateInfo ci{.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                                   .flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT,
+                                   .imageType = VK_IMAGE_TYPE_2D,
+                                   .format = static_cast<VkFormat>(format),
+                                   .extent = {frame->width, frame->height, 1},
+                                   .mipLevels = 1,
+                                   .arrayLayers = 1,
+                                   .samples = VK_SAMPLE_COUNT_1_BIT,
+                                   .tiling = VK_IMAGE_TILING_OPTIMAL,
+                                   .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                   .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                                   .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
+        const VmaAllocationCreateInfo alloc{.flags = VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT, .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
+        VkImage image{};
+        if (vmaCreateImage(instance.GetAllocator(), &ci, &alloc, &image, &frame->fg_allocation, nullptr) != VK_SUCCESS) {
+            LOG_ERROR(Render_Vulkan, "vkb frame generation: off, no generated image in {} with storage use", vk::to_string(format));
+            fg_failed = true;
+            Core::Vkb::Aa::NoteFg(false, false, true);
+            return;
+        }
+        frame->fg_image = vk::Image{image};
+        frame->fg_view = Check(device.createImageView({.image = frame->fg_image, .viewType = vk::ImageViewType::e2D, .format = format,
+                                                       .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}}));
+    }
+    if (fg_width != frame->width || fg_height != frame->height || fg_format != format) {
+        if (!Core::Vkb::DlssGlue::FgCreate(device, cmdbuf, frame->width, frame->height, format)) {
+            LOG_ERROR(Render_Vulkan, "vkb frame generation: off, NVIDIA refused to create it ({}x{} {})", frame->width, frame->height, vk::to_string(format));
+            fg_failed = true;
+            Core::Vkb::Aa::NoteFg(false, false, true);
+            return;
+        }
+        fg_width = frame->width, fg_height = frame->height, fg_format = format;
+        LOG_INFO(Render_Vulkan, "vkb frame generation (DLSS): {}x{} {}, from {}x{} depth and motion", frame->width, frame->height, vk::to_string(format), inputs.width,
+                 inputs.height);
+    }
+    const auto all = vk::PipelineStageFlagBits2::eAllCommands;
+    const std::array barriers{
+        vk::ImageMemoryBarrier2{.srcStageMask = all, .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite, .dstStageMask = all, .dstAccessMask = vk::AccessFlagBits2::eMemoryRead,
+                                .oldLayout = vk::ImageLayout::eGeneral, .newLayout = vk::ImageLayout::eGeneral, .image = frame->image,
+                                .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}},
+        vk::ImageMemoryBarrier2{.srcStageMask = all, .srcAccessMask = vk::AccessFlagBits2::eNone, .dstStageMask = all, .dstAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+                                .oldLayout = vk::ImageLayout::eUndefined, .newLayout = vk::ImageLayout::eGeneral, .image = frame->fg_image,
+                                .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}},
+    };
+    cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = static_cast<u32>(barriers.size()), .pImageMemoryBarriers = barriers.data()});
+    using Core::Vkb::DlssGlue::Image;
+    const auto color = vk::ImageAspectFlagBits::eColor;
+    const bool ok = Core::Vkb::DlssGlue::FgEvaluate(cmdbuf, Image{frame->image, frame->image_view, format, color, frame->width, frame->height},
+                                                    Image{inputs.depth, inputs.depth_view, inputs.depth_format, vk::ImageAspectFlagBits::eDepth, inputs.width, inputs.height},
+                                                    Image{inputs.motion, inputs.motion_view, vk::Format::eR16G16Sfloat, color, inputs.width, inputs.height},
+                                                    Image{frame->fg_image, frame->fg_view, format, color, frame->width, frame->height}, inputs.reset);
+    if (!ok) {
+        LOG_ERROR(Render_Vulkan, "vkb frame generation: off, evaluation failed");
+        fg_failed = true;
+        Core::Vkb::Aa::NoteFg(false, false, true);
+        return;
+    }
+    const vk::MemoryBarrier2 done{.srcStageMask = all, .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite, .dstStageMask = all, .dstAccessMask = vk::AccessFlagBits2::eMemoryRead};
+    cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &done});
+    frame->fg_ready = !inputs.reset;
+    Core::Vkb::Aa::NoteFg(true, false, false);
 }
 
 } // namespace VkbVulkan

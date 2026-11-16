@@ -96,9 +96,16 @@ FfxVkPortableImage Describe(VkImage image, VkFormat format, u32 w, u32 h, VkImag
 }
 
 // F1d (DLAA): the motion in pixels (vkb_aa_motion.comp), views of the inputs (by image), the conversion pipeline
+std::array<VkImage, 2> motion_pxs{};
+std::array<VmaAllocation, 2> motion_px_allocs{};
+std::array<vk::ImageView, 2> motion_px_views{};
+u32 px_index = 0; ///< the motion image of this run (the presenter may still read the other one, F2)
 VkImage motion_px = VK_NULL_HANDLE;
-VmaAllocation motion_px_alloc = nullptr;
 vk::ImageView motion_px_view{}, output_view{};
+// F2: the newest frame's inputs for frame generation
+std::mutex fg_mutex;
+FgInputs fg_inputs{};
+u64 fg_serial = 0, fg_taken = 0;
 std::map<std::pair<VkImage, u32>, vk::ImageView> views; ///< (image, format) -> view
 vk::DescriptorSetLayout motion_set_layout{};
 vk::PipelineLayout motion_layout{};
@@ -140,14 +147,18 @@ bool EnsureDlaa(u32 w, u32 h) {
         }
         motion_pipeline = pipeline;
     }
-    if (motion_px != VK_NULL_HANDLE && dl_w == w && dl_h == h) {
+    if (motion_pxs[0] != VK_NULL_HANDLE && dl_w == w && dl_h == h) {
+        px_index ^= 1;
+        motion_px = motion_pxs[px_index], motion_px_view = motion_px_views[px_index];
         return true;
     }
-    if (motion_px != VK_NULL_HANDLE) {
+    if (motion_pxs[0] != VK_NULL_HANDLE) {
         (void)device.waitIdle();
-        device.destroyImageView(motion_px_view);
-        vmaDestroyImage(instance->GetAllocator(), motion_px, motion_px_alloc);
-        motion_px = VK_NULL_HANDLE;
+        for (u32 i = 0; i < 2; ++i) {
+            device.destroyImageView(motion_px_views[i]);
+            vmaDestroyImage(instance->GetAllocator(), motion_pxs[i], motion_px_allocs[i]);
+            motion_pxs[i] = VK_NULL_HANDLE;
+        }
     }
     const VkImageCreateInfo ci{.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
                                .imageType = VK_IMAGE_TYPE_2D,
@@ -161,11 +172,15 @@ bool EnsureDlaa(u32 w, u32 h) {
                                .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
                                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
     const VmaAllocationCreateInfo alloc{.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
-    if (vmaCreateImage(instance->GetAllocator(), &ci, &alloc, &motion_px, &motion_px_alloc, nullptr) != VK_SUCCESS) {
-        return false;
+    for (u32 i = 0; i < 2; ++i) {
+        if (vmaCreateImage(instance->GetAllocator(), &ci, &alloc, &motion_pxs[i], &motion_px_allocs[i], nullptr) != VK_SUCCESS) {
+            return false;
+        }
+        motion_px_views[i] = device.createImageView({.image = vk::Image{motion_pxs[i]}, .viewType = vk::ImageViewType::e2D, .format = vk::Format::eR16G16Sfloat,
+                                                     .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}}).value;
     }
-    motion_px_view = device.createImageView({.image = vk::Image{motion_px}, .viewType = vk::ImageViewType::e2D, .format = vk::Format::eR16G16Sfloat,
-                                             .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}}).value;
+    px_index = 0;
+    motion_px = motion_pxs[0], motion_px_view = motion_px_views[0];
     dl_w = w, dl_h = h;
     return true;
 }
@@ -395,7 +410,8 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
         }
         return;
     }
-    if (!EnsureContext(w, h) || (Chosen() == Kind::Dlaa && !EnsureDlaa(w, h))) {
+    const bool want_px = Chosen() == Kind::Dlaa || Core::Vkb::DlssGlue::FgWanted();
+    if (!EnsureContext(w, h) || (want_px && !EnsureDlaa(w, h))) {
         failed = true;
         c_failed.fetch_add(1, std::memory_order_relaxed);
         return;
@@ -421,7 +437,7 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
     cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &out_barrier});
 
     static const float sharpness = [] { const char* e = std::getenv("TLG_VKB_AA_SHARPNESS"); return e != nullptr ? static_cast<float>(std::atof(e)) : 0.5f; }();
-    if (Chosen() == Kind::Dlaa) {
+    if (want_px) {
         // the game's motion as DLSS reads it: render pixels, previous - current (vkb_aa_motion.comp)
         const vk::DescriptorImageInfo game_info{.imageView = ViewOf(m.image, m.format, vk::ImageAspectFlagBits::eColor), .imageLayout = vk::ImageLayout::eGeneral};
         const vk::DescriptorImageInfo px_info{.imageView = motion_px_view, .imageLayout = vk::ImageLayout::eGeneral};
@@ -440,6 +456,14 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
         cmd.pushConstants(motion_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(size), size.data());
         cmd.dispatch((w + 7) / 8, (h + 7) / 8, 1);
         Barrier(cmd);
+        { // F2: this frame's depth and motion for the presenter's frame generation
+            std::scoped_lock fg_lock{fg_mutex};
+            fg_inputs = {.depth = d.image, .motion = vk::Image{motion_px}, .depth_view = ViewOf(d.image, d.format, vk::ImageAspectFlagBits::eDepth),
+                         .motion_view = motion_px_view, .depth_format = d.format, .width = w, .height = h, .reset = reset};
+            ++fg_serial;
+        }
+    }
+    if (Chosen() == Kind::Dlaa) {
         using Core::Vkb::DlssGlue::Image;
         const Image color{s.image, ViewOf(s.image, s.format, vk::ImageAspectFlagBits::eColor), s.format, vk::ImageAspectFlagBits::eColor, w, h};
         const Image dimg{d.image, ViewOf(d.image, d.format, vk::ImageAspectFlagBits::eDepth), d.format, vk::ImageAspectFlagBits::eDepth, w, h};
@@ -515,6 +539,22 @@ copy_back:
     c_runs.fetch_add(1, std::memory_order_relaxed);
 }
 
+std::atomic<u64> c_fg_made{0}, c_fg_presented{0}, c_fg_failed{0};
+void NoteFg(bool made, bool presented, bool failed) {
+    (made ? c_fg_made : presented ? c_fg_presented : c_fg_failed).fetch_add(1, std::memory_order_relaxed);
+    (void)failed;
+}
+
+bool TakeFgInputs(FgInputs& out) {
+    std::scoped_lock lock{fg_mutex};
+    if (fg_serial == fg_taken) {
+        return false;
+    }
+    fg_taken = fg_serial;
+    out = fg_inputs;
+    return true;
+}
+
 nlohmann::json Report() {
     return {{"on", On()},
             {"kind", Chosen() == Kind::Fsr3 ? "fsr3" : Chosen() == Kind::Dlaa ? "dlaa" : "off"},
@@ -527,7 +567,8 @@ nlohmann::json Report() {
             {"history_resets", c_resets.load()},
             {"jitter", JitterWanted()},
             {"jittered_draws", c_jittered.load()},
-            {"jittered_mesh_redraws", c_jittered_meshes.load()}};
+            {"jittered_mesh_redraws", c_jittered_meshes.load()},
+            {"frame_generation", {{"made", c_fg_made.load()}, {"presented", c_fg_presented.load()}, {"failed", c_fg_failed.load()}}}};
 }
 
 } // namespace Core::Vkb::Aa

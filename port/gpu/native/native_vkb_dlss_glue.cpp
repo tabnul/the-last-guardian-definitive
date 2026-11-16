@@ -18,12 +18,40 @@ Vulkan::Dlss::Resource Res(const Image& i) {
 
 } // namespace
 
+bool FgWanted() {
+    static const bool wanted = [] {
+        const char* e = std::getenv("TLG_VKB_FG");
+        return e != nullptr && std::strcmp(e, "dlss") == 0 && Vulkan::Dlss::Get() != nullptr;
+    }();
+    return wanted;
+}
+
 bool Wanted() {
     static const bool wanted = [] {
         const char* e = std::getenv("TLG_VKB_AA");
-        return e != nullptr && std::strcmp(e, "dlaa") == 0 && Vulkan::Dlss::Get() != nullptr;
+        return (e != nullptr && std::strcmp(e, "dlaa") == 0 && Vulkan::Dlss::Get() != nullptr) || FgWanted();
     }();
     return wanted;
+}
+
+bool FgAvailable() {
+    Vulkan::Dlss* dlss = Vulkan::Dlss::Get();
+    return FgWanted() && dlss != nullptr && dlss->FgAvailable();
+}
+
+bool FgCreate(vk::Device device, vk::CommandBuffer cmd, u32 width, u32 height, vk::Format format) {
+    Vulkan::Dlss* dlss = Vulkan::Dlss::Get();
+    if (dlss == nullptr) {
+        return false;
+    }
+    (void)device.waitIdle();
+    dlss->FgRelease();
+    return dlss->FgCreate(cmd, width, height, format);
+}
+
+bool FgEvaluate(vk::CommandBuffer cmd, const Image& backbuffer, const Image& depth, const Image& motion, const Image& output, bool reset) {
+    Vulkan::Dlss* dlss = Vulkan::Dlss::Get();
+    return dlss != nullptr && dlss->FgEvaluate(cmd, {.backbuffer = Res(backbuffer), .depth = Res(depth), .motion = Res(motion), .output = Res(output), .reset = reset, .hdr = false});
 }
 
 void AppendInstanceExtensions(std::vector<const char*>& enabled) {

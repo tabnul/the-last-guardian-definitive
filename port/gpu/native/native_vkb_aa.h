@@ -38,4 +38,16 @@ void NoteSceneDepth(u64 depth_view_id);
 [[nodiscard]] std::array<float, 2> OnCombineQueued();
 [[nodiscard]] nlohmann::json Report();
 
+/// F2: what frame generation reads of the newest frame the AA ran on: the scene depth and the motion in render pixels (previous - current). False: nothing new.
+struct FgInputs {
+    vk::Image depth{}, motion{};
+    vk::ImageView depth_view{}, motion_view{};
+    vk::Format depth_format{};
+    u32 width{}, height{};
+    bool reset{};
+};
+bool TakeFgInputs(FgInputs& out);
+/// F2: the presenter's counts (stats aa.frame_generation): generated frames made, presented, failures
+void NoteFg(bool made, bool presented, bool failed);
+
 } // namespace Core::Vkb::Aa

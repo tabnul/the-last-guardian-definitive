@@ -19,8 +19,10 @@ struct Image {
     u32 width{}, height{};
 };
 
-/// TLG_VKB_AA=dlaa and the DLLs present (their Dlss::Get)
+/// TLG_VKB_AA=dlaa or TLG_VKB_FG=dlss, and the DLLs present (their Dlss::Get): NGX is set up with our instance
 [[nodiscard]] bool Wanted();
+/// F2: TLG_VKB_FG=dlss and the DLLs present
+[[nodiscard]] bool FgWanted();
 /// Our instance and device creation (only when Wanted): what NGX needs
 void AppendInstanceExtensions(std::vector<const char*>& enabled);
 void AppendDeviceExtensions(vk::Instance instance, vk::PhysicalDevice physical, std::vector<const char*>& enabled);
@@ -28,5 +30,11 @@ void Initialize(vk::Instance instance, vk::PhysicalDevice physical, vk::Device d
 /// DLAA (DLSS at the render size): a feature made on first use or a size change (`device` idles first), then evaluated into `output`. False: failed.
 bool Run(vk::Device device, vk::CommandBuffer cmd, const Image& color, const Image& depth, const Image& motion, const Image& output, float jitter_x, float jitter_y,
          bool reset, float frame_ms, float sharpness);
+
+/// F2: DLSS frame generation: one image between the previous finished frame and `backbuffer` (the finished frame with the interface), from the render depth and the
+/// motion (render pixels, previous - current). FgCreate on the first use and a size or format change (`device` idles first).
+[[nodiscard]] bool FgAvailable();
+bool FgCreate(vk::Device device, vk::CommandBuffer cmd, u32 width, u32 height, vk::Format format);
+bool FgEvaluate(vk::CommandBuffer cmd, const Image& backbuffer, const Image& depth, const Image& motion, const Image& output, bool reset);
 
 } // namespace Core::Vkb::DlssGlue
