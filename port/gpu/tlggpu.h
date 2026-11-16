@@ -98,6 +98,8 @@ typedef void (*TlgGpuWaitEnd)(void);
 void tlggpu_set_wait_hooks(TlgGpuWaitBegin begin, TlgGpuWaitEnd end);
 /* The game executable's address range, so diagnostics (TLG_FAULT_PROFILE) print guest offsets. */
 void tlggpu_set_guest_image(uintptr_t base, uint64_t size);
+/* VKB: the engine-to-Vulkan backend's guest hooks (TLG_VKB=1; the hooks file of the game), once the eboot is loaded and patched. Nothing without TLG_VKB. */
+void tlggpu_install_hooks(uintptr_t image_base, uint64_t image_size);
 /* Flip requests from the game, flips handed to the presenter, presents done, vblank ticks,
  * page-protection faults being handled now and handled so far. */
 typedef struct { uint64_t submitted, shown, presented, vblanks, faults_in_progress, faults_handled; } TlgGpuFrameCounters;

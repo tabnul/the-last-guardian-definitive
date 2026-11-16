@@ -252,6 +252,11 @@ set_source_files_properties(shim/tlg_overlay.cpp PROPERTIES
 target_include_directories(tlggpu PRIVATE shim shadps4 ${CMAKE_CURRENT_SOURCE_DIR} ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include)
 target_include_directories(tlggpu PRIVATE third_party/cpp-httplib) # VKB: the debug server
 target_compile_definitions(tlggpu PRIVATE TLG_PORT=1) # VKB: native code shared with the shadPS4 tree switches on this
+# VKB: the backend's per game files, built in (native/native_builtin_data.cpp; a file in the user's custom_configs overrides them)
+target_compile_definitions(tlggpu PRIVATE TLG_VKB_HOOKS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/native/data/CUSA03627.hooks.json"
+    TLG_VKB_LUA_PATCHES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/native/data/CUSA03627.lua_patches.json")
+set_source_files_properties(native/native_builtin_data.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/native/data/CUSA03627.hooks.json;${CMAKE_CURRENT_SOURCE_DIR}/native/data/CUSA03627.lua_patches.json")
 target_compile_definitions(tlggpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
 target_compile_options(tlggpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers -fms-extensions)
 # Runtime symbols (runtime_memory_*, runtime_process_*) resolve against tlg-probe.

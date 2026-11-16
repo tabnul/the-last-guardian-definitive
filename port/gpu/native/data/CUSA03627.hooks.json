@@ -1,0 +1,1162 @@
+{
+  "ghidra_image_base": "0x1000000",
+  "hooks": [
+    {
+      "name": "DrawIndexedCommon",
+      "ghidra": "0x248e080",
+      "mode": "call",
+      "handler": "tag_indexed",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "DrawAuto",
+      "ghidra": "0x2488220",
+      "mode": "call",
+      "handler": "tag_auto",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AllocFrameGarlic",
+      "ghidra": "0x2476350",
+      "mode": "call",
+      "handler": "ring_discover",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "PrepareDraw",
+      "ghidra": "0x2488580",
+      "mode": "call",
+      "handler": "tag_prepare_draw",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "DrawIndexedIndirect",
+      "ghidra": "0x248e340",
+      "mode": "call",
+      "handler": "tag_indirect",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "Dispatch_0247e340",
+      "ghidra": "0x247e340",
+      "mode": "call",
+      "handler": "tag_dispatch",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "Dispatch_02479810",
+      "ghidra": "0x2479810",
+      "mode": "call",
+      "handler": "tag_dispatch_fenced",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "CsCopyBufferDwords",
+      "ghidra": "0x2480b70",
+      "mode": "call",
+      "handler": "tag_cs_copy",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AscDispatch",
+      "ghidra": "0x24711c0",
+      "mode": "call",
+      "handler": "tag_asc_dispatch",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AscDispatchFenced",
+      "ghidra": "0x246f5f0",
+      "mode": "call",
+      "handler": "tag_asc_dispatch",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "FillCopy",
+      "ghidra": "0x2485c00",
+      "mode": "call",
+      "handler": "tag_fill",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ModeSwitch",
+      "ghidra": "0x247b920",
+      "mode": "call",
+      "handler": "tag_mode_switch",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AscBarrier",
+      "ghidra": "0x24712d0",
+      "mode": "call",
+      "handler": "tag_asc_barrier",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "CopyResource",
+      "ghidra": "0x247eb00",
+      "mode": "call",
+      "handler": "tag_copy_resource",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ClearDSV",
+      "ghidra": "0x24860c0",
+      "mode": "call",
+      "handler": "note_clear_dsv",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ClearQuad",
+      "ghidra": "0x24879c0",
+      "mode": "call",
+      "handler": "measure_clear_quad",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "SdkQuad",
+      "ghidra": "0x24a79e0",
+      "mode": "count",
+      "expect": "554889e553504889"
+    },
+    {
+      "name": "ResTransition",
+      "ghidra": "0x2479db0",
+      "mode": "call",
+      "handler": "tag_track_resource",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "Fn247c680",
+      "ghidra": "0x247c680",
+      "mode": "call",
+      "handler": "measure_target_eliminate",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "Fn2487ce0",
+      "ghidra": "0x2487ce0",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ExCsDepthCopy",
+      "ghidra": "0x248e800",
+      "mode": "call",
+      "handler": "tag_excs_depth_copy",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "Fn247d4a0",
+      "ghidra": "0x247d4a0",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "HtileClear",
+      "ghidra": "0x2487e40",
+      "mode": "call",
+      "handler": "measure_htile_clear",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AscCsCopy",
+      "ghidra": "0x2473340",
+      "mode": "call",
+      "handler": "tag_asc_cs_copy",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AscResourceLimits",
+      "ghidra": "0x24720f0",
+      "mode": "call",
+      "handler": "skip_resource_limits",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "DeviceResourceLimits",
+      "ghidra": "0x2480ed0",
+      "mode": "call",
+      "handler": "skip_resource_limits",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AscBegin",
+      "ghidra": "0x246e8e0",
+      "mode": "call",
+      "handler": "tag_asc_begin",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AscCounterReadback",
+      "ghidra": "0x2471530",
+      "mode": "call",
+      "handler": "tag_asc_counter_readback",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AscCopyResource",
+      "ghidra": "0x24717c0",
+      "mode": "call",
+      "handler": "tag_asc_copy_resource",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "DispatchIndirect",
+      "ghidra": "0x248dec0",
+      "mode": "call",
+      "handler": "tag_dispatch_indirect",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "DeviceBegin",
+      "ghidra": "0x24826c0",
+      "mode": "call",
+      "handler": "tag_device_begin",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ResourceBufferCreate",
+      "ghidra": "0x246ddd0",
+      "mode": "call",
+      "handler": "resource_buffer_created",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ResourceTexture2D",
+      "ghidra": "0x2496f60",
+      "mode": "call",
+      "handler": "resource_texture_init_2d",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ResourceTexture1D",
+      "ghidra": "0x2477740",
+      "mode": "call",
+      "handler": "resource_texture_init_1d",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ResourceTexture3D",
+      "ghidra": "0x2476850",
+      "mode": "call",
+      "handler": "resource_texture_init_3d",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ResourceBufferDestroy",
+      "ghidra": "0x246db40",
+      "mode": "call",
+      "handler": "resource_buffer_destroyed",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ResourceBufferDelete",
+      "ghidra": "0x246dc80",
+      "mode": "call",
+      "handler": "resource_buffer_deleted",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "WaitComputeDone",
+      "ghidra": "0x247e510",
+      "mode": "call",
+      "handler": "skip_wait_compute_done",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "FenceEop",
+      "ghidra": "0x2480d60",
+      "mode": "call",
+      "handler": "tag_fence",
+      "expect": "554889e541565348"
+    },
+    {
+      "name": "AsyncMap",
+      "ghidra": "0x2473600",
+      "mode": "call",
+      "handler": "asyncmap_note",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "StagingWorker",
+      "ghidra": "0x1c4c570",
+      "mode": "call",
+      "handler": "staging_worker_window",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "Map",
+      "ghidra": "0x247f990",
+      "mode": "call",
+      "handler": "tag_map",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "DynTextureFill",
+      "ghidra": "0x1c98930",
+      "mode": "call",
+      "handler": "dyn_texture_fill",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AppMemoryInit",
+      "ghidra": "0x1dd39d0",
+      "mode": "call",
+      "handler": "garlic_pool_pro",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "JobRun",
+      "ghidra": "0x1e4baf0",
+      "mode": "call",
+      "handler": "span_job",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "SchedPoll",
+      "ghidra": "0x1e4b060",
+      "mode": "call",
+      "handler": "sched_poll",
+      "expect": "55534c8b4f584531"
+    },
+    {
+      "name": "SchedDispatch",
+      "ghidra": "0x1e4a6f0",
+      "mode": "call",
+      "handler": "sched_dispatch",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "CueSetConstantBuffer",
+      "ghidra": "0x249fe90",
+      "mode": "call",
+      "handler": "cue_set_constant_buffer",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "CueSetBuffer",
+      "ghidra": "0x249fa60",
+      "mode": "call",
+      "handler": "cue_set_buffer",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "CueSetTexture",
+      "ghidra": "0x249f630",
+      "mode": "call",
+      "handler": "cue_set_texture",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "CueSetUserTable",
+      "ghidra": "0x24a0a10",
+      "mode": "call",
+      "handler": "cue_set_user_table",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "PrimitiveBind",
+      "ghidra": "0x1c92f30",
+      "mode": "call",
+      "handler": "primitive_bind",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "SkinWrites",
+      "ghidra": "0x1c93730",
+      "mode": "call",
+      "handler": "skin_writes",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "LightWrites",
+      "ghidra": "0x1eeb610",
+      "mode": "call",
+      "handler": "light_writes",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "RecordingWrites",
+      "ghidra": "0x1c49540",
+      "mode": "call",
+      "handler": "recording_writes",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "DrawZPass",
+      "ghidra": "0x1c74a00",
+      "mode": "call",
+      "handler": "zpass_enter",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "InstanceGroupBind",
+      "ghidra": "0x1ee4e50",
+      "mode": "call",
+      "handler": "instance_group_bind",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "DrawGBufferPrimitives",
+      "ghidra": "0x1c76710",
+      "mode": "call",
+      "handler": "gbuffer_enter",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "DrawForwardPass",
+      "ghidra": "0x1c779a0",
+      "mode": "call",
+      "handler": "forward_enter",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "DrawDecalPass",
+      "ghidra": "0x1c71680",
+      "mode": "call",
+      "handler": "decal_enter",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "SceneSlotWrites",
+      "ghidra": "0x1e05330",
+      "mode": "call",
+      "handler": "scene_slot_writes",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ShaderClassCompile1",
+      "ghidra": "0x1c8e930",
+      "mode": "call",
+      "handler": "shader_class_compile_1",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ShaderClassCompile2",
+      "ghidra": "0x1c8ef20",
+      "mode": "call",
+      "handler": "shader_class_compile_2",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ShaderClassCompile3",
+      "ghidra": "0x1c8f500",
+      "mode": "call",
+      "handler": "shader_class_compile_3",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ShaderCacheLoad0",
+      "ghidra": "0x1c8fa50",
+      "mode": "call",
+      "handler": "shader_cache_load_0",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ShaderCacheLoad1",
+      "ghidra": "0x1c8fbc0",
+      "mode": "call",
+      "handler": "shader_cache_load_1",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "WetSim",
+      "ghidra": "0x199bf00",
+      "mode": "call",
+      "handler": "wet_sim",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "InstanceLoop",
+      "ghidra": "0x1ee5130",
+      "mode": "call",
+      "handler": "instance_loop",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "RenderDataCreate",
+      "ghidra": "0x1c45170",
+      "mode": "call",
+      "handler": "render_data_create_guard",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AllocGarlicMemory",
+      "ghidra": "0x2475f90",
+      "mode": "call",
+      "handler": "alloc_garlic_memory",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AllocOnionMemory",
+      "ghidra": "0x2476730",
+      "mode": "call",
+      "handler": "alloc_onion_memory",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "JobLoopTop",
+      "ghidra": "0x1c606f0",
+      "mode": "mid",
+      "handler": "job_loop_top",
+      "expect": "488b174963ce488d"
+    },
+    {
+      "name": "SiteTop0",
+      "ghidra": "0x1c49d20",
+      "mode": "mid",
+      "handler": "site_top_0",
+      "expect": "418b4750488b8c24"
+    },
+    {
+      "name": "SiteTop1",
+      "ghidra": "0x1c4a8a0",
+      "mode": "mid",
+      "handler": "site_top_1",
+      "expect": "418b47504c8bac24"
+    },
+    {
+      "name": "SiteTop2",
+      "ghidra": "0x1d7e240",
+      "mode": "mid",
+      "handler": "site_top_2",
+      "expect": "498b942410010000"
+    },
+    {
+      "name": "SiteTop3",
+      "ghidra": "0x1d7e3b0",
+      "mode": "mid",
+      "handler": "site_top_3",
+      "expect": "498b8f1001000048"
+    },
+    {
+      "name": "SiteTop4",
+      "ghidra": "0x1bcc264",
+      "mode": "mid",
+      "handler": "site_top_4",
+      "expect": "4c8ba3080100004d"
+    },
+    {
+      "name": "SiteTop5",
+      "ghidra": "0x1bcbdb8",
+      "mode": "mid",
+      "handler": "site_top_5",
+      "expect": "4d8bac2408010000"
+    },
+    {
+      "name": "SiteTop6",
+      "ghidra": "0x1bcba34",
+      "mode": "mid",
+      "handler": "site_top_6",
+      "expect": "4c8bbb080100004d"
+    },
+    {
+      "name": "SiteTop7",
+      "ghidra": "0x1d7e0a1",
+      "mode": "mid",
+      "handler": "site_top_7",
+      "expect": "498b8424b0000000"
+    },
+    {
+      "name": "SiteTop8",
+      "ghidra": "0x1c4b590",
+      "mode": "mid",
+      "handler": "site_top_8",
+      "expect": "418b4d504c8bb424"
+    },
+    {
+      "name": "SiteTop9",
+      "ghidra": "0x1c4bd40",
+      "mode": "mid",
+      "handler": "site_top_9",
+      "expect": "418b442450418987"
+    },
+    {
+      "name": "SiteTop10",
+      "ghidra": "0x1c6d360",
+      "mode": "mid",
+      "handler": "site_top_10",
+      "expect": "488b9c24d8000000"
+    },
+    {
+      "name": "SiteTop11",
+      "ghidra": "0x1c6cefc",
+      "mode": "mid",
+      "handler": "site_top_11",
+      "expect": "488b842480000000"
+    },
+    {
+      "name": "SiteTop12",
+      "ghidra": "0x1c6d944",
+      "mode": "mid",
+      "handler": "site_top_12",
+      "expect": "c5f8288424900000"
+    },
+    {
+      "name": "SiteTop13",
+      "ghidra": "0x1c6d199",
+      "mode": "mid",
+      "handler": "site_top_13",
+      "expect": "488b8c24d0000000"
+    },
+    {
+      "name": "SiteTop14",
+      "ghidra": "0x1c6549f",
+      "mode": "mid",
+      "handler": "site_top_14",
+      "expect": "498b865014000048"
+    },
+    {
+      "name": "SiteTop15",
+      "ghidra": "0x1c65997",
+      "mode": "mid",
+      "handler": "site_top_15",
+      "expect": "498b9e601400004d"
+    },
+    {
+      "name": "SiteTop16",
+      "ghidra": "0x1c67e70",
+      "mode": "mid",
+      "handler": "site_top_16",
+      "expect": "498b4550488b4b40"
+    },
+    {
+      "name": "SiteTop17",
+      "ghidra": "0x1c98ee3",
+      "mode": "mid",
+      "handler": "site_top_17",
+      "expect": "488b835001000048"
+    },
+    {
+      "name": "SiteTop18",
+      "ghidra": "0x1c44e56",
+      "mode": "mid",
+      "handler": "site_top_18",
+      "expect": "498b857041000048"
+    },
+    {
+      "name": "SiteTop19",
+      "ghidra": "0x1cf1e8a",
+      "mode": "mid",
+      "handler": "site_top_19",
+      "expect": "498b5618498b0649"
+    },
+    {
+      "name": "SiteTop20",
+      "ghidra": "0x1c640ca",
+      "mode": "mid",
+      "handler": "site_top_20",
+      "expect": "4d8b7f504c8da424"
+    },
+    {
+      "name": "SiteTop21",
+      "ghidra": "0x1c64484",
+      "mode": "mid",
+      "handler": "site_top_21",
+      "expect": "488b03498b774031"
+    },
+    {
+      "name": "SiteTop22",
+      "ghidra": "0x1c6e0f0",
+      "mode": "mid",
+      "handler": "site_top_22",
+      "expect": "498b0683bc24bc00"
+    },
+    {
+      "name": "SiteTop23",
+      "ghidra": "0x1c6018a",
+      "mode": "mid",
+      "handler": "site_top_23",
+      "expect": "488b9c24c8030000"
+    },
+    {
+      "name": "SiteTop24",
+      "ghidra": "0x1c636dc",
+      "mode": "mid",
+      "handler": "site_top_24",
+      "expect": "4c8ba424b8000000"
+    },
+    {
+      "name": "SiteTop25",
+      "ghidra": "0x1bcbc29",
+      "mode": "mid",
+      "handler": "site_top_25",
+      "expect": "4c8bbb080100004d"
+    },
+    {
+      "name": "SiteTop26",
+      "ghidra": "0x1bcc075",
+      "mode": "mid",
+      "handler": "site_top_26",
+      "expect": "498b8424a8010000"
+    },
+    {
+      "name": "SiteTop27",
+      "ghidra": "0x1ee4cfa",
+      "mode": "mid",
+      "handler": "site_top_27",
+      "expect": "498bb08000000048"
+    },
+    {
+      "name": "SiteTop28",
+      "ghidra": "0x1c62baf",
+      "mode": "mid",
+      "handler": "site_top_28",
+      "expect": "498b85d8020000c5"
+    },
+    {
+      "name": "SceneSlotWritesMatrices",
+      "ghidra": "0x1e07330",
+      "mode": "call",
+      "handler": "scene_slot_writes_matrices",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "TextureUpdateSubresource",
+      "ghidra": "0x2480f90",
+      "mode": "call",
+      "handler": "texture_update_subresource",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "ComputeUpdateSubresource",
+      "ghidra": "0x24721a0",
+      "mode": "call",
+      "handler": "compute_update_subresource",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_CreateBlendState",
+      "ghidra": "0x246d7f0",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_ComputeContextInit",
+      "ghidra": "0x24728d0",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_ComputeQueueSubmit",
+      "ghidra": "0x2472ed0",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_StallUntilSignaled",
+      "ghidra": "0x2473180",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_CreateEmbeddedCsShader",
+      "ghidra": "0x2473890",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_CreateDepthStencilState",
+      "ghidra": "0x2474e00",
+      "mode": "count",
+      "expect": "554889e541565348"
+    },
+    {
+      "name": "NativeViewDsv",
+      "ghidra": "0x2474fb0",
+      "mode": "call",
+      "expect": "554889e541574156",
+      "handler": "native_view_dsv"
+    },
+    {
+      "name": "B0_CreateTexture2D",
+      "ghidra": "0x2477370",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_Create_2478250",
+      "ghidra": "0x2478250",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_UnknownDtor",
+      "ghidra": "0x24785d0",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "NativeDelayDelete",
+      "ghidra": "0x2478860",
+      "mode": "call",
+      "expect": "554889e541574156",
+      "handler": "native_delay_delete"
+    },
+    {
+      "name": "SceneGroupAdvance",
+      "ghidra": "0x1d18266",
+      "mode": "mid",
+      "expect": "480fafca48c1e921",
+      "handler": "native_scene_group_advance"
+    },
+    {
+      "name": "GomallocAlloc",
+      "ghidra": "0x248fb10",
+      "mode": "call",
+      "expect": "554889e5415741564155415453504989",
+      "handler": "native_gomalloc_alloc"
+    },
+    {
+      "name": "MaterialPressure",
+      "ghidra": "0x1f7e520",
+      "mode": "call",
+      "expect": "554889e54157415641554154534881ec",
+      "handler": "native_material_pressure"
+    },
+    {
+      "name": "MaterialMove",
+      "ghidra": "0x1f7e850",
+      "mode": "call",
+      "expect": "554889e54157415641554154534881ec",
+      "handler": "native_material_move"
+    },
+    {
+      "name": "GomallocStats",
+      "ghidra": "0x246d6e0",
+      "mode": "call",
+      "expect": "554889e5415741564154534989fc4989",
+      "handler": "native_gomalloc_stats"
+    },
+    {
+      "name": "GomallocFree",
+      "ghidra": "0x248fd20",
+      "mode": "call",
+      "expect": "554889e5415741564154534989ff4889",
+      "handler": "native_gomalloc_free"
+    },
+    {
+      "name": "B0_CopySubresource_247e860",
+      "ghidra": "0x247e860",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_CueInit",
+      "ghidra": "0x2481830",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_DrawIndexedInstanced",
+      "ghidra": "0x248e1d0",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_SetIndexBuffer",
+      "ghidra": "0x2488430",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_CreatePixelShader",
+      "ghidra": "0x2490440",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_CreateRasterizerState",
+      "ghidra": "0x2490e70",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_RTV_2491080",
+      "ghidra": "0x2491080",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "NativeViewRtv",
+      "ghidra": "0x2491370",
+      "mode": "call",
+      "expect": "554889e541574156",
+      "handler": "native_view_rtv"
+    },
+    {
+      "name": "B0_CreateSamplerState",
+      "ghidra": "0x2492e40",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "NativeViewSrv",
+      "ghidra": "0x2493620",
+      "mode": "call",
+      "expect": "554889e541574156",
+      "handler": "native_view_srv"
+    },
+    {
+      "name": "B0_EopSubmitWait",
+      "ghidra": "0x24944c0",
+      "mode": "count",
+      "expect": "554889e541565348"
+    },
+    {
+      "name": "B0_SwapChainBeginFrame",
+      "ghidra": "0x2495480",
+      "mode": "call",
+      "expect": "554889e541574156",
+      "handler": "native_begin_frame_tick"
+    },
+    {
+      "name": "B0_JsTexCreateResource",
+      "ghidra": "0x2495f20",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "NativeViewUav",
+      "ghidra": "0x24999e0",
+      "mode": "call",
+      "expect": "554889e541574156",
+      "handler": "native_view_uav"
+    },
+    {
+      "name": "B0_Create_249b400",
+      "ghidra": "0x249b400",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_ClearRenderTargetView",
+      "ghidra": "0x2483380",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "B0_UpdateWrapper_2481220",
+      "ghidra": "0x2481220",
+      "mode": "count",
+      "expect": "89d0488d0d87f515"
+    },
+    {
+      "name": "B0_TextureDestructor",
+      "ghidra": "0x2496e40",
+      "mode": "count",
+      "expect": "554889e541565348"
+    },
+    {
+      "name": "B11ClearRtv",
+      "ghidra": "0x2483386",
+      "mode": "mid",
+      "handler": "b11_clear_rtv",
+      "expect": "4156415541545348"
+    },
+    {
+      "name": "B11ClearDsv",
+      "ghidra": "0x24860c6",
+      "mode": "mid",
+      "handler": "b11_clear_dsv",
+      "expect": "4156415541545348"
+    },
+    {
+      "name": "AscWaitFence",
+      "ghidra": "0x2472050",
+      "mode": "call",
+      "handler": "tag_asc_wait",
+      "expect": "554889e541565348"
+    },
+    {
+      "name": "RenderFrameFenceA",
+      "ghidra": "0x1c57362",
+      "mode": "mid",
+      "handler": "render_frame_fence_a",
+      "expect": "4c89ff4c89e641ff"
+    },
+    {
+      "name": "RenderFrameFenceB",
+      "ghidra": "0x1c577d3",
+      "mode": "mid",
+      "handler": "render_frame_fence_b",
+      "expect": "4c89ef4c89fe41ff"
+    },
+    {
+      "name": "FlipFrameFence",
+      "ghidra": "0x1c4e08b",
+      "mode": "mid",
+      "handler": "flip_frame_fence",
+      "expect": "488383d047000018"
+    },
+    {
+      "name": "FlipInterrupt",
+      "ghidra": "0x1c4e543",
+      "mode": "mid",
+      "handler": "flip_interrupt",
+      "expect": "498b85d047000048"
+    },
+    {
+      "name": "ComputeSubmitRelease",
+      "ghidra": "0x2472f3e",
+      "mode": "mid",
+      "handler": "compute_submit_release",
+      "expect": "48ba024905c02f86"
+    },
+    {
+      "name": "ComputeSubmitEnd",
+      "ghidra": "0x2473091",
+      "mode": "mid",
+      "handler": "compute_submit_end",
+      "expect": "488b8be01c000048"
+    },
+    {
+      "name": "AscFencedRelease",
+      "ghidra": "0x246f767",
+      "mode": "mid",
+      "handler": "compute_submit_release",
+      "expect": "48ba024905c02f86"
+    },
+    {
+      "name": "AscFencedEnd",
+      "ghidra": "0x246f8ac",
+      "mode": "mid",
+      "handler": "asc_fenced_end",
+      "expect": "440faf7dc4488b05"
+    },
+    {
+      "name": "FenceUnitRelease",
+      "ghidra": "0x24713bb",
+      "mode": "mid",
+      "handler": "fence_unit_release",
+      "expect": "48ba024905c02f86"
+    },
+    {
+      "name": "FenceUnitEnd",
+      "ghidra": "0x24714f8",
+      "mode": "mid",
+      "handler": "asc_fenced_end",
+      "expect": "498b07483b45d875"
+    },
+    {
+      "name": "FenceSignalRelease",
+      "ghidra": "0x247200f",
+      "mode": "mid",
+      "handler": "fence_signal_release",
+      "expect": "48ba024905c02f86"
+    },
+    {
+      "name": "InlineFenceA",
+      "ghidra": "0x1c5fdbf",
+      "mode": "mid",
+      "handler": "inline_fence_a",
+      "expect": "488383d047000018"
+    },
+    {
+      "name": "InlineFenceB",
+      "ghidra": "0x1c626ce",
+      "mode": "mid",
+      "handler": "inline_fence_b",
+      "expect": "488383d047000018"
+    },
+    {
+      "name": "InlineFenceC",
+      "ghidra": "0x1c64a1a",
+      "mode": "mid",
+      "handler": "inline_fence_c",
+      "expect": "488383d047000018"
+    },
+    {
+      "name": "InlineWaitA",
+      "ghidra": "0x1c5d8a6",
+      "mode": "mid",
+      "handler": "inline_wait_r14_10",
+      "expect": "498386d04700001c"
+    },
+    {
+      "name": "InlineWaitB",
+      "ghidra": "0x1c5da01",
+      "mode": "mid",
+      "handler": "inline_wait_r14_10",
+      "expect": "498386d04700001c"
+    },
+    {
+      "name": "InlineWaitC",
+      "ghidra": "0x1c64678",
+      "mode": "mid",
+      "handler": "inline_wait_r14_10",
+      "expect": "498386d04700001c"
+    },
+    {
+      "name": "InlineWaitD",
+      "ghidra": "0x1c66a55",
+      "mode": "mid",
+      "handler": "inline_wait_r14_10",
+      "expect": "498386d04700001c"
+    },
+    {
+      "name": "InlineWaitE",
+      "ghidra": "0x1c69423",
+      "mode": "mid",
+      "handler": "inline_wait_r14_10",
+      "expect": "498386d04700001c"
+    },
+    {
+      "name": "DmaCopy",
+      "ghidra": "0x24a5e20",
+      "mode": "call",
+      "handler": "tag_dma_copy",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "GameTimeEnvPhase",
+      "ghidra": "0x1e0f071",
+      "mode": "mid",
+      "handler": "env_phase_dt",
+      "expect": "c4e3792180d80000"
+    },
+    {
+      "name": "GameTimeParticleA",
+      "ghidra": "0x1bcb5d1",
+      "mode": "mid",
+      "handler": "particle_dt_a",
+      "expect": "c5e857d2c5fa5983"
+    },
+    {
+      "name": "GameTimeParticleB",
+      "ghidra": "0x1bcbf34",
+      "mode": "mid",
+      "handler": "particle_dt_b",
+      "expect": "c5f057c9c4c17a59"
+    },
+    {
+      "name": "GameTimeParticleC",
+      "ghidra": "0x1bcb790",
+      "mode": "mid",
+      "handler": "particle_dt_c",
+      "expect": "c4413857c0c5f828"
+    },
+    {
+      "name": "LuaDumpLoadBuffer",
+      "ghidra": "0x1e7e430",
+      "mode": "mid",
+      "handler": "lua_dump",
+      "expect": "554889e54157"
+    },
+    {
+      "name": "VkbOcclusionBegin",
+      "ghidra": "0x2481330",
+      "mode": "call",
+      "expect": "554889e54157415653504889fb4989f7",
+      "handler": "vkb_occlusion_begin"
+    },
+    {
+      "name": "VkbOcclusionEnd",
+      "ghidra": "0x24814a0",
+      "mode": "call",
+      "expect": "554889e54157415653504889fb4989f7",
+      "handler": "vkb_occlusion_end"
+    }
+  ]
+}

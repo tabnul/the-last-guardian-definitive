@@ -2200,10 +2200,28 @@ void BackgroundLoading() {
 
 } // namespace
 
+static bool InitImGui(const Device& device, vk::Format format, u32 image_count);
+
 void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) {
+    const Device device{.api_version = instance.ApiVersion(),
+                        .instance = instance.GetInstance(),
+                        .physical_device = instance.GetPhysicalDevice(),
+                        .device = instance.GetDevice(),
+                        .queue_family = instance.GetGraphicsQueueFamilyIndex(),
+                        .queue = instance.GetGraphicsQueue()};
+    if (InitImGui(device, format, image_count)) {
+        overlay_instance = &instance;
+    }
+}
+
+void Init(const Device& device, vk::Format format, u32 image_count) { // VKB
+    InitImGui(device, format, image_count);
+}
+
+static bool InitImGui(const Device& device, vk::Format format, u32 image_count) {
     std::scoped_lock lock{imgui_mutex};
     if (initialized) {
-        return;
+        return false;
     }
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -2251,9 +2269,9 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
         }
     }
 
-    const vk::Instance vk_instance = instance.GetInstance();
+    const vk::Instance vk_instance = device.instance;
     ImGui_ImplVulkan_LoadFunctions(
-        instance.ApiVersion(),
+        device.api_version,
         [](const char* name, void* user) {
             return VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr(
                 *static_cast<const vk::Instance*>(user), name);
@@ -2262,12 +2280,12 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
 
     const VkFormat color_format = static_cast<VkFormat>(format);
     ImGui_ImplVulkan_InitInfo info{};
-    info.ApiVersion = instance.ApiVersion();
+    info.ApiVersion = device.api_version;
     info.Instance = vk_instance;
-    info.PhysicalDevice = instance.GetPhysicalDevice();
-    info.Device = instance.GetDevice();
-    info.QueueFamily = instance.GetGraphicsQueueFamilyIndex();
-    info.Queue = instance.GetGraphicsQueue();
+    info.PhysicalDevice = device.physical_device;
+    info.Device = device.device;
+    info.QueueFamily = device.queue_family;
+    info.Queue = device.queue;
     // Font atlas plus the save list pictures (up to 33, and a closed list's until freed).
     info.DescriptorPoolSize = 128;
     info.MinImageCount = std::max(image_count, 2u);
@@ -2281,11 +2299,11 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
     if (!ImGui_ImplVulkan_Init(&info)) {
         std::printf("Overlay: ImGui Vulkan backend init failed\n");
         ImGui::DestroyContext();
-        return;
+        return false;
     }
-    overlay_instance = &instance;
     initialized = true;
     std::printf("Overlay: menu ready (Insert or R3+L2)\n");
+    return true;
 }
 
 void UpdateTextInput(SDL_Window* window) {

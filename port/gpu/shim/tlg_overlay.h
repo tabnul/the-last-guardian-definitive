@@ -23,6 +23,18 @@ namespace TlgOverlay {
 /// Present thread, once: the ImGui context and its Vulkan backend.
 void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count);
 
+/// VKB: the device as plain handles, for a presenter that has no Vulkan::Instance (the engine-to-Vulkan backend, TLG_VKB=1). The performance
+/// items that read the device (GPU, VRAM) stay empty under it.
+struct Device {
+    u32 api_version{};
+    vk::Instance instance{};
+    vk::PhysicalDevice physical_device{};
+    vk::Device device{};
+    u32 queue_family{};
+    vk::Queue queue{};
+};
+void Init(const Device& device, vk::Format format, u32 image_count);
+
 /// Window thread, for every SDL event: true when the menu consumed it.
 bool HandleEvent(const SDL_Event& event);
 /// Turns SDL text input on while the menu edits a value (window thread, once per poll).

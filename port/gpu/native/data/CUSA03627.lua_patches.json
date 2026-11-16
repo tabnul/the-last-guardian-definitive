@@ -1,0 +1,250 @@
+{
+ "rules": [
+  {
+   "chunk": "system_scripts_utils.lua",
+   "find": "function Tick(dt, edt)",
+   "replace": "FRAME30 = 1 F30_PREV = 1 function F30_Factor(dt, edt) local f = (edt or 0) * 30 if f > 4 then f = 4 elseif not (f > 0) then f = 1 end return f end function F30Cross(x, n) return x >= n and x - F30_PREV < n end function F30CrossNow(x, n) return x >= n and x - FRAME30 < n end function F30Every(x, n) return math.floor(x / n) ~= math.floor((x - FRAME30) / n) end function Tick(dt, edt) F30_PREV = FRAME30 FRAME30 = F30_Factor(dt, edt)",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_ai2_condor_condorcommonsurface.lua",
+   "find": "work.RelaxToSleepTimer = work.RelaxToSleepTimer + 1",
+   "replace": "work.RelaxToSleepTimer = work.RelaxToSleepTimer + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_ai2_condor_stage_s08_largetower.lua",
+   "find": "work.LT_LookAroundForAricoTimer = work.LT_LookAroundForAricoTimer + 1",
+   "replace": "work.LT_LookAroundForAricoTimer = work.LT_LookAroundForAricoTimer + FRAME30",
+   "count": 2
+  },
+  {
+   "chunk": "game_scripts_ai2_condor_stage_s09_fallingbridge2.lua",
+   "find": "work.FB2_LookAtHeadlessTimer = work.FB2_LookAtHeadlessTimer + 1",
+   "replace": "work.FB2_LookAtHeadlessTimer = work.FB2_LookAtHeadlessTimer + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_ai2_condor_stage_s12_thenest.lua",
+   "find": "work.TN_SumKunKunTimer = work.TN_SumKunKunTimer + 1",
+   "replace": "work.TN_SumKunKunTimer = work.TN_SumKunKunTimer + FRAME30",
+   "count": 2
+  },
+  {
+   "chunk": "game_scripts_ai2_condor_stage_s15_secondflight.lua",
+   "find": "work.SF_LongJumpTimerThirty = work.SF_LongJumpTimerThirty + 1",
+   "replace": "work.SF_LongJumpTimerThirty = work.SF_LongJumpTimerThirty + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_ai2_condor_stage_s99_extra.lua",
+   "find": "exDebug.intrSleepFrontTime=exDebug.intrSleepFrontTime+1",
+   "replace": "exDebug.intrSleepFrontTime=exDebug.intrSleepFrontTime + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_common_missionscript.lua",
+   "find": "v.wait_frame = v.wait_frame - 1",
+   "replace": "v.wait_frame = v.wait_frame - FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_common_missionscript.lua",
+   "find": "if v.wait_frame == 0 then",
+   "replace": "if v.wait_frame <= 0 then",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_common_missionscript.lua",
+   "find": "v.frame = v.frame - 1",
+   "replace": "v.frame = v.frame - FRAME30",
+   "count": 2
+  },
+  {
+   "chunk": "game_scripts_common_missionscript.lua",
+   "find": "if v.frame == 0 then",
+   "replace": "if v.frame <= 0 then",
+   "count": 2
+  },
+  {
+   "chunk": "game_scripts_stages_common_extension_bgm_bgm.lua",
+   "find": "v.frame = v.frame - 1",
+   "replace": "v.frame = v.frame - FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_common_soundsystem.lua",
+   "find": "SoundSystem_State.drawsword_soldier_delay = SoundSystem_State.drawsword_soldier_delay + 1",
+   "replace": "SoundSystem_State.drawsword_soldier_delay = SoundSystem_State.drawsword_soldier_delay + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_common_soundsystem.lua",
+   "find": "SoundSystem_State.tail.emitter_timer = SoundSystem_State.tail.emitter_timer + 1",
+   "replace": "SoundSystem_State.tail.emitter_timer = SoundSystem_State.tail.emitter_timer + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_common_soundsystem.lua",
+   "find": "self.reset_bgm = self.reset_bgm + 1",
+   "replace": "self.reset_bgm = self.reset_bgm + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_common_asc_condor_common.lua",
+   "find": "l_ms.elapse_CCRO_frame = l_ms.elapse_CCRO_frame + 1",
+   "replace": "l_ms.elapse_CCRO_frame = l_ms.elapse_CCRO_frame + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_common_extension_statemachine_sm_callbacks_sound.lua",
+   "find": "state.snd_params_elevator_01.frames = state.snd_params_elevator_01.frames + 1",
+   "replace": "state.snd_params_elevator_01.frames = state.snd_params_elevator_01.frames + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_common_extension_statemachine_sm_callbacks_unique.lua",
+   "find": "state.frameCounter =   state.frameCounter + 1",
+   "replace": "state.frameCounter =   state.frameCounter + FRAME30",
+   "count": 2
+  },
+  {
+   "chunk": "game_scripts_stages_common_extension_statemachine_sm_callbacks_unique.lua",
+   "find": "state.frameCounter % frameIntervalForVelocity  == 0",
+   "replace": "F30Every(state.frameCounter, frameIntervalForVelocity)",
+   "count": 10
+  },
+  {
+   "chunk": "game_scripts_stages_s06_fallingbridge_missionscript.lua",
+   "find": "target.animWork = target.animWork + 1",
+   "replace": "target.animWork = target.animWork + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s06_fallingbridge_missionscript.lua",
+   "find": "target.delayWork = target.delayWork + 1",
+   "replace": "target.delayWork = target.delayWork + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s11_columncorridor_missionscript.lua",
+   "find": "state.HintCountUp = state.HintCountUp + 1",
+   "replace": "state.HintCountUp = state.HintCountUp + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s11_columncorridor_missionscript.lua",
+   "find": "state.marker_timer_01_01 = state.marker_timer_01_01 - 1",
+   "replace": "state.marker_timer_01_01 = state.marker_timer_01_01 - FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s11_columncorridor_missionscript.lua",
+   "find": "state.cc_TROPHY_Riding_Check = state.cc_TROPHY_Riding_Check + 1",
+   "replace": "state.cc_TROPHY_Riding_Check = state.cc_TROPHY_Riding_Check + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s13_firstflight_missionscript.lua",
+   "find": "state.FF_050_Inst_Timer = state.FF_050_Inst_Timer + 1",
+   "replace": "state.FF_050_Inst_Timer = state.FF_050_Inst_Timer + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s13_firstflight_missionscript.lua",
+   "find": "state.FF_055_Inst_Timer = state.FF_055_Inst_Timer + 1",
+   "replace": "state.FF_055_Inst_Timer = state.FF_055_Inst_Timer + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s13_firstflight_missionscript.lua",
+   "find": "state.ff_085_setupTime = state.ff_085_setupTime + 1",
+   "replace": "state.ff_085_setupTime = state.ff_085_setupTime + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s13_firstflight_missionscript.lua",
+   "find": "state.FF_AutoJump_Count = state.FF_AutoJump_Count + 1",
+   "replace": "state.FF_AutoJump_Count = state.FF_AutoJump_Count + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s13_firstflight_missionscript.lua",
+   "find": "state.SUB_default_Timer = state.SUB_default_Timer + 1",
+   "replace": "state.SUB_default_Timer = state.SUB_default_Timer + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s13_firstflight_missionscript.lua",
+   "find": "state.tbl_bridge[i].animWaitFrame = state.tbl_bridge[i].animWaitFrame - 1",
+   "replace": "state.tbl_bridge[i].animWaitFrame = state.tbl_bridge[i].animWaitFrame - FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s13_firstflight_missionscript.lua",
+   "find": "state.tbl_bridge[i].animDelayTime = state.tbl_bridge[i].animDelayTime - 1",
+   "replace": "state.tbl_bridge[i].animDelayTime = state.tbl_bridge[i].animDelayTime - FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s16_soldiersden_missionscript.lua",
+   "find": "state.sub_sd_ev01_pulseTimer = state.sub_sd_ev01_pulseTimer  + 1",
+   "replace": "state.sub_sd_ev01_pulseTimer = state.sub_sd_ev01_pulseTimer + FRAME30",
+   "count": 2
+  },
+  {
+   "chunk": "game_scripts_stages_s16_soldiersden_missionscript.lua",
+   "find": "if state.sub_sd_ev01_pulseTimer == 1 then",
+   "replace": "if F30CrossNow(state.sub_sd_ev01_pulseTimer, 1) then",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s16_soldiersden_missionscript.lua",
+   "find": "state.SD_ClosingTimer = state.SD_ClosingTimer + 1",
+   "replace": "state.SD_ClosingTimer = state.SD_ClosingTimer + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s16_soldiersden_missionscript.lua",
+   "find": "state.SD_sub_sEV_pulse_waitTime = state.SD_sub_sEV_pulse_waitTime + 1",
+   "replace": "state.SD_sub_sEV_pulse_waitTime = state.SD_sub_sEV_pulse_waitTime + FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s16_soldiersden_missionscript.lua",
+   "find": "state.checkTime = state.checkTime - 1",
+   "replace": "state.checkTime = state.checkTime - FRAME30",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s16_soldiersden_stage_common.lua",
+   "find": "pulsetime = pulsetime + 1",
+   "replace": "pulsetime = pulsetime + FRAME30",
+   "count": 2
+  },
+  {
+   "chunk": "game_scripts_stages_s16_soldiersden_stage_common.lua",
+   "find": "if pulsetime == need_time then",
+   "replace": "if F30Cross(pulsetime, need_time) then",
+   "count": 2
+  },
+  {
+   "chunk": "game_scripts_stages_s16_soldiersden_stage_common.lua",
+   "find": "elseif pulsetime == 20 then",
+   "replace": "elseif F30Cross(pulsetime, 20) then",
+   "count": 1
+  },
+  {
+   "chunk": "game_scripts_stages_s16_soldiersden_stage_common.lua",
+   "find": "pulseTimer = pulseTimer  + 1",
+   "replace": "pulseTimer = pulseTimer + FRAME30",
+   "count": 2
+  },
+  {
+   "chunk": "game_scripts_stages_s16_soldiersden_stage_common.lua",
+   "find": "elseif pulseTimer == 1 then",
+   "replace": "elseif F30CrossNow(pulseTimer, 1) then",
+   "count": 1
+  }
+ ]
+}

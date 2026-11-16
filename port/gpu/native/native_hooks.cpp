@@ -21,6 +21,7 @@
 #include "common/decoder.h"
 #include "common/logging/log.h"
 #include "common/memory_patcher.h"
+#include "native/native_builtin_data.h"
 #include "common/path_util.h"
 #include "native/shadps4/core/cpu_patches.h"
 #include "native/native_debug_server.h"
@@ -637,18 +638,21 @@ void InstallForEboot(VAddr base, u64 image_size) {
     NativeDraw::SetImageBase(base);
     stub_area_base = base;
     InstallSpans(base, image_size);
-    const auto path = ConfigPath();
-    if (!std::filesystem::exists(path)) {
+    // M3 (5): the user's custom_configs file, else the built-in one (native/data)
+    std::string source;
+    const std::string text = Core::BuiltinData::Read(MemoryPatcher::g_game_serial, ".hooks.json", source);
+    if (text.empty()) {
+        TLG_LOG(HOOK, Error, "guest hooks: no {}.hooks.json (user folder or built in): the backend gets no engine calls", MemoryPatcher::g_game_serial);
         return;
     }
     nlohmann::json config;
     try {
-        std::ifstream in(path);
-        in >> config;
+        config = nlohmann::json::parse(text);
     } catch (const std::exception& e) {
-        TLG_LOG(HOOK, Error, "guest hooks: cannot read {}: {}", path.string(), e.what());
+        TLG_LOG(HOOK, Error, "guest hooks: cannot read {}: {}", source, e.what());
         return;
     }
+    TLG_LOG(HOOK, Info, "guest hooks: {}", source);
 
     try {
         const u64 ghidra_base = config.contains("ghidra_image_base")
@@ -777,9 +781,9 @@ void InstallForEboot(VAddr base, u64 image_size) {
                 ++failed;
             }
         }
-        LOG_INFO(Core, "guest hooks: {} installed, {} failed ({})", installed, failed, path.string());
+        LOG_INFO(Core, "guest hooks: {} installed, {} failed ({})", installed, failed, source);
     } catch (const std::exception& e) {
-        TLG_LOG(HOOK, Error, "guest hooks: bad configuration {}: {}", path.string(), e.what());
+        TLG_LOG(HOOK, Error, "guest hooks: bad configuration {}: {}", source, e.what());
     }
 
     if (hooks.empty()) {

@@ -2396,8 +2396,18 @@ void CounterSample(std::vector<u64>& values) {
 // the ledger of announced writes. A page with no announcement in this window or the one before is a silent write (a writer nobody hooked). The raster thread's reads
 // are then checked against those pages: a read for submission S of a page silently written for a later submission is a late read the ledger cannot see.
 // Page granular: a silent write elsewhere in the page counts too (samples show the ledger's view of the page to tell).
-extern "C" uint64_t runtime_memory_census_harvest(void (*page)(uintptr_t address, void* context), void* context, uint64_t* gpu_side_resets);
-extern "C" void runtime_memory_census_kernel(uint64_t* ns, uint64_t* calls, uint64_t* max_ns);
+// merge note 5: the old runtime's write watch census (runtime_memory_census_*) is not in the fork's runtime; the silent census has no pages
+static uint64_t runtime_memory_census_harvest(void (*)(uintptr_t, void*), void*, uint64_t* gpu_side_resets) {
+    if (gpu_side_resets) {
+        *gpu_side_resets = 0;
+    }
+    return 0;
+}
+static void runtime_memory_census_kernel(uint64_t* ns, uint64_t* calls, uint64_t* max_ns) {
+    *ns = 0;
+    *calls = 0;
+    *max_ns = 0;
+}
 
 namespace {
 bool SilentCensusOn() noexcept {

@@ -18,10 +18,11 @@
 #include "native/native_hook_ring.h"
 #include "native/native_vkb.h"
 #include "native/native_hook_diff.h"
-nlohmann::json TlgPurePlanReport(); // note 182 (vk_pipeline_cache.cpp)
-nlohmann::json TlgPublishedPlanReport(); // note 184 (vk_rasterizer_engine.cpp)
-nlohmann::json TlgHookPlanSamples(); // note 185 (vk_rasterizer_engine.cpp)
-nlohmann::json TlgCrossWaitReport(); // note 189 (vk_runtime.cpp)
+// merge note 5: the old renderer's reports (notes 182, 184, 185, 189: vk_pipeline_cache, vk_rasterizer_engine, vk_runtime) are not in the fork
+static nlohmann::json TlgPurePlanReport() { return nullptr; }
+static nlohmann::json TlgPublishedPlanReport() { return nullptr; }
+static nlohmann::json TlgHookPlanSamples() { return nullptr; }
+static nlohmann::json TlgCrossWaitReport() { return nullptr; }
 #include "native/native_ring_mirror.h"
 #include "native/native_updates.h"
 #include "native/native_untracked_ring.h"

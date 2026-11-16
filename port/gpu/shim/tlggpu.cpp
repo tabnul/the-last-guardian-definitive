@@ -28,6 +28,12 @@
 #include "common/rdtsc.h"
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/libs.h"
+#include "native/native_vkb.h" // VKB
+#include "native/native_hooks.h" // VKB
+#include "native/native_debug_server.h" // VKB
+#include "native/shadps4/core/guest_heap.h" // VKB
+#include "native/shadps4/core/libraries/gnmdriver/gnmdriver.h" // VKB
+#include "native/shadps4/core/libraries/videoout/video_out.h" // VKB
 #include "core/memory.h"
 #include "core/signals.h"
 #include "sdl_window.h"
@@ -294,6 +300,14 @@ extern "C" int tlggpu_init(const TlgGpuConfig* config) {
     if (config->user_dir) setenv("TLG_GPU_USER_DIR", config->user_dir, 0);
 #endif
     Core::Emulator::FillElfInfo(*config);
+    if (Core::Vkb::On()) {
+        // VKB: the runtime maps the game's memory from 64 GiB (runtime_memory.c USER_MIN); the backend's heap checks (native/shadps4/core/guest_heap.h) use it
+        Core::g_guest_heap = {0x1000000000ull, 0x10000000000ull, 0x1000000000ull, 0x10000000000ull};
+    }
+    // VKB: the debug server (development; TLG_DEBUG_SERVER_PORT, JSON endpoints, native/native_debug_server.cpp)
+    if (const char* port = std::getenv("TLG_DEBUG_SERVER_PORT"); port && std::atoi(port) > 0) {
+        Core::DebugServer::Start(static_cast<u16>(std::atoi(port)));
+    }
     const std::string title = config->title ? config->title : "The Last Guardian";
     const s32 width = config->width, height = config->height;
     g_window_thread = std::thread([title, width, height] {
@@ -320,6 +334,13 @@ extern "C" int tlggpu_init(const TlgGpuConfig* config) {
         g_window_cv.wait(lock, [] { return g_window_ready; });
     }
     Core::Loader::SymbolsResolver resolver;
+    if (Core::Vkb::On()) {
+        // VKB: the engine-to-Vulkan backend (TLG_VKB=1, merge plan M3 (4)): our Gnm and VideoOut take the game's calls and our presenter
+        // shows the backend's image; their renderer (presenter, Liverpool) is never created
+        Libraries::VkbGnmDriver::RegisterLib(&resolver);
+        Libraries::VkbVideoOut::RegisterLib(&resolver);
+        return 0;
+    }
     // GnmDriver creates the presenter that the VideoOut present thread uses.
     Libraries::GnmDriver::RegisterLib(&resolver);
     Libraries::VideoOut::RegisterLib(&resolver);
@@ -361,6 +382,12 @@ extern "C" int tlggpu_handle_fault(void* ucontext, void* address) {
 extern "C" void tlggpu_set_guest_image(std::uintptr_t base, std::uint64_t size) {
     TlgFreeze::guest_size.store(size);
     TlgFreeze::guest_base.store(base);
+}
+
+extern "C" void tlggpu_install_hooks(std::uintptr_t image_base, std::uint64_t image_size) { // VKB
+    if (Core::Vkb::On()) {
+        Core::GuestHooks::InstallForEboot(image_base, image_size);
+    }
 }
 
 extern "C" void tlggpu_set_wait_hooks(TlgGpuWaitBegin begin, TlgGpuWaitEnd end) {

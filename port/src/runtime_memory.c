@@ -908,6 +908,22 @@ static void cache_region(size_t i) {
 }
 /* Copy from the backing view. The GPU thread reads shader headers here per draw: from a cached
  * region the copy needs no lock or table search, and it only counts if no writer started meanwhile. */
+/* VKB (engine-to-Vulkan backend, TLG_VKB=1): where [address, address + size) lives in the backing view. Returns 1 and the view's base address, the offset of the
+ * range in it and the size of the section when the whole range lies in one mapped region (so its bytes are contiguous in the view), else 0. The view is always
+ * read/write: a GPU import of its pages sees every CPU write. */
+int runtime_memory_backing_window(uintptr_t address, uint64_t size, void **base, uint64_t *offset, uint64_t *section_bytes) {
+    read_lock();
+    int ok=0;
+    size_t i=vma_index(address);
+    if (i!=vma_count && vmas[i].start<=address && vmas[i].kind!=KIND_RESERVED && address+size<=vmas[i].end && backing_base) {
+        *base=backing_base;
+        *offset=vmas[i].phys+(address-vmas[i].start);
+        *section_bytes=POOL_SIZE+FLEX_SPAN;
+        ok=1;
+    }
+    read_unlock();
+    return ok;
+}
 int runtime_memory_read_backing(uintptr_t address, void *data, uint64_t size) {
     const CachedRegion *c=(runtime_disabled_optimizations & 1) ? NULL : cached_region(address);
     if (c && c->kind!=KIND_RESERVED && size<=c->end-address) {

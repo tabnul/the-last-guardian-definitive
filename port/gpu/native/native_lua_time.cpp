@@ -17,6 +17,7 @@
 
 #include "common/logging/log.h"
 #include "common/memory_patcher.h"
+#include "native/native_builtin_data.h"
 #include "common/path_util.h"
 #include "native/native_debug_server.h"
 #include "native/native_lua_time.h"
@@ -68,14 +69,15 @@ bool EndsWith(const std::string& s, const std::string& suffix) {
 
 void LoadRules() {
     loaded = true;
-    const auto path = Common::FS::GetUserPath(Common::FS::PathType::CustomConfigs) / (MemoryPatcher::g_game_serial + ".lua_patches.json");
-    std::ifstream file{path, std::ios::binary};
-    if (!file) {
-        LOG_WARNING(Core, "lua patches: {} not found, nothing is patched", path.string());
+    // M3 (5): the user's custom_configs file, else the built-in one (native/data)
+    std::string path;
+    const std::string text = Core::BuiltinData::Read(MemoryPatcher::g_game_serial, ".lua_patches.json", path);
+    if (text.empty()) {
+        LOG_WARNING(Core, "lua patches: no {}.lua_patches.json, nothing is patched", MemoryPatcher::g_game_serial);
         return;
     }
     try {
-        const auto json = nlohmann::json::parse(file);
+        const auto json = nlohmann::json::parse(text);
         for (const auto& r : json.at("rules")) {
             Rule rule;
             rule.chunk = Lower(r.at("chunk").get<std::string>());
@@ -86,11 +88,11 @@ void LoadRules() {
                 rules.push_back(std::move(rule));
             }
         }
-        LOG_INFO(Core, "lua patches: {} rules from {}", rules.size(), path.string());
+        LOG_INFO(Core, "lua patches: {} rules from {}", rules.size(), path);
     } catch (const std::exception& e) {
         ++rule_file_errors;
         rules.clear();
-        LOG_ERROR(Core, "lua patches: {} is not valid: {}", path.string(), e.what());
+        LOG_ERROR(Core, "lua patches: {} is not valid: {}", path, e.what());
     }
 }
 } // namespace
