@@ -1042,6 +1042,14 @@ void ControlsTab() {
         ImGui::EndTable();
     }
     ImGui::SeparatorText(TR("Controller"));
+    if (BeginRows("##padicons")) {
+        static const char* const icon_labels[] = {TR("Automatic"), "PlayStation", "Xbox"};
+        static const int icon_values[] = {0, 1, 2};
+        ChoiceRow(TR("Button icons"), s.button_icons, icon_labels, icon_values, 3,
+                  TR("The controller drawn in the game's button hints. Automatic follows the controller used last."),
+                  0);
+        ImGui::EndTable();
+    }
     if (BeginRows("##combos")) {
         const char* labels[4] = {TR("Quit game (hold 2 seconds)"), TR("In-game menu"), TR("QA menu"),
                                  TR("Photo mode on / off")};

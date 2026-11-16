@@ -64,6 +64,7 @@ void tlggpu_save_toast(int kind);
 int tlggpu_overlay_captures_input(void);
 /* The buttons the game reads now (PS4 pad bits: controller, keyboard and mouse after the
  * remaps), after every pad read. Photo mode takes its buttons from here. */
+void tlggpu_pad_kind(int xbox);
 void tlggpu_pad_game_buttons(uint32_t buttons);
 /* A short message at the top of the screen (any thread). */
 void tlggpu_overlay_notice(const char *text, float seconds);

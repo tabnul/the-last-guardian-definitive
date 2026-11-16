@@ -241,6 +241,44 @@ local function Treasures(on)
   if (pd.treasurePoint or 0)<999 then pd.treasurePoint=999 end
   if SavePerpetual then SavePerpetual() end
 end
+-- Button icons: Xbox (issue #61). The game draws every button hint from one picture of the pad and
+-- puts a glow on the button to press, at the places in GuideSystem._Const.BUTTON. The picture is
+-- swapped on the PC side (vk_texture_pack.cpp); here the glow moves to the same button on our Xbox
+-- drawing (table from scripts/make_xbox_pad.py), and the hints are rebuilt with the game's own
+-- RegenerationGuide so they pick the new places up. Idea from SulphurS16/TLG-Port (pc_prompts).
+local XBOXPAD={R1={158.0,7.7},R2={159.4,-1.1},L1={66.0,7.7},L2={64.6,-1.1},Left={82.1,56.9},
+  Right={99.6,56.9},Up={90.8,48.2},Down={90.8,65.6},Square={142.4,33.0},Cross={152.5,43.1},
+  Circle={162.6,33.0},Triangle={152.5,22.9},StickBaseL={71.5,33.0},StickBaseR={133.2,56.9},
+  Push={100.0,33.0},PS={112.0,21.0},Select={100.0,33.0},Start={124.0,33.0}}
+-- wide: screen shape / 16:9 (1 up to 16:9). The game draws the glow that much wider, from its left
+-- edge (the glow sheet has 32 pixels a button), so its place moves left by half the extra width.
+local function ButtonIcons(xbox,wide)
+  local G=GuideSystem local B=G and G._Const and G._Const.BUTTON
+  if not B or not B.Cross or Loading() then return end
+  if not Guide_SetButtonData or not Guide_SetButtonParam then return end
+  -- The engine keeps the first place it was given for a button name, so the Xbox places go in
+  -- under names of their own ('Xb'..name) and the hints ask for those while Xbox icons are on.
+  local function Names()
+    for k,v in pairs(XBOXPAD) do local d=B[k]
+      if d then Guide_SetButtonData('Xb'..k,d.uv[1],d.uv[2],d.uv[3],d.uv[4],v[1]-16*((wide or 1)-1),v[2]) end
+    end
+  end
+  if not _TLGPADSET then
+    _TLGPADSET=Guide_SetButtonParam
+    Guide_SetButtonParam=function(n,id,...)
+      if _TLGPADXB and XBOXPAD[id] then id='Xb'..id end
+      return _TLGPADSET(n,id,...)
+    end
+  end
+  if not G._tlgCreate then
+    G._tlgCreate=G.CreateObject
+    G.CreateObject=function(self,...) pcall(Names) return G._tlgCreate(self,...) end
+  end
+  if (_TLGPADXB or false)==xbox then return end
+  _TLGPADXB=xbox
+  if G.isCreateObj then pcall(G.RegenerationGuide,G) end
+end
+
 -- Mods > ICO horns (tlg.ini mod_horns 1): the boy wears horns on his head bone, a nod to Ico. Own
 -- models (bone white, black tip) from the horn archive the launcher builds; without that archive
 -- the load fails and nothing shows (tried again after the next stage load). A stage load removes
@@ -605,6 +643,16 @@ int SubtitleShift() {
     return (ui_width - 1920) / 2;
 }
 
+// Screen shape over 16:9, 1 up to 16:9: how much wider the game draws the button-hint glow.
+double WideFactor() {
+    const char* resolution = std::getenv("TLG_RESOLUTION_PATCH");
+    int width = 0, height = 0;
+    if (!resolution || std::sscanf(resolution, "%dx%d", &width, &height) != 2 || height <= 0 ||
+        width * 9 <= height * 16)
+        return 1.0;
+    return (width * 9.0) / (height * 16.0);
+}
+
 // Copies the saves to savedata_backups/<time>-<tag> (the game runs in the user folder), where the
 // launcher's save manager lists them and can restore one. A failed copy only logs.
 void BackupSaves(const char* tag) {
@@ -679,7 +727,8 @@ std::string SetChunk() {
             std::to_string(s.mod_throw_up.load() ? 1 : 0) + ") _TLGHINTS=" +
             (s.mod_hints.load() ? "true" : "false") + "\n";
     code += std::string("Treasures(") + (s.mod_treasures.load() ? "true" : "false") + ") Horns(" +
-            (s.mod_horns.load() ? "true" : "false") +")\n";
+            (s.mod_horns.load() ? "true" : "false") + ") ButtonIcons(" +
+            (s.XboxIcons() ? "true" : "false") + "," + std::to_string(WideFactor()) + ")\n";
     if (subtitle_shift) {
         // Re-applied every tick: SubtitleSystem:Initialize resets it to (0, -OFFSET_Y).
         std::snprintf(line, sizeof(line),

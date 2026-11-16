@@ -31,6 +31,9 @@ class StagingBufferPool;
 /// full mip chain. Sampled-only bindings of a matching image read the pack image instead; guest
 /// memory and the game files stay untouched. Settings texture_pack picks the pack (0 = off); a
 /// switch drops the loaded images, which load again on demand on a worker thread.
+/// Button icons: Xbox (issue #61) uses the same swap for two built-in pictures: the pad of the
+/// game's button hints and the Controls screen (gpu/assets/pad_xbox*.dds, in the binary), with
+/// or without a pack.
 class TexturePack {
 public:
     TexturePack(const Instance&, Scheduler&, StagingBufferPool&);
@@ -68,6 +71,9 @@ private:
     void Upload(Entry& entry);
     void Worker(std::stop_token stop);
     void Evict();
+    void XboxPad();
+    vk::ImageView View(Entry& entry, const VideoCore::Image& image,
+                       const VideoCore::ImageViewInfo& info);
 
     const Instance& instance;
     Scheduler& scheduler;
@@ -79,6 +85,10 @@ private:
     const std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     u32 now = 0; ///< seconds since start, updated by Tick
     std::unordered_map<u64, std::shared_ptr<Entry>> entries;
+    /// Built-in Xbox pictures by the key of the game picture they replace; kept over pack
+    /// switches, never evicted.
+    std::unordered_map<u64, std::unique_ptr<Entry>> xbox_pads;
+    bool xbox_icons = false;
     /// Pack images only: freed ones empty whole blocks, which VMA returns to the driver (in the
     /// default pools they left holes in blocks the game still uses). Large images get their own
     /// memory, released at once.

@@ -147,6 +147,17 @@ struct Values {
     /// tlg.ini trico_drool, env TLG_TRICO_DROOL wins): 0 = off as shipped, 1 = always,
     /// 2 = as the developers planned (only while he wants a smell pot or the boy's smell bottle).
     std::atomic<int> trico_drool{0};
+    /// Button icons in the game's hints (issue #61; tlg.ini button_icons, env TLG_BUTTON_ICONS wins):
+    /// 0 = automatic (follows the controller used last), 1 = PlayStation (the game's own), 2 = Xbox.
+    /// See XboxIcons().
+    std::atomic<int> button_icons{0};
+    /// Not a setting: the controller used last is an Xbox-style one (runtime_pad.c, tlggpu_pad_kind).
+    std::atomic<bool> pad_is_xbox{false};
+    /// The hints show an Xbox pad: picture swapped in vk_texture_pack.cpp, glow moved in tlg_lua.cpp.
+    bool XboxIcons() const {
+        const int icons = button_icons.load();
+        return icons == 2 || (icons == 0 && pad_is_xbox.load());
+    }
     /// Trico's moves bar (Trico Tricks tab and the F12 bar, in game only): the favourite moves
     /// (tlg.ini trico_favourites, control command names, comma separated, at most 16; the menu
     /// thread only) and the last group shown (trico_bar_group: 0 = favourites, then the groups).

@@ -64,6 +64,10 @@ TEXT = {
     'photo_press': 'press a button…',
     'photo_note': 'One button each, used only in photo mode. Left stick flies, right stick looks around. '
                   'Keyboard: the keys of the same buttons; Print Screen also takes a screenshot.',
+    'icons': 'Button icons in the game',
+    'icons_auto': 'Automatic (follows the controller used last)',
+    'icons_ps': 'PlayStation',
+    'icons_xbox': 'Xbox',
     'credit': 'Drawing: RPCS3 DualShock 3 by HerrHulaHoop (GPL-2.0), made a DualShock 4 for this port.',
 }
 KINDS = {'ps3': 'DualShock 3 (PS3)', 'ps4': 'DualShock 4 (PS4)', 'ps5': 'DualSense (PS5)',
@@ -204,18 +208,8 @@ class ControllerPage:
         self.canvas = tk.Canvas(left, width=int(400 * self.scale + 20), height=int(250 * self.scale + 20),
                                 background=self.BG, highlightthickness=0)
         self.canvas.pack(anchor='w')
-        self.items, circles = pad_drawing.draw(self.canvas, self.scale, 10, 18, self.LINE, self.MUTED)
-        self.sticks = {}
-        for side, key in (('l', 'LeftJoystickInner'), ('r', 'RightJoystickInner')):
-            x, y, r = circles[key]
-            zone = self.canvas.create_oval(0, 0, 0, 0, outline=self.MUTED, dash=(2, 3))
-            dot = self.canvas.create_oval(x - 7, y - 7, x + 7, y + 7, fill=self.ACCENT, outline='')
-            self.sticks[side] = (x, y, r, dot, zone)
-        self.triggers = {}
-        for side, x in (('lt', 10 + 84 * self.scale), ('rt', 10 + 318 * self.scale)):
-            self.canvas.create_rectangle(x - 30, 2, x + 30, 10, outline=self.LINE)
-            self.triggers[side] = (x - 30, self.canvas.create_rectangle(x - 30, 2, x - 30, 10, fill=self.ACCENT, outline=''),
-                                   self.canvas.create_line(0, 0, 0, 0, fill=self.TEXT))
+        self.drawn_xbox = None
+        self.draw_pad(False)
         test = ttk.Frame(left)
         test.pack(anchor='w', pady=(6, 0))
         ttk.Label(test, text=self.t('test') + ':').pack(side='left')
@@ -223,7 +217,20 @@ class ControllerPage:
         self.rumble_button.pack(side='left', padx=6)
         self.gyro = ttk.Label(test, text='', foreground=self.MUTED, width=40)
         self.gyro.pack(side='left', padx=6)
-        ttk.Label(left, text=self.t('credit'), foreground=self.MUTED, font=('TkDefaultFont', 8)).pack(anchor='w', pady=(8, 0))
+        self.credit = ttk.Label(left, text=self.t('credit'), foreground=self.MUTED, font=('TkDefaultFont', 8))
+        self.credit.pack(anchor='w', pady=(8, 0))
+        # Button icons of the game's hints (tlg.ini button_icons; the game reads it live, also from
+        # the in-game menu).
+        icons = ttk.Frame(left)
+        icons.pack(anchor='w', pady=(8, 0))
+        ttk.Label(icons, text=self.t('icons') + ':').pack(side='left')
+        self.icons = ttk.Combobox(icons, state='readonly', width=44,
+                                  values=[self.t('icons_auto'), self.t('icons_ps'), self.t('icons_xbox')])
+        chosen = tlg_run.read_ini(tlg_run.user_dir() / 'tlg.ini').get('button_icons', '0')
+        self.icons.current(int(chosen) if chosen in ('1', '2') else 0)
+        self.icons.pack(side='left', padx=6)
+        self.icons.bind('<<ComboboxSelected>>', lambda _: tlg_run.update_ini(
+            tlg_run.user_dir() / 'tlg.ini', {'button_icons': self.icons.current()}))
         self.status = ttk.Label(left, text='', foreground=self.ACCENT, wraplength=700)
         self.status.pack(anchor='w', pady=(4, 0))
 
@@ -319,6 +326,29 @@ class ControllerPage:
         label.configure(text=f'{self.trigger.get()} %')
         self.app.settings['trigger_threshold'] = int(self.trigger.get())
         self.save()
+
+    def draw_pad(self, xbox):
+        """The drawing of the shown pad: our Xbox pad for Xbox-style ones, else the DualShock 4."""
+        if xbox == self.drawn_xbox:
+            return
+        self.drawn_xbox = xbox
+        self.canvas.delete('all')
+        self.items, circles = pad_drawing.draw(self.canvas, self.scale, 10, 18, self.LINE, self.MUTED,
+                                               svg=pad_drawing.XBOX_SVG if xbox else None)
+        self.sticks = {}
+        for side, key in (('l', 'LeftJoystickInner'), ('r', 'RightJoystickInner')):
+            x, y, r = circles[key]
+            zone = self.canvas.create_oval(0, 0, 0, 0, outline=self.MUTED, dash=(2, 3))
+            dot = self.canvas.create_oval(x - 7, y - 7, x + 7, y + 7, fill=self.ACCENT, outline='')
+            self.sticks[side] = (x, y, r, dot, zone)
+        self.triggers = {}
+        for side, at in (('lt', 97 if xbox else 84), ('rt', 303 if xbox else 318)):
+            x = 10 + at * self.scale
+            self.canvas.create_rectangle(x - 30, 2, x + 30, 10, outline=self.LINE)
+            self.triggers[side] = (x - 30, self.canvas.create_rectangle(x - 30, 2, x - 30, 10, fill=self.ACCENT, outline=''),
+                                   self.canvas.create_line(0, 0, 0, 0, fill=self.TEXT))
+        if hasattr(self, 'credit'):
+            self.credit.configure(text='' if xbox else self.t('credit'))  # the Xbox drawing is our own
 
     def kind(self):
         pad = self.pads.get(self.shown_id())
@@ -440,6 +470,7 @@ class ControllerPage:
         self.choice.current(self.choice_guids.index(guid) if guid in self.choice_guids else 0)
         pid = self.shown_id()
         pad = self.pads.get(pid)
+        self.draw_pad(bool(pad) and pad['type'].startswith(('xbox', 'generic')))
         if pad:
             self.info.configure(text=self.t('detected', kind=KINDS.get(pad['type'], pad['type'])) + '  ·  ' +
                                 self.t('motion_yes' if pad['gyro'] else 'motion_no') + '  ·  ' +
