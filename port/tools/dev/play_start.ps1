@@ -16,7 +16,7 @@ $e = [ordered]@{
     MSYS2_ROOT = $Cfg.msys2_root   # the runner puts its clang64in (SDL3, FFmpeg, libc++) on the game's PATH
     # owner default: 120 fps at 4K. The fork's runner has no "120" mode: unlocked (its uncapped eboot patches) held to 120 by the 120 Hz vblank;
     # 3840x2160 is its native resolution patch. The launcher's own settings apply when the game starts from the launcher.
-    TLG_FPS = "unlocked"; TLG_VBLANK_HZ = "120"; TLG_ENGINE_FPS = "120"; TLG_RESOLUTION = "3840x2160"
+    TLG_FPS = "120"; TLG_RESOLUTION = "3840x2160"
     # memory: what the launcher gives players (their eboot patch sizes the GPU heap at 4064 MB, the runner sets TLG_DMEM_MB for it; merge plan M6);
     # never the old port's TLG_DMEM_MB=5056 / TLG_GARLIC_POOL_* (the engine gives up at start, notes 6)
     TLG_FRAMES_IN_FLIGHT = "1"   # depth 1

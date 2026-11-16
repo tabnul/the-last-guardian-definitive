@@ -76,6 +76,17 @@ PATCHES = {
         (0x24f17fc, f32(1 / 30), f32(1 / 60), 'dt snap target 1/30 -> 1/60'),
         (0x24f1800, f32(0.0316666663), f32(0.0158333331), 'dt snap lower bound 0.031667 -> 0.015833'),
     ],
+    # 120 (the owner's 120 FPS mode from the HayatoG-based port): the same snap at 1/120.
+    'dt_snap_120': [
+        (0x24f17f8, f32(0.035), f32(0.00875), 'dt snap upper bound 0.035 -> 0.00875'),
+        (0x24f17fc, f32(1 / 30), f32(1 / 120), 'dt snap target 1/30 -> 1/120'),
+        (0x24f1800, f32(0.0316666663), f32(0.00791666672), 'dt snap lower bound 0.031667 -> 0.0079167'),
+    ],
+    # The Lua garbage collector's time budget per frame (read only by the per-frame collection step):
+    # at 120 frames a quarter of the 30 FPS budget, so the collection costs per second what it does at 30.
+    'gc_budget_120': [
+        (0x24f17e0, bytes.fromhex('95bf5633'), bytes.fromhex('95bf5632'), 'Lua GC time budget per frame 50 ns/KB -> 12.5 ns/KB'),
+    ],
     # Material/cloth update null pointer guard (0x128c100, loop header at 0x128c161..0x128c1a4):
     # At 60+ FPS on fast multi-core CPUs, worker threads can run 0x128c100 before streaming
     # populates the pointer table at [r12 + 0x28] (fault at 0x28c193) or an element entry at
@@ -137,11 +148,13 @@ MODES = {
     # (game+0x180 is no frame limiter in the tested scenes; its reader is not found yet).
     # TLG_FPS_PATCHES=flip_rate_60,max_fps_off tries them.
     '60': ['flip_rate_60', 'dt_snap_60', 'cloth_null_guard'],
+    # 120: a fixed 120 FPS (the present thread holds it at the engine rate), not the uncapped mode.
+    '120': ['flip_rate_60', 'dt_snap_120', 'cloth_null_guard', 'gc_budget_120'],
     'unlocked': ['flip_rate_60', 'cloth_null_guard'],
 }
 # The engine rate each mode presents at most (TLG_ENGINE_FPS: the overlay's frame limiter and
 # tlg_graphics.h PresentLimit). Unlocked is paced by the present thread (TLG_VBLANK_HZ=0).
-ENGINE_FPS = {'30': 30, '60': 60, 'unlocked': 240}
+ENGINE_FPS = {'30': 30, '60': 60, '120': 120, 'unlocked': 240}
 
 
 def normalize_mode(value):
