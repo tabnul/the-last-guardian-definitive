@@ -455,6 +455,8 @@
     "pad.photo_fast": "Hızlı (basılı tut)",
     "pad.photo_slow": "Yavaş (basılı tut)",
     "pad.photo_help_key": "Tuş yardımını gizle / göster",
+    "pad.remap_touchpad_left": "Dokunmatik yüzey (sol): fotoğraf modu",
+    "pad.remap_touchpad_right": "Dokunmatik yüzey (sağ): duraklat",
     "pad.photo_press": "bir tuşa bas…",
     "pad.photo_note": "Her biri için bir tuş, yalnızca fotoğraf modunda. Sol çubuk uçurur, sağ çubuk etrafa baktırır. Klavye: aynı tuşların klavye karşılıkları; Print Screen de ekran görüntüsü alır."
   },
@@ -1096,14 +1098,6 @@
     "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Ayarla: iki veya daha fazla tuşu birlikte basılı tutun, sonra bırakın. Klavye: Alt+Q çıkar, Insert bu menüyü açar.",
     "Quitting...": "Çıkılıyor...",
     "Quitting... (release to cancel)": "Çıkılıyor... (iptal için bırakın)",
-    "Quit game: hold %s for 2 seconds, or press Alt+Q": "Oyundan çık: %s tuşlarını 2 saniye basılı tut veya Alt+Q'ya bas",
-    "Quit game: press Alt+Q": "Oyundan çık: Alt+Q'ya bas",
-    "Port menu: %s, or press Insert": "Port menüsü: %s veya Insert'e bas",
-    "Port menu: press Insert": "Port menüsü: Insert'e bas",
-    "QA menu: %s, or press 1 + Z": "QA menüsü: %s veya 1 + Z'ye bas",
-    "QA menu: %s": "QA menüsü: %s",
-    "QA menu: off": "QA menüsü: kapalı",
-    "(turn on Level select and QA menu in the launcher first)": "(önce başlatıcıda Bölüm seçimi ve QA menüsünü aç)",
     "Photo mode": "Fotoğraf modu",
     "Invert look up / down": "Yukarı / aşağı bakışı ters çevir",
     "Pushing the right stick forward looks down, as in a plane.": "Sağ çubuğu ileri itmek aşağı baktırır, uçaktaki gibi.",
@@ -1151,6 +1145,13 @@
     "No favourites yet. Right-click a move in another group to add it here.": "Henüz favori yok. Buraya eklemek için başka bir gruptaki bir harekete sağ tıklayın.",
     "Trico's moves (F12 hides). Right-click a move to add it to your favourites.": "Trico'nun hareketleri (F12 gizler). Favorilerinize eklemek için bir harekete sağ tıklayın.",
     "Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites.": "Bir harekete tıklayın (oyunda çubuk olarak da: F12). Favorilerinize eklemek için bir harekete sağ tıklayın.",
-    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "Hikâyedeki Trico'dan, oyunun kendisinin yaptığı gibi bunu yapmasını ister. Önce hareketin gerektirdiği duruşa geçer (ayağa kalkar, oturur veya yatar). Hareket başlamazsa ayakta duruşa sıfırlanır ve bir kez daha istenir, ama asla bir hikâye olayı, zıplama veya tırmanma sırasında değil. Kendi aklı yine de galip gelebilir ve bazı hareketler yer ister (yuvarlanma çocuğu bir kenardan itebilir). \"May not work\": testlerimizde çalıştığı görülmedi."
+    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "Hikâyedeki Trico'dan, oyunun kendisinin yaptığı gibi bunu yapmasını ister. Önce hareketin gerektirdiği duruşa geçer (ayağa kalkar, oturur veya yatar). Hareket başlamazsa ayakta duruşa sıfırlanır ve bir kez daha istenir, ama asla bir hikâye olayı, zıplama veya tırmanma sırasında değil. Kendi aklı yine de galip gelebilir ve bazı hareketler yer ister (yuvarlanma çocuğu bir kenardan itebilir). \"May not work\": testlerimizde çalıştığı görülmedi.",
+    "Shortcuts": "Kısayollar",
+    "Quit game": "Oyundan çık",
+    "Port menu": "Port menüsü",
+    "Game photo mode": "Oyunun fotoğraf modu",
+    "Touchpad (left)": "Dokunmatik yüzey (sol)",
+    "(hold 2 s)": "(2 sn basılı tut)",
+    "QA menu: turn on Level select and QA menu in the launcher first": "QA menüsü: önce başlatıcıda Bölüm seçimi ve QA menüsünü açın"
   }
 }

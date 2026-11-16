@@ -455,6 +455,8 @@
     "pad.photo_fast": "Snel (vasthouden)",
     "pad.photo_slow": "Langzaam (vasthouden)",
     "pad.photo_help_key": "Knoppenhulp verbergen / tonen",
+    "pad.remap_touchpad_left": "Touchpad (links): fotomodus",
+    "pad.remap_touchpad_right": "Touchpad (rechts): pauze",
     "pad.photo_press": "druk op een knop…",
     "pad.photo_note": "Eén knop per actie, alleen in fotomodus. Linkerstick vliegt, rechterstick kijkt rond. Toetsenbord: de toetsen van dezelfde knoppen; Print Screen maakt ook een screenshot."
   },
@@ -1096,14 +1098,6 @@
     "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Instellen: houd twee of meer knoppen samen vast en laat dan los. Toetsenbord: Alt+Q sluit af, Insert opent dit menu.",
     "Quitting...": "Afsluiten...",
     "Quitting... (release to cancel)": "Afsluiten... (loslaten om te annuleren)",
-    "Quit game: hold %s for 2 seconds, or press Alt+Q": "Spel afsluiten: houd %s 2 seconden vast, of druk op Alt+Q",
-    "Quit game: press Alt+Q": "Spel afsluiten: druk op Alt+Q",
-    "Port menu: %s, or press Insert": "Port-menu: %s, of druk op Insert",
-    "Port menu: press Insert": "Port-menu: druk op Insert",
-    "QA menu: %s, or press 1 + Z": "QA-menu: %s, of druk op 1 + Z",
-    "QA menu: %s": "QA-menu: %s",
-    "QA menu: off": "QA-menu: uit",
-    "(turn on Level select and QA menu in the launcher first)": "(zet eerst Levelselectie en QA-menu aan in de launcher)",
     "Photo mode": "Fotomodus",
     "Invert look up / down": "Omhoog / omlaag kijken omkeren",
     "Pushing the right stick forward looks down, as in a plane.": "Rechterstick naar voren duwen kijkt omlaag, zoals in een vliegtuig.",
@@ -1151,6 +1145,13 @@
     "No favourites yet. Right-click a move in another group to add it here.": "Nog geen favorieten. Rechtsklik op een beweging in een andere groep om hem hier toe te voegen.",
     "Trico's moves (F12 hides). Right-click a move to add it to your favourites.": "Trico's bewegingen (F12 verbergt). Rechtsklik op een beweging om hem aan je favorieten toe te voegen.",
     "Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites.": "Klik op een beweging (ook als balk in het spel: F12). Rechtsklik op een beweging om hem aan je favorieten toe te voegen.",
-    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "Vraagt de Trico van het verhaal het te doen, zoals het spel zelf dat doet. Eerst neemt hij de houding aan die de beweging nodig heeft (staat op, gaat zitten of liggen). Begint de beweging niet, dan wordt hij teruggezet naar staan en nog één keer gevraagd, maar nooit tijdens een verhaalmoment, een sprong of het klimmen. Zijn eigen wil kan nog steeds winnen, en sommige bewegingen hebben ruimte nodig (een rol kan de jongen van een rand duwen). \"May not work\": in onze tests niet zien werken."
+    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "Vraagt de Trico van het verhaal het te doen, zoals het spel zelf dat doet. Eerst neemt hij de houding aan die de beweging nodig heeft (staat op, gaat zitten of liggen). Begint de beweging niet, dan wordt hij teruggezet naar staan en nog één keer gevraagd, maar nooit tijdens een verhaalmoment, een sprong of het klimmen. Zijn eigen wil kan nog steeds winnen, en sommige bewegingen hebben ruimte nodig (een rol kan de jongen van een rand duwen). \"May not work\": in onze tests niet zien werken.",
+    "Shortcuts": "Sneltoetsen",
+    "Quit game": "Spel afsluiten",
+    "Port menu": "Port-menu",
+    "Game photo mode": "Fotomodus van het spel",
+    "Touchpad (left)": "Touchpad (links)",
+    "(hold 2 s)": "(2 s vasthouden)",
+    "QA menu: turn on Level select and QA menu in the launcher first": "QA-menu: zet eerst Levelselectie en QA-menu aan in de launcher"
   }
 }

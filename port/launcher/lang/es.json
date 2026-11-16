@@ -448,6 +448,8 @@
     "pad.photo_fast": "Rápido (mantener)",
     "pad.photo_slow": "Lento (mantener)",
     "pad.photo_help_key": "Ocultar / mostrar la ayuda de botones",
+    "pad.remap_touchpad_left": "Panel táctil (izquierda): modo foto",
+    "pad.remap_touchpad_right": "Panel táctil (derecha): pausa",
     "pad.photo_press": "pulsa un botón…",
     "pad.photo_note": "Un botón cada uno, solo en el modo foto. El stick izquierdo vuela, el derecho mira alrededor. Teclado: las teclas de los mismos botones; Impr Pant también hace una captura."
   },
@@ -1083,14 +1085,6 @@
     "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Asignar: mantén pulsados dos o más botones a la vez y suéltalos. Teclado: Alt+Q sale, Insert abre este menú.",
     "Quitting...": "Saliendo...",
     "Quitting... (release to cancel)": "Saliendo... (suelta para cancelar)",
-    "Quit game: hold %s for 2 seconds, or press Alt+Q": "Salir del juego: mantén %s 2 segundos o pulsa Alt+Q",
-    "Quit game: press Alt+Q": "Salir del juego: pulsa Alt+Q",
-    "Port menu: %s, or press Insert": "Menú del port: %s o pulsa Insert",
-    "Port menu: press Insert": "Menú del port: pulsa Insert",
-    "QA menu: %s, or press 1 + Z": "Menú QA: %s o pulsa 1 + Z",
-    "QA menu: %s": "Menú QA: %s",
-    "QA menu: off": "Menú QA: desactivado",
-    "(turn on Level select and QA menu in the launcher first)": "(activa primero Selección de nivel y menú QA en el launcher)",
     "Photo mode": "Modo foto",
     "Invert look up / down": "Invertir mirar arriba / abajo",
     "Pushing the right stick forward looks down, as in a plane.": "Empujar el stick derecho hacia delante mira hacia abajo, como en un avión.",
@@ -1138,6 +1132,13 @@
     "No favourites yet. Right-click a move in another group to add it here.": "Aún no hay favoritos. Haz clic derecho en un movimiento de otro grupo para añadirlo aquí.",
     "Trico's moves (F12 hides). Right-click a move to add it to your favourites.": "Movimientos de Trico (F12 oculta). Haz clic derecho en un movimiento para añadirlo a tus favoritos.",
     "Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites.": "Haz clic en un movimiento (también como barra en el juego: F12). Haz clic derecho en un movimiento para añadirlo a tus favoritos.",
-    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "Le pide al Trico de la historia que lo haga, como lo hace el propio juego. Primero adopta la postura que necesita el movimiento (se levanta, se sienta o se tumba). Si el movimiento no empieza, se le devuelve a estar de pie y se le pide una vez más, pero nunca durante un evento de la historia, un salto o una escalada. Su propia voluntad aún puede ganar, y algunos movimientos necesitan espacio (una voltereta puede tirar al niño por un borde). \"May not work\": no lo vimos funcionar en nuestras pruebas."
+    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "Le pide al Trico de la historia que lo haga, como lo hace el propio juego. Primero adopta la postura que necesita el movimiento (se levanta, se sienta o se tumba). Si el movimiento no empieza, se le devuelve a estar de pie y se le pide una vez más, pero nunca durante un evento de la historia, un salto o una escalada. Su propia voluntad aún puede ganar, y algunos movimientos necesitan espacio (una voltereta puede tirar al niño por un borde). \"May not work\": no lo vimos funcionar en nuestras pruebas.",
+    "Shortcuts": "Atajos",
+    "Quit game": "Salir del juego",
+    "Port menu": "Menú del port",
+    "Game photo mode": "Modo foto del juego",
+    "Touchpad (left)": "Panel táctil (izquierda)",
+    "(hold 2 s)": "(mantener 2 s)",
+    "QA menu: turn on Level select and QA menu in the launcher first": "Menú QA: activa primero Selección de nivel y Menú QA en el launcher"
   }
 }

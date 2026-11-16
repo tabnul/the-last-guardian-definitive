@@ -448,6 +448,8 @@
     "pad.photo_fast": "Rapide (maintenir)",
     "pad.photo_slow": "Lent (maintenir)",
     "pad.photo_help_key": "Masquer / afficher l'aide des boutons",
+    "pad.remap_touchpad_left": "Pavé tactile (gauche) : mode photo",
+    "pad.remap_touchpad_right": "Pavé tactile (droite) : pause",
     "pad.photo_press": "appuyez sur un bouton…",
     "pad.photo_note": "Un bouton chacun, seulement en mode photo. Le stick gauche vole, le stick droit regarde autour. Clavier : les touches des mêmes boutons ; Impr. écran prend aussi une capture."
   },
@@ -1083,14 +1085,6 @@
     "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Définir : maintenez deux boutons ou plus ensemble, puis relâchez. Clavier : Alt+Q quitte, Inser ouvre ce menu.",
     "Quitting...": "Fermeture...",
     "Quitting... (release to cancel)": "Fermeture... (relâchez pour annuler)",
-    "Quit game: hold %s for 2 seconds, or press Alt+Q": "Quitter le jeu : maintenez %s 2 secondes ou appuyez sur Alt+Q",
-    "Quit game: press Alt+Q": "Quitter le jeu : appuyez sur Alt+Q",
-    "Port menu: %s, or press Insert": "Menu du port : %s ou appuyez sur Inser",
-    "Port menu: press Insert": "Menu du port : appuyez sur Inser",
-    "QA menu: %s, or press 1 + Z": "Menu QA : %s ou appuyez sur 1 + Z",
-    "QA menu: %s": "Menu QA : %s",
-    "QA menu: off": "Menu QA : désactivé",
-    "(turn on Level select and QA menu in the launcher first)": "(activez d'abord Sélection de niveau et menu QA dans le launcher)",
     "Photo mode": "Mode photo",
     "Invert look up / down": "Inverser regarder haut / bas",
     "Pushing the right stick forward looks down, as in a plane.": "Pousser le stick droit vers l'avant regarde vers le bas, comme dans un avion.",
@@ -1138,6 +1132,13 @@
     "No favourites yet. Right-click a move in another group to add it here.": "Pas encore de favoris. Faites un clic droit sur un mouvement d'un autre groupe pour l'ajouter ici.",
     "Trico's moves (F12 hides). Right-click a move to add it to your favourites.": "Mouvements de Trico (F12 masque). Clic droit sur un mouvement pour l'ajouter à vos favoris.",
     "Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites.": "Cliquez sur un mouvement (aussi en barre dans le jeu : F12). Clic droit sur un mouvement pour l'ajouter à vos favoris.",
-    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "Demande au Trico de l'histoire de le faire, comme le jeu lui-même. Il prend d'abord la posture dont le mouvement a besoin (se lève, s'assoit ou se couche). Si le mouvement ne démarre pas, il est remis debout et on le lui demande encore une fois, mais jamais pendant un événement de l'histoire, un saut ou une escalade. Sa propre volonté peut encore l'emporter, et certains mouvements demandent de la place (une roulade peut pousser le garçon d'un rebord). \"May not work\" : jamais vu fonctionner dans nos tests."
+    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "Demande au Trico de l'histoire de le faire, comme le jeu lui-même. Il prend d'abord la posture dont le mouvement a besoin (se lève, s'assoit ou se couche). Si le mouvement ne démarre pas, il est remis debout et on le lui demande encore une fois, mais jamais pendant un événement de l'histoire, un saut ou une escalade. Sa propre volonté peut encore l'emporter, et certains mouvements demandent de la place (une roulade peut pousser le garçon d'un rebord). \"May not work\" : jamais vu fonctionner dans nos tests.",
+    "Shortcuts": "Raccourcis",
+    "Quit game": "Quitter le jeu",
+    "Port menu": "Menu du portage",
+    "Game photo mode": "Mode photo du jeu",
+    "Touchpad (left)": "Pavé tactile (gauche)",
+    "(hold 2 s)": "(maintenir 2 s)",
+    "QA menu: turn on Level select and QA menu in the launcher first": "Menu QA : activez d'abord Sélection de niveau et Menu QA dans le lanceur"
   }
 }

@@ -455,6 +455,8 @@
     "pad.photo_fast": "빠르게 (누르고 있기)",
     "pad.photo_slow": "느리게 (누르고 있기)",
     "pad.photo_help_key": "버튼 도움말 숨기기 / 보이기",
+    "pad.remap_touchpad_left": "터치패드 (왼쪽): 사진 모드",
+    "pad.remap_touchpad_right": "터치패드 (오른쪽): 일시 정지",
     "pad.photo_press": "버튼을 누르세요…",
     "pad.photo_note": "항목마다 버튼 하나, 사진 모드에서만. 왼쪽 스틱으로 날고 오른쪽 스틱으로 둘러봅니다. 키보드: 같은 버튼의 키. Print Screen으로도 스크린샷을 찍습니다."
   },
@@ -1096,14 +1098,6 @@
     "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "설정: 두 개 이상의 버튼을 함께 누르고 있다가 떼세요. 키보드: Alt+Q는 종료, Insert는 이 메뉴를 엽니다.",
     "Quitting...": "종료하는 중...",
     "Quitting... (release to cancel)": "종료하는 중... (떼면 취소)",
-    "Quit game: hold %s for 2 seconds, or press Alt+Q": "게임 종료: %s 2초 길게 누르기 또는 Alt+Q",
-    "Quit game: press Alt+Q": "게임 종료: Alt+Q",
-    "Port menu: %s, or press Insert": "포트 메뉴: %s 또는 Insert",
-    "Port menu: press Insert": "포트 메뉴: Insert",
-    "QA menu: %s, or press 1 + Z": "QA 메뉴: %s 또는 1 + Z",
-    "QA menu: %s": "QA 메뉴: %s",
-    "QA menu: off": "QA 메뉴: 꺼짐",
-    "(turn on Level select and QA menu in the launcher first)": "(먼저 런처에서 레벨 선택 및 QA 메뉴를 켜세요)",
     "Photo mode": "사진 모드",
     "Invert look up / down": "위 / 아래 시점 반전",
     "Pushing the right stick forward looks down, as in a plane.": "오른쪽 스틱을 앞으로 밀면 아래를 봅니다 (비행기처럼).",
@@ -1151,6 +1145,13 @@
     "No favourites yet. Right-click a move in another group to add it here.": "아직 즐겨찾기가 없습니다. 다른 그룹의 동작을 오른쪽 클릭하면 여기에 추가됩니다.",
     "Trico's moves (F12 hides). Right-click a move to add it to your favourites.": "트리코의 동작 (F12로 숨기기). 동작을 오른쪽 클릭하면 즐겨찾기에 추가됩니다.",
     "Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites.": "동작을 클릭하세요 (게임 안의 바로도 가능: F12). 동작을 오른쪽 클릭하면 즐겨찾기에 추가됩니다.",
-    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "게임 자체와 같은 방식으로 이야기 속 트리코에게 부탁합니다. 먼저 동작에 필요한 자세를 취합니다 (일어서기, 앉기, 엎드리기). 동작이 시작되지 않으면 선 자세로 되돌린 뒤 한 번 더 부탁하지만, 이야기 이벤트, 점프, 기어오르기 중에는 하지 않습니다. 트리코의 고집이 이길 때도 있고, 공간이 필요한 동작도 있습니다 (구르기는 소년을 난간 밖으로 밀어낼 수 있습니다). \"May not work\": 테스트에서 작동하는 것을 보지 못한 동작."
+    "Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests.": "게임 자체와 같은 방식으로 이야기 속 트리코에게 부탁합니다. 먼저 동작에 필요한 자세를 취합니다 (일어서기, 앉기, 엎드리기). 동작이 시작되지 않으면 선 자세로 되돌린 뒤 한 번 더 부탁하지만, 이야기 이벤트, 점프, 기어오르기 중에는 하지 않습니다. 트리코의 고집이 이길 때도 있고, 공간이 필요한 동작도 있습니다 (구르기는 소년을 난간 밖으로 밀어낼 수 있습니다). \"May not work\": 테스트에서 작동하는 것을 보지 못한 동작.",
+    "Shortcuts": "단축키",
+    "Quit game": "게임 종료",
+    "Port menu": "포트 메뉴",
+    "Game photo mode": "게임 사진 모드",
+    "Touchpad (left)": "터치패드 (왼쪽)",
+    "(hold 2 s)": "(2초 누르기)",
+    "QA menu: turn on Level select and QA menu in the launcher first": "QA 메뉴: 먼저 런처에서 레벨 선택과 QA 메뉴를 켜세요"
   }
 }
