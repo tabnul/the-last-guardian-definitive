@@ -188,6 +188,11 @@ static SDL_Gamepad *current_gamepad(void) {
         if (gamepads[i] && gamepads[i]!=gamepad && gamepad_allowed(gamepads[i]) && (!gamepad || gamepad_active(gamepads[i]))) {
             if (gamepad) printf("Runtime: gamepad in use: %s\n",SDL_GetGamepadName(gamepads[i]));
             gamepad=gamepads[i];
+            /* Button icons: Automatic (issue #61). Xbox pads and unknown ones (Xbox layout on a
+             * PC, as on the launcher's Controller page) get the Xbox hint picture. */
+            const SDL_GamepadType type=SDL_GetGamepadType(gamepad);
+            tlggpu_pad_kind(type==SDL_GAMEPAD_TYPE_XBOX360 || type==SDL_GAMEPAD_TYPE_XBOXONE ||
+                            type==SDL_GAMEPAD_TYPE_STANDARD || type==SDL_GAMEPAD_TYPE_UNKNOWN);
             break;
         }
     return gamepad;
@@ -200,7 +205,8 @@ static SDL_Gamepad *current_gamepad(void) {
  * map also takes the mouse: Mouse Left/Middle/Right/X1/X2, Wheel Up/Down/Left/Right.
  * touchpad_left (alias touchpad) and touchpad_right are the two sides of the touchpad click:
  * photo mode and the pause menu. Back/View (Share on a DualSense) is the right click, and with
- * L1 held the left one. Sticks, triggers, the real touchpad click and the overlay shortcuts are
+ * L1 held the left one; misc1 (Share on Xbox Series pads, Mute on a DualSense) is the left one too.
+ * Sticks, triggers, the real touchpad click and the overlay shortcuts are
  * not remapped. */
 static const struct { const char *name; uint32_t ps; } ps_names[]={
     {"cross",BTN_CROSS}, {"circle",BTN_CIRCLE}, {"square",BTN_SQUARE}, {"triangle",BTN_TRIANGLE},
@@ -224,11 +230,11 @@ static ButtonMap pad_map={{
     {SDL_GAMEPAD_BUTTON_WEST,BTN_SQUARE}, {SDL_GAMEPAD_BUTTON_NORTH,BTN_TRIANGLE},
     {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,BTN_L1}, {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,BTN_R1},
     {SDL_GAMEPAD_BUTTON_LEFT_STICK,BTN_L3}, {SDL_GAMEPAD_BUTTON_RIGHT_STICK,BTN_R3},
-    {SDL_GAMEPAD_BUTTON_START,BTN_OPTIONS}, {SDL_GAMEPAD_BUTTON_BACK,CLICK_RIGHT},
+    {SDL_GAMEPAD_BUTTON_START,BTN_OPTIONS}, {SDL_GAMEPAD_BUTTON_MISC1,CLICK_LEFT}, {SDL_GAMEPAD_BUTTON_BACK,CLICK_RIGHT},
     {SDL_GAMEPAD_BUTTON_TOUCHPAD,BTN_TOUCHPAD},
     {SDL_GAMEPAD_BUTTON_DPAD_UP,BTN_UP}, {SDL_GAMEPAD_BUTTON_DPAD_DOWN,BTN_DOWN},
     {SDL_GAMEPAD_BUTTON_DPAD_LEFT,BTN_LEFT}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT,BTN_RIGHT},
-},15};
+},16};
 static ButtonMap key_map={{
     {SDL_SCANCODE_SPACE,BTN_CROSS}, {SDL_SCANCODE_LSHIFT,BTN_CIRCLE}, {SDL_SCANCODE_E,BTN_SQUARE},
     {SDL_SCANCODE_Q,BTN_TRIANGLE}, {SDL_SCANCODE_1,BTN_L1}, {SDL_SCANCODE_3,BTN_R1},
@@ -692,7 +698,7 @@ static void replay_sample(PadData *d) {
 static int hold_after_capture;
 static void sample(PadData *d) {
     sample_host(d);
-    if (tlggpu_overlay_captures_input()) { hold_after_capture=1; click.side=-1; return; }
+    if (tlggpu_overlay_captures_input()) { hold_after_capture=1; click.side=-1; tlggpu_pad_game_buttons(0); return; }
     record_sample(d); /* the click sources as they are: a replay plays them again */
     read_inject();
     replay_sample(d);
@@ -705,6 +711,15 @@ static void sample(PadData *d) {
     if (hold_after_capture) {
         if (d->buttons) d->buttons=0;
         else hold_after_capture=0;
+    }
+    tlggpu_pad_game_buttons(d->buttons);
+    /* Photo mode with the world running and the sticks on the camera: the camera takes the
+     * sticks, the boy gets none of the controller (only Options and the touchpad: pause, photo
+     * mode). The photo buttons were read above (game buttons). */
+    if (tlggpu_photo_takes_pad(d->left_x,d->left_y,d->right_x,d->right_y)) {
+        d->left_x=d->left_y=d->right_x=d->right_y=128;
+        d->l2=d->r2=0;
+        d->buttons&=BTN_OPTIONS|BTN_TOUCHPAD;
     }
 }
 

@@ -32,12 +32,16 @@ No game files are included. You need your own copy, dumped from your own PS4.
 
 - **[Photo mode](#photo-mode):** freeze the world, fly a free camera anywhere and save lossless
   PNG screenshots at full render resolution.
+- **[Free camera, live world](#photo-mode):** unfreeze the world and keep the free camera. Watch
+  events unfold from any angle you like, or play the game itself from that angle while the camera
+  stays where you put it (D-pad down: world on / off, D-pad left: sticks camera / boy).
 - **[ICO horns](#ico-horns-only-in-this-port):** the Horned Apparel outfit finally gives the boy
   Ico's horns. Optional, off by default.
 - **[Quit directly](#controllers-and-languages):** quit the game from anywhere with a controller
   combo or the keyboard (**Alt+Q**), no menus. The game's pause menu shows the buttons.
-- **[Trico Tricks](docs/fun.md#trico-tricks-make-trico-move):** 30 of Trico's own moves on a bar (**F12**), including the throw-up animation
-  the developers sealed.
+- **[Trico Tricks](docs/fun.md#trico-tricks-make-trico-move):** 49 of Trico's own moves on a bar (**F12**) in coloured
+  groups, with your own favourites, the poses of the game's press shots and E3 demos, and the
+  throw-up animation the developers sealed.
 - **[Soundtrack](#soundtrack):** a music player in the launcher with all 100 pieces of the game's
   music, from your own game files.
 - **[Start at any point](#for-testers):** over 200 start points, from the first cave to the
@@ -83,6 +87,7 @@ No game files are included. You need your own copy, dumped from your own PS4.
 - An in-game settings menu (**Insert**) with presets, shadows, field of view, effects, colour and HDR10
 - Shader recipes against stutter and calmer wind
 - 7.1 surround, output device choice and headphone surround
+- [Xbox button icons](#controllers-and-languages) in the game's button hints and Controls screen
 - Language packs for 14 languages
 - [Packed game files](#get-started): play straight from one ZArchive `.zar` file
   and save about half the disk space (about 26 GB becomes about 12.5 GB)
@@ -166,6 +171,18 @@ The in-game menu also has:
 Settings that made no visible difference were left out; see
 [docs/graphics-investigation.md](docs/graphics-investigation.md).
 
+### Verified on
+
+| Graphics card | System | Settings | FPS |
+|---|---|---|---|
+| RTX 5090 | CachyOS, Windows 11 | 3840x1600, DLAA | mostly above 100, indoors mostly 120 |
+| RTX 4090 | Windows | 4K | mostly above 100 |
+| RX 9070 XT | SteamOS, Windows 11 | | 60-100 |
+| RX 9060 XT | SteamOS, Windows 11 | 1920x1080, FSR 4 AA | 60-100 |
+| RX 6600 | SteamOS | 1920x1080, FSR 3.1 AA, 60 FPS cap | mostly 60 |
+| RX 580 | Windows | 1920x1080 | steady 30 (capped) in the starting area; not measured further |
+| Steam Deck | SteamOS | 1280x800 | works, but under 20 in heavy scenes |
+
 <details>
 <summary>Screenshots: stock vs this port</summary>
 
@@ -205,6 +222,11 @@ the picture.
   in-game menu (Fun tab). You can change the controller combo under Controls.
 - **Fly:** left stick to move, right stick to look around, **L2 / R2** down and up, hold **R1** to
   go faster or **L1** to go slower.
+- **Watch the world move:** ever wanted to see events happen from a completely different angle?
+  Press **D-pad down** and the world runs on while you keep flying the camera. Follow a chase from
+  above, or watch Trico from the far side of the room. Press it again to freeze the world.
+- **Play under the photo camera:** with the world running, press **D-pad left** and the sticks
+  control the boy again while the camera stays where you put it. Press it again to fly the camera.
 - **Save a picture:** **Cross** or **Print Screen**. It is saved as a lossless PNG at the full
   render resolution in `user/screenshots`. The button help on screen is not in the picture.
 - **HDR and normal, both:** with HDR on, every photo is saved twice. A normal picture that looks
@@ -259,9 +281,10 @@ that: he goes right away, in front of you.
 
 The rest:
 
-- **Trico Tricks** (**F12**): a bar with 30 of Trico's own moves, such as yawn, sneeze, roar, sit
-  and roll over, plus the throw-up animation the developers sealed in July 2016. More moves are
-  in the menu, but some of them may not work. Trico doesn't always listen.
+- **Trico Tricks** (**F12**): a bar with 49 of Trico's own moves in coloured groups, such as yawn,
+  sneeze, roar, sit and roll over, the photo pose and lion roar of the press shots and E3 demos,
+  plus the throw-up animation the developers sealed in July 2016. Right-click a move to add it to
+  your favourites. 10 of them are in their own "May not work" group. Trico doesn't always listen.
 - **Extra Tricos**: up to 8 more, including the armoured one.
 - **Size:** from half to twice his size.
 - **Eyes:** the hidden disco-eye effect, or any colour.
@@ -272,7 +295,7 @@ The rest:
 <table>
   <tr>
     <td><a href="docs/fun.md#extra-tricos"><img src="docs/screenshots/fun/free-camera.jpg" alt="A crowd of Tricos"></a></td>
-    <td><a href="docs/fun.md#trico-tricks-make-trico-move"><img src="docs/screenshots/fun/yawn.jpg" alt="Trico yawning, with the Trico Tricks bar"></a></td>
+    <td><a href="docs/fun.md#trico-tricks-make-trico-move"><img src="docs/screenshots/fun/trico-tricks-bar.jpg" alt="Trico doing a happy jump next to the boy, with the Trico Tricks bar and its group buttons"></a></td>
     <td><a href="docs/fun.md#tricos-size"><img src="docs/screenshots/fun/big.jpg" alt="A giant Trico"></a></td>
   </tr>
   <tr>
@@ -311,6 +334,11 @@ sensor. On the launcher's **Controls** page you can remap buttons, set stick dea
 trigger points, check for stick drift, and remap keyboard and mouse. See
 [port/packaging/README-player.md](port/packaging/README-player.md).
 
+- **Xbox button icons:** with an Xbox controller the game's button hints and its Controls screen
+  (Options > Controls) show an Xbox pad, with the glow on the right button, and the launcher's
+  Controller page draws one too. **Button icons**
+  (Controller page, or Controls in the port's menu) picks Automatic, PlayStation or Xbox;
+  Automatic follows the controller you used last.
 - **Quit from anywhere:** **Alt+Q** on the keyboard, or hold **Share + Options** for 2 seconds
   on a controller (a note shows while you hold; let go to cancel). The window's X and Alt+F4 work
   the same way. It quits the way the game's own Quit does, so settings and progress are saved.
@@ -320,7 +348,9 @@ trigger points, check for stick drift, and remap keyboard and mouse. See
   (L1 + L3) can each be set to other buttons, on the launcher's **Controller** page (Combos) or
   under Controls in the port's menu. The quit combo is always held for 2 seconds.
 
-<p align="center"><img src="docs/screenshots/fun/controller.png" width="80%" alt="The launcher's Controls page"></p>
+<p align="center"><img src="docs/screenshots/fun/xbox-icons.jpg" width="100%" alt="The game's Controls screen and two button hints with an Xbox pad"></p>
+
+<p align="center"><img src="docs/screenshots/fun/controller.png" width="49%" alt="The launcher's Controls page with a PlayStation controller"> <img src="docs/screenshots/fun/controller-xbox.png" width="49%" alt="The launcher's Controls page with an Xbox controller"></p>
 
 The launcher and in-game menu are in English, with language packs for German, French, Spanish,
 Italian, Dutch, Polish, Turkish, Ukrainian, Portuguese (Brazil and Portugal), Japanese, Korean and
@@ -381,6 +411,9 @@ Thanks to everyone whose work this builds on.
   [gow3_pc](https://github.com/R-V-L/gow3_pc). Thanks to @dwaynevn-git for asking for it (#72).
 - The controller drawing: the [RPCS3](https://github.com/RPCS3/rpcs3) DualShock 3 drawing by
   HerrHulaHoop (GPL-2.0), redrawn as a DualShock 4.
+- Xbox button icons: the method (swap the game's pad pictures, move the glow) comes from
+  [@SulphurS16](https://github.com/SulphurS16)'s [TLG-Port](https://github.com/SulphurS16/TLG-Port).
+  Thank you! The Xbox pad drawing and the code are our own.
 
 ## License
 

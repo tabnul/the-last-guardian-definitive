@@ -222,7 +222,6 @@ DEBUG_FLAGS = (
     ('flag_fault_nodrain', 'TLG_FAULT_NODRAIN', '1', None, False),     # #38
     ('flag_pipeline_binaries', 'TLG_PIPELINE_BINARIES', '1', '0', False),  # NVIDIA 595 crash
     ('flag_object_motion', 'TLG_OBJECT_MOTION', '1', '0', False),      # ~10% FPS; unguarded reads
-    ('flag_arena_free', 'TLG_ARENA_FREE', '1', None, False),           # #79: out of memory, 8 GB AMD
     ('flag_granule', 'TLG_RESIDENCY_GRANULE_MB', None, '0', True),    # #79: AMD Windows submit OOM
     ('flag_sema_fast', 'TLG_SEMA_FAST', None, '0', True),            # #41 (@thearturord)
     ('flag_vk_validation', 'TLG_VK_VALIDATION', '1', None, False),     # needs the Vulkan SDK layer

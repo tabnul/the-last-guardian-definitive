@@ -9,7 +9,6 @@
 #include <chrono>
 #include <deque>
 #include <functional>
-#include <list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -157,10 +156,6 @@ public:
 
     /// Commits pending sparse buffer memory binds. Must be called before every scheduler submit.
     void SubmitPendingArenaBinds(Vulkan::SubmitInfo& info);
-
-    /// tlg (issue #79): destroys the arenas a migration replaced, once the GPU is done with
-    /// them (TLG_ARENA_FREE=1). GPU thread, between draws.
-    void FreeReplacedArenas();
 
     /// tlg (issue #38): releases the arena memory backing a range the guest unmapped. From the
     /// SotC port (@AjncSystem, @Oussama268, thanks). GPU thread only.
@@ -390,20 +385,7 @@ private:
     u64 max_arena_pages{2};
     u64 arena_page_size{u64{1} << MAX_ARENA_PAGE_BITS};
     u64 num_arena_pages{u64{1} << (ADDRESS_SPACE_BITS - MAX_ARENA_PAGE_BITS)};
-    /// A list: FreeReplacedArenas erases from the middle and the others must not move.
-    std::list<Buffer> arenas;
-    /// tlg (issue #79): a migration builds a larger arena over the pages of the ones it joins
-    /// and the old ones stayed alive for good, each still reserving its sparse address range
-    /// (New Game on an 8 GB RX 580: 10 arenas, 7680 MiB reserved for 771 MiB of data, then the
-    /// driver's ErrorOutOfHostMemory). With TLG_ARENA_FREE=1 they are destroyed once the work
-    /// recorded against them has finished on the GPU.
-    struct RetiredArena {
-        const Buffer* arena;
-        u64 tick;
-        std::chrono::steady_clock::time_point since;
-    };
-    std::vector<RetiredArena> retired_arenas;
-    bool free_replaced_arenas{};
+    std::deque<Buffer> arenas;
     // tlg (issue #79): memory becomes resident in aligned granules of this size (0 = per block).
     u64 residency_granule_bytes{16_MB};
     std::vector<ArenaBinds> pending_binds;

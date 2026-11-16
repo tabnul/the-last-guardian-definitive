@@ -2,6 +2,8 @@
 // tlg: the in-game menu's Fun tab (tlg_overlay.cpp): jump to a start point and extra Tricos.
 // The commands are Lua, run once by the settings tick (tlg_lua.cpp, within 15 frames).
 #pragma once
+#include <cstdint>
+#include <string>
 
 namespace TlgFun {
 // Extra Tricos at most: the physics engine (Havok) runs out of constraint room at 10 Tricos
@@ -12,84 +14,92 @@ void Jump(const char* stage, const char* area);
 void AddTrico();
 void AddEnemyTrico(); // the armoured one
 void RemoveTricos(); // all extra Tricos, enemy ones too
-// Trico actions (the Fun tab's list): the game's control commands, ControlCommand_C_<command>,
-// asked of the story's Trico as the game's AI does (Ai2.Utils.ReqCtrlCmd). All tested live 2026-11-04
-// (terrace s04 _090_GardenTerrace_001 and the area after it). His own AI often wins, so Act first gets him
-// into the pose the move needs and tries up to 3 times, until his animation shows the move (key).
-// "May not work": never seen in those tests (some small moves may play too subtly to see), or not tested.
+// Trico actions (the Trico Tricks bar): the game's control commands, ControlCommand_C_<command>,
+// asked of the story's Trico as the game's AI does (Ai2.Utils.ReqCtrlCmd). Checked one by one live
+// 2026-11-15 (s04 _110_WatersideGarden_001, all 60): Act gets him into the pose the move needs, sends
+// it in the same frame and watches his animation and his animation layers for the key. When the move
+// does not start within ~1.5 s, Act resets him (ControlCommand_C_Restart, instant, back to standing)
+// and tries once more; never while a story event, a jump or a climb has him (control mode EVENT,
+// JUMP, COLUMN). 11 moves of the 60 only worked after that reset.
+// "May not work": never seen working in that check; still in the bar, in their own group.
 struct Action {
     const char* command; // nullptr: a group heading
     const char* name;
     const char* pose = nullptr; // nullptr: sent once (a small move, no animation to check); "": as he is;
-                                // "stand", "sit", "lie": that pose first
+                                // "stand", "sit", "lie", "photo" (photo pose loop), "excite" (excited
+                                // stand), "sitplay" (sitting and playing): that pose first
     const char* key = nullptr;  // part of his animation name that shows the move; nullptr: the command
+    float hold = 0;             // seconds to send the command every frame (the game does so for some)
 };
+// Group headings (the bar's group tabs, same order); the icon script and the bar key on these names.
+inline constexpr const char* MayNotWork = "May not work";
 inline constexpr Action Actions[] = {
     {nullptr, "Sounds and moods"},
-    {"A_sneeze", "Sneeze"},
-    {"A_yawn", "Yawn"},
+    {"A_sneeze", "Sneeze", "", "sneeze"},
+    {"A_yawn", "Yawn", "", "yawn"},
     {"roar", "Roar", "stand"},
     {"howling", "Howl", "stand"},
     {"howling_calm", "Howl softly", "stand", "howling"},
+    {"A_groanA", "Groan", "", "groana"},
+    {"A_face_rejoice", "Happy face", "", "rejoice"},
+    {"A_inclines_neck", "Tilt head", "", "inclines"},
+    {"A_scolded", "Scolded", "", "scolded"},
+    {"A_refuse", "Refuse", "", "refuse"},
+    {"threat_posture", "Threaten", "stand", "threat"},
     {nullptr, "Body"},
     {"flap_wings", "Flap wings", "stand"},
-    {"A_wing_stretchA", "Stretch wings"},
-    {"A_wing_stretchB", "Stretch wings 2"},
+    {"A_wing_stretchA", "Stretch wings", "", "wing_stretcha"},
+    {"A_wing_stretchB", "Stretch wings 2", "", "wing_stretchb"},
     {"stretch_front", "Stretch forward", "stand"},
     {"stretch_back", "Stretch back", "stand"},
     {"stretch_up", "Stretch up", "stand"},
     {"stand_shake_high", "Shake off", "stand", "shake_high"},
-    {"scratch_left", "Scratch left", "stand"},
-    {"scratch_right", "Scratch right", "stand"},
+    {"stand_shake_drainsWater", "Shake off water", "stand", "drainswater"},
+    {"excite_shake_head", "Excited head shake", "excite", "excite_shake_head", 3.0f},
+    {"scratch_left", "Scratch left", "sit"},
+    {"scratch_right", "Scratch right", "sit"},
+    {"grooming_left", "Groom", "sit", "grooming"},
+    {"grooming_wing_left", "Groom wing", "sit", "wing"},
     {"kneading", "Knead", "stand", "knead"},
-    {"P_eye_wink_left", "Wink"},
-    {"P_ear_shake_left", "Shake ear"},
+    {"P_eye_wink_left", "Wink", "", "wink"},
+    {"P_ear_shake_left", "Shake ear", "", "ear_shake"},
+    {"P_fur_bristle", "Fluff fur", "", "fur_bristle"},
     {nullptr, "Play"},
-    {"roll_on_ground", "Roll on the ground (needs room)", "stand"},
+    {"roll_on_ground", "Roll on the ground (needs room)", "sit"},
     {"sit_plays", "Sit and play", "sit", "sit_play"},
+    {"sit_plays_pecks_nose", "Sit and peck", "sitplay", "pecks_nose", 3.0f},
+    {"joy_jump", "Happy jump (needs room)", "stand"},
+    {"mud_playing", "Play in the mud", "stand"},
+    {"cat_toy", "Play like a cat", "stand", "cat_toy"},
+    {"roll_in_nose", "Sniff and roll", "stand", "roll_in_nose"},
+    {"smell", "Sniff", "stand", "smell"},
+    {"touch_boy_right", "Touch the boy", "stand", "touch_right"},
+    {"touch_left_side_soft", "Paw", "stand", "touch_left"}, // second half of the sealed Play act (Mods > Trico plays)
     {"toilet", "Toilet", "stand"},
     {nullptr, "Tummy"},
     {"tlg_gag", "Gag"},              // our Lua, not a control command (tlg_lua.cpp Act)
     {"tlg_throw_up", "Throw up"},    // the developers' cut throw-up, brought back
     {nullptr, "Rest"},
-    {"sit", "Sit", "stand", "sit_loop"},
+    {"sit", "Sit", "stand", "sit_"},
     {"sit_shake", "Sit and shake", "sit"},
-    {"sit_end", "Stand up from sitting", ""},
     {"lie_down", "Lie down", "sit"},
-    {"lie_down_relax", "Lie down relaxed", "stand"},
     {"rise", "Get up", "stand"},
     {"stand", "Stand", ""},
-    {nullptr, "May not work"},
-    {"A_groanA", "Groan"},
-    {"A_excite", "Get excited"},
-    {"excite_shake_head", "Excited head shake", "stand", "shake_head"},
-    {"A_face_rejoice", "Happy face"},
-    {"A_inclines_neck", "Tilt head"},
-    {"A_hungry", "Hungry"},
-    {"A_scolded", "Scolded"},
-    {"A_refuse", "Refuse"},
-    {"P_fur_bristle", "Fluff fur"},
-    {"threat_posture", "Threaten", "stand", "threat"},
-    {"threat_posture_end", "Stop threatening", "stand", "threat"},
-    {"stand_shake_drainsWater", "Shake off water", "stand", "drain"},
-    {"grooming_left", "Groom", "stand", "grooming"},
-    {"grooming_wing_left", "Groom wing", "stand", "wing"},
-    {"joy_jump", "Happy jump (needs room)", "stand"},
-    {"mud_playing", "Play in the mud", "stand"},
-    {"cat_toy", "Play like a cat", "stand", "cat"},
-    {"roll_in_nose", "Sniff and roll", "stand", "nose"},
-    {"sit_plays_pecks_nose", "Sit and peck", "sit", "peck"},
+    {nullptr, "Marketing / E3 poses"}, // the poses of the game's press shots and E3 demos
+    {"EX_photo", "Photo pose", "stand", "photo"},
+    {"EX_photo_claws", "Claws", "photo", "claws"},
+    {"A_groanD", "Lion roar", "", "groand"},
+    {nullptr, MayNotWork},
+    {"A_excite", "Get excited", "stand", "excite"},
+    {"A_hungry", "Hungry", "stand", "hungry"},
     {"puts_sand", "Dig sand", "stand", "sand"},
-    {"liedown_to_sleep", "Fall asleep", "lie", "sleep"},
-    {"sleep", "Sleep", "lie"},
-    {"sleep_to_liedown", "Wake up", "lie", "sleep_to"},
-    {"smell", "Sniff", "stand"},
-    {"smellA", "Sniff around", "stand", "smell"},
-    {"liedown_smell", "Sniff lying down", "lie", "smell"},
-    {"touch_boy_right", "Touch the boy", "stand", "touch"},
+    {"smellA", "Sniff around", "stand", "smella"},
     {"TC_reactionA_to_boy", "React to the boy", "stand", "reaction"},
-    {"A_smell", "Sniff", "stand", "smell"},              // first half of the sealed Play act (Mods > Trico plays)
-    {"touch_left_side_soft", "Paw", "stand", "touch"},   // second half (Common_touch_left)
+    {"lie_down_relax", "Lie down relaxed", "lie", "relax", 5.0f},
+    {"liedown_smell", "Sniff lying down", "lie", "smell"},
+    {"liedown_to_sleep", "Fall asleep", "lie", "sleep"},
+    {"sleep", "Sleep", "lie", "sleep"},
+    {"sleep_to_liedown", "Wake up", "lie", "sleep_to"},
 };
 void Act(const char* command);
 
@@ -126,8 +136,29 @@ bool FreeCameraOn();
 // Leaving puts back the normal camera and the game's speed or pause. A jump turns it off.
 enum class PhotoFreeze { Pause = 0, StopTime = 1 };
 inline constexpr const char* PhotoFreezeNames[] = {"Pause the game", "Stop time"};
+// Photo mode button rows (Controls tab), in tlg_overlay.cpp PhotoSlots order.
+inline constexpr const char* PhotoButtonNames[] = {"Screenshot", "Fly up", "Fly down", "Fast (hold)", "Slow (hold)",
+                                                   "Hide / show the button help", "Freeze world on / off",
+                                                   "Sticks: camera / boy"};
 void PhotoMode(bool on);
 bool PhotoModeOn();
+/// Freeze world on / off: lets the world run under the photo camera, or freezes it again.
+void PhotoWorldToggle();
+bool PhotoWorldFrozen();
+/// Sticks: camera or boy (the switch button, camera first). On the camera, the pad thread keeps
+/// the sticks for the camera (PhotoTakesPad) and the game gets a still controller, so the boy
+/// stands still; the camera tick reads them every frame through the "--TLGPAD" chunk. On the boy,
+/// the game gets the controller and the camera holds still.
+void PhotoSticksToggle();
+bool PhotoSticksBoy();
+/// Pad thread, every read: keeps the raw sticks (0..255, 128 = centre); true = hide the
+/// controller from the game (photo mode, sticks on the camera, game pause menu closed).
+bool PhotoTakesPad(uint8_t lx, uint8_t ly, uint8_t rx, uint8_t ry);
+/// The "--TLGPAD" chunk: "return lx,ly,rx,ry" (-1..1, up = +), zeros when the camera may not move.
+std::string PhotoPadChunk();
+/// The photo buttons held now and the invert setting, for the camera tick (the overlay sends
+/// them when they change; does nothing outside photo mode).
+void PhotoPad(bool up, bool down, bool fast, bool slow, bool invert_y);
 void PhotoModeFreeze(PhotoFreeze how); // takes effect at the next start of photo mode
 PhotoFreeze PhotoModeFreeze();
 // Tricopilot: the developers' self-driving Trico, left in the retail game

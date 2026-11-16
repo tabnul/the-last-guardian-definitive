@@ -147,6 +147,22 @@ struct Values {
     /// tlg.ini trico_drool, env TLG_TRICO_DROOL wins): 0 = off as shipped, 1 = always,
     /// 2 = as the developers planned (only while he wants a smell pot or the boy's smell bottle).
     std::atomic<int> trico_drool{0};
+    /// Button icons in the game's hints (issue #61; tlg.ini button_icons, env TLG_BUTTON_ICONS wins):
+    /// 0 = automatic (follows the controller used last), 1 = PlayStation (the game's own), 2 = Xbox.
+    /// See XboxIcons().
+    std::atomic<int> button_icons{0};
+    /// Not a setting: the controller used last is an Xbox-style one (runtime_pad.c, tlggpu_pad_kind).
+    std::atomic<bool> pad_is_xbox{false};
+    /// The hints show an Xbox pad: picture swapped in vk_texture_pack.cpp, glow moved in tlg_lua.cpp.
+    bool XboxIcons() const {
+        const int icons = button_icons.load();
+        return icons == 2 || (icons == 0 && pad_is_xbox.load());
+    }
+    /// Trico's moves bar (Trico Tricks tab and the F12 bar, in game only): the favourite moves
+    /// (tlg.ini trico_favourites, control command names, comma separated, at most 16; the menu
+    /// thread only) and the last group shown (trico_bar_group: 0 = favourites, then the groups).
+    std::string trico_favourites;
+    std::atomic<int> trico_bar_group{0};
     /// Mods > All treasures (tlg.ini mod_treasures, env TLG_MOD_TREASURES wins): owns every treasure
     /// and opens the Treasures menu. Written to the save: turning it off takes nothing back.
     std::atomic<bool> mod_treasures{false};
@@ -216,6 +232,13 @@ struct Values {
     /// QA menu of level_select (tlg_lua.cpp) and photo mode on/off (tlg_overlay.cpp). Defaults are the combos the port always used.
     std::atomic<uint32_t> combo_quit{PadComboQuit}, combo_menu{PadComboMenu}, combo_qa{PadComboQa},
         combo_photo{PadComboPhoto};
+    /// Photo mode buttons (Controls tab + launcher Controller page, tlg.ini pad_photo_*): one
+    /// button each (PadCombo bit). Read by tlg_overlay.cpp, which hands the held state to the
+    /// photo camera tick (TlgFun::PhotoPad). photo_invert_y: pushing the right stick forward
+    /// looks down (default on, user 2026-11-16).
+    std::atomic<uint32_t> photo_shot{PadCross}, photo_up{PadR2}, photo_down{PadL2}, photo_fast{PadR1},
+        photo_slow{PadL1}, photo_help{PadUp}, photo_world{PadDown}, photo_sticks{PadLeft};
+    std::atomic<bool> photo_invert_y{true};
 
     /// Startup settings for the explicit TLG_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;
@@ -230,7 +253,7 @@ Values& Get();
 /// "share+options" (tlg.ini) <-> PadCombo bits; unknown names are skipped, an empty result keeps `fallback`.
 uint32_t ParseCombo(const std::string& text, uint32_t fallback);
 std::string ComboText(uint32_t bits);
-/// "Share + Options" for the menus.
+/// "Share + Options" for the menus; Xbox names ("View + Menu") while the game shows Xbox icons.
 std::string ComboLabel(uint32_t bits);
 
 /// Pack folders with an index.txt under TLG_TEXPACK_DIR (default "texpack"), sorted; read once.

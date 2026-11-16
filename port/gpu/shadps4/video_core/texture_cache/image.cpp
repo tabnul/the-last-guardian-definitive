@@ -4,6 +4,7 @@
 #include "tlg_toggles.h"
 #include <ranges>
 #include "common/assert.h"
+#include "common/scope_exit.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -295,10 +296,49 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
                                            subres_range->base.layer + subres_range->extent.layers)
                 : std::views::iota(0u, info.resources.layers);
 
+        // tlg (issue #79): the loop below makes one barrier per mip and layer. A full upload
+        // of a 512-layer, 7-mip array after per-layer use gave 3584 barriers in one go (5090
+        // measurement), next to the batch an RX 580 refuses with ErrorOutOfHostMemory. Neighbours
+        // with the same old state are merged: first along the layers (the inner loop), then
+        // whole layer runs along the mips. Same transitions, far fewer barriers.
+        const size_t first_barrier = barriers.size();
+        size_t raw_barriers = 0;
+        const auto same_state = [](const vk::ImageMemoryBarrier2& x,
+                                   const vk::ImageMemoryBarrier2& y) {
+            return x.srcStageMask == y.srcStageMask && x.srcAccessMask == y.srcAccessMask &&
+                   x.oldLayout == y.oldLayout;
+        };
+        SCOPE_EXIT {
+            const size_t before = raw_barriers;
+            size_t out = first_barrier;
+            for (size_t i = first_barrier; i < barriers.size(); ++i) {
+                auto& cur = barriers[i];
+                if (out > first_barrier) {
+                    auto& prev = barriers[out - 1];
+                    auto& pr = prev.subresourceRange;
+                    const auto& cr = cur.subresourceRange;
+                    if (same_state(prev, cur) && pr.baseArrayLayer == cr.baseArrayLayer &&
+                        pr.layerCount == cr.layerCount &&
+                        pr.baseMipLevel + pr.levelCount == cr.baseMipLevel) {
+                        pr.levelCount += cr.levelCount;
+                        continue;
+                    }
+                }
+                barriers[out++] = cur;
+            }
+            barriers.resize(out);
+            static u32 logged = 0;
+            if (before >= 64 && logged < 20) {
+                ++logged;
+                LOG_INFO(Render_Vulkan,
+                         "Barrier merge: {} -> {} for {:#x} ({}x{}, {} mips, {} layers, {})",
+                         before, out - first_barrier, info.guest_address, info.size.width,
+                         info.size.height, info.resources.levels, info.resources.layers,
+                         vk::to_string(info.pixel_format));
+            }
+        };
         for (u32 mip : mips) {
             for (u32 layer : layers) {
-                // NOTE: these loops may produce a lot of small barriers.
-                // If this becomes a problem, we can optimize it by merging adjacent barriers.
                 const auto subres_idx = mip * info.resources.layers + layer;
                 ASSERT(subres_idx < subresource_states.size());
                 auto& state = subresource_states[subres_idx];
@@ -308,6 +348,22 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
                                              vk::AccessFlagBits2::eMemoryWrite;
                 const bool is_write = static_cast<bool>(state.access_mask & write_flags);
                 if (state.layout != dst_layout || state.access_mask != dst_mask || is_write) {
+                    ++raw_barriers;
+                    if (barriers.size() > first_barrier) {
+                        auto& prev = barriers.back();
+                        auto& range = prev.subresourceRange;
+                        if (range.baseMipLevel == mip && range.levelCount == 1 &&
+                            range.baseArrayLayer + range.layerCount == layer &&
+                            prev.srcStageMask == state.pl_stage &&
+                            prev.srcAccessMask == state.access_mask &&
+                            prev.oldLayout == state.layout) {
+                            ++range.layerCount;
+                            state.layout = dst_layout;
+                            state.access_mask = dst_mask;
+                            state.pl_stage = dst_stage;
+                            continue;
+                        }
+                    }
                     barriers.emplace_back(vk::ImageMemoryBarrier2{
                         .srcStageMask = state.pl_stage,
                         .srcAccessMask = state.access_mask,

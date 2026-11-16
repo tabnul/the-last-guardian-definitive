@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <sstream>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -76,15 +77,33 @@ std::atomic<bool> move_bar_open{false};
 ImTextureData* move_icons = nullptr; // TlgFunIcons atlas, made on first use (present thread)
 // tlg: controller combos (tlg.ini pad_combo_*). pad_mask = buttons held now (PadCombo bits).
 u32 pad_mask = 0;
-int capture_slot = -1;  // Controls tab: the combo being set (0 quit, 1 menu, 2 QA menu, 3 photo mode), -1 = none
+int capture_slot = -1;  // Controls tab: the combo being set (0 quit, 1 menu, 2 QA menu, 3 photo mode,
+                        // 4.. one photo mode button, PhotoSlots), -1 = none
 u32 capture_mask = 0;   // buttons pressed during the capture
 u32 capture_ignore = 0; // buttons already held when the capture started (the click on "Set")
 std::atomic<bool> screenshot_requested{false}; // Cross in photo mode / Print Screen (TakeScreenshotRequest)
 std::atomic<bool> pause_menu_open{false}; // the game's own pause menu is open (PauseMenuUI.lua)
 std::atomic<int64_t> quit_hold_start{0}; // steady ms when the quit combo was complete, 0 = not held
 constexpr int64_t QuitHoldMs = 2000;     // fixed: the quit combo is always a 2 second hold
+// Photo mode buttons (tlg.ini pad_photo_*): one button each, capture slots 4 and up.
+constexpr int PhotoSlotFirst = 4;
+struct PhotoSlot { std::atomic<u32> TlgSettings::Values::*member; u32 fallback; };  // label: TlgFun::PhotoButtonNames
+const PhotoSlot PhotoSlots[] = {
+    {&TlgSettings::Values::photo_shot, TlgSettings::PadCross},
+    {&TlgSettings::Values::photo_up, TlgSettings::PadR2},
+    {&TlgSettings::Values::photo_down, TlgSettings::PadL2},
+    {&TlgSettings::Values::photo_fast, TlgSettings::PadR1},
+    {&TlgSettings::Values::photo_slow, TlgSettings::PadL1},
+    {&TlgSettings::Values::photo_help, TlgSettings::PadUp},
+    {&TlgSettings::Values::photo_world, TlgSettings::PadDown},
+    {&TlgSettings::Values::photo_sticks, TlgSettings::PadLeft},
+};
+constexpr int PhotoSlotCount = int(std::size(PhotoSlots));
+static_assert(std::size(PhotoSlots) == std::size(TlgFun::PhotoButtonNames));
+bool photo_help_hidden = false; // the photo button help was hidden with its button (until shown again)
 std::atomic<u32>* ComboSlot(int slot) {
     auto& s = TlgSettings::Get();
+    if (slot >= PhotoSlotFirst) return &(s.*PhotoSlots[slot - PhotoSlotFirst].member);
     return slot == 0 ? &s.combo_quit : slot == 1 ? &s.combo_menu : slot == 2 ? &s.combo_qa : &s.combo_photo;
 }
 
@@ -1025,6 +1044,14 @@ void ControlsTab() {
         ImGui::EndTable();
     }
     ImGui::SeparatorText(TR("Controller"));
+    if (BeginRows("##padicons")) {
+        static const char* const icon_labels[] = {TR("Automatic"), "PlayStation", "Xbox"};
+        static const int icon_values[] = {0, 1, 2};
+        ChoiceRow(TR("Button icons"), s.button_icons, icon_labels, icon_values, 3,
+                  TR("The controller drawn in the game's button hints. Automatic follows the controller used last."),
+                  0);
+        ImGui::EndTable();
+    }
     if (BeginRows("##combos")) {
         const char* labels[4] = {TR("Quit game (hold 2 seconds)"), TR("In-game menu"), TR("QA menu"),
                                  TR("Photo mode on / off")};
@@ -1062,6 +1089,43 @@ void ControlsTab() {
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextDisabled("%s", TR("Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu."));
     ImGui::PopTextWrapPos();
+    ImGui::SeparatorText(TR("Photo mode"));
+    if (BeginRows("##photobuttons")) {
+        CheckRow(TR("Invert look up / down"), s.photo_invert_y,
+                 TR("Pushing the right stick forward looks down, as in a plane."), d.photo_invert_y);
+        for (int i = 0; i < PhotoSlotCount; ++i) {
+            const int slot = PhotoSlotFirst + i;
+            Row(TR(TlgFun::PhotoButtonNames[i]));
+            if (capture_slot == slot) {
+                ImGui::TextUnformatted(TR("Press a button..."));
+                ImGui::SameLine();
+                if (ImGui::SmallButton(TR("Cancel"))) {
+                    capture_slot = -1;
+                }
+            } else {
+                const u32 button = ComboSlot(slot)->load();
+                ImGui::TextUnformatted(TlgSettings::ComboLabel(button).c_str());
+                ImGui::SameLine();
+                if (ImGui::SmallButton(TR("Set"))) {
+                    capture_slot = slot;
+                    capture_mask = 0;
+                    capture_ignore = pad_mask;
+                }
+                if (button != PhotoSlots[i].fallback) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton(TR("Default"))) {
+                        ComboSlot(slot)->store(PhotoSlots[i].fallback);
+                        dirty = true;
+                    }
+                }
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextDisabled("%s", TR("One button each. Left stick flies, right stick looks around. The buttons only count while photo mode is on."));
+    ImGui::PopTextWrapPos();
     ImGui::SeparatorText(TR("Keyboard and mouse layout"));
     if (BeginRows("##layout")) {
         InfoRow(TR("Move / camera"), TR("WASD / mouse or arrow keys"));
@@ -1090,8 +1154,10 @@ void ControlsTab() {
 
 // tlg: Fun tab: jump to any start point of the story (as the game's QA menu does, without
 // turning it on) and extra Tricos. Commands run at the game's next settings tick.
-// The move bar: the working moves of TlgFun::Actions (before "May not work"), one row per group,
-// each an icon (TlgFunIcons, same order) with its name under it and as a tooltip. Fun tab and F12.
+// The move bar: all moves of TlgFun::Actions as icons (TlgFunIcons, same order) with the name under
+// each and as a tooltip, one group at a time behind coloured group buttons (user 2026-11-15).
+// Favourites come first: right-click a move to star it (at most 16, tlg.ini trico_favourites).
+// Fun tab and F12.
 void MakeMoveIcons() {
     static bool tried = false;
     if (tried) {
@@ -1109,75 +1175,199 @@ void MakeMoveIcons() {
     ImGui::RegisterUserTexture(move_icons);
 }
 
-// rows 0: one row per group (the menu tab); rows > 0: the moves spread evenly over that many rows (the
-// F12 bar, 2 rows: user 2026-11-05).
-void MoveBar(float slot, int rows = 0) {
-    const float label_h = ImGui::GetTextLineHeight() * 0.8f * 2.0f;
-    int per_row = 0;
-    if (rows > 0) {
-        int moves = 0;
-        for (const auto& a : TlgFun::Actions) {
-            if (!a.command && std::strcmp(a.name, "May not work") == 0) {
-                break;
-            }
-            moves += a.command ? 1 : 0;
-        }
-        per_row = (moves + rows - 1) / rows;
-    }
+struct MoveGroup {
+    const char* name;
+    std::vector<int> moves; // indexes into TlgFun::Actions
+    ImVec4 color;
+};
+
+constexpr int MaxFavourites = 16;
+
+// The icon of a move: its place among the moves (headers do not count).
+int MoveIcon(int action) {
     int icon = 0;
-    bool row_started = false;
-    for (const auto& a : TlgFun::Actions) {
+    for (int i = 0; i < action; ++i) {
+        icon += TlgFun::Actions[i].command ? 1 : 0;
+    }
+    return icon;
+}
+
+// The groups in TlgFun::Actions order, coloured like their icons (tools/fun-icons/make_icons.py GROUPS).
+const std::vector<MoveGroup>& MoveGroups() {
+    static std::vector<MoveGroup> groups;
+    if (!groups.empty()) {
+        return groups;
+    }
+    const ImVec4 colors[] = {
+        ImVec4(222 / 255.f, 168 / 255.f, 72 / 255.f, 1), // Sounds and moods
+        ImVec4(70 / 255.f, 190 / 255.f, 180 / 255.f, 1), // Body
+        ImVec4(235 / 255.f, 120 / 255.f, 110 / 255.f, 1), // Play
+        ImVec4(150 / 255.f, 200 / 255.f, 80 / 255.f, 1), // Tummy
+        ImVec4(120 / 255.f, 130 / 255.f, 235 / 255.f, 1), // Rest
+        ImVec4(214 / 255.f, 120 / 255.f, 230 / 255.f, 1), // Marketing / E3 poses
+        ImVec4(150 / 255.f, 150 / 255.f, 160 / 255.f, 1), // May not work
+    };
+    for (int i = 0; i < int(std::size(TlgFun::Actions)); ++i) {
+        const auto& a = TlgFun::Actions[i];
         if (!a.command) {
-            if (std::strcmp(a.name, "May not work") == 0) {
-                break;
-            }
-            if (per_row == 0) {
-                row_started = false;
-            }
-            continue;
+            const ImVec4 color = groups.size() < std::size(colors) ? colors[groups.size()] : colors[std::size(colors) - 1];
+            groups.push_back({a.name, {}, color});
+        } else if (!groups.empty()) {
+            groups.back().moves.push_back(i);
         }
-        if (per_row > 0 && icon > 0 && icon % per_row == 0) {
-            row_started = false;
+    }
+    return groups;
+}
+
+// The favourites (indexes into TlgFun::Actions) from tlg.ini trico_favourites, in the saved order.
+std::vector<int>& Favourites() {
+    static std::vector<int> list;
+    static bool loaded = false;
+    if (!loaded) {
+        loaded = true;
+        std::istringstream stream{TlgSettings::Get().trico_favourites};
+        std::string name;
+        while (std::getline(stream, name, ',') && int(list.size()) < MaxFavourites) {
+            for (int i = 0; i < int(std::size(TlgFun::Actions)); ++i) {
+                const char* command = TlgFun::Actions[i].command;
+                if (command && name == command && std::find(list.begin(), list.end(), i) == list.end()) {
+                    list.push_back(i);
+                }
+            }
         }
-        if (row_started) {
+    }
+    return list;
+}
+
+void ToggleFavourite(int action) {
+    auto& list = Favourites();
+    const auto found = std::find(list.begin(), list.end(), action);
+    if (found != list.end()) {
+        list.erase(found);
+    } else if (int(list.size()) < MaxFavourites) {
+        list.push_back(action);
+    } else {
+        return;
+    }
+    std::string text;
+    for (const int i : list) {
+        text += (text.empty() ? "" : ",") + std::string(TlgFun::Actions[i].command);
+    }
+    TlgSettings::Get().trico_favourites = text;
+    TlgSettings::Save();
+}
+
+// A small gold star in the top right corner of the last item.
+void DrawFavouriteStar() {
+    const ImVec2 corner = ImGui::GetItemRectMax();
+    const float r = ImGui::GetItemRectSize().x * 0.13f;
+    const ImVec2 c(corner.x - r * 1.1f, ImGui::GetItemRectMin().y + r * 1.1f);
+    ImVec2 points[10];
+    for (int i = 0; i < 10; ++i) {
+        const float angle = -IM_PI / 2 + float(i) * IM_PI / 5;
+        const float len = i % 2 ? r * 0.45f : r;
+        points[i] = ImVec2(c.x + std::cos(angle) * len, c.y + std::sin(angle) * len);
+    }
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    for (int i = 0; i < 10; i += 2) {
+        draw->AddTriangleFilled(points[(i + 9) % 10], points[i], points[i + 1], IM_COL32(255, 210, 80, 255));
+    }
+    ImVec2 inner[5];
+    for (int i = 0; i < 5; ++i) {
+        inner[i] = points[i * 2 + 1];
+    }
+    draw->AddConvexPolyFilled(inner, 5, IM_COL32(255, 210, 80, 255));
+    draw->AddPolyline(points, 10, IM_COL32(60, 35, 0, 220), ImDrawFlags_Closed, 1.0f);
+}
+
+void MoveButton(int action, float slot) {
+    const auto& a = TlgFun::Actions[action];
+    const int icon = MoveIcon(action);
+    const float label_h = ImGui::GetTextLineHeight() * 0.8f * 3.0f; // "Roll on the ground" needs 3 lines
+    ImGui::PushID(action);
+    ImGui::BeginGroup();
+    bool pressed;
+    if (move_icons && icon < TlgFunIcons::Count) {
+        const float u = float(TlgFunIcons::Size) / float(move_icons->Width);
+        const float v = float(TlgFunIcons::Size) / float(move_icons->Height);
+        const float x = float(icon % TlgFunIcons::Columns) * u, y = float(icon / TlgFunIcons::Columns) * v;
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+        pressed = ImGui::ImageButton("##move", move_icons->GetTexRef(), ImVec2(slot, slot), ImVec2(x, y),
+                                     ImVec2(x + u, y + v));
+        ImGui::PopStyleVar();
+    } else {
+        pressed = ImGui::Button("##move", ImVec2(slot + 4, slot + 4));
+    }
+    const bool hovered = ImGui::IsItemHovered();
+    const auto& favourites = Favourites();
+    const bool favourite = std::find(favourites.begin(), favourites.end(), action) != favourites.end();
+    // Right mouse button, or Square / X on a controller in the menu.
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right) ||
+        (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceLeft, false))) {
+        ToggleFavourite(action);
+    }
+    if (favourite) {
+        DrawFavouriteStar();
+    }
+    if (hovered) {
+        ImGui::SetTooltip("%s\n%s", a.name,
+                          favourite ? TR("Right-click: remove from favourites")
+                          : int(favourites.size()) < MaxFavourites ? TR("Right-click: add to favourites")
+                                                                   : TR("Favourites are full (16)"));
+    }
+    if (pressed) {
+        TlgFun::Act(a.command);
+    }
+    // The name under the icon, up to the bracket ("Roll on the ground (needs room)").
+    const char* end = std::strstr(a.name, " (");
+    const std::string label = end ? std::string(a.name, end) : std::string(a.name);
+    ImGui::BeginChild("##label", ImVec2(slot + 4, label_h), ImGuiChildFlags_None,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground);
+    ImGui::SetWindowFontScale(0.8f);
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextColored(hovered ? ImVec4(1.0f, 0.86f, 0.5f, 1.0f) : ImVec4(0.92f, 0.92f, 0.92f, 1.0f), "%s",
+                       label.c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::EndChild();
+    ImGui::EndGroup();
+    ImGui::PopID();
+}
+
+// Group buttons (Favourites first, then the groups in their icon colours), then the moves of the
+// picked group, per_row icons a row. The picked group is kept in tlg.ini trico_bar_group.
+void MoveBar(float slot, int per_row) {
+    const auto& groups = MoveGroups();
+    auto& setting = TlgSettings::Get().trico_bar_group;
+    const int current = std::clamp(setting.load(), 0, int(groups.size()));
+    for (int g = 0; g <= int(groups.size()); ++g) {
+        const bool picked = g == current;
+        const ImVec4 color = g == 0 ? ImVec4(1.0f, 0.82f, 0.3f, 1.0f) : groups[g - 1].color;
+        const auto shade = [&](float k, float alpha) { return ImVec4(color.x * k, color.y * k, color.z * k, alpha); };
+        ImGui::PushStyleColor(ImGuiCol_Button, picked ? shade(0.85f, 1.0f) : shade(0.45f, 0.75f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, shade(1.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, shade(1.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, picked ? ImVec4(0.08f, 0.06f, 0.04f, 1.0f) : ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
+        if (g > 0) {
             ImGui::SameLine();
         }
-        row_started = true;
-        ImGui::PushID(icon);
-        ImGui::BeginGroup();
-        bool pressed;
-        if (move_icons && icon < TlgFunIcons::Count) {
-            const float u = float(TlgFunIcons::Size) / float(move_icons->Width);
-            const float v = float(TlgFunIcons::Size) / float(move_icons->Height);
-            const float x = float(icon % TlgFunIcons::Columns) * u, y = float(icon / TlgFunIcons::Columns) * v;
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
-            pressed = ImGui::ImageButton("##move", move_icons->GetTexRef(), ImVec2(slot, slot), ImVec2(x, y),
-                                         ImVec2(x + u, y + v));
-            ImGui::PopStyleVar();
-        } else {
-            pressed = ImGui::Button("##move", ImVec2(slot + 4, slot + 4));
+        ImGui::PushID(g);
+        if (ImGui::Button(g == 0 ? TR("Favourites") : groups[g - 1].name)) {
+            setting = g;
+            TlgSettings::Save();
         }
-        const bool hovered = ImGui::IsItemHovered();
-        if (hovered) {
-            ImGui::SetTooltip("%s", a.name);
-        }
-        if (pressed) {
-            TlgFun::Act(a.command);
-        }
-        // The name under the icon, up to the bracket ("Roll on the ground (needs room)").
-        const char* end = std::strstr(a.name, " (");
-        const std::string label = end ? std::string(a.name, end) : std::string(a.name);
-        ImGui::BeginChild("##label", ImVec2(slot + 4, label_h), ImGuiChildFlags_None,
-                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground);
-        ImGui::SetWindowFontScale(0.8f);
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextColored(hovered ? ImVec4(1.0f, 0.86f, 0.5f, 1.0f) : ImVec4(0.92f, 0.92f, 0.92f, 1.0f), "%s",
-                           label.c_str());
-        ImGui::PopTextWrapPos();
-        ImGui::EndChild();
-        ImGui::EndGroup();
         ImGui::PopID();
-        ++icon;
+        ImGui::PopStyleColor(4);
+    }
+    const std::vector<int> moves = current == 0 ? Favourites() : groups[current - 1].moves;
+    if (moves.empty()) {
+        ImGui::TextDisabled("%s", TR("No favourites yet. Right-click a move in another group to add it here."));
+        return;
+    }
+    for (int i = 0; i < int(moves.size()); ++i) {
+        if (i % per_row != 0) {
+            ImGui::SameLine();
+        }
+        MoveButton(moves[i], slot);
     }
 }
 
@@ -1190,37 +1380,16 @@ void MoveBarWindow() {
     ImGui::Begin("##move_bar", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing);
-    ImGui::TextDisabled("Trico's moves (F12 hides)");
-    MoveBar(48.0f * base_scale, 2);
+    ImGui::TextDisabled("%s", TR("Trico's moves (F12 hides). Right-click a move to add it to your favourites."));
+    MoveBar(48.0f * base_scale, 12);
     ImGui::End();
 }
 
 // tlg: Trico Tricks, Trico's moves on their own tab (user 2026-11-05: moves out of the Fun tab).
 void TricksTab() {
-    ImGui::TextDisabled("Moves that work (also as a bar in the game: F12, click a move)");
-    MoveBar(44.0f * base_scale);
-    ImGui::TextDisabled("Every move, also the ones that may not work:");
-    static int action = 1;
-    const auto& picked = TlgFun::Actions[action];
-    ImGui::SetNextItemWidth(260);
-    if (ImGui::BeginCombo("##action", picked.name)) {
-        for (int i = 0; i < int(std::size(TlgFun::Actions)); ++i) {
-            const auto& a = TlgFun::Actions[i];
-            if (!a.command) {
-                ImGui::SeparatorText(a.name);
-                continue;
-            }
-            if (ImGui::Selectable(a.name, i == action)) {
-                action = i;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Do it")) {
-        TlgFun::Act(picked.command);
-    }
-    Help("Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down) and gets up to 3 tries. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": never seen in our tests, or not tested.");
+    ImGui::TextDisabled("%s", TR("Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites."));
+    MoveBar(44.0f * base_scale, 12);
+    Help(TR("Asks the story's Trico to do it, as the game itself does. He first gets into the pose the move needs (stands up, sits or lies down). When the move does not start, he is reset to standing and asked once more, but never during a story event, a jump or a climb. His own mind can still win, and some moves need room (a roll can push the boy off a ledge). \"May not work\": not seen working in our tests."));
 }
 
 void FunTab() {
@@ -1341,7 +1510,7 @@ void FunTab() {
         TlgFun::PhotoMode(photo);
         if (photo) SetOpen(false);
     }
-    Help(TR("The world stands still and you fly the camera to take a picture. Left stick: fly. Right stick: look around. L2 / R2: down / up. Hold R1: fast, hold L1: slow. Cross or Print Screen: save a screenshot to user/screenshots. L3 + R3, F9 (or this menu) turns it on and off. A jump turns it off."));
+    Help(TR("The world stands still and you fly the camera to take a picture. Left stick: fly. Right stick: look around. The other buttons are set on the Controls tab and shown on screen in photo mode. Print Screen also saves a screenshot to user/screenshots. F9 (or this menu) turns it on and off. A jump turns it off."));
     ImGui::BeginDisabled(photo);
     int freeze = int(TlgFun::PhotoModeFreeze());
     const char* freeze_names[] = {TR(TlgFun::PhotoFreezeNames[0]), TR(TlgFun::PhotoFreezeNames[1])};
@@ -2110,27 +2279,114 @@ void PhotoHelpBox() {
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                      ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoFocusOnAppearing);
-    ImGui::TextUnformatted(TR("Photo mode"));
+    // Sticks on the boy: say so in the title, so the shorter list below makes sense.
+    const bool boy = TlgFun::PhotoSticksBoy();
+    ImGui::TextUnformatted(boy ? TR("Photo mode: playing as the boy") : TR("Photo mode"));
     ImGui::Separator();
     // Key column as wide as its longest text (packs translate it) plus a clear gap.
-    const std::string exit_keys = TlgSettings::ComboLabel(TlgSettings::Get().combo_photo.load()) + " / F9";
-    const std::pair<const char*, const char*> rows[] = {
-        {TR("Cross / Print Screen"), TR("Screenshot")},
-        {TR("Left stick"), TR("Fly")},
-        {TR("Right stick"), TR("Look around")},
-        {"L2 / R2", TR("Down / up")},
-        {TR("Hold R1 / L1"), TR("Fast / slow")},
-        {exit_keys.c_str(), TR("Exit photo mode")},
+    // The buttons as set (Controls tab, tlg.ini pad_photo_*).
+    const auto& st = TlgSettings::Get();
+    const auto key = [](u32 bits) { return TlgSettings::ComboLabel(bits); };
+    const std::string shot_keys = key(st.photo_shot) + " / " + TR("Print Screen");
+    const std::string up_down = key(st.photo_down) + " / " + key(st.photo_up);
+    const std::string fast_slow = std::string(TR("Hold")) + " " + key(st.photo_fast) + " / " + key(st.photo_slow);
+    const std::string help_key = key(st.photo_help);
+    const std::string world_key = key(st.photo_world);
+    const std::string sticks_key = key(st.photo_sticks);
+    const std::string exit_keys = key(st.combo_photo) + " / F9";
+    // One fixed list (user 2026-11-16: a list that changed with the sticks looked like a second
+    // menu). Sticks on the boy: the camera rows stay, greyed out, as those buttons play the game.
+    const char* world_text = TlgFun::PhotoWorldFrozen() ? TR("Let the world run") : TR("Freeze the world");
+    struct Row {
+        const char* key;
+        const char* text;
+        bool camera; // greyed out while the sticks are on the boy
     };
+    const Row rows[] = {{shot_keys.c_str(), TR("Screenshot"), false},
+                        {TR("Left stick"), TR("Fly"), true},
+                        {TR("Right stick"), TR("Look around"), true},
+                        {up_down.c_str(), TR("Down / up"), true},
+                        {fast_slow.c_str(), TR("Fast / slow"), true},
+                        {sticks_key.c_str(), TR("Sticks: camera / boy"), false},
+                        {world_key.c_str(), world_text, false},
+                        {help_key.c_str(), TR("Hide this help"), false},
+                        {exit_keys.c_str(), TR("Exit photo mode"), false}};
     float key_w = 0.0f;
-    for (const auto& r : rows) key_w = std::max(key_w, ImGui::CalcTextSize(r.first).x);
+    for (const auto& r : rows) key_w = std::max(key_w, ImGui::CalcTextSize(r.key).x);
     const float col = ImGui::GetCursorPosX() + key_w + 32.0f * base_scale;
     for (const auto& r : rows) {
-        ImGui::TextUnformatted(r.first);
+        const bool grey = boy && r.camera;
+        if (grey) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        ImGui::TextUnformatted(r.key);
         ImGui::SameLine(col);
-        ImGui::TextUnformatted(r.second);
+        ImGui::TextUnformatted(r.text);
+        if (grey) ImGui::PopStyleColor();
     }
     ImGui::End();
+}
+
+// tlg: the photo mode buttons, once per presented frame. They are read from what the game reads
+// (game_buttons: controller, keyboard and mouse after the remaps, so keyboard players keep the
+// same keys), with the raw controller (pad_mask) only for buttons the game has no bit for
+// (Share, PS). Screenshot and help act on a press; up/down/fast/slow and the invert setting go
+// to the camera tick when they change. Our menu open counts as nothing held.
+std::atomic<u32> game_buttons{0};
+u32 GameBit(u32 sdl_bit) {
+    using namespace TlgSettings;
+    switch (sdl_bit) {
+    case PadCross: return 0x4000; case PadCircle: return 0x2000; case PadSquare: return 0x8000;
+    case PadTriangle: return 0x1000; case PadOptions: return 0x8; case PadL3: return 0x2;
+    case PadR3: return 0x4; case PadL1: return 0x400; case PadR1: return 0x800; case PadL2: return 0x100;
+    case PadR2: return 0x200; case PadUp: return 0x10; case PadDown: return 0x40; case PadLeft: return 0x80;
+    case PadRight: return 0x20; case PadTouchpad: return 0x100000; default: return 0;
+    }
+}
+void PhotoPadSync() {
+    static int sent = -1; // last state sent, -1 = none (photo mode off)
+    static u32 last_actions = ~0u; // shot / help pressed last frame (~0 = wait for a release first)
+    if (!TlgFun::PhotoModeOn()) {
+        sent = -1;
+        last_actions = ~0u;
+        return;
+    }
+    const auto& s = TlgSettings::Get();
+    const u32 game = game_buttons;
+    const auto held = [&](u32 bit) {
+        if (menu_open || !bit) return false;
+        const u32 g = GameBit(bit);
+        return g ? (game & g) != 0 : (pad_mask & bit) != 0;
+    };
+    // The press that turned photo mode on is not a screenshot: wait until both are let go.
+    // Sticks on the boy: the controller plays the game, so the camera buttons rest (Cross would
+    // jump and take a picture); Print Screen still takes one.
+    const bool boy = TlgFun::PhotoSticksBoy();
+    const u32 actions = (!boy && held(s.photo_shot) ? 1u : 0u) | (held(s.photo_help) ? 2u : 0u) |
+                        (held(s.photo_world) ? 4u : 0u) | (held(s.photo_sticks) ? 8u : 0u);
+    const u32 pressed = last_actions == ~0u ? 0 : actions & ~last_actions;
+    last_actions = last_actions == ~0u && actions ? ~0u : actions;
+    if (pressed & 1) screenshot_requested = true;
+    if (pressed & 2) photo_help_hidden = !photo_help_hidden;
+    // Not under the game's pause menu: there the button belongs to the menu, and the world
+    // would run behind it.
+    if ((pressed & 4) && !pause_menu_open) TlgFun::PhotoWorldToggle();
+    // The boy can only move in a running world: while frozen the switch is blocked with a note,
+    // else the camera buttons rest and nothing moves (SteamOS test 2026-11-16, user picked this).
+    if ((pressed & 8) && !pause_menu_open) {
+        if (!boy && TlgFun::PhotoWorldFrozen()) {
+            NoticeLocked(std::string(TR("Let the world run first")) + " (" +
+                             TlgSettings::ComboLabel(s.photo_world) + ")",
+                         2.5f);
+        } else {
+            TlgFun::PhotoSticksToggle();
+        }
+    }
+    const bool up = !boy && held(s.photo_up), down = !boy && held(s.photo_down),
+               fast = !boy && held(s.photo_fast), slow = !boy && held(s.photo_slow), inv = s.photo_invert_y;
+    const int now = up | down << 1 | fast << 2 | slow << 3 | inv << 4;
+    if (now != sent) {
+        sent = now;
+        TlgFun::PhotoPad(up, down, fast, slow, inv);
+    }
 }
 
 void NoticeBox() {
@@ -2148,7 +2404,46 @@ void NoticeBox() {
     ImGui::End();
 }
 
-/// tlg: while the game's pause menu is open: how to quit and open the menus (the player's own combos).
+// tlg: the controller button(s) that press the touchpad's left side (the game's own photo mode):
+// the launcher's remap (TLG_PAD_MAP touchpad_left=..., runtime_pad.c) or the defaults.
+std::string GamePhotoButtons(bool xbox) {
+    static const struct { const char* sdl; const char* ps; const char* xbox; } names[] = {
+        {"a", "Cross", "A"}, {"b", "Circle", "B"}, {"x", "Square", "X"}, {"y", "Triangle", "Y"},
+        {"back", "Share", "View"}, {"start", "Options", "Menu"}, {"guide", "PS", "Xbox"},
+        {"leftshoulder", "L1", "LB"}, {"rightshoulder", "R1", "RB"}, {"leftstick", "L3", "LS"},
+        {"rightstick", "R3", "RS"}, {"dpup", "Up", "Up"}, {"dpdown", "Down", "Down"},
+        {"dpleft", "Left", "Left"}, {"dpright", "Right", "Right"}, {"misc1", "Mute", "Share"},
+        {"touchpad", "Touchpad", "Touchpad"},
+    };
+    std::string mapped;
+    if (const char* env = std::getenv("TLG_PAD_MAP")) {
+        std::string map = std::string(",") + env;
+        for (const char* key : {",touchpad_left=", ",touchpad="}) {
+            if (const size_t at = map.find(key); at != std::string::npos) {
+                const size_t from = at + std::strlen(key);
+                mapped = map.substr(from, map.find(',', from) - from);
+                break;
+            }
+        }
+    }
+    if (mapped.empty()) return xbox ? "Share" : TR("Touchpad (left)");
+    std::string out;
+    for (size_t from = 0; from <= mapped.size();) {
+        const size_t end = std::min(mapped.find('|', from), mapped.size());
+        const std::string name = mapped.substr(from, end - from);
+        from = end + 1;
+        if (name.empty() || name == "none") continue;
+        std::string label = name;
+        for (const auto& n : names) {
+            if (name == n.sdl) label = xbox ? n.xbox : n.ps;
+        }
+        out += (out.empty() ? "" : " / ") + label;
+    }
+    return out;
+}
+
+/// tlg: while the game's pause menu is open: the shortcuts with the player's own buttons, as a
+/// two-column list (buttons | action) like the photo mode help.
 void QuitHintBox() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
@@ -2160,25 +2455,37 @@ void QuitHintBox() {
                      ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoFocusOnAppearing);
     ImGui::SetWindowFontScale(1.1f);
-    // One line per combo, with the player's own buttons.
-    const auto line = [](const char* with, const char* without, u32 combo) {
-        std::string text = combo ? with : without;
-        if (const size_t at = text.find("%s"); combo && at != std::string::npos) {
-            text.replace(at, 2, TlgSettings::ComboLabel(combo));
-        }
-        ImGui::TextUnformatted(text.c_str());
-    };
     const auto& s = TlgSettings::Get();
-    line(TR("Quit game: hold %s for 2 seconds, or press Alt+Q"), TR("Quit game: press Alt+Q"), s.combo_quit);
-    line(TR("Port menu: %s, or press Insert"), TR("Port menu: press Insert"), s.combo_menu);
+    // Buttons, then the keyboard key; a combo set to nothing leaves only the key.
+    const auto keys = [](u32 combo, const char* key) {
+        std::string text = combo ? TlgSettings::ComboLabel(combo) : std::string();
+        if (key && *key) text += (text.empty() ? "" : " / ") + std::string(key);
+        return text.empty() ? std::string(TR("off")) : text;
+    };
+    std::string quit = s.combo_quit ? TlgSettings::ComboLabel(s.combo_quit) + " " + TR("(hold 2 s)") : "";
+    quit += (quit.empty() ? "" : " / ") + std::string("Alt+Q");
     // The keyboard keys (1 + Z) reach the QA menu only through the default combo (game pad map).
-    // The launcher note shows always, so players learn the QA menu exists.
-    std::string qa_with = s.combo_qa == TlgSettings::PadComboQa ? TR("QA menu: %s, or press 1 + Z") : TR("QA menu: %s");
-    std::string qa_without = TR("QA menu: off");
-    const std::string note = std::string(" ") + TR("(turn on Level select and QA menu in the launcher first)");
-    qa_with += note;
-    qa_without += note;
-    line(qa_with.c_str(), qa_without.c_str(), s.combo_qa);
+    const bool qa_keys = s.combo_qa == TlgSettings::PadComboQa;
+    const std::pair<std::string, const char*> rows[] = {
+        {quit, TR("Quit game")},
+        {keys(s.combo_menu, "Insert"), TR("Port menu")},
+        {keys(s.combo_photo, "F9"), TR("Photo mode on / off")},
+        {keys(s.photo_world, ""), TR("Photo mode: freeze world on / off")},
+        {keys(s.photo_sticks, ""), TR("Photo mode: sticks camera / boy")},
+        {GamePhotoButtons(TlgSettings::Get().XboxIcons()), TR("Game photo mode")},
+        {keys(s.combo_qa, qa_keys ? "1 + Z" : ""), TR("QA menu")},
+    };
+    ImGui::TextDisabled("%s", TR("Shortcuts"));
+    float key_w = 0.0f;
+    for (const auto& r : rows) key_w = std::max(key_w, ImGui::CalcTextSize(r.first.c_str()).x);
+    const float col = ImGui::GetCursorPosX() + key_w + 32.0f * base_scale;
+    for (const auto& r : rows) {
+        ImGui::TextUnformatted(r.first.c_str());
+        ImGui::SameLine(col);
+        ImGui::TextUnformatted(r.second);
+    }
+    // Always shown, so players learn the QA menu exists.
+    ImGui::TextDisabled("%s", TR("QA menu: turn on Level select and QA menu in the launcher first"));
     ImGui::End();
 }
 
@@ -2468,7 +2775,9 @@ bool PadEvent(const SDL_Event& event) {
         capture_mask |= pad_mask & ~capture_ignore;
         if (!pad_mask && capture_mask) {
             // All released: two or more buttons make the new combo; a single button keeps waiting.
-            if (__builtin_popcount(capture_mask) >= 2) {
+            // A photo mode button is exactly one button; more keeps waiting.
+            const int count = __builtin_popcount(capture_mask);
+            if (capture_slot >= PhotoSlotFirst ? count == 1 : count >= 2) {
                 ComboSlot(capture_slot)->store(capture_mask);
                 std::printf("Settings: controller combo %d set to %s\n", capture_slot,
                             TlgSettings::ComboText(capture_mask).c_str());
@@ -2502,11 +2811,6 @@ bool PadEvent(const SDL_Event& event) {
     // The default QA combo stays in the game's Lua (works with keyboard keys too).
     if (s.combo_qa != TlgSettings::PadComboQa && completes(s.combo_qa)) {
         TlgFun::ToggleQaMenu();
-        return true;
-    }
-    // Cross in photo mode: a screenshot (the menu is closed: photo mode closes it).
-    if (bit == TlgSettings::PadCross && !menu_open && TlgFun::PhotoModeOn()) {
-        screenshot_requested = true;
         return true;
     }
     if (completes(s.combo_photo)) {
@@ -2735,6 +3039,10 @@ void SetPauseMenu(bool open) {
     pause_menu_open = open;
 }
 
+bool PauseMenuOpen() {
+    return pause_menu_open;
+}
+
 bool TakeScreenshotRequest() {
     return screenshot_requested.exchange(false);
 }
@@ -2771,6 +3079,10 @@ bool Visible() {
                            NoticeActive() || quit_hold_start != 0 || pause_menu_open ||
                            choice_retiring || s.show_fps || move_bar_open ||
                            TlgFun::PhotoModeOn());
+}
+
+void SetGameButtons(u32 buttons) {
+    game_buttons = buttons;
 }
 
 bool CapturesInput() {
@@ -2931,7 +3243,8 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     if (NoticeActive() && !menu_open) {
         NoticeBox();
     }
-    if (TlgFun::PhotoModeOn() && !menu_open && !loading) {
+    PhotoPadSync();
+    if (TlgFun::PhotoModeOn() && !menu_open && !loading && !photo_help_hidden) {
         PhotoHelpBox();
     }
     if (pause_menu_open && !menu_open && !quit_hold_start) {

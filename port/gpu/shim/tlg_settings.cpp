@@ -131,6 +131,19 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         target = ParseCombo(value, target.load());
         return;
     }
+    if (key.rfind("pad_photo_", 0) == 0) {
+        auto* target = key == "pad_photo_shot" ? &v.photo_shot : key == "pad_photo_up" ? &v.photo_up
+                     : key == "pad_photo_down" ? &v.photo_down : key == "pad_photo_fast" ? &v.photo_fast
+                     : key == "pad_photo_slow" ? &v.photo_slow : key == "pad_photo_help" ? &v.photo_help
+                     : key == "pad_photo_world" ? &v.photo_world : key == "pad_photo_sticks" ? &v.photo_sticks
+                                               : nullptr;
+        if (target) target->store(ParseCombo(value, target->load()));
+        return;
+    }
+    if (key == "photo_invert_y") {
+        v.photo_invert_y = std::atoi(value.c_str()) != 0;
+        return;
+    }
     if (key == "audio_surround") {
         v.audio_surround = std::atoi(value.c_str()) != 0;
         return;
@@ -229,6 +242,12 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.slow_motion = i == 1 ? 1 : 0;
     } else if (key == "trico_drool") {
         v.trico_drool = i == 1 || i == 2 ? i : 0;
+    } else if (key == "button_icons") {
+        v.button_icons = value == "playstation" ? 1 : value == "xbox" ? 2 : i == 1 || i == 2 ? i : 0;
+    } else if (key == "trico_favourites") {
+        v.trico_favourites = value;
+    } else if (key == "trico_bar_group") {
+        v.trico_bar_group = std::max(i, 0);
     } else if (key == "mod_treasures") {
         v.mod_treasures = i != 0;
     } else if (key == "mod_horns") {
@@ -289,13 +308,17 @@ void Set(Values& v, const std::string& key, const std::string& value) {
 } // namespace
 
 namespace {
-struct ComboName { uint32_t bit; const char* key; const char* label; };
+// label: PlayStation name; xbox: the same button on an Xbox pad (as the launcher's XBOX_LABEL).
+struct ComboName { uint32_t bit; const char* key; const char* label; const char* xbox; };
 constexpr ComboName ComboNames[] = {
-    {PadCross, "cross", "Cross"}, {PadCircle, "circle", "Circle"}, {PadSquare, "square", "Square"},
-    {PadTriangle, "triangle", "Triangle"}, {PadL1, "l1", "L1"}, {PadR1, "r1", "R1"}, {PadL2, "l2", "L2"},
-    {PadR2, "r2", "R2"}, {PadL3, "l3", "L3"}, {PadR3, "r3", "R3"}, {PadShare, "share", "Share"},
-    {PadOptions, "options", "Options"}, {PadTouchpad, "touchpad", "Touchpad"}, {PadPs, "ps", "PS"},
-    {PadUp, "up", "Up"}, {PadDown, "down", "Down"}, {PadLeft, "left", "Left"}, {PadRight, "right", "Right"},
+    {PadCross, "cross", "Cross", "A"}, {PadCircle, "circle", "Circle", "B"},
+    {PadSquare, "square", "Square", "X"}, {PadTriangle, "triangle", "Triangle", "Y"},
+    {PadL1, "l1", "L1", "LB"}, {PadR1, "r1", "R1", "RB"}, {PadL2, "l2", "L2", "LT"},
+    {PadR2, "r2", "R2", "RT"}, {PadL3, "l3", "L3", "LS"}, {PadR3, "r3", "R3", "RS"},
+    {PadShare, "share", "Share", "View"}, {PadOptions, "options", "Options", "Menu"},
+    {PadTouchpad, "touchpad", "Touchpad", "Touchpad"}, {PadPs, "ps", "PS", "Xbox"},
+    {PadUp, "up", "Up", "Up"}, {PadDown, "down", "Down", "Down"}, {PadLeft, "left", "Left", "Left"},
+    {PadRight, "right", "Right", "Right"},
 };
 } // namespace
 
@@ -314,17 +337,17 @@ uint32_t ParseCombo(const std::string& text, uint32_t fallback) {
     return bits ? bits : fallback;
 }
 
-static std::string ComboJoin(uint32_t bits, bool label) {
+static std::string ComboJoin(uint32_t bits, bool label, bool xbox = false) {
     std::string out;
     for (const auto& n : ComboNames) {
         if (!(bits & n.bit)) continue;
         if (!out.empty()) out += label ? " + " : "+";
-        out += label ? n.label : n.key;
+        out += !label ? n.key : xbox ? n.xbox : n.label;
     }
     return out;
 }
 std::string ComboText(uint32_t bits) { return ComboJoin(bits, false); }
-std::string ComboLabel(uint32_t bits) { return ComboJoin(bits, true); }
+std::string ComboLabel(uint32_t bits) { return ComboJoin(bits, true, Get().XboxIcons()); }
 
 Values& Get() {
     static Values values;
@@ -431,6 +454,7 @@ void Load() {
         {"TLG_MOUSE_ACCEL", "mouse_accel"},          {"TLG_MOUSE_DEADZONE", "mouse_deadzone"},
         {"TLG_SMAA", "smaa"},                        {"TLG_DLAA", "dlaa"},
         {"TLG_LEVEL_SELECT", "level_select"},       {"TLG_TRICO_DROOL", "trico_drool"},
+        {"TLG_BUTTON_ICONS", "button_icons"},
         {"TLG_MOD_TREASURES", "mod_treasures"},     {"TLG_MOD_HORNS", "mod_horns"},
         {"TLG_MOD_PLAYS", "mod_plays"},             {"TLG_MOD_THROW_UP", "mod_throw_up"},
         {"TLG_MOD_HINTS", "mod_hints"},
@@ -749,7 +773,17 @@ void Save() {
     std::fprintf(file, "pad_combo_quit=%s\npad_combo_menu=%s\npad_combo_qa=%s\npad_combo_photo=%s\n",
                  ComboText(v.combo_quit).c_str(), ComboText(v.combo_menu).c_str(), ComboText(v.combo_qa).c_str(),
                  ComboText(v.combo_photo).c_str());
+    std::fprintf(file,
+                 "pad_photo_shot=%s\npad_photo_up=%s\npad_photo_down=%s\npad_photo_fast=%s\npad_photo_slow=%s\n"
+                 "pad_photo_help=%s\npad_photo_world=%s\npad_photo_sticks=%s\nphoto_invert_y=%d\n",
+                 ComboText(v.photo_shot).c_str(), ComboText(v.photo_up).c_str(), ComboText(v.photo_down).c_str(),
+                 ComboText(v.photo_fast).c_str(), ComboText(v.photo_slow).c_str(), ComboText(v.photo_help).c_str(),
+                 ComboText(v.photo_world).c_str(), ComboText(v.photo_sticks).c_str(),
+                 int(v.photo_invert_y.load()));
     std::fprintf(file, "trico_drool=%d\n", v.trico_drool.load());
+    std::fprintf(file, "button_icons=%d\n", v.button_icons.load());
+    std::fprintf(file, "trico_favourites=%s\ntrico_bar_group=%d\n", v.trico_favourites.c_str(),
+                 v.trico_bar_group.load());
     std::fprintf(file, "mod_treasures=%d\nmod_horns=%d\n", int(v.mod_treasures.load()),
                  int(v.mod_horns.load()));
     std::fprintf(file, "mod_plays=%d\nmod_throw_up=%d\nmod_hints=%d\n", int(v.mod_plays.load()),
