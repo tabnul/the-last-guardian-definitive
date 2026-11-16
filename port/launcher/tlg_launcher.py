@@ -440,7 +440,9 @@ TEXT = {
     'preset_view': 'View preset settings…',
     'preset_view_title': 'Preset settings: {name}',
     'preset_view_hint': ('Every setting this preset sets. "Now" is your current value; the marked rows change '
-                         'when you pick this preset.'),
+                         'when you apply this preset.'),
+    'preset_apply': 'Apply',
+    'preset_pending': 'Not applied yet: press Apply to use this preset.',
     'preset_view_setting': 'Setting',
     'preset_view_value': 'Preset',
     'preset_view_now': 'Now',
@@ -2257,6 +2259,9 @@ class Launcher:
         self.preset_box.pack(side='left')
         self.preset_box.bind('<<ComboboxSelected>>', lambda _: self.preset_picked())
         # What the preset in the box does: one line here, every value behind the button.
+        # A pick only selects; Apply writes it (so the view window can show what would change).
+        self.preset_apply = ttk.Button(pick, text=self.t('preset_apply'), command=self.apply_preset)
+        self.preset_apply.pack(side='left', padx=(6, 0))
         ttk.Button(pick, text=self.t('preset_view'), command=self.preset_view_dialog).pack(side='left', padx=(6, 0))
         self.preset_about = ttk.Label(parent, text='', foreground=MUTED, wraplength=420, justify='left')
         self.preset_about.grid(row=row + 2, column=0, columnspan=3, sticky='w', pady=(0, 4))
@@ -2357,12 +2362,34 @@ class Launcher:
         self.presets = preset_share.launcher_presets(tlg_run.USER_DIR / 'presets')
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
         names = [self.preset_label(i, name) for i, (name, _) in enumerate(self.presets)]
-        self.preset_box.configure(values=names, postcommand=self.refresh_preset)
+        self.preset_box.configure(values=names, postcommand=self.refresh_preset_list)
         current = preset_share.current_preset(self.presets, ini, self.settings)
         self.preset_box.set(names[current] if current >= 0 else self.t('preset_custom'))
         self.preset_shown = current
-        if getattr(self, 'preset_about', None):
-            self.preset_about.configure(text=self.preset_about_text(current))
+        self.show_preset_pick()
+
+    def refresh_preset_list(self):
+        """Opening the list: new presets in the folder show up, the pick in the box stays."""
+        picked = self.preset_box.get()
+        self.presets = preset_share.launcher_presets(tlg_run.USER_DIR / 'presets')
+        self.preset_box.configure(values=[self.preset_label(i, name) for i, (name, _) in enumerate(self.presets)])
+        self.preset_box.set(picked)
+
+    def preset_pending(self):
+        """The preset picked in the box but not applied yet, else -1."""
+        index = self.preset_box.current()
+        return index if index >= 0 and index != getattr(self, 'preset_shown', -1) else -1
+
+    def show_preset_pick(self):
+        """The line under the box and the Apply button follow the pick in the box."""
+        if not getattr(self, 'preset_about', None):
+            return
+        index = self.preset_box.current()
+        pending = self.preset_pending() >= 0
+        text = self.preset_about_text(index if index >= 0 else self.preset_shown)
+        self.preset_about.configure(text=text + ('\n' + self.t('preset_pending') if pending else ''),
+                                    foreground=ACCENT if pending else MUTED)
+        self.preset_apply.state(['!disabled'] if pending else ['disabled'])
 
     def preset_about_text(self, index):
         """One line on what preset `index` (launcher_presets) does; -1 = no preset fits."""
@@ -2447,11 +2474,21 @@ class Launcher:
             ttk.Label(frame, text=self.preset_value_text(key, value), foreground=colour).grid(
                 row=row, column=2, sticky='w', padx=(0, 16))
             ttk.Label(frame, text=self.preset_value_text(key, now)).grid(row=row, column=3, sticky='w')
-        ttk.Button(frame, text=self.t('close'), command=win.destroy).grid(
-            row=len(rows) + 3, column=0, columnspan=4, pady=(10, 0))
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=len(rows) + 3, column=0, columnspan=4, pady=(10, 0))
+        if self.preset_pending() == index:
+            def apply_and_close():
+                win.destroy()
+                self.apply_preset()
+            ttk.Button(buttons, text=self.t('preset_apply'), command=apply_and_close).pack(side='left', padx=(0, 6))
+        ttk.Button(buttons, text=self.t('close'), command=win.destroy).pack(side='left')
 
     def preset_picked(self):
-        index = self.preset_box.current()
+        """A pick in the box: shown, not written until Apply."""
+        self.show_preset_pick()
+
+    def apply_preset(self):
+        index = self.preset_pending()
         if index < 0:
             return
         tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
