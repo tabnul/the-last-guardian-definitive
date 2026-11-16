@@ -1665,6 +1665,13 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         ProcessCommands();
         // tlg: per packet, so a live toggle switch keeps the stream in order.
         const bool compute_pipe = rasterizer && ComputePipeOn();
+        {
+            // One log line at the first compute job and at every live switch.
+            static std::atomic<int> logged{-1};
+            if (rasterizer && logged.exchange(compute_pipe ? 1 : 0, std::memory_order_relaxed) != (compute_pipe ? 1 : 0)) {
+                std::printf("GPU: compute in the draw pipeline %s\n", compute_pipe ? "on" : "off");
+            }
+        }
         if (rasterizer && !compute_pipe) {
             rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCompute); // tlg: compute work uses the caches
         }

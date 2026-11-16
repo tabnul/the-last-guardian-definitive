@@ -738,6 +738,16 @@ std::string SetChunk() {
                   s.shadow_lite.load() ? "{-1}" : "nil", s.trico_feathers.load(), s.fov.load(),
                   s.grass_smooth.load() ? "true" : "false", s.boy_wind.load(), s.tree_wind.load());
     code += line;
+    {
+        // One log line when the shadow values sent to the game change (proof in reporters' logs).
+        static int last_distance = -1, last_lite = -1;
+        const int distance = std::clamp(s.shadow_distance.load(), 10, 100), lite = s.shadow_lite.load() ? 1 : 0;
+        if (distance != last_distance || lite != last_lite) {
+            last_distance = distance;
+            last_lite = lite;
+            std::printf("Lua: shadows distance %d%%, lite %s\n", distance, lite ? "on" : "off");
+        }
+    }
     code += "Drool(" + std::to_string(std::clamp(s.trico_drool.load(), 0, 2)) + ")\n";
     code += std::string("Plays(") + (s.mod_plays.load() ? "true" : "false") + ") ThrowUp(" +
             std::to_string(s.mod_throw_up.load() ? 1 : 0) + ") _TLGHINTS=" +
