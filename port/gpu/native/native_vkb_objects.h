@@ -110,8 +110,9 @@ void TextureMoved(u64 new_id, u64 old_id, u32 first_mip);
 /// API contract census (debug, TLG_VKB_CONTRACT_CENSUS=1): counts by key, in the objects report under "contract_census"
 bool ContractCensusOn();
 void ContractNote(const std::string& key);
-/// review A6 census (debug): an engine buffer view (V# at view + 0x74) that is not its whole buffer from offset 0
-void ContractViewRange(u64 view, u64 buffer, bool graphics);
+/// api-contract.md V4 / review A6: an engine buffer view's byte range inside its buffer (`bytes` long), from the view's own V# (SRV at + 0x78, UAV at + 0x74).
+/// False with offset 0, size = bytes: the whole buffer.
+bool ViewRange(u64 view, bool srv, u64 buffer, u64 bytes, u64& offset, u64& size);
 /// C10: a texture bound as target 7 (the target-7 mode), and a shader reading a texture (counted when it was a target-7 texture)
 void ContractTarget7(u64 texture_id, const std::string& key);
 void ContractSampled(u64 texture_id);

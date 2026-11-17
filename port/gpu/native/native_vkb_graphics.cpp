@@ -1133,14 +1133,16 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
                 }
             } else if (object != 0 && src.kind == 1 && (Rd<u32>(object, 0x44) == 1 || Rd<u32>(object, 0x44) == 0xb)) {
                 const u64 buffer = Rd<u64>(object, 0x30);
-                const u64 size = buffer != 0 ? Rd<u32>(buffer, 0x180) : 0;
-                Core::Vkb::ContractViewRange(object, buffer, true); // review A6 census (debug)
+                const u64 bytes = buffer != 0 ? Rd<u32>(buffer, 0x180) : 0;
+                u64 offset = 0, size = bytes; // api-contract.md V4 / review A6: the view's own range of its buffer
+                Core::Vkb::ViewRange(object, true, buffer, bytes, offset, size);
                 Core::Vkb::BufferWindow w;
-                if (late != nullptr && size != 0) { // R2b: the frame ring now (arithmetic), any other buffer by the recording thread
+                if (late != nullptr && bytes != 0) { // R2b: the frame ring now (arithmetic), any other buffer by the recording thread
                     const u64 memory = Rd<u64>(buffer, 0x30);
-                    ok = Core::Vkb::BufferInRing(memory, size, w) ? bind_window(memory, size, w) : defer(buffer, Rd<u64>(buffer, 0x10), memory, size, 0, size);
+                    ok = Core::Vkb::BufferInRing(memory + offset, size, w) ? bind_window(memory + offset, size, w)
+                                                                          : defer(buffer, Rd<u64>(buffer, 0x10), memory, bytes, offset, size);
                 } else {
-                    ok = size != 0 && Core::Vkb::BufferOfObject(buffer, 0, size, w) && bind_window(Rd<u64>(buffer, 0x30), size, w);
+                    ok = bytes != 0 && Core::Vkb::BufferOfObject(buffer, offset, size, w) && bind_window(Rd<u64>(buffer, 0x30) + offset, size, w);
                 }
             }
         } else if (src.cls == Source::Class::Slot) {

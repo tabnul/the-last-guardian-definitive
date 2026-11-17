@@ -3128,24 +3128,38 @@ void BufferCpuAddressable(u64 buffer_id) {
     c_placed_by_asyncmap.fetch_add(1, std::memory_order_relaxed);
 }
 
-void ContractViewRange(u64 view, u64 buffer, bool graphics) {
-    if (!ContractCensusOn() || view == 0 || buffer == 0) {
-        return;
+/// api-contract.md V4 / review A6: an engine buffer view's bytes inside its buffer, from the view's own V# (the engine keeps it on the buffer's current memory at every
+/// rename): offset = view base - buffer base (the buffer's V# at + 0x60), size = records x stride (bytes if no stride), clamped to the buffer. False: the whole buffer.
+std::atomic<u64> c_view_whole{0}, c_view_part{0}, c_view_outside{0};
+bool ViewRange(u64 view, bool srv, u64 buffer, u64 bytes, u64& offset, u64& size) {
+    offset = 0, size = bytes;
+    if (view == 0 || buffer == 0 || bytes == 0) {
+        return false;
     }
-    const u32* v = reinterpret_cast<const u32*>(view + 0x74);
+    const u32* v = reinterpret_cast<const u32*>(view + (srv ? 0x78 : 0x74));
     const u64 base = static_cast<u64>(v[0]) | static_cast<u64>(v[1] & 0xfffu) << 32; // base: 44 bits
     const u32 stride = (v[1] >> 16) & 0x3fffu;
-    const u64 bytes = stride != 0 ? u64{v[2]} * stride : u64{v[2]};
-    const u64 memory = *reinterpret_cast<const u64*>(buffer + 0x30);
-    const u64 size = *reinterpret_cast<const u32*>(buffer + 0x180);
-    const char* stage = graphics ? "graphics" : "compute";
-    if (base != memory) {
-        ContractNote(fmt::format("A6 {} buffer view starts {} B into its buffer", stage, static_cast<s64>(base - memory)));
-    } else if (bytes < size) {
-        ContractNote(fmt::format("A6 {} buffer view shorter than its buffer", stage));
-    } else {
-        ContractNote(fmt::format("A6 {} buffer view = whole buffer", stage));
+    const u64 records = stride != 0 ? u64{v[2]} * stride : u64{v[2]};
+    const u32* b = reinterpret_cast<const u32*>(buffer + 0x60);
+    const u64 buffer_base = static_cast<u64>(b[0]) | static_cast<u64>(b[1] & 0xfffu) << 32;
+    if (base < buffer_base || base >= buffer_base + bytes || records == 0) {
+        c_view_outside.fetch_add(1, std::memory_order_relaxed);
+        if (ContractCensusOn()) {
+            ContractNote("A6 buffer view outside its buffer (whole buffer bound)");
+        }
+        return false;
     }
+    offset = base - buffer_base;
+    size = std::min(records, bytes - offset);
+    if (offset == 0 && size == bytes) {
+        c_view_whole.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    c_view_part.fetch_add(1, std::memory_order_relaxed);
+    if (ContractCensusOn()) {
+        ContractNote(offset != 0 ? "A6 buffer view starts inside its buffer (range bound)" : "A6 buffer view shorter than its buffer (range bound)");
+    }
+    return true;
 }
 
 /// api-contract.md W5: the engine moved a texture to new memory (RenderTexture_CopyToNewMemory, 01c97a00: a raw copy of the old texture's memory into a new texture's,
@@ -3576,6 +3590,7 @@ nlohmann::json ObjectsReport() {
                           {"texture_updates", {{"wanted", c_reupload_wanted.load()}, {"uploaded", c_reupload_done.load()}, {"no_image", c_reupload_no_image.load()},
                                                {"in_stream", c_reupload_in_stream.load()}, {"moved_textures", c_moved_textures.load()}, {"moved_no_image", c_moved_no_image.load()},
                                                {"moved_mismatch", c_moved_mismatch.load()}}},
+                          {"buffer_views", {{"whole", c_view_whole.load()}, {"range", c_view_part.load()}, {"outside", c_view_outside.load()}}},
                           {"asyncmap_buffers", {{"placed_in_place", c_placed_by_asyncmap.load()}, {"gpu_written_kept_device_copy", c_asyncmap_gpu_written.load()}}},
                           {"file_reads_into_textures", {{"reads", c_loaded_reads.load()}, {"textures", c_loaded_textures.load()}, {"buffers", c_loaded_buffers.load()}}},
                           {"texture_copies", {{"copies", c_tex_copies.load()}, {"no_image", c_tex_copy_no_image.load()}, {"mismatch", c_tex_copy_mismatch.load()}}},
