@@ -567,6 +567,11 @@ bool ViewRange(Kind kind, const Object& view, const Image& img, Range& r) {
     }
     if (clamped) {
         c_views_clamped.fetch_add(1, std::memory_order_relaxed);
+        if (ContractCensusOn()) { // api-contract.md V6 (debug): what a clamped view asked for against what our image has
+            ContractNote(fmt::format("V6 view range clamped: kind {} dim {} desc {} {} {} {} | image {}x{}x{} mips {} layers {} {} -> view mips {}+{} layers {}+{}", static_cast<u32>(kind), dim,
+                                     d[0], d[1], d[2], d[3], img.width, img.height, img.depth, all_mips, all_layers, vk::to_string(img.format), r.base_mip, r.mips,
+                                     r.base_layer, r.layers));
+        }
     }
     return true;
 }
@@ -2921,6 +2926,18 @@ void TextureCpuWritten(u64 texture_id) {
         image = img.image, format = img.format, mips = img.mips, layers = img.layers, layout = img.layout;
     }
     c_reupload_wanted.fetch_add(1, std::memory_order_relaxed);
+    if (ContractCensusOn()) { // api-contract.md R9 (debug): our image's size against the engine's live T# (a moved texture's T# is rewritten to its logical size)
+        u32 w = 0, h = 0, m = 0, iw = 0, ih = 0;
+        {
+            std::scoped_lock lock{mutex};
+            if (const auto it = images.find(texture_id); it != images.end()) {
+                iw = it->second.width, ih = it->second.height;
+            }
+        }
+        if (Upload::LiveExtent(texture_id, w, h, m) && (w != iw || h != ih)) {
+            ContractNote(fmt::format("R9 re-upload: image {}x{}, engine T# {}x{} ({} mips)", iw, ih, w, h, m));
+        }
+    }
     // api-contract.md L5 / L6 / L8 / W5: the new contents are a job of the frame stream, made here, where the engine changed the memory (its hazard barriers order the
     // copy after the earlier reads of the image and before the later ones). LEGACY(upload_batch): TLG_LEGACY_UPLOAD_BATCH=1 uploads in the batch that runs before the frame
     static const bool upload_batch = [] { const char* e = std::getenv("TLG_LEGACY_UPLOAD_BATCH"); return e != nullptr && e[0] == '1'; }();

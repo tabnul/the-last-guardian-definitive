@@ -219,6 +219,16 @@ void Init(const VkbVulkan::Instance& instance_, VkbVulkan::HostImport& host_impo
     pipeline_layout = device.createPipelineLayout({.setLayoutCount = 1, .pSetLayouts = &set_layout}).value;
 }
 
+bool LiveExtent(u64 texture_id, u32& width, u32& height, u32& mips) {
+    NativeDesc::ImageDesc desc;
+    if (!NativeImageDesc::DeriveDesc(texture_id, 0, desc)) {
+        return false;
+    }
+    const VideoCore::Vkb::ImageInfo info{desc, false};
+    width = info.size.width, height = info.size.height, mips = info.resources.levels;
+    return true;
+}
+
 u64 GuestSize(u64 texture_id) {
     NativeDesc::ImageDesc desc;
     if (!NativeImageDesc::DeriveDesc(texture_id, 0, desc)) {

@@ -24,6 +24,8 @@ void Init(const VkbVulkan::Instance& instance, VkbVulkan::HostImport& host_impor
 /// one imported chunk, or the texel size of the image does not match the layout.
 /// The size of the engine texture's memory from its description (its tiled layout); 0 when it cannot be derived
 u64 GuestSize(u64 texture_id);
+/// api-contract.md R9 census: the size and mip count the engine's live T# gives the texture now
+bool LiveExtent(u64 texture_id, u32& width, u32& height, u32& mips);
 bool TextureContents(u64 texture_id, vk::Image image, vk::Format format, u32 mips, u32 layers, vk::ImageLayout final_layout);
 /// api-contract.md W5 / L5 / L6 / L8: the same upload as a job of the frame stream, made where the engine changed the texture's memory (a file read, a fill, UpdateSubresource,
 /// a GPU copy into it): the stream's hazard barriers order it after earlier work on the image (and on the memory) and before later reads. The image must already be GENERAL.
