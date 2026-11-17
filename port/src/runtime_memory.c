@@ -345,28 +345,63 @@ static int pool(void) {
     return backing_base ? 0 : -1;
 }
 #else
+/* VKB GPU pool (TLG_VKB_GPU_POOL, Linux): where the GPU cannot import shared memory in place, the new engine
+ * provides the pool as GPU memory exported as a dma-buf file; it is mapped exactly like the memfd (the same
+ * aliases, backing view and protections), so the GPU reads the game's memory where it is. Set before the pool exists. */
+static RuntimePoolProvider pool_provider;
+static int pool_is_gpu;
+static uint64_t pool_exec_dropped;
+int runtime_memory_set_pool_provider(RuntimePoolProvider provider) {
+    write_lock();
+    int ok=pool_fd<0;
+    if (ok) pool_provider=provider;
+    write_unlock();
+    return ok ? 0 : -1;
+}
+int runtime_memory_pool_is_gpu(uint64_t *exec_dropped) {
+    if (exec_dropped) *exec_dropped=__atomic_load_n(&pool_exec_dropped,__ATOMIC_RELAXED);
+    return pool_is_gpu;
+}
+/* The GPU pool's mappings cannot be executable (the driver refuses it; the game's code is not in the pool):
+ * execute is dropped and counted. */
+static int pool_prot(int prot) {
+    if (!pool_is_gpu || !(prot & PROT_EXEC)) return prot;
+    if (__atomic_fetch_add(&pool_exec_dropped,1,__ATOMIC_RELAXED)<4)
+        fprintf(stderr,"Runtime: GPU pool: execute permission asked for guest memory, dropped (counted)\n");
+    return prot & ~PROT_EXEC;
+}
 /* Direct memory occupies [0,POOL_SIZE) of the memfd, flexible memory [POOL_SIZE,+FLEX_SPAN). */
 static int pool(void) {
     if (pool_fd>=0) return 0;
-    pool_fd=memfd_create("tlg-guest-memory", MFD_CLOEXEC);
-    if (pool_fd<0 || ftruncate(pool_fd,(off_t)(POOL_SIZE+FLEX_SPAN))) return -1;
+    if (pool_provider) {
+        int fd=pool_provider(POOL_SIZE+FLEX_SPAN);
+        if (fd>=0) { pool_fd=fd; pool_is_gpu=1; }
+        else fprintf(stderr,"Runtime: GPU pool: the GPU could not provide %" PRIu64 " MiB of guest memory; ordinary shared memory instead, which this GPU cannot read in place\n",(POOL_SIZE+FLEX_SPAN)>>20);
+    }
+    if (pool_fd<0) {
+        pool_fd=memfd_create("tlg-guest-memory", MFD_CLOEXEC);
+        if (pool_fd<0 || ftruncate(pool_fd,(off_t)(POOL_SIZE+FLEX_SPAN))) return -1;
+    }
     void *view=mmap(NULL,POOL_SIZE+FLEX_SPAN,PROT_READ|PROT_WRITE,MAP_SHARED|MAP_NORESERVE,pool_fd,0);
     if (view==MAP_FAILED) return -1;
     backing_base=view;
+    if (pool_is_gpu) printf("Runtime: GPU pool: guest memory is GPU memory (%" PRIu64 " MiB, dma-buf)\n",(POOL_SIZE+FLEX_SPAN)>>20);
     return 0;
 }
 void runtime_memory_reserve(void) {}
 static int system_window_reserved(void) { return 1; }
 static int host_map(uintptr_t address, uint64_t size, int prot, int reserved, uint64_t phys) {
     void *mapped = !reserved
-        ? mmap((void *)address,size,prot,MAP_SHARED|MAP_FIXED,pool_fd,(off_t)phys)
+        ? mmap((void *)address,size,pool_prot(prot),MAP_SHARED|MAP_FIXED,pool_fd,(off_t)phys)
         : mmap((void *)address,size,PROT_NONE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_FIXED,-1,0);
     return mapped==MAP_FAILED ? -1 : 0;
 }
 static int host_unmap(uintptr_t address, uint64_t size) { return munmap((void *)address,size); }
-static int host_protect(uintptr_t address, uint64_t size, int prot) { return mprotect((void *)address,size,prot); }
+static int host_protect(uintptr_t address, uint64_t size, int prot) { return mprotect((void *)address,size,pool_prot(prot)); }
+/* Released pages read as zero when reused: holes punched in the memfd; the GPU pool has no holes, so it is cleared. */
 static void host_discard(uint64_t phys, uint64_t size) {
-    fallocate(pool_fd,FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,(off_t)phys,(off_t)size);
+    if (pool_is_gpu) memset(backing_base+phys,0,size);
+    else fallocate(pool_fd,FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,(off_t)phys,(off_t)size);
 }
 #endif
 static void queue_hook(int kind, uintptr_t address, uint64_t size) {

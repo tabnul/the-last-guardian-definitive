@@ -6,6 +6,10 @@
 //
 // The backing is imported in chunks of 256 MiB on first use. `Find` answers where a guest range is: the chunk's buffer and the offset in it, or a null buffer (the range is not
 // inside one mapped region, spans two chunks, or the import failed): the caller then takes its ordinary path.
+//
+// GPU pool (TLG_VKB_GPU_POOL, Linux): where the driver cannot import the runtime's shared memory (RADV imports only private anonymous memory), the guest pool itself
+// is made our memory: allocated here, exported as a dma-buf file, and mapped by the runtime where it maps its memfd otherwise (same aliases, backing view and
+// protections). A chunk is then a buffer bound into that memory at the chunk's offset instead of an import: the same windows, the same in place reads.
 
 #pragma once
 
@@ -19,6 +23,20 @@
 namespace VkbVulkan {
 
 class Instance;
+
+namespace GpuPool {
+/// At the device's creation, before the game has memory: decides whether the guest pool is made our memory (TLG_VKB_GPU_POOL; unset: only when a trial import
+/// of shared memory fails and a trial of the pool works) and hands the runtime its provider. Does nothing on Windows.
+void Setup(const Instance& instance);
+/// The pool's memory once the runtime has taken it, else null
+vk::DeviceMemory Memory() noexcept;
+u64 Bytes() noexcept;
+u32 MemoryType() noexcept;
+/// Why the pool is or is not used (for the log and the report)
+const char* Reason() noexcept;
+/// Guest requests for execute permission on the pool's memory that were dropped (the driver refuses executable mappings of it)
+u64 ExecDropped() noexcept;
+} // namespace GpuPool
 
 class HostImport {
 public:
@@ -49,6 +67,9 @@ public:
     [[nodiscard]] u32 FailedChunks() const noexcept {
         return failed_chunks.load(std::memory_order_relaxed);
     }
+    [[nodiscard]] bool OnGpuPool() const noexcept {
+        return gpu_pool;
+    }
 
 private:
     struct Chunk {
@@ -58,9 +79,11 @@ private:
         bool tried{false};
     };
     bool ImportChunk(u32 index, Chunk& chunk, u8* backing_base, u64 section_bytes);
+    bool BindPoolChunk(u32 index, Chunk& chunk, u64 begin);
 
     const Instance& instance;
     bool available{false};
+    bool gpu_pool{false}; ///< the guest pool is our memory (GpuPool): chunks are bound into it, not imported
     u32 memory_type_bits{0};
     u64 alignment{4096};
     std::array<Chunk, MaxChunks> chunks{};

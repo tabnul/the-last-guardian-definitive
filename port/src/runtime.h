@@ -53,6 +53,12 @@ extern RuntimeTimelineHooks runtime_timeline;
 void runtime_pad_set_image(uintptr_t image, uint64_t size);
 /* VKB: the backing view's window of a guest range (the engine-to-Vulkan backend's host import) */
 int runtime_memory_backing_window(uintptr_t address, uint64_t size, void **base, uint64_t *offset, uint64_t *section_bytes);
+/* VKB GPU pool (Linux, TLG_VKB_GPU_POOL): a provider returns a file (dma-buf) of `bytes` bytes that the runtime maps as the guest
+ * pool instead of its memfd, or -1. Accepted (0) only before the pool exists. Not on Windows. */
+typedef int (*RuntimePoolProvider)(uint64_t bytes);
+int runtime_memory_set_pool_provider(RuntimePoolProvider provider);
+/* 1 when the pool is the GPU's memory; *exec_dropped: guest requests for execute permission on it that were dropped */
+int runtime_memory_pool_is_gpu(uint64_t *exec_dropped);
 const char *runtime_import_name(const char *name);
 uintptr_t runtime_rwlock_resolve(const char *name);
 void runtime_rwlock_report(void);
