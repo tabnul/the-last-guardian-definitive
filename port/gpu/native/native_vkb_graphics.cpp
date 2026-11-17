@@ -1362,7 +1362,11 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         c_skip_no_attachment.fetch_add(1, std::memory_order_relaxed);
         return;
     }
+#if defined(__clang__)
     pass.extent = {width, height};
+#else // GCC: {..} also matches operator=(VkExtent2D const&) and is ambiguous
+    pass.extent = vk::Extent2D{width, height};
+#endif
     pass.layers = layers;
     phase(0);
     // the resources of both stages, pixel first (the pipeline layout's order)
@@ -1693,7 +1697,11 @@ bool DrawJob::ResolveLate() {
             }
             const u64 aligned = w.offset & ~(alignment - 1);
             push.buf_offsets[l.push_index] = static_cast<u8>(w.offset - aligned);
+#if defined(__clang__)
             b.buffers[l.slot] = {w.buffer, aligned, l.size + (w.offset - aligned)};
+#else // GCC: {..} also matches operator=(VkDescriptorBufferInfo const&) and is ambiguous
+            b.buffers[l.slot] = vk::DescriptorBufferInfo{w.buffer, aligned, l.size + (w.offset - aligned)};
+#endif
             b.stageable[l.slot] = !w.device && !l.written ? 1 : 0;
             uses.push_back(Stream::BufferUse(w.buffer, w.offset, l.size, l.written));
             Core::Vkb::NoteBind(1, w, l.size, l.written);
@@ -1753,7 +1761,11 @@ bool DrawJob::ResolveLate() {
             attachment_uses.push_back(Stream::ImageUse(a.image, true));
             width = std::min(width, a.extent.width), height = std::min(height, a.extent.height), layers = std::min(layers, a.layers);
         }
+#if defined(__clang__)
         pass.extent = {width, height};
+#else // GCC: {..} also matches operator=(VkExtent2D const&) and is ambiguous
+        pass.extent = vk::Extent2D{width, height};
+#endif
         pass.layers = layers;
     }
     c_late_images.fetch_add(late_images.size(), std::memory_order_relaxed);

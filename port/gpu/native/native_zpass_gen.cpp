@@ -33,6 +33,7 @@
 #endif
 #include <windows.h>
 #endif
+#include "native/native_linux.h" // Linux side of the Windows calls (empty on Windows)
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 #include "common/logging/log.h"
