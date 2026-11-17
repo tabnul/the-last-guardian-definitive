@@ -33,7 +33,9 @@
 #include "native/shadps4/video_core/host_shaders/vkb_tiling_micro_8_comp.h"
 #include "native/shadps4/video_core/host_shaders/vkb_tiling_micro_96_comp.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_host_import.h"
+#include "native/native_vkb.h"
 #include "native/native_vkb_objects.h"
+#include "native/native_vkb_stream.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_instance.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_scheduler.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_shader_util.h"
@@ -79,7 +81,14 @@ vk::PipelineLayout pipeline_layout{};
 std::unordered_map<u64, vk::Pipeline> pipelines; ///< by (tile mode, bits, samples)
 
 std::atomic<u64> c_uploads{0}, c_tiled{0}, c_linear{0}, c_bytes{0}, c_no_desc{0}, c_not_in_place{0}, c_texel_mismatch{0}, c_samples{0}, c_unsupported_bits{0}, c_batches{0},
-    c_record_ns{0}, c_pipelines{0}, c_alloc_failed{0};
+    c_record_ns{0}, c_pipelines{0}, c_alloc_failed{0}, c_stream_uploads{0}, c_stream_tiled{0}, c_stream_bytes{0};
+
+/// TextureContentsInStream's temporary buffers: freed once the graphics submit `after` is done (under `mutex`)
+struct Retired {
+    u64 after{};
+    OwnedBuffer buffer{};
+};
+std::deque<Retired> retired;
 
 u64 NowNs() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -170,6 +179,10 @@ vk::CommandBuffer Cmd() {
 }
 
 void CollectLocked() {
+    while (!retired.empty() && Core::Vkb::GraphicsSubmitDone(retired.front().after)) {
+        vmaDestroyBuffer(instance->GetAllocator(), retired.front().buffer.buffer, retired.front().buffer.allocation);
+        retired.pop_front();
+    }
     if (in_flight.empty()) {
         return;
     }
@@ -327,6 +340,117 @@ bool TextureContents(u64 texture_id, vk::Image image, vk::Format format, u32 mip
     return true;
 }
 
+bool TextureContentsInStream(u64 texture_id, vk::Image image, vk::Format format, u32 mips, u32 layers) {
+    NativeDesc::ImageDesc desc;
+    if (instance == nullptr || !NativeImageDesc::DeriveDesc(texture_id, 0, desc)) {
+        c_no_desc.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    const VideoCore::Vkb::ImageInfo info{desc, false};
+    if (info.num_samples > 1) {
+        c_samples.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    if (u32(vk::blockSize(format)) * 8 != info.num_bits) {
+        c_texel_mismatch.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    const BufferWindow window = SourceWindow(info.guest_address, info.guest_size);
+    if (!window.buffer || info.guest_size == 0) {
+        c_not_in_place.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    const u64 guest_size = info.guest_size;
+    const u32 levels = std::min<u32>(mips, info.resources.levels);
+    std::vector<vk::BufferImageCopy> copies;
+    for (u32 m = 0; m < levels; ++m) {
+        const u32 width = std::max(info.size.width >> m, 1u);
+        const u32 height = std::max(info.size.height >> m, 1u);
+        const u32 depth = info.props.is_volume ? std::max(info.size.depth >> m, 1u) : 1u;
+        const auto& mip = info.mips_layout[m];
+        copies.push_back({
+            .bufferOffset = mip.offset,
+            .bufferRowLength = mip.pitch,
+            .bufferImageHeight = mip.height,
+            .imageSubresource = {vk::ImageAspectFlagBits::eColor, m, 0, std::min<u32>(layers, info.resources.layers)},
+            .imageOffset = {0, 0, 0},
+            .imageExtent = {mip.pitch ? std::min<u32>(mip.pitch, width) : width, mip.height ? std::min<u32>(mip.height, height) : height, depth},
+        });
+    }
+    vk::Pipeline detile{};
+    OwnedBuffer linear{}, params{};
+    u32 groups = 0;
+    if (info.props.is_tiled) {
+        std::scoped_lock lock{mutex};
+        detile = DetilePipeline(info);
+        if (!detile) {
+            c_unsupported_bits.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+        void* mapped = nullptr;
+        if (!MakeBuffer(guest_size, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc, false, linear) ||
+            !MakeBuffer(sizeof(TilingInfo), vk::BufferUsageFlagBits::eUniformBuffer, true, params, &mapped) || mapped == nullptr) {
+            if (linear.buffer) {
+                vmaDestroyBuffer(instance->GetAllocator(), linear.buffer, linear.allocation);
+            }
+            if (params.buffer) {
+                vmaDestroyBuffer(instance->GetAllocator(), params.buffer, params.allocation);
+            }
+            return false;
+        }
+        TilingInfo p{};
+        p.bank_swizzle = info.bank_swizzle;
+        p.micro_tiled_mips = info.micro_tiled_mips;
+        p.num_mips = info.resources.levels;
+        for (u32 m = 0; m < p.num_mips && m < VideoCore::Vkb::MAX_MIPS; ++m) {
+            p.mips[m] = info.mips_layout[m];
+            if (info.props.is_block) {
+                p.mips[m].pitch = std::max<u16>((p.mips[m].pitch + 3) / 4, 1U);
+                p.mips[m].height = std::max<u16>((p.mips[m].height + 3) / 4, 1U);
+            }
+        }
+        std::memcpy(mapped, &p, sizeof(p));
+        groups = static_cast<u32>((guest_size / (info.num_bits / 8)) / 64);
+        // the job runs in the next graphics submit at the latest; three submits later nothing uses them
+        const u64 after = Core::Vkb::GraphicsSubmits() + 3;
+        retired.push_back({after, linear});
+        retired.push_back({after, params});
+        c_stream_tiled.fetch_add(1, std::memory_order_relaxed);
+    }
+    const vk::PipelineLayout layout = pipeline_layout;
+    Stream::NoteBytes(Stream::Work::UploadCpuWritten, guest_size);
+    Stream::Defer(Stream::Work::UploadCpuWritten, [window, guest_size, image, detile, layout, groups, linear = linear.buffer, params = params.buffer,
+                                                   copies = std::move(copies)](vk::CommandBuffer cmd) mutable {
+        vk::Buffer source = window.buffer;
+        u64 source_offset = window.offset;
+        if (detile) {
+            Stream::Hazard(cmd, {Stream::BufferUse(window.buffer, window.offset, guest_size, false), Stream::BufferUse(vk::Buffer{linear}, 0, guest_size, true)},
+                           Stream::Agent::Compute);
+            const vk::DescriptorBufferInfo tiled_info{.buffer = window.buffer, .offset = window.offset, .range = guest_size};
+            const vk::DescriptorBufferInfo linear_info{.buffer = vk::Buffer{linear}, .offset = 0, .range = guest_size};
+            const vk::DescriptorBufferInfo params_info{.buffer = vk::Buffer{params}, .offset = 0, .range = sizeof(TilingInfo)};
+            const std::array<vk::WriteDescriptorSet, 3> writes{{
+                {.dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &tiled_info},
+                {.dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &linear_info},
+                {.dstBinding = 2, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &params_info},
+            }};
+            cmd.bindPipeline(vk::PipelineBindPoint::eCompute, detile);
+            cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0, writes);
+            cmd.dispatch(groups, 1, 1);
+            source = vk::Buffer{linear};
+            source_offset = 0;
+        }
+        for (auto& copy : copies) {
+            copy.bufferOffset += source_offset;
+        }
+        Stream::Hazard(cmd, {Stream::BufferUse(source, source_offset, guest_size, false), Stream::ImageUse(image, true)}, Stream::Agent::Transfer);
+        cmd.copyBufferToImage(source, image, vk::ImageLayout::eGeneral, copies);
+    });
+    c_stream_uploads.fetch_add(1, std::memory_order_relaxed);
+    c_stream_bytes.fetch_add(guest_size, std::memory_order_relaxed);
+    return true;
+}
+
 void CopyBuffer(vk::Buffer source, u64 source_offset, vk::Buffer destination, u64 destination_offset, u64 bytes) {
     std::scoped_lock lock{mutex};
     if (instance == nullptr) {
@@ -391,7 +515,8 @@ nlohmann::json Report() {
             {"skipped_texel_size_differs", c_texel_mismatch.load()},
             {"skipped_multisampled", c_samples.load()},
             {"skipped_bit_width_without_shader", c_unsupported_bits.load()},
-            {"staging_allocations_failed", c_alloc_failed.load()}};
+            {"staging_allocations_failed", c_alloc_failed.load()},
+            {"in_stream", {{"uploads", c_stream_uploads.load()}, {"tiled", c_stream_tiled.load()}, {"mb", c_stream_bytes.load() >> 20}}}};
 }
 
 } // namespace Core::Vkb::Upload

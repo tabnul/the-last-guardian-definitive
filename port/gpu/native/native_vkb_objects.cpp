@@ -219,6 +219,7 @@ struct DeviceBuffer {
 std::mutex mutex;
 std::unordered_map<u64, Image> images;
 std::unordered_map<u64, View> views;
+std::map<u64, u64> texture_at_address; ///< api-contract.md W5: colour textures the engine fills (not GPU written) by the start of their memory (newest wins), for buffer copies into them
 std::unordered_map<u64, u64> image_at_address; ///< V4c: the newest render target image at an engine texture's memory, by address
 std::map<u64, DeviceBuffer> device_buffers;
 std::unordered_map<u64, u64> device_buffer_start; ///< engine id -> start address
@@ -236,7 +237,7 @@ std::atomic<u64> c_display_found{0}, c_display_missed{0}, c_display_not_general{
 std::atomic<u64> c_attach_views{0}, c_attach_refused{0}, c_clears_color{0}, c_clears_depth{0}, c_clear_no_view{0};
 std::atomic<u64> c_samplers_made{0}, c_samplers_invalid{0}, c_sampler_minmax{0}, c_sampler_border_rounded{0}, c_sampler_mirror_once{0};
 std::unordered_map<u64, vk::Sampler> samplers; ///< by engine sampler id (mutex)
-std::atomic<u64> c_reupload_wanted{0}, c_reupload_done{0}, c_reupload_no_image{0};
+std::atomic<u64> c_reupload_wanted{0}, c_reupload_done{0}, c_reupload_no_image{0}, c_reupload_in_stream{0}, c_moved_textures{0};
 std::atomic<u64> c_cpu_writes{0}, c_cpu_write_bytes{0}, c_copies{0}, c_copy_bytes{0}, c_copies_device{0}, c_copy_unresolved{0}, c_copy_overlap{0}, c_fills{0}, c_fill_unresolved{0};
 std::atomic<u64> c_buffers{0}, c_buffers_in_place{0}, c_buffers_not_in_place{0}, c_buffer_bytes{0}, c_too_early{0}, c_deleted_unknown{0};
 
@@ -448,6 +449,9 @@ Image* MakeImage(const Object& texture) {
                                       : HasStencil(img.format) ? (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil)
                                                                : vk::ImageAspectFlags{vk::ImageAspectFlagBits::eDepth},
                             !img.is_depth && (texture.bind & BindRenderTarget) == 0});
+    if (img.address != 0 && !img.is_depth && !img.gpu_written) {
+        texture_at_address[img.address] = texture.id;
+    }
     return &images.emplace(texture.id, img).first->second;
 }
 
@@ -1265,6 +1269,9 @@ void ObjectDeletedNow(u64 id) {
         }
         doomed.push_back({due, i->second.image, i->second.allocation, {}});
         c_image_bytes.fetch_sub(i->second.bytes, std::memory_order_relaxed);
+        if (const auto t = texture_at_address.find(i->second.address); t != texture_at_address.end() && t->second == id) {
+            texture_at_address.erase(t);
+        }
         images.erase(i);
         BumpViewEpoch(); // note 46: A1 memo answers may change
         return;
@@ -2838,6 +2845,19 @@ void TextureCpuWritten(u64 texture_id) {
         image = img.image, format = img.format, mips = img.mips, layers = img.layers, layout = img.layout;
     }
     c_reupload_wanted.fetch_add(1, std::memory_order_relaxed);
+    // api-contract.md L5 / L6 / L8 / W5: the new contents are a job of the frame stream, made here, where the engine changed the memory (its hazard barriers order the
+    // copy after the earlier reads of the image and before the later ones). LEGACY(upload_batch): TLG_LEGACY_UPLOAD_BATCH=1 uploads in the batch that runs before the frame
+    static const bool upload_batch = [] { const char* e = std::getenv("TLG_LEGACY_UPLOAD_BATCH"); return e != nullptr && e[0] == '1'; }();
+    if (!upload_batch && layout == vk::ImageLayout::eGeneral && Stream::Ready()) {
+        if (ContractCensusOn()) {
+            ContractNote("L5 cpu rewrite of a texture, in the stream");
+        }
+        if (Upload::TextureContentsInStream(texture_id, image, format, mips, layers)) {
+            c_reupload_done.fetch_add(1, std::memory_order_relaxed);
+            c_reupload_in_stream.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+    }
     if (ContractCensusOn()) {
         std::scoped_lock census_lock{contract_mutex};
         ++contract_counts[contract_copy_destinations.contains(texture_id) ? "L7 cpu rewrite of a texture a GPU copy wrote" : "L5 cpu rewrite of a texture"];
@@ -2996,6 +3016,21 @@ bool CopyBuffer(u64 destination, u64 source, u64 bytes) {
     c_copy_bytes.fetch_add(bytes, std::memory_order_relaxed);
     if (to.device || from.device) {
         c_copies_device.fetch_add(1, std::memory_order_relaxed);
+    }
+    // api-contract.md W5: the engine moves a texture (or drops its top mip) by a raw GPU copy of its memory into a new texture's memory (RenderTexture_CopyToNewMemory,
+    // 01c97a00); our image of the new texture gets those contents by an upload job right after the copy job
+    if (!to.device) {
+        u64 moved = 0;
+        {
+            std::scoped_lock lock{mutex};
+            if (const auto t = texture_at_address.find(destination); t != texture_at_address.end()) {
+                moved = t->second;
+            }
+        }
+        if (moved != 0) {
+            c_moved_textures.fetch_add(1, std::memory_order_relaxed);
+            TextureCpuWritten(moved);
+        }
     }
     return true;
 }
@@ -3311,7 +3346,8 @@ nlohmann::json ObjectsReport() {
                           {"clears", {{"color", c_clears_color.load()}, {"depth_stencil", c_clears_depth.load()}, {"no_view", c_clear_no_view.load()}}},
                           {"our_samplers", {{"made", c_samplers_made.load()}, {"invalid_description", c_samplers_invalid.load()}, {"min_max_reduction", c_sampler_minmax.load()},
                                             {"border_rounded", c_sampler_border_rounded.load()}, {"mirror_once", c_sampler_mirror_once.load()}}},
-                          {"texture_updates", {{"wanted", c_reupload_wanted.load()}, {"uploaded", c_reupload_done.load()}, {"no_image", c_reupload_no_image.load()}}},
+                          {"texture_updates", {{"wanted", c_reupload_wanted.load()}, {"uploaded", c_reupload_done.load()}, {"no_image", c_reupload_no_image.load()},
+                                               {"in_stream", c_reupload_in_stream.load()}, {"moved_textures", c_moved_textures.load()}}},
                           {"file_reads_into_textures", {{"reads", c_loaded_reads.load()}, {"textures", c_loaded_textures.load()}, {"buffers", c_loaded_buffers.load()}}},
                           {"texture_copies", {{"copies", c_tex_copies.load()}, {"no_image", c_tex_copy_no_image.load()}, {"mismatch", c_tex_copy_mismatch.load()}}},
                           {"buffer_lookups", {{"range_leaves_a_device_buffer", c_find_straddle.load()}, {"not_in_place", c_find_none.load()}}},
