@@ -7925,6 +7925,58 @@ u64 PS4_SYSV_ABI ProbeFaceCopy(Core::GuestHooks::MidContext* c) {
     Core::Vkb::TextureLayerCopied(Rd<u64>(dst_texture, 0x10), layer, Rd<u64>(src_texture, 0x10), face, mip);
     return 0; // the engine's copy runs (its guest memory stays the same as our image)
 }
+/// api-contract.md K1 check: the AABB readback reader (01c4c570, AabbCompute.cpp) at 01c4c5de, right after its wait for the readback label (r14 = the render device,
+/// rdx = the frame data). It reads the record count (device + 0x27a8, written by CounterReadback) and the records (+ 0x27a0, AsyncCopyResource of + 0x2798) the last
+/// BeginRecording's AABB dispatches made; each record's group (dword 0x20 >> 16) indexes the frame data's group table (+ 0x31e60, count + 0x31e68) with no check, and
+/// a group past the table was the crash after the shield cutscene. Counts reads, records and records whose group is not in the table (logged, the first ones in full),
+/// and BeginRecordings with no read between them (the case where an older unit's end could land after a newer submit).
+std::atomic<u64> c_aabb_reads{0}, c_aabb_records{0}, c_aabb_bad{0}, c_aabb_bad_reads{0}, c_aabb_unpaired{0};
+std::atomic<u32> g_recordings_since_read{0};
+u64 BufferMemory(u64 buffer) {
+    return IsHeapPointer(buffer) ? (static_cast<u64>(Rd<u32>(buffer, 0x60)) | (static_cast<u64>(Rd<u32>(buffer, 0x64)) & 0xfff) << 32) : 0;
+}
+u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
+    const u64 device = c->r14, frame = c->rdx;
+    const u32 recordings = g_recordings_since_read.exchange(0, std::memory_order_relaxed);
+    if (!IsHeapPointer(device) || !IsHeapPointer(frame) || Rd<u32>(frame, 0x31e68) == 0) {
+        return 0;
+    }
+    if (recordings > 1) {
+        c_aabb_unpaired.fetch_add(1, std::memory_order_relaxed);
+    }
+    const u64 count_memory = BufferMemory(Rd<u64>(device, 0x27a8)), records = BufferMemory(Rd<u64>(device, 0x27a0));
+    const u64 table = Rd<u64>(frame, 0x31e60);
+    if (count_memory == 0 || records == 0 || table == 0) {
+        return 0;
+    }
+    const u32 count = std::min(Rd<u32>(count_memory, 0), 0x2000u), groups = Rd<u32>(frame, 0x31e68);
+    u32 bad = 0, first_bad = 0, bad_group = 0;
+    for (u32 i = 0; i < count; ++i) {
+        const u32 group = Rd<u32>(records + i * 0x90ull, 0x80) >> 16;
+        if (group >= groups || Rd<u64>(table, group * 8ull) == 0) {
+            if (bad++ == 0) {
+                first_bad = i, bad_group = group;
+            }
+        }
+    }
+    if (const u64 reads = c_aabb_reads.fetch_add(1, std::memory_order_relaxed) + 1; reads % 1800 == 0) {
+        TLG_LOG(CP, Warn, "K1 AABB readback: {} reads, {} records, {} with a group not in the table, {} reads after more than one BeginRecording", reads,
+                c_aabb_records.load() + count, c_aabb_bad.load(), c_aabb_unpaired.load());
+    }
+    c_aabb_records.fetch_add(count, std::memory_order_relaxed);
+    if (bad != 0) {
+        c_aabb_bad.fetch_add(bad, std::memory_order_relaxed);
+        const u64 reads_bad = c_aabb_bad_reads.fetch_add(1, std::memory_order_relaxed);
+        if (reads_bad < 16) {
+            const u64 label = Rd<u64>(device, 0x2c0);
+            TLG_LOG(CP, Error,
+                    "K1 AABB readback: {} of {} records name a group not in the table ({} groups; first: record {} group {}), label {:#x} = {:#x}, BeginRecordings since the "
+                    "last read {}, unpaired so far {}",
+                    bad, count, groups, first_bad, bad_group, label, IsHeapPointer(label) ? Rd<u64>(label, 0) : 0, recordings, c_aabb_unpaired.load());
+        }
+    }
+    return 0; // the engine's read runs
+}
 u64 PS4_SYSV_ABI RenderFrameFenceA(Core::GuestHooks::MidContext* c) {
     NoteRenderFrameFence(c->rbx, c->r12);
     return 0;
@@ -8094,9 +8146,9 @@ u64 PS4_SYSV_ABI FlipInterrupt(Core::GuestHooks::MidContext* c) {
 /// 0x11 by the CPU, then a release memory stores 1 (64 bit) there (7 dwords), a wait for 1 (7 dwords, poll interval 10) and a CPU style write of 0x10 (64 bit, 6 dwords). The first mid hook
 /// is right after the release packet's address is known (rax = the packet, r14 = the label), the second where the three packets are done (rax = the cursor): when the cursor moved by
 /// exactly the three packets, the wait and the write are typed too.
-thread_local u64 t_csub_packet = 0, t_csub_label = 0;
+thread_local u64 t_csub_packet = 0, t_csub_label = 0, t_csub_unit = 0;
 thread_local u32 t_csub_queue = 0;
-void TypedUnitRelease(u64 ctx, u64 packet, u64 label, u64 value, bool unit) {
+void TypedUnitRelease(u64 ctx, u64 packet, u64 label, u64 value, bool unit, bool shared_label = false) {
     t_csub_packet = 0;
     if (Core::Vkb::On()) {
         if (!IsHeapPointer(ctx) || !IsHeapPointer(ctx + 0x1ce8)) {
@@ -8109,11 +8161,14 @@ void TypedUnitRelease(u64 ctx, u64 packet, u64 label, u64 value, bool unit) {
         fence.value = value;
         fence.source = Core::NativeSync::Source::Immediate64;
         fence.interrupt = true;
-        Core::Vkb::Fence(fence, queue);
+        // api-contract.md K1: JsComputeQueue_Submit's label is shared by its units (one per caller, reused every frame): this unit is now its newest
+        const u64 unit_number = shared_label ? Core::Vkb::BeginLabelUnit(fence.address) : 0;
+        Core::Vkb::Fence(fence, queue, unit_number);
         if (unit) {
             t_csub_packet = 1; // the unit's write follows (ComputeUnitEnd)
             t_csub_label = label;
             t_csub_queue = queue;
+            t_csub_unit = unit_number;
         }
         return;
     }
@@ -8132,7 +8187,7 @@ void TypedUnitRelease(u64 ctx, u64 packet, u64 label, u64 value, bool unit) {
     Core::NativeSync::Typed::Expect(packet, typed, Core::NativeSync::Typed::KindRelease);
 }
 u64 PS4_SYSV_ABI ComputeSubmitRelease(Core::GuestHooks::MidContext* c) {
-    TypedUnitRelease(c->rbx, c->rax, c->r14, 1, true);
+    TypedUnitRelease(c->rbx, c->rax, c->r14, 1, true, true);
     return 0;
 }
 /// FUN_024712d0 (the same unit, label in r12) and FUN_02471f40 (the fence signal: label NOP + the release alone, value 0x10, label in r15; AscWaitFence waits for it)
@@ -8151,7 +8206,7 @@ void ComputeUnitEnd(u64 cursor) {
         if (packet != 0) {
             // the unit's wait for 1 (nothing to wait for) and its CPU style write of 0x10 (64 bit)
             static const u32 data[2] = {0x10, 0};
-            Core::Vkb::Write((label & 0xfffffffcull) | ((label >> 32) & 0xffffull) << 32, data, 8, t_csub_queue);
+            Core::Vkb::Write((label & 0xfffffffcull) | ((label >> 32) & 0xffffull) << 32, data, 8, t_csub_queue, t_csub_unit);
         }
         return;
     }
@@ -8796,6 +8851,9 @@ void InstallUnmapSlot();
 
 u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret, u64 caller_rsp) {
     (void)a1, (void)a2, (void)a3, (void)a4, (void)a5, (void)ret, (void)caller_rsp;
+    if ((a2 & 0xff) != 0) {
+        g_recordings_since_read.fetch_add(1, std::memory_order_relaxed); // K1 check: a BeginRecording that records (AabbReadCheck)
+    }
     if (Core::Vkb::On() && Core::Vkb::ContractCensusOn()) { // api-contract.md Y6 (debug): BeginRecording returns at once when its third argument is 0
         Core::Vkb::ContractNote(fmt::format("Y6 BeginRecording called, record flag {}, frameData+0x31e50 {}", a2 & 0xff, IsHeapPointer(a1) ? Rd<u32>(a1, 0x31e50) : 0xffffffffu));
     }
@@ -11675,6 +11733,9 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "probe_face_copy") {
         return reinterpret_cast<u64>(&ProbeFaceCopy);
+    }
+    if (name == "aabb_read_check") {
+        return reinterpret_cast<u64>(&AabbReadCheck);
     }
     if (name == "texture_move") {
         return reinterpret_cast<u64>(&TextureMove);

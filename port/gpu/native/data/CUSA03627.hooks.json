@@ -816,6 +816,13 @@
       "expect": "488b7da84889de48"
     },
     {
+      "name": "AabbReadCheck",
+      "ghidra": "0x1c4c5de",
+      "mode": "mid",
+      "handler": "aabb_read_check",
+      "expect": "4c8bba901e030041"
+    },
+    {
       "name": "TextureMove",
       "ghidra": "0x1c97a00",
       "mode": "call",

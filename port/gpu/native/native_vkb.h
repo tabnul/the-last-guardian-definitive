@@ -32,8 +32,11 @@ void NoteEngineCallSkipped(EngineCall call);
 constexpr u32 GraphicsQueue = 0;
 
 /// The engine wrote a sync packet whose meaning is `fence` / `write` / `dma` into a command buffer of `queue`
-void Fence(const NativeSync::Fence& fence, u32 queue);
-void Write(u64 address, const u32* data, u32 bytes, u32 queue);
+void Fence(const NativeSync::Fence& fence, u32 queue, u64 unit = 0);
+void Write(u64 address, const u32* data, u32 bytes, u32 queue, u64 unit = 0);
+/// api-contract.md K1: JsComputeQueue_Submit (02472ed0) on a shared label (the engine set it to 0x11 just now): this unit becomes the label's newest; the records of an
+/// older unit on it (still on our completion thread) no longer write it. Returns the unit's number for its Fence / Write.
+u64 BeginLabelUnit(u64 address);
 void Dma(const NativeSync::DmaCopy& dma, u32 queue);
 
 /// R6 census (note 36, `TLG_VKB_ASYNC_CENSUS=1`): the async compute queue against graphics, in recording order. Work: 0 a graphics draw, 1 a graphics dispatch, 2 an async

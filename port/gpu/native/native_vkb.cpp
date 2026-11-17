@@ -45,7 +45,30 @@ struct Entry {
     std::array<u32, 4> data{};
     u32 bytes{};
     NativeSync::DmaCopy dma{};
+    u64 unit{}; ///< K1: the submit unit (JsComputeQueue_Submit) this record ends, on a shared label (0: none)
 };
+
+/// api-contract.md K1: the engine's compute submit unit (JsComputeQueue_Submit 02472ed0) on a shared label (e.g. the AABB readback's, RenderDev +0x2c0): the CPU sets
+/// the label to 0x11, the unit's end sets 1 then 0x10, and the reader (JsComputeContext_StallUntilSignaled) takes 0x10 as "the unit last submitted on it is done". On the
+/// console an older unit's end comes before the newer submit (the queue is idle within the frame); ours runs on the completion thread after the GPU, so it could land after
+/// the newer unit's 0x11 and say 0x10 while the newer unit's copies are still to run (the reader then read half-copied records: the crash after the shield cutscene,
+/// 01c4c570). The newest unit owns the label; an older unit's end records are dropped. LEGACY(label_units): TLG_LEGACY_LABEL_UNITS=1 writes them all.
+std::mutex label_mutex;
+std::unordered_map<u64, u64> label_units; ///< label -> its newest unit
+u64 label_unit_count = 0;
+std::atomic<u64> c_label_units{0}, c_label_stale_dropped{0};
+bool LabelUnitsOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_LEGACY_LABEL_UNITS"); return e == nullptr || e[0] != '1'; }();
+    return on;
+}
+/// True when `entry` ends a unit that is no longer its label's newest (call under label_mutex)
+bool StaleUnitLocked(const Entry& entry, u64 address) {
+    if (entry.unit == 0) {
+        return false;
+    }
+    const auto it = label_units.find(address);
+    return it != label_units.end() && it->second != entry.unit;
+}
 
 constexpr u32 NumQueues = 65; ///< graphics + the 64 Gnm virtual compute queues
 std::mutex mutex;
@@ -81,6 +104,15 @@ void WriteGuest(void* address, u64 data, u32 bytes) {
 void Run(const Entry& entry, bool graphics, u32 pipe_id) {
     switch (entry.kind) {
     case Entry::Kind::Fence: {
+        std::unique_lock unit_lock{label_mutex, std::defer_lock};
+        bool stale = false;
+        if (entry.unit != 0) {
+            unit_lock.lock(); // K1: held over the write (BeginLabelUnit restores the engine's 0x11 under it)
+            stale = StaleUnitLocked(entry, entry.fence.address);
+            if (stale) {
+                c_label_stale_dropped.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
         const auto irq = [&] {
             c_interrupts[graphics ? 0 : 1].fetch_add(1, std::memory_order_relaxed);
             if (graphics) {
@@ -91,14 +123,27 @@ void Run(const Entry& entry, bool graphics, u32 pipe_id) {
                 NativeFrameEvents::ComputeRelease(pipe_id);
             }
         };
-        entry.fence.Signal(WriteGuest, irq);
+        if (stale) {
+            entry.fence.Signal([](void*, u64, u32) {}, irq); // K1: an older unit's end: its interrupt, not its label value
+        } else {
+            entry.fence.Signal(WriteGuest, irq);
+        }
         c_fences[graphics ? 0 : 1].fetch_add(1, std::memory_order_relaxed);
         break;
     }
-    case Entry::Kind::Write:
+    case Entry::Kind::Write: {
+        std::unique_lock unit_lock{label_mutex, std::defer_lock};
+        if (entry.unit != 0) {
+            unit_lock.lock();
+            if (StaleUnitLocked(entry, entry.address)) {
+                c_label_stale_dropped.fetch_add(1, std::memory_order_relaxed);
+                break;
+            }
+        }
         std::memcpy(reinterpret_cast<void*>(entry.address), entry.data.data(), entry.bytes);
         c_writes.fetch_add(1, std::memory_order_relaxed);
         break;
+    }
     case Entry::Kind::Dma: {
         const auto& dma = entry.dma;
         using K = NativeSync::DmaCopy::Kind;
@@ -339,7 +384,7 @@ nlohmann::json Report() {
 }
 } // namespace Census
 
-void Fence(const NativeSync::Fence& fence, u32 queue) {
+void Fence(const NativeSync::Fence& fence, u32 queue, u64 unit) {
     if (!fence.valid) {
         return;
     }
@@ -349,10 +394,11 @@ void Fence(const NativeSync::Fence& fence, u32 queue) {
     Entry entry;
     entry.kind = Entry::Kind::Fence;
     entry.fence = fence;
+    entry.unit = unit;
     Push(queue, std::move(entry));
 }
 
-void Write(u64 address, const u32* data, u32 bytes, u32 queue) {
+void Write(u64 address, const u32* data, u32 bytes, u32 queue, u64 unit) {
     if (address == 0 || data == nullptr || bytes == 0 || bytes > 16) {
         return;
     }
@@ -360,8 +406,23 @@ void Write(u64 address, const u32* data, u32 bytes, u32 queue) {
     entry.kind = Entry::Kind::Write;
     entry.address = address;
     entry.bytes = bytes;
+    entry.unit = unit;
     std::memcpy(entry.data.data(), data, bytes);
     Push(queue, std::move(entry));
+}
+
+u64 BeginLabelUnit(u64 address) {
+    if (address == 0 || !LabelUnitsOn()) {
+        return 0;
+    }
+    std::scoped_lock lock{label_mutex};
+    const u64 unit = ++label_unit_count;
+    label_units[address] = unit;
+    // the engine set the label to 0x11 at the start of its submit; an older unit's end record may have run since (before this unit was known): its 0x11 stands
+    const u64 pending = 0x11;
+    std::memcpy(reinterpret_cast<void*>(address), &pending, sizeof(pending));
+    c_label_units.fetch_add(1, std::memory_order_relaxed);
+    return unit;
 }
 
 void Dma(const NativeSync::DmaCopy& dma, u32 queue) {
@@ -715,6 +776,7 @@ void Publish() {
                                       {"graphics_interrupts", c_interrupts[0].load()},
                                       {"compute_interrupts", c_interrupts[1].load()},
                                       {"label_writes", c_writes.load()},
+                                      {"label_units", {{"submitted", c_label_units.load()}, {"older_unit_records_dropped", c_label_stale_dropped.load()}}},
                                       {"dma_copies", c_dma.load()},
                                       {"dma_bytes", c_dma_bytes.load()},
                                       {"dma_ignored_gds", c_dma_ignored.load()},
