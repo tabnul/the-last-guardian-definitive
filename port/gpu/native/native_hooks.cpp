@@ -35,6 +35,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+#include "native/native_linux.h" // Linux side of the Windows calls (empty on Windows)
 
 using namespace Xbyak::util;
 
@@ -605,7 +606,10 @@ void InstallSpans(VAddr base, u64 image_size) {
             *slot = reinterpret_cast<u64>(stub);
             VirtualProtect(slot, 8, old, &old);
 #else
-            *slot = reinterpret_cast<u64>(stub);
+            if (!WriteProtectedSlot(slot, reinterpret_cast<u64>(stub))) {
+                TLG_LOG(HOOK, Error, "frame profiler span '{}': cannot make its slot writable", name);
+                continue;
+            }
 #endif
             span_names_installed.push_back(name);
             FrameTimeline::RegisterSpan(id, name);

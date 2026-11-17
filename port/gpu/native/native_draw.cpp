@@ -8930,7 +8930,10 @@ void InstallUnmapSlot() {
     *slot = reinterpret_cast<u64>(&UnmapSlot);
     VirtualProtect(slot, sizeof(u64), old_protect, &old_protect);
 #else
-    *slot = reinterpret_cast<u64>(&UnmapSlot);
+    if (!WriteProtectedSlot(slot, reinterpret_cast<u64>(&UnmapSlot))) { // the table is read only after relocation
+        TLG_LOG(CP, Error, "native updates: cannot make the Unmap slot writable");
+        return;
+    }
 #endif
     LOG_INFO(Core, "native updates: the Unmap slot of the device context is replaced");
 }
