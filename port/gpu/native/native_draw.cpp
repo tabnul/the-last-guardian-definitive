@@ -10845,6 +10845,9 @@ u64 PS4_SYSV_ABI FileReadDone(u64 fs, u64 op, u64 event, u64 error, u64 a4, u64 
             }
         }
     }
+    if (static_cast<s32>(error) != 0) {
+        return 0; // review B2: a failed read brought no data (the engine marks its file state failed, 01f461f0): nothing is uploaded; the pending entry is gone
+    }
     for (const auto& [buf, len] : ranges) {
         FileLoads::Loaded(buf, len);
     }
