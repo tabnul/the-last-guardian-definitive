@@ -587,6 +587,7 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
         const bool view = (src.kind == 1 && (Rd<u32>(object, 0x44) == 1 || Rd<u32>(object, 0x44) == 0xb)) || (src.kind == 4 && Rd<u32>(object, 0x44) == 1);
         const u64 buffer = view ? Rd<u64>(object, 0x30) : 0;
         const u64 size = buffer != 0 ? Rd<u32>(buffer, 0x180) : 0;
+        Core::Vkb::ContractViewRange(object, buffer, false); // review A6 census (debug)
         return size != 0 && Core::Vkb::BufferOfObject(buffer, 0, size, w) && bind_window(index, Rd<u64>(buffer, 0x30), size, w);
     };
     for (u32 i = 0; i < v.buffers.size(); ++i) {

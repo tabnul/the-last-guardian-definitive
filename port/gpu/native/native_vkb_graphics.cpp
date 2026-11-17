@@ -1134,6 +1134,7 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
             } else if (object != 0 && src.kind == 1 && (Rd<u32>(object, 0x44) == 1 || Rd<u32>(object, 0x44) == 0xb)) {
                 const u64 buffer = Rd<u64>(object, 0x30);
                 const u64 size = buffer != 0 ? Rd<u32>(buffer, 0x180) : 0;
+                Core::Vkb::ContractViewRange(object, buffer, true); // review A6 census (debug)
                 Core::Vkb::BufferWindow w;
                 if (late != nullptr && size != 0) { // R2b: the frame ring now (arithmetic), any other buffer by the recording thread
                     const u64 memory = Rd<u64>(buffer, 0x30);

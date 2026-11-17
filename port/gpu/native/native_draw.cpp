@@ -8181,6 +8181,9 @@ u64 PS4_SYSV_ABI NoteAsyncMap(u64 resource, u64 out, u64 a2, u64 a3, u64 a4, u64
     reinterpret_cast<GuestFunction6>(original)(resource, out, a2, a3, a4, a5);
     const u64 mapped = Rd<u64>(out, 0);
     const u32 mapped_size = Rd<u32>(out, 8);
+    if (Core::Vkb::On() && mapped != 0 && mapped_size != 0 && Rd<u32>(resource, 0x124) == 1) {
+        Core::Vkb::BufferCpuAddressable(mapped, mapped_size); // api-contract.md Y6: the buffer lives where this pointer writes
+    }
     if (Core::Vkb::On() && Core::Vkb::ContractCensusOn() && mapped != 0) { // api-contract.md Y6 (debug): the CPU reads this memory in place
         const u32 kind = Rd<u32>(resource, 0x124);
         Core::Vkb::ContractNote(kind == 1 ? fmt::format("Y6 AsyncMap of a buffer ({} B, caller {:#x}): ours lives in {}", mapped_size, ret - ImageBase() + 0x1000000,

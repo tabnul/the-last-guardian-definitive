@@ -14,6 +14,8 @@
 /// (bisect by commit). The whole PS4 backend path (TLG_VKB unset) stays until the owner's long play.
 /// Open backend switch (2026-11-17, api-contract.md W5 / L5 / L6 / L8, until its picture check): TLG_LEGACY_UPLOAD_BATCH=1 uploads a texture's new contents in the batch that
 /// runs before the frame (no order with the frame's work) instead of a job of the frame stream at the engine's call, and moved textures are not followed.
+/// Open backend switch (2026-11-17, api-contract.md Y6, until its picture check): TLG_LEGACY_ASYNCMAP_DEVICE=1 keeps our device copy of a buffer the engine hands the CPU
+/// through AsyncMap (the records BeginRecording writes into renderDev + 0x2790 then never reach the GPU).
 /// (`TLG_LEGACY_GEOMETRY_ROWS`, note 122) were deleted for good in note 141: they had rotted once the writers left the batch (note 140).
 ///
 /// Steps whose old path is the switch's `=0` (each default on; listed so the whole set is in one place):

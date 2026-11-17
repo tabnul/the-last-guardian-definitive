@@ -103,9 +103,13 @@ void BufferCpuWritten(u64 address, u64 size);
 /// V2e: the CPU wrote a texture's memory after its creation (UpdateSubresource, the dynamic texture fill): our image gets the contents again (the upload batch, which the
 /// queue runs before the frame stream: a dispatch earlier in the same frame sees the new contents too)
 void TextureCpuWritten(u64 texture_id);
+/// api-contract.md Y6: the engine handed the CPU a plain pointer to this buffer range (AsyncMap): its bytes live where the pointer writes (our device copy is retired)
+void BufferCpuAddressable(u64 address, u64 size);
 /// API contract census (debug, TLG_VKB_CONTRACT_CENSUS=1): counts by key, in the objects report under "contract_census"
 bool ContractCensusOn();
 void ContractNote(const std::string& key);
+/// review A6 census (debug): an engine buffer view (V# at view + 0x74) that is not its whole buffer from offset 0
+void ContractViewRange(u64 view, u64 buffer, bool graphics);
 /// C10: a texture bound as target 7 (the target-7 mode), and a shader reading a texture (counted when it was a target-7 texture)
 void ContractTarget7(u64 texture_id, const std::string& key);
 void ContractSampled(u64 texture_id);

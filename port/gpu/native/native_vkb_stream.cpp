@@ -1463,7 +1463,11 @@ void PollQueries() {
     std::scoped_lock lock{mutex};
     const u64 done = CompletedValue();
     std::scoped_lock blocks_lock{blocks_mutex};
-    for (u32 index = 0; index < QuerySlots; ++index) {
+    // in issue order: from the oldest slot (the next one to be handed out) around the ring, so a newer answer for the same block is written last
+    // (api-contract review B4: index order wrote an older answer over a newer one across the wrap)
+    const u32 oldest = query_next;
+    for (u32 k = 0; k < QuerySlots; ++k) {
+        const u32 index = (oldest + k) % QuerySlots;
         QuerySlot& slot = query_slots[index];
         if (!slot.pending || slot.value > done) {
             continue;

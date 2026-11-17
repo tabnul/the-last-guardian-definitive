@@ -234,6 +234,7 @@ struct DeviceBuffer {
     VkBuffer buffer{};
     VmaAllocation allocation{};
     u64 id{};
+    bool gpu_writes{}; ///< bound as an unordered access view: the GPU writes it (its bytes are ours alone)
 };
 
 std::mutex mutex;
@@ -1157,7 +1158,7 @@ void BufferCreated(const Object& buffer) {
                 BumpBufferEpoch(); // note 46: A1 memo answers may change
                 c_dev_replaced.fetch_add(1, std::memory_order_relaxed);
             }
-            device_buffers[buffer.address] = {buffer.address + buffer.bytes, handle, allocation, buffer.id};
+            device_buffers[buffer.address] = {buffer.address + buffer.bytes, handle, allocation, buffer.id, (buffer.bind & BindUnorderedAccess) != 0};
             device_buffer_start[buffer.id] = buffer.address;
             devbuf_hash.erase(buffer.address); // Y7 census: a new buffer at this memory starts a new baseline
             if (ContractCensusOn()) {
@@ -1301,6 +1302,10 @@ void ObjectDeletedNow(u64 id) {
         }
         doomed.push_back({due, i->second.image, i->second.allocation, {}});
         c_image_bytes.fetch_sub(i->second.bytes, std::memory_order_relaxed);
+        if (ContractCensusOn()) { // review A2: copy-destination history ends with the texture
+            std::scoped_lock census_lock{contract_mutex};
+            contract_copy_destinations.erase(id);
+        }
         if (const auto t = texture_at_address.find(i->second.address); t != texture_at_address.end() && t->second == id) {
             texture_at_address.erase(t);
         }
@@ -2051,7 +2056,11 @@ bool CopyTexture(u64 destination_id, u32 destination_sub, u64 source_id, u32 sou
         c_tex_copy_mismatch.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
-    const vk::ImageAspectFlags aspect = !to.is_depth ? vk::ImageAspectFlags{vk::ImageAspectFlagBits::eColor} : vk::ImageAspectFlags{vk::ImageAspectFlagBits::eDepth};
+    // a depth copy carries the stencil plane too where both images have one (api-contract review A4: ExCsDepthCopy, 0248e800, dispatches one raw copy over the
+    // depth surface and one over the stencil surface)
+    const vk::ImageAspectFlags aspect = !to.is_depth                                         ? vk::ImageAspectFlags{vk::ImageAspectFlagBits::eColor}
+                                        : HasStencil(to.format) && HasStencil(from.format) ? (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil)
+                                                                                           : vk::ImageAspectFlags{vk::ImageAspectFlagBits::eDepth};
     const bool volume = to.type == vk::ImageType::e3D;
     const vk::ImageCopy region{.srcSubresource = {aspect, from_mip, volume ? 0u : from_layer, 1},
                                .dstSubresource = {aspect, to_mip, volume ? 0u : to_layer, 1},
@@ -2938,6 +2947,10 @@ void TextureCpuWritten(u64 texture_id) {
             ContractNote(fmt::format("R9 re-upload: image {}x{}, engine T# {}x{} ({} mips)", iw, ih, w, h, m));
         }
     }
+    if (ContractCensusOn()) { // L5 / L7 (debug), before the stream / batch split (api-contract review A2)
+        std::scoped_lock census_lock{contract_mutex};
+        ++contract_counts[contract_copy_destinations.contains(texture_id) ? "L7 cpu rewrite of a texture a GPU copy wrote" : "L5 cpu rewrite of a texture"];
+    }
     // api-contract.md L5 / L6 / L8 / W5: the new contents are a job of the frame stream, made here, where the engine changed the memory (its hazard barriers order the
     // copy after the earlier reads of the image and before the later ones). LEGACY(upload_batch): TLG_LEGACY_UPLOAD_BATCH=1 uploads in the batch that runs before the frame
     static const bool upload_batch = [] { const char* e = std::getenv("TLG_LEGACY_UPLOAD_BATCH"); return e != nullptr && e[0] == '1'; }();
@@ -2950,10 +2963,6 @@ void TextureCpuWritten(u64 texture_id) {
             c_reupload_in_stream.fetch_add(1, std::memory_order_relaxed);
             return;
         }
-    }
-    if (ContractCensusOn()) {
-        std::scoped_lock census_lock{contract_mutex};
-        ++contract_counts[contract_copy_destinations.contains(texture_id) ? "L7 cpu rewrite of a texture a GPU copy wrote" : "L5 cpu rewrite of a texture"];
     }
     if (Upload::TextureContents(texture_id, image, format, mips, layers, layout)) {
         c_reupload_done.fetch_add(1, std::memory_order_relaxed);
@@ -3017,20 +3026,25 @@ u32 MemoryLoaded(u64 address, u64 bytes) {
                 copies.push_back({lo, hi - lo, device, lo - start});
             }
         };
-        if (auto it = watched.upper_bound(address); it != watched.begin()) {
-            for (--it; it != watched.end() && it->first < address + bytes; ++it) {
-                if (it->second.state == Watched::State::Device) {
-                    add(it->first, it->second.end, it->second.device);
-                }
+        // every tracked buffer the read overlaps: the one holding its start (if any), then all that begin inside it (api-contract review B1: a read that begins
+        // before the first tracked buffer used to skip them all)
+        auto it = watched.upper_bound(address);
+        if (it != watched.begin() && std::prev(it)->second.end > address) {
+            --it;
+        }
+        for (; it != watched.end() && it->first < address + bytes; ++it) {
+            if (it->second.state == Watched::State::Device) {
+                add(it->first, it->second.end, it->second.device);
             }
         }
         // (not the GPU-written device buffers of V2f: their contents are ours alone, note 84)
         if (ContractCensusOn()) { // api-contract.md Y7 (debug): a file read into memory under a GPU-written device buffer
-            if (auto d = device_buffers.upper_bound(address); d != device_buffers.begin()) {
+            auto d = device_buffers.upper_bound(address);
+            if (d != device_buffers.begin() && std::prev(d)->second.end > address) {
                 --d;
-                if (address < d->second.end && d->first < address + bytes) {
-                    ContractNote(fmt::format("Y7 file read into a GPU-written device buffer ({} B)", d->second.end - d->first));
-                }
+            }
+            for (; d != device_buffers.end() && d->first < address + bytes; ++d) {
+                ContractNote(fmt::format("Y7 file read into a GPU-written device buffer ({} B)", d->second.end - d->first));
             }
         }
     }
@@ -3086,6 +3100,59 @@ std::string ContractWhereLives(u64 address, u64 size) {
         }
     }
     return "in place";
+}
+
+/// api-contract.md Y6: AsyncMap hands the CPU a plain pointer into the buffer's own memory (no Map, no Unmap, no copy): the engine's contract is that the buffer's bytes
+/// are where that pointer writes. A device copy of ours (a dynamic buffer's, refreshed only at Unmap) breaks it, so it is retired here and the buffer is read in place
+/// from now on (FindLocked falls back to the imported memory). A buffer the GPU writes keeps its device copy (its bytes are ours alone): counted, open to test.
+/// LEGACY(asyncmap_device): TLG_LEGACY_ASYNCMAP_DEVICE=1 keeps every device copy.
+std::atomic<u64> c_placed_by_asyncmap{0}, c_asyncmap_gpu_written{0};
+void BufferCpuAddressable(u64 address, u64 size) {
+    static const bool legacy = [] { const char* e = std::getenv("TLG_LEGACY_ASYNCMAP_DEVICE"); return e != nullptr && e[0] == '1'; }();
+    if (!On() || !device_ready || legacy || size == 0) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    u64 start = 0;
+    bool straddle = false;
+    if (DeviceBufferOf(address, size, start, straddle) == nullptr) {
+        return;
+    }
+    const auto it = device_buffers.find(start);
+    if (it == device_buffers.end()) {
+        return;
+    }
+    if (it->second.gpu_writes) {
+        c_asyncmap_gpu_written.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    doomed.push_back({static_cast<u32>(GraphicsSubmits()) + DestroyDelay(), {}, {}, {}, it->second.buffer, it->second.allocation});
+    c_dev_bytes.fetch_sub(it->second.end - it->first, std::memory_order_relaxed);
+    device_buffer_start.erase(it->second.id);
+    devbuf_hash.erase(it->first);
+    device_buffers.erase(it);
+    BumpBufferEpoch(); // note 46: A1 memo answers may change
+    c_placed_by_asyncmap.fetch_add(1, std::memory_order_relaxed);
+}
+
+void ContractViewRange(u64 view, u64 buffer, bool graphics) {
+    if (!ContractCensusOn() || view == 0 || buffer == 0) {
+        return;
+    }
+    const u32* v = reinterpret_cast<const u32*>(view + 0x74);
+    const u64 base = static_cast<u64>(v[0]) | static_cast<u64>(v[1] & 0xfffu) << 32; // base: 44 bits
+    const u32 stride = (v[1] >> 16) & 0x3fffu;
+    const u64 bytes = stride != 0 ? u64{v[2]} * stride : u64{v[2]};
+    const u64 memory = *reinterpret_cast<const u64*>(buffer + 0x30);
+    const u64 size = *reinterpret_cast<const u32*>(buffer + 0x180);
+    const char* stage = graphics ? "graphics" : "compute";
+    if (base != memory) {
+        ContractNote(fmt::format("A6 {} buffer view starts {} B into its buffer", stage, static_cast<s64>(base - memory)));
+    } else if (bytes < size) {
+        ContractNote(fmt::format("A6 {} buffer view shorter than its buffer", stage));
+    } else {
+        ContractNote(fmt::format("A6 {} buffer view = whole buffer", stage));
+    }
 }
 
 bool CopyBuffer(u64 destination, u64 source, u64 bytes) {
@@ -3470,6 +3537,7 @@ nlohmann::json ObjectsReport() {
                                             {"border_rounded", c_sampler_border_rounded.load()}, {"mirror_once", c_sampler_mirror_once.load()}}},
                           {"texture_updates", {{"wanted", c_reupload_wanted.load()}, {"uploaded", c_reupload_done.load()}, {"no_image", c_reupload_no_image.load()},
                                                {"in_stream", c_reupload_in_stream.load()}, {"moved_textures", c_moved_textures.load()}}},
+                          {"asyncmap_buffers", {{"placed_in_place", c_placed_by_asyncmap.load()}, {"gpu_written_kept_device_copy", c_asyncmap_gpu_written.load()}}},
                           {"file_reads_into_textures", {{"reads", c_loaded_reads.load()}, {"textures", c_loaded_textures.load()}, {"buffers", c_loaded_buffers.load()}}},
                           {"texture_copies", {{"copies", c_tex_copies.load()}, {"no_image", c_tex_copy_no_image.load()}, {"mismatch", c_tex_copy_mismatch.load()}}},
                           {"buffer_lookups", {{"range_leaves_a_device_buffer", c_find_straddle.load()}, {"not_in_place", c_find_none.load()}}},
