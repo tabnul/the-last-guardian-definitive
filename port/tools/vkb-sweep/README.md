@@ -29,14 +29,16 @@ python3 compare.py ~/vkb-shots/s13_FirstFlight__FF_b01_EnterGarden/vkb0_take1.pn
 The game runs on its own Xvfb (`SHOT_DISPLAY`, default `:93`) with `MESA_VK_WSI_DEBUG=sw`, so the picture
 is what the game presented, taken the same way for both renderers. Fixed settings for every take:
 `TLG_SKIP_LOGOS=1 TLG_FPS=unlocked TLG_HDR=0 TLG_FG=0 TLG_DLAA=1`; `TLG_VKB` is always set from the
-`VKB` argument. Extra `NAME=VALUE` arguments go into the game's environment.
+`VKB` argument. Extra `NAME=VALUE` arguments go into the game's environment; no other `TLG_` setting of the
+calling shell reaches the game.
 
 ## Output
 
 `OUT/STAGE__SCENE/` holds `vkbV_takeN.png`, the game log of each take (`vkbV_takeN.log`) and `camera.txt`.
 The fixed camera comes from the game's own camera in the first take ever made of that scene; every later
 take of either renderer uses the same `camera.txt`, so all pictures of a scene are from the same spot.
-An existing picture is never overwritten: new takes get the next free number.
+An existing picture or log is never overwritten: new takes get the next free number. The save is backed up
+to `OUT/save_backup` for the run and put back at the end; a backup left from a broken run stops the next run.
 
 Keep `OUT` outside the repository: pictures of the game do not go into the repo.
 

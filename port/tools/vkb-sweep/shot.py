@@ -58,7 +58,7 @@ PHOTO = HEAD + """local ok, e = pcall(function()
   end
   CameraManager:SetActiveCamera('default')
   local cam = FindObject('_default_camera')
-  local pos, rot = Vector(PX, PY, PZ), Vector(PITCH, YAW, 0)
+  local pos, rot = Vector(@PX@, @PY@, @PZ@), Vector(@PITCH@, @YAW@, 0)
   cam.position = pos cam.rotation = rot
   MS.SetGameSpeed(0.001, 0)
   RegisterTick(function() local c = FindObject('_default_camera') if c then c.position = pos c.rotation = rot end end)
@@ -116,7 +116,9 @@ def picture(path):
 class Game:
     def __init__(self, env, log_path, exec_path):
         self.log_path, self.seen = log_path, []
-        full = dict(os.environ, DISPLAY=DISPLAY, MESA_VK_WSI_DEBUG="sw", TLG_USER_DIR=USER, TLG_SKIP_LOGOS="1",
+        # no TLG_ setting of the calling shell reaches the game: only the fixed ones below and NAME=VALUE
+        base = {k: v for k, v in os.environ.items() if not k.startswith("TLG_")}
+        full = dict(base, DISPLAY=DISPLAY, MESA_VK_WSI_DEBUG="sw", TLG_USER_DIR=USER, TLG_SKIP_LOGOS="1",
                     TLG_FPS="unlocked", TLG_HDR="0", TLG_FG="0", TLG_DLAA="1", TLG_LUA_EXEC=exec_path)
         full.update(env)
         self.log = open(log_path, "w")
@@ -153,7 +155,8 @@ class Game:
             except subprocess.TimeoutExpired:
                 pass
         self.log.close()
-        gone()
+        if not gone():
+            raise SystemExit("the game did not exit after the take; stopped")
 
 
 def gone(seconds=20):
@@ -170,8 +173,9 @@ def take(out, tag, stage, scene, env, cam_file, cam_arg):
     exec_path = os.path.join(out, "exec.lua")
 
     def send(text):
-        with open(exec_path, "w", newline="\n") as f:
+        with open(exec_path + ".new", "w", newline="\n") as f:
             f.write(text + f"-- {time.time()}\n")
+        os.replace(exec_path + ".new", exec_path)  # the game never reads a half written file
     send("-- idle\n")
     game = Game(env, os.path.join(out, tag + ".log"), exec_path)
     try:
@@ -206,7 +210,7 @@ def take(out, tag, stage, scene, env, cam_file, cam_arg):
             print(f"  camera taken from the game in this take: {' '.join(cam)}", flush=True)
         lua = PHOTO
         for k, v in zip(("PX", "PY", "PZ", "PITCH", "YAW"), cam):
-            lua = lua.replace(k, v)
+            lua = lua.replace(f"@{k}@", v)
         mark = len(game.lines())
         send(lua)
         game.wait(5, lambda ls: any("Lua: shot photo" in l for l in ls[mark:]))
@@ -240,14 +244,16 @@ def main():
     os.makedirs(out, exist_ok=True)
     save = os.path.join(USER, "savedata", "1", "CUSA03745.memory")
     backup = os.path.join(root, "save_backup")
-    if os.path.exists(save) and not os.path.exists(backup):
+    if os.path.exists(backup):
+        sys.exit(f"{backup} is left from a run that did not finish: put it back by hand, then delete it")
+    if os.path.exists(save):
         shutil.copytree(save, backup)
     screen = Screen()
     try:
         n = 0
         for _ in range(takes):
             n += 1
-            while os.path.exists(os.path.join(out, f"vkb{vkb}_take{n}.png")):  # never overwrite an older take
+            while any(os.path.exists(os.path.join(out, f"vkb{vkb}_take{n}.{e}")) for e in ("png", "log")):  # never overwrite
                 n += 1
             tag = f"vkb{vkb}_take{n}"
             shutil.rmtree(save, ignore_errors=True)
@@ -257,10 +263,13 @@ def main():
             print(f"{tag}: {status}  ({time.monotonic() - t:.0f} s)", flush=True)
     finally:
         screen.close()
+        shutil.rmtree(save, ignore_errors=True)
         if os.path.exists(backup):
-            shutil.rmtree(save, ignore_errors=True)
             shutil.copytree(backup, save)
+            shutil.rmtree(backup)
             print("save restored", flush=True)
+        else:
+            print("no save before the run: start save removed", flush=True)
 
 
 main()
