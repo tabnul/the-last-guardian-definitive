@@ -955,6 +955,33 @@ def texture_packs(folder):
     return sorted(entry.name for entry in folder.iterdir() if (entry / 'index.txt').is_file())
 
 
+def backend_aa_env(settings, ini):
+    """The Video page's Anti-aliasing and Frame generation rows for the engine-to-Vulkan backend
+    (TLG_VKB_AA / TLG_VKB_FG, gpu/native/native_vkb_aa.cpp). The backend draws at the output size
+    (no upscaler), so the row's choice is its anti-aliasing: DLAA (an upscaler choice of DLSS counts
+    as DLAA), FSR 3.1 (FSR 4 runs as FSR 3.1 here), or none (Off, TAA). Frame generation: DLSS only,
+    on top of an anti-aliasing (it takes the AA's depth and motion), off at a 30 FPS game rate."""
+    env = {}
+    # tlg.ini dlss_supported / dlss_fg_supported are the default renderer's own DLSS checks: they never run with the
+    # backend (which loads DLSS through its own glue, tlg_dlss.dll), so they say nothing here
+    if ini.get('aa_row', '0') in ('0', ''):
+        choice = 'dlss'                     # a tlg.ini from before the row: DLSS (launcher upscaler_of)
+    elif ini.get('dlaa', '1') in ('0', ''):
+        choice = 'off'
+    else:
+        choice = ini.get('upscaler', 'dlss')
+    aa = {'dlss': 'dlaa', 'fsr3': 'fsr3', 'fsr4': 'fsr3'}.get(choice)
+    blocked = settings.get('frame_rate') == '30' or ini.get('fps_limit') == '30'
+    fg = ini.get('frame_generation', '0') == '1' and not blocked
+    if fg and aa is None:
+        aa = 'dlaa'                         # frame generation needs an anti-aliasing's inputs
+    if aa:
+        env['TLG_VKB_AA'] = aa
+    if fg:
+        env['TLG_VKB_FG'] = 'dlss'
+    return env
+
+
 def build_env(settings, extra=None):
     env = dict(os.environ)
     for key, value in DEFAULT_ENV.items():
@@ -1069,6 +1096,9 @@ def build_env(settings, extra=None):
         for key in THEIR_RENDERER_ENV:
             if key not in os.environ:
                 env.pop(key, None)
+        # the Video page's anti-aliasing / frame generation (TLG_VKB_AA / TLG_VKB_FG set outside win)
+        for key, value in backend_aa_env(settings, read_ini(user_dir() / 'tlg.ini')).items():
+            env.setdefault(key, value)
     if extra:
         env.update(extra)
     return env
