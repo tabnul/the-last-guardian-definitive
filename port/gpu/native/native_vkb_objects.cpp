@@ -2878,6 +2878,14 @@ bool ClearDepthStencil(u64 view_id, u32 flags, float depth, u32 stencil) {
     if (!On() || !device_ready || (flags & 3) == 0) {
         return false;
     }
+    // api-contract.md W12: the engine clamps the clear depth to [0, 1] (below 0 -> 0, above 1 -> 1; 024860c0) and writes the stencil value with a full mask
+    if (const float clamped = depth < 0.0f ? 0.0f : std::min(depth, 1.0f); clamped != depth || depth != depth) {
+        if (ContractCensusOn()) {
+            ContractNote("W12 clear depth outside [0, 1] (clamped)");
+        }
+        depth = depth != depth ? 0.0f : clamped;
+    }
+    stencil &= 0xffu;
     std::unique_lock lock{mutex};
     const auto v = views.find(view_id);
     const auto i = v != views.end() ? images.find(v->second.texture_id) : images.end();
