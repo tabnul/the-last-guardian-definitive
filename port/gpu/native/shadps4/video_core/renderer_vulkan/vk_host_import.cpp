@@ -30,13 +30,13 @@ namespace VkbVulkan {
 
 namespace GpuPool {
 namespace {
-const Instance* g_instance = nullptr;
 u32 g_type = ~0u;
 std::atomic<VkDeviceMemory> g_memory{VK_NULL_HANDLE};
 u64 g_bytes = 0;
 const char* g_reason = "not decided";
 
 #ifndef _WIN32
+const Instance* g_instance = nullptr;
 constexpr vk::BufferUsageFlags WindowUsage =
     vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndirectBuffer;
 
