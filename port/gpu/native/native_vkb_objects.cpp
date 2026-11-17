@@ -517,8 +517,11 @@ bool ViewRange(Kind kind, const Object& view, const Image& img, Range& r) {
         case 3: r = {vk::ImageViewType::e2D, d[1], 1, 0, 1}; break;
         case 4: r = {vk::ImageViewType::e2DArray, d[1], 1, d[2], d[3]}; break;
         case 5: r = {vk::ImageViewType::e2D, 0, 1, 0, 1}; break;
-        case 6: r = {vk::ImageViewType::e2DArray, 0, 1, d[0], d[1]}; break;
+        case 6: r = {vk::ImageViewType::e2DArray, 0, 1, d[1], d[2]}; break; // api-contract.md V7: after the Flags word (it was read as FirstArraySlice)
         default: r.mips = 1; return true;
+        }
+        if (ContractCensusOn() && (dim == 5 || dim == 6)) {
+            ContractNote("V7 multisample depth view");
         }
     } else {
         // render target and unordered access views: format, dimension, mip slice, then the array or depth slices
@@ -532,6 +535,11 @@ bool ViewRange(Kind kind, const Object& view, const Image& img, Range& r) {
         case 7: r = {vk::ImageViewType::e2DArray, 0, 1, d[0], d[1]}; break;
         case 8: r = {vk::ImageViewType::e3D, d[0], 1, 0, 1, true}; break;
         default: r.mips = 1; return true;
+        }
+        if (ContractCensusOn() && dim == 8) { // api-contract.md V7 (debug): a 3D render target / UAV's depth slices (FirstWSlice, WSize) against the volume at that mip
+            const u32 depth = std::max(img.depth >> std::min<u32>(d[0], 31), 1u);
+            const bool whole = d[1] == 0 && (d[2] == ~0u || d[2] >= depth);
+            ContractNote(fmt::format("V7 3D {} view: {}", kind == Kind::RenderTargetView ? "render target" : "unordered access", whole ? "whole volume" : "a slice range"));
         }
     }
     // -1 (all remaining) and out of range values are clamped to the image

@@ -1376,6 +1376,12 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
             c_skip_target.fetch_add(1, std::memory_order_relaxed);
             return;
         }
+        if (Core::Vkb::ContractCensusOn()) { // api-contract.md V7 (debug): the RTV's DXGI sRGB-ness (29, 91, 93; 90 / 92 typeless map to sRGB in the engine table) against our attachment format
+            const u32 dxgi = Rd<u32>(views[cb], 0x40);
+            const bool engine_srgb = dxgi == 29 || dxgi == 91 || dxgi == 93 || dxgi == 90 || dxgi == 92;
+            const bool ours_srgb = vk::to_string(v.color_formats[cb]).find("Srgb") != std::string::npos;
+            Core::Vkb::ContractNote(fmt::format("V7 render target dxgi {} -> {} ({})", dxgi, vk::to_string(v.color_formats[cb]), engine_srgb == ours_srgb ? "same sRGB-ness" : "sRGB DIFFERS"));
+        }
         pass.colors[cb] = a.view;
         attachment_uses.push_back(Stream::ImageUse(a.image, true));
         width = std::min(width, a.extent.width), height = std::min(height, a.extent.height), layers = std::min(layers, a.layers);
