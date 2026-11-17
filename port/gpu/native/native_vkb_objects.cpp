@@ -242,6 +242,8 @@ std::unordered_map<u64, View> views;
 std::map<u64, u64> texture_at_address; ///< api-contract.md W5: colour textures the engine fills (not GPU written) by the start of their memory (newest wins), for buffer copies into them
 std::unordered_map<u64, u64> image_at_address; ///< V4c: the newest render target image at an engine texture's memory, by address
 std::map<u64, DeviceBuffer> device_buffers;
+std::unordered_map<u64, u64> devbuf_hash; ///< api-contract.md Y7 census: device buffer start -> hash of its guest memory at the last check (under `mutex`)
+std::unordered_map<u64, std::string> devbuf_desc; ///< api-contract.md Y7 census: device buffer start -> its engine description (under `mutex`)
 std::unordered_map<u64, u64> device_buffer_start; ///< engine id -> start address
 std::deque<Doomed> doomed;
 std::unique_ptr<VkbVulkan::HostImport> host_import;
@@ -1152,6 +1154,10 @@ void BufferCreated(const Object& buffer) {
             }
             device_buffers[buffer.address] = {buffer.address + buffer.bytes, handle, allocation, buffer.id};
             device_buffer_start[buffer.id] = buffer.address;
+            devbuf_hash.erase(buffer.address); // Y7 census: a new buffer at this memory starts a new baseline
+            if (ContractCensusOn()) {
+                devbuf_desc[buffer.address] = fmt::format("usage {} bind {:#x} cpu {:#x} misc {:#x} stride {}", buffer.usage, buffer.bind, buffer.cpu_access, buffer.misc, buffer.stride);
+            }
         }
         c_dev_buffers.fetch_add(1, std::memory_order_relaxed);
         c_dev_bytes.fetch_add(buffer.bytes, std::memory_order_relaxed);
@@ -1262,6 +1268,7 @@ void ObjectDeletedNow(u64 id) {
         if (const auto d = device_buffers.find(b->second); d != device_buffers.end() && d->second.id == id) {
             doomed.push_back({due, {}, {}, {}, d->second.buffer, d->second.allocation});
             c_dev_bytes.fetch_sub(d->second.end - d->first, std::memory_order_relaxed);
+            devbuf_hash.erase(d->first); // Y7 census
             device_buffers.erase(d);
             BumpBufferEpoch(); // note 46: A1 memo answers may change
         }
@@ -1613,12 +1620,50 @@ bool FrameRingInPlace(u64& buffer_handle, u64& begin, u64& end) {
     return buffer_handle != 0;
 }
 
+namespace {
+/// api-contract.md Y7 census (debug, with TLG_VKB_CONTRACT_CENSUS=1): the guest memory under each GPU-written device buffer, hashed every 60 graphics submits; a change
+/// no BufferCpuWritten announced is a CPU write (or a file read) our device copy never gets
+void DeviceBufferWriteCheck() {
+    if (!ContractCensusOn() || (GraphicsSubmits() % 60) != 0) {
+        return;
+    }
+    std::vector<std::tuple<u64, u64, u64>> ranges; // start, end, id
+    {
+        std::scoped_lock lock{mutex};
+        for (const auto& [start, d] : device_buffers) {
+            ranges.emplace_back(start, d.end, d.id);
+        }
+    }
+    for (const auto& [start, end, id] : ranges) {
+        const u64 h = HashGuest(start, end - start);
+        bool changed = false;
+        {
+            std::scoped_lock lock{mutex};
+            auto [it, fresh] = devbuf_hash.try_emplace(start, h);
+            changed = !fresh && it->second != h;
+            it->second = h;
+        }
+        if (changed) {
+            std::string desc;
+            {
+                std::scoped_lock lock{mutex};
+                if (const auto d = devbuf_desc.find(start); d != devbuf_desc.end()) {
+                    desc = d->second;
+                }
+            }
+            ContractNote(fmt::format("Y7 guest memory of a GPU-written device buffer changed unannounced ({} B, {})", end - start, desc));
+        }
+    }
+}
+} // namespace
+
 void ObjectsTick() {
     if (!On() || !device_ready) {
         return;
     }
     DestroyDue(static_cast<u32>(GraphicsSubmits()), false);
     CensusFrame();
+    DeviceBufferWriteCheck();
     if (DeviceBuffersMode() != 0) {
         std::vector<std::pair<u64, u64>> marks;
         {
@@ -2146,6 +2191,7 @@ void BufferCpuWritten(u64 address, u64 size) {
             return;
         }
         device_buffer = d->buffer, offset = address - start;
+        devbuf_hash.erase(start); // Y7 census: an announced write
     }
     const BufferWindow w = SourceWindow(address, size);
     if (!w.buffer) {
@@ -2962,6 +3008,14 @@ u32 MemoryLoaded(u64 address, u64 bytes) {
             }
         }
         // (not the GPU-written device buffers of V2f: their contents are ours alone, note 84)
+        if (ContractCensusOn()) { // api-contract.md Y7 (debug): a file read into memory under a GPU-written device buffer
+            if (auto d = device_buffers.upper_bound(address); d != device_buffers.begin()) {
+                --d;
+                if (address < d->second.end && d->first < address + bytes) {
+                    ContractNote(fmt::format("Y7 file read into a GPU-written device buffer ({} B)", d->second.end - d->first));
+                }
+            }
+        }
     }
     for (const Copy& c : copies) {
         const BufferWindow src = SourceWindow(c.guest, c.bytes);
