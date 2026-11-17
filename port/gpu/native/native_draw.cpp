@@ -7595,6 +7595,10 @@ u64 PS4_SYSV_ABI TagAscCsCopy(u64 jcc, u64 destination, u64 source, u64 bytes_ar
     }
     if (Vkb::On()) [[unlikely]] {
         Core::Vkb::WorkCensus::Note("async_cs_copy", ret, bytes); // D2 census (debug)
+        // api-contract.md W5b: the engine's buffer move (GpuHeap_MoveOneResource, the call at 01f7eec3) swaps the holder to the new buffer as soon as this returns
+        if (ret - ImageBase() + 0x1000000 == 0x1f7eec8 && Core::Vkb::MoveBufferNow(destination, source, bytes)) {
+            return 1;
+        }
         (void)Core::Vkb::CopyBuffer(destination, source, bytes); // our copy in the frame stream
         return 1;
     }

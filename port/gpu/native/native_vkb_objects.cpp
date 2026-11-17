@@ -2694,50 +2694,39 @@ vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
         ContractNote(fmt::format("S sampler filter {} address {} {} {} bias {} aniso {} compare {} cmp_used {} lod {} {}", filter, address[0], address[1], address[2], bias, aniso,
                                  compare_func, compare ? 1 : 0, min_lod, max_lod));
     }
-    bool linear = true, mip_linear = true, anisotropic = false;
-    switch (filter) {
-    case 0x0:
-        linear = false, mip_linear = false;
-        break;
-    case 0x7:
-    case 0x10:
-        break;
-    case 0x8:
-        anisotropic = instance->IsAnisotropicFilteringSupported();
-        break;
-    default:
-        c_samplers_invalid.fetch_add(1, std::memory_order_relaxed); // an engine filter value not met before: trilinear
-        if (c_samplers_invalid.load(std::memory_order_relaxed) <= 8) {
-            LOG_WARNING(Render_Vulkan, "vkb sampler: engine filter value {:#x} not known, trilinear", filter);
-        }
-        break;
-    }
+    // api-contract.md S1 / S2 (JsDevice_CreateSamplerState 02492e40): the filter is `Filter % 9` into the engine's three tables (mag 025e0840, min 025e0870,
+    // mip 025e08a0: point / linear / anisotropic per index; 9..17 are the same nine with a comparison); the address mode is the engine's value 0 wrap, 1 mirror,
+    // 2 clamp, 3 border, 4 mirror once (table 025e08d0 -> GNM 0, 1, 2, 6, 3); the maximum anisotropy is rounded up to 1 / 2 / 4 / 8 / 16
+    static constexpr u8 MagTable[9] = {0, 0, 1, 1, 0, 0, 1, 1, 3}; // 0 point, 1 linear, 3 anisotropic
+    static constexpr u8 MinTable[9] = {0, 0, 0, 0, 1, 1, 1, 1, 3};
+    static constexpr u8 MipTable[9] = {1, 2, 1, 2, 1, 2, 1, 2, 2}; // 1 point, 2 linear
+    const u32 f = filter % 9;
+    const bool mag_linear = MagTable[f] != 0, min_linear = MinTable[f] != 0, mip_linear = MipTable[f] == 2;
+    const bool anisotropic = MagTable[f] == 3 && instance->IsAnisotropicFilteringSupported();
+    const float aniso_level = aniso <= 1 ? 1.0f : aniso == 2 ? 2.0f : aniso <= 4 ? 4.0f : aniso <= 8 ? 8.0f : 16.0f;
     const auto address_mode = [](u32 mode) {
         switch (mode) {
         case 0: return vk::SamplerAddressMode::eRepeat;
         case 1: return vk::SamplerAddressMode::eMirroredRepeat;
         case 2: return vk::SamplerAddressMode::eClampToEdge;
-        case 3:
-        case 5:
-        case 7: c_sampler_mirror_once.fetch_add(1, std::memory_order_relaxed); return vk::SamplerAddressMode::eMirrorClampToEdge;
-        case 4:
-        case 6: return vk::SamplerAddressMode::eClampToBorder;
-        default: c_samplers_invalid.fetch_add(1, std::memory_order_relaxed); return vk::SamplerAddressMode::eRepeat;
+        case 3: return vk::SamplerAddressMode::eClampToBorder; // the border colour: type 0, transparent black
+        case 4: c_sampler_mirror_once.fetch_add(1, std::memory_order_relaxed); return vk::SamplerAddressMode::eMirrorClampToEdge;
+        default: c_samplers_invalid.fetch_add(1, std::memory_order_relaxed); return vk::SamplerAddressMode::eRepeat; // the engine asserts above 4
         }
     };
     if (compare_func < 1 || compare_func > 8) {
         c_samplers_invalid.fetch_add(1, std::memory_order_relaxed);
     }
     const vk::SamplerCreateInfo ci{
-        .magFilter = linear ? vk::Filter::eLinear : vk::Filter::eNearest,
-        .minFilter = linear ? vk::Filter::eLinear : vk::Filter::eNearest,
+        .magFilter = mag_linear ? vk::Filter::eLinear : vk::Filter::eNearest,
+        .minFilter = min_linear ? vk::Filter::eLinear : vk::Filter::eNearest,
         .mipmapMode = mip_linear ? vk::SamplerMipmapMode::eLinear : vk::SamplerMipmapMode::eNearest,
         .addressModeU = address_mode(address[0]),
         .addressModeV = address_mode(address[1]),
         .addressModeW = address_mode(address[2]),
-        .mipLodBias = bias,
+        .mipLodBias = 0.0f, // api-contract.md S3: the engine never writes the S#'s bias field (MipLODBias is ignored)
         .anisotropyEnable = anisotropic,
-        .maxAnisotropy = anisotropic ? std::clamp(static_cast<float>(aniso), 1.0f, instance->MaxSamplerAnisotropy()) : 1.0f,
+        .maxAnisotropy = anisotropic ? std::min(aniso_level, instance->MaxSamplerAnisotropy()) : 1.0f,
         .compareEnable = compare,
         .compareOp = static_cast<vk::CompareOp>(compare_func >= 1 && compare_func <= 8 ? compare_func - 1 : 7),
         .minLod = min_lod,
@@ -3238,6 +3227,55 @@ void TextureMoved(u64 new_id, u64 old_id, u32 first_mip) {
     }
 }
 
+/// api-contract.md W5b: the engine's buffer move (GpuHeap_MoveOneResource 01f7e850, its buffer branch: a new buffer, the async copy old -> new at 01f7eec3, then the
+/// holder swapped to the new buffer at once, so CPU readers (e.g. FUN_01d7a890, the effects' vertex clusters, which turn floats read from it into array indexes)
+/// may read the new memory right away). On PS4 the async queue runs that copy within moments; our frame stream would run it a frame or more later. So the copy is
+/// made now, on the CPU, when the old memory holds the contents (nothing of ours writes it on the GPU: no GPU-written device copy, no pending in-place GPU write,
+/// not marked GPU-written); else it stays our copy in the frame stream (false). LEGACY(move_in_stream): TLG_LEGACY_MOVE_IN_STREAM=1 always in the stream.
+std::atomic<u64> c_moves_now{0}, c_moves_in_stream{0};
+bool MoveBufferNow(u64 destination, u64 source, u64 bytes) {
+    static const bool legacy = [] { const char* e = std::getenv("TLG_LEGACY_MOVE_IN_STREAM"); return e != nullptr && e[0] == '1'; }();
+    if (!On() || !device_ready || legacy || bytes == 0 || destination == source || (destination < source + bytes && source < destination + bytes)) {
+        return false;
+    }
+    bool gpu_side = false;
+    {
+        std::scoped_lock lock{mutex};
+        for (auto d = device_buffers.upper_bound(source); !gpu_side && d != device_buffers.begin();) { // the device copy holding the start, and those inside
+            --d;
+            if (d->second.end > source) {
+                gpu_side = d->second.gpu_writes;
+            }
+            break;
+        }
+        for (auto d = device_buffers.lower_bound(source); !gpu_side && d != device_buffers.end() && d->first < source + bytes; ++d) {
+            gpu_side = d->second.gpu_writes;
+        }
+        if (!gpu_side) {
+            if (const Watched* w = WatchedAt(source, bytes)) {
+                gpu_side = w->gpu_written;
+            }
+        }
+    }
+    if (!gpu_side) {
+        std::scoped_lock marks_lock{gpu_write_mutex};
+        for (const auto& [a, n] : gpu_write_pending) {
+            if (a < source + bytes && source < a + n) {
+                gpu_side = true;
+                break;
+            }
+        }
+    }
+    if (gpu_side) {
+        c_moves_in_stream.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    std::memcpy(reinterpret_cast<void*>(destination), reinterpret_cast<const void*>(source), bytes);
+    BufferCpuWritten(destination, bytes); // a copy of ours of the new memory (if any) takes the bytes
+    c_moves_now.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
 bool CopyBuffer(u64 destination, u64 source, u64 bytes) {
     if (!device_ready || bytes == 0) {
         return false;
@@ -3606,6 +3644,7 @@ nlohmann::json ObjectsReport() {
                           {"texture_updates", {{"wanted", c_reupload_wanted.load()}, {"uploaded", c_reupload_done.load()}, {"no_image", c_reupload_no_image.load()},
                                                {"in_stream", c_reupload_in_stream.load()}, {"moved_textures", c_moved_textures.load()}, {"moved_no_image", c_moved_no_image.load()},
                                                {"moved_mismatch", c_moved_mismatch.load()}}},
+                          {"buffer_moves", {{"copied_at_the_move", c_moves_now.load()}, {"in_the_stream", c_moves_in_stream.load()}}},
                           {"buffer_views", {{"whole", c_view_whole.load()}, {"range", c_view_part.load()}, {"outside", c_view_outside.load()}}},
                           {"asyncmap_buffers", {{"placed_in_place", c_placed_by_asyncmap.load()}, {"gpu_written_kept_device_copy", c_asyncmap_gpu_written.load()}}},
                           {"file_reads_into_textures", {{"reads", c_loaded_reads.load()}, {"textures", c_loaded_textures.load()}, {"buffers", c_loaded_buffers.load()}}},
