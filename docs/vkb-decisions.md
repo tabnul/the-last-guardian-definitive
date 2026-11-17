@@ -9,6 +9,35 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-17 - The import refusal is an AMD Linux driver rule, not the container (not yet merged)
+
+- **In short:** the import that failed in #8 is refused by a rule in the AMD Linux driver itself, not
+  by the container. Shown by the driver's source and by a test in this container; a run on a plain
+  install (no container) is still to come, see the owner test in the comment below. This entry does
+  not settle the open owner question of the principles page about two paths (principle 6).
+- **Problem:** Owner (asked 2026-11-18 owner time): "I don't want to be fixing things that are related
+  to LXC." The test box is an LXC container with the GPU passed in. Was the refusal to import the
+  game's memory (#8), which the GPU pool works around, caused by the container?
+- **Considered:** (1) a container effect: then the GPU pool would only be needed on this box; (2) a
+  driver rule: then any AMD Linux machine with this driver needs it.
+- **Finding:** (2), by reading the source and one run on this box. The kernel driver (Linux 7.0,
+  `amdgpu_ttm.c`, function `amdgpu_ttm_tt_get_user_pages`) refuses memory that has a file behind it
+  when the caller asks for "anonymous memory only", and libdrm (2.4.125, `amdgpu_create_bo_from_user_mem`,
+  used by RADV in Mesa 25.2.8) always asks for that. On this path there is no check of namespaces,
+  cgroups, limits or permissions. A small test in this container that calls the driver directly gets
+  the same shared memory accepted as soon as "anonymous only" is not asked for. The same check is in
+  the kernel sources of 6.8 and 6.14 (read, not run). Not run on a plain install; the test for that is
+  in the comment linked below. Sources, the test and its output are in that comment.
+- **Choice:** the GPU pool stays the way for AMD Linux. Nothing in the engine is changed for the
+  container. Container differences that can only change timing (9 of 12 CPUs, possibly a shared GPU,
+  software present on Xvfb) and the hidden kernel log are listed in the comment. Whether #12 (takes
+  differ) also happens without the container is not proven; one test on the host without the
+  container is given there for the owner.
+- **Switch:** none, docs only.
+- **Who:** the box (loop rule 14), **not yet merged**. The owner can overrule in the issue or at the merge.
+- **Links:** https://github.com/tabnul/tlg-vkb-work/issues/8#issuecomment-6964582869 , pull request
+  #13, issue #12.
+
 ## 2026-11-17 - The guest pool becomes GPU memory (not yet merged)
 
 - **Problem:** On AMD Linux the new engine drew a black picture. The GPU reads the game's memory in
