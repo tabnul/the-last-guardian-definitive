@@ -1120,6 +1120,9 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
             if (object != 0 && src.kind == 3) {
                 const u64 address = static_cast<u64>(Rd<u32>(object, 0x60)) | static_cast<u64>(Rd<u32>(object, 0x64) & 0xffu) << 32;
                 const u64 size = Rd<u32>(object, 0x180);
+                if (size > 65536 && Core::Vkb::ContractCensusOn()) { // api-contract.md C17 (debug): a constant buffer above the usual 64 KB uniform range
+                    Core::Vkb::ContractNote("C17 constant buffer above 64 KB");
+                }
                 Core::Vkb::BufferWindow w;
                 if (address != 0 && size != 0) {
                     if (Core::Vkb::ConstantInRing(address, size, w)) {
@@ -1335,6 +1338,13 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
             return;
         }
         width = height = layers = 0; // set by the resolver
+    }
+    if (Core::Vkb::ContractCensusOn()) { // api-contract.md C17 (debug): domain / hull / geometry shader slots (ctx + 0x4678 / 0x4680 / 0x4688), topology >= 10 (patches)
+        const u64 ds = Rd<u64>(ctx, 0x4678), hs = Rd<u64>(ctx, 0x4680), gs = Rd<u64>(ctx, 0x4688);
+        const u32 topology = Rd<u32>(ctx, 0x4480);
+        if (ds != 0 || hs != 0 || gs != 0 || topology >= 10) {
+            Core::Vkb::ContractNote(fmt::format("C17 draw with stages ds {} hs {} gs {}, topology {}", ds != 0, hs != 0, gs != 0, topology));
+        }
     }
     if (Core::Vkb::ContractCensusOn() && Rd<u64>(ctx, CtxTarget7) != 0) { // api-contract.md C10 (debug): the target-7 mode (the Pro's ID buffer, note 10)
         const auto describe = [](u64 view) -> std::string {
