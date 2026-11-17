@@ -2906,7 +2906,7 @@ bool ClearDepthStencil(u64 view_id, u32 flags, float depth, u32 stencil) {
     return true;
 }
 
-void TextureCpuWritten(u64 texture_id) {
+void TextureCpuWritten(u64 texture_id, u32 subresource) {
     if (!On() || !device_ready) {
         return;
     }
@@ -2952,13 +2952,13 @@ void TextureCpuWritten(u64 texture_id) {
         if (ContractCensusOn()) {
             ContractNote("L5 cpu rewrite of a texture, in the stream");
         }
-        if (Upload::TextureContentsInStream(texture_id, image, format, mips, layers)) {
+        if (Upload::TextureContentsInStream(texture_id, image, format, mips, layers, subresource)) {
             c_reupload_done.fetch_add(1, std::memory_order_relaxed);
             c_reupload_in_stream.fetch_add(1, std::memory_order_relaxed);
             return;
         }
     }
-    if (Upload::TextureContents(texture_id, image, format, mips, layers, layout)) {
+    if (Upload::TextureContents(texture_id, image, format, mips, layers, layout, subresource)) {
         c_reupload_done.fetch_add(1, std::memory_order_relaxed);
     }
 }

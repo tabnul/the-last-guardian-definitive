@@ -238,7 +238,7 @@ u64 GuestSize(u64 texture_id) {
     return info.guest_size;
 }
 
-bool TextureContents(u64 texture_id, vk::Image image, vk::Format format, u32 mips, u32 layers, vk::ImageLayout final_layout) {
+bool TextureContents(u64 texture_id, vk::Image image, vk::Format format, u32 mips, u32 layers, vk::ImageLayout final_layout, u32 subresource) {
     const u64 t0 = NowNs();
     NativeDesc::ImageDesc desc;
     if (instance == nullptr || !NativeImageDesc::DeriveDesc(texture_id, 0, desc)) {
@@ -261,16 +261,26 @@ bool TextureContents(u64 texture_id, vk::Image image, vk::Format format, u32 mip
     }
     const u32 levels = std::min<u32>(mips, info.resources.levels);
     std::vector<vk::BufferImageCopy> copies;
-    for (u32 m = 0; m < levels; ++m) {
+    // api-contract.md L5 / review A3: UpdateSubresource names one subresource (mip + layer x mips): only it gets the new contents, so the other mips and layers keep what
+    // the GPU wrote into them (a whole re-upload would replace them with the guest memory's older bytes)
+    const u32 all_layers = std::min<u32>(layers, info.resources.layers);
+    const bool one = subresource != ~0u && levels != 0;
+    const u32 only_mip = one ? subresource % std::max(mips, 1u) : 0, only_layer = one ? subresource / std::max(mips, 1u) : 0;
+    if (one && (only_mip >= levels || (!info.props.is_volume && only_layer >= all_layers))) {
+        return false;
+    }
+    const u32 block = info.props.is_block ? 4u : 1u;
+    for (u32 m = one ? only_mip : 0; m < (one ? only_mip + 1 : levels); ++m) {
         const u32 width = std::max(info.size.width >> m, 1u);
         const u32 height = std::max(info.size.height >> m, 1u);
         const u32 depth = info.props.is_volume ? std::max(info.size.depth >> m, 1u) : 1u;
         const auto& mip = info.mips_layout[m];
+        const u64 slice = info.props.is_volume ? 0 : u64{(mip.pitch + block - 1) / block} * ((mip.height + block - 1) / block) * vk::blockSize(format);
         copies.push_back({
-            .bufferOffset = mip.offset,
+            .bufferOffset = mip.offset + (one ? only_layer * slice : 0),
             .bufferRowLength = mip.pitch,
             .bufferImageHeight = mip.height,
-            .imageSubresource = {vk::ImageAspectFlagBits::eColor, m, 0, std::min<u32>(layers, info.resources.layers)},
+            .imageSubresource = {vk::ImageAspectFlagBits::eColor, m, one && !info.props.is_volume ? only_layer : 0u, one && !info.props.is_volume ? 1u : all_layers},
             .imageOffset = {0, 0, 0},
             .imageExtent = {mip.pitch ? std::min<u32>(mip.pitch, width) : width, mip.height ? std::min<u32>(mip.height, height) : height, depth},
         });
@@ -350,7 +360,7 @@ bool TextureContents(u64 texture_id, vk::Image image, vk::Format format, u32 mip
     return true;
 }
 
-bool TextureContentsInStream(u64 texture_id, vk::Image image, vk::Format format, u32 mips, u32 layers) {
+bool TextureContentsInStream(u64 texture_id, vk::Image image, vk::Format format, u32 mips, u32 layers, u32 subresource) {
     NativeDesc::ImageDesc desc;
     if (instance == nullptr || !NativeImageDesc::DeriveDesc(texture_id, 0, desc)) {
         c_no_desc.fetch_add(1, std::memory_order_relaxed);
@@ -373,16 +383,26 @@ bool TextureContentsInStream(u64 texture_id, vk::Image image, vk::Format format,
     const u64 guest_size = info.guest_size;
     const u32 levels = std::min<u32>(mips, info.resources.levels);
     std::vector<vk::BufferImageCopy> copies;
-    for (u32 m = 0; m < levels; ++m) {
+    // api-contract.md L5 / review A3: UpdateSubresource names one subresource (mip + layer x mips): only it gets the new contents, so the other mips and layers keep what
+    // the GPU wrote into them (a whole re-upload would replace them with the guest memory's older bytes)
+    const u32 all_layers = std::min<u32>(layers, info.resources.layers);
+    const bool one = subresource != ~0u && levels != 0;
+    const u32 only_mip = one ? subresource % std::max(mips, 1u) : 0, only_layer = one ? subresource / std::max(mips, 1u) : 0;
+    if (one && (only_mip >= levels || (!info.props.is_volume && only_layer >= all_layers))) {
+        return false;
+    }
+    const u32 block = info.props.is_block ? 4u : 1u;
+    for (u32 m = one ? only_mip : 0; m < (one ? only_mip + 1 : levels); ++m) {
         const u32 width = std::max(info.size.width >> m, 1u);
         const u32 height = std::max(info.size.height >> m, 1u);
         const u32 depth = info.props.is_volume ? std::max(info.size.depth >> m, 1u) : 1u;
         const auto& mip = info.mips_layout[m];
+        const u64 slice = info.props.is_volume ? 0 : u64{(mip.pitch + block - 1) / block} * ((mip.height + block - 1) / block) * vk::blockSize(format);
         copies.push_back({
-            .bufferOffset = mip.offset,
+            .bufferOffset = mip.offset + (one ? only_layer * slice : 0),
             .bufferRowLength = mip.pitch,
             .bufferImageHeight = mip.height,
-            .imageSubresource = {vk::ImageAspectFlagBits::eColor, m, 0, std::min<u32>(layers, info.resources.layers)},
+            .imageSubresource = {vk::ImageAspectFlagBits::eColor, m, one && !info.props.is_volume ? only_layer : 0u, one && !info.props.is_volume ? 1u : all_layers},
             .imageOffset = {0, 0, 0},
             .imageExtent = {mip.pitch ? std::min<u32>(mip.pitch, width) : width, mip.height ? std::min<u32>(mip.height, height) : height, depth},
         });

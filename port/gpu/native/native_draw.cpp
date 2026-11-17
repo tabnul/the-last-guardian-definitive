@@ -10877,7 +10877,7 @@ u64 PS4_SYSV_ABI TextureUpdateSubresource(u64 context, u64 resource, u64 subreso
             Core::Vkb::WorkCensus::Note("update_texture", ret, static_cast<u64>(Rd<u32>(resource, 0x180)) * Rd<u32>(resource, 0x184)); // D2 census (debug): bytes = texels of the top level
             Core::Vkb::WorkCensus::Scope scope{"UpdateSubresource"};
             reinterpret_cast<GuestFunction6>(original)(context, resource, subresource, box, data, 0);
-            Core::Vkb::TextureCpuWritten(Rd<u64>(resource, 0x10)); // V2e: the engine wrote the texture's memory (tiled): our image gets the contents again
+            Core::Vkb::TextureCpuWritten(Rd<u64>(resource, 0x10), static_cast<u32>(subresource)); // V2e / review A3: that subresource of our image gets the contents again
             return 1ull << 63;
         }
         return 0;
@@ -10979,7 +10979,7 @@ u64 PS4_SYSV_ABI ComputeUpdateSubresource(u64 context, u64 resource, u64 subreso
             Core::Vkb::WorkCensus::Note("update_texture", ret, static_cast<u64>(Rd<u32>(resource, 0x180)) * Rd<u32>(resource, 0x184)); // D2 census (debug): bytes = texels of the top level
             Core::Vkb::WorkCensus::Scope scope{"UpdateSubresource"};
             reinterpret_cast<GuestFunction6>(original)(context, resource, subresource, box, data, 0);
-            Core::Vkb::TextureCpuWritten(Rd<u64>(resource, 0x10)); // V2e: the engine wrote the texture's memory (tiled): our image gets the contents again
+            Core::Vkb::TextureCpuWritten(Rd<u64>(resource, 0x10), static_cast<u32>(subresource)); // V2e / review A3: that subresource of our image gets the contents again
             return 1ull << 63;
         }
         return 0;

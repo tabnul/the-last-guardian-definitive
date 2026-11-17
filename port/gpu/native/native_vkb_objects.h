@@ -102,7 +102,7 @@ void NoteBind(u32 kind, const BufferWindow& w, u64 size, bool written);
 void BufferCpuWritten(u64 address, u64 size);
 /// V2e: the CPU wrote a texture's memory after its creation (UpdateSubresource, the dynamic texture fill): our image gets the contents again (the upload batch, which the
 /// queue runs before the frame stream: a dispatch earlier in the same frame sees the new contents too)
-void TextureCpuWritten(u64 texture_id);
+void TextureCpuWritten(u64 texture_id, u32 subresource = ~0u); ///< subresource: the one UpdateSubresource named (~0u: the whole texture)
 /// api-contract.md Y6: the engine handed the CPU a plain pointer to this buffer range (AsyncMap): its bytes live where the pointer writes (our device copy is retired)
 void BufferCpuAddressable(u64 buffer_id);
 /// api-contract.md W5: the engine moved texture `old_id` to new memory as texture `new_id` (from mip `first_mip` on): our new image gets the old image's contents
