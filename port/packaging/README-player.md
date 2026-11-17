@@ -12,7 +12,7 @@ None of it is in the download; you need your own copy. Use **The Last Guardian C
 
 | File | From | Size | Purpose |
 |---|---|---|---|
-| `eboot.bin` | update 01.03 | 89 MB | the game code (must be the 1.03 one) |
+| `eboot.bin` | update 01.03 | 89 MB | the game code (must be the 1.03 one; any other build or an already patched one runs at 30 FPS, the launcher warns) |
 | `sce_module/libc.prx`, `sce_module/libSceFios2.prx` | update 01.03 | 1.5 MB | the game's own libraries |
 | `sce_sys/` (`param.sfo`, `playgo-chunk.dat`, `icon0.png`, `pic0.png`, `pic1.png`) | base + update | ~5 MB | metadata, install info and the launcher art |
 | `trico_boot.psarc`, `trico_001.psarc`, `trico_002.psarc`, `trico_003.psarc` | base game | 2.8 + 5.8 + 5.4 + 6.8 GB | main content |
@@ -45,6 +45,7 @@ Pitfalls:
 - **FTP can cut big files off at 4 GB.** Compare the file sizes with the console. When one is short, copy it again from a USB dump.
 - **FAT32 cannot hold files over 4 GB.** Format the USB drive as exFAT.
 - **Without update 01.03 the port does not work properly** (30 FPS, none of the port's fixes). The launcher shows a warning when the folder is older.
+- **Stuck at 30 FPS?** 60 FPS and Unlocked need the 1.03 game code in `eboot.bin`. The port checks the exact bytes it changes, so any 1.03 dump works (US or EU, PS4 or PS5 dump tool). When the check fails, the game runs at 30 FPS and the launcher shows a warning. Usually the update was not merged on top of the base game, or `eboot.bin` was already changed by another patch or cheat: dump it again with update 01.03.
 
 ## How to play
 

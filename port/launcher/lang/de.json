@@ -340,6 +340,7 @@
     "launcher.mods_empty": "Noch keine Cheat-XML-Dateien im Mods-Ordner gefunden.",
     "launcher.quit": "Beenden",
     "launcher.ready": "Bereit zum Spielen.",
+    "launcher.fps_unsupported": "eboot.bin ist nicht der 1.03-Spielcode: 60 FPS und Unbegrenzt funktionieren nicht, das Spiel läuft mit 30 FPS (siehe README)",
     "launcher.audio_native": "Audio: nativ (Konsolenmodul gefunden).",
     "launcher.audio_builtin": "Audio: eingebauter Mixer, experimentell (libSceNgs2.sprx nicht gefunden oder nicht gewählt).",
     "launcher.missing": "Fehlt",

@@ -338,6 +338,7 @@
     "launcher.mods_empty": "Nenhum arquivo de cheat XML encontrado na pasta de mods ainda.",
     "launcher.quit": "Sair",
     "launcher.ready": "Pronto para jogar.",
+    "launcher.fps_unsupported": "eboot.bin não é o código do jogo 1.03: 60 FPS e Sem limite não funcionam, o jogo roda a 30 FPS (veja o README)",
     "launcher.audio_native": "Áudio: nativo (módulo do console encontrado).",
     "launcher.audio_builtin": "Áudio: mixer próprio, experimental (libSceNgs2.sprx não encontrado ou desmarcado).",
     "launcher.missing": "Faltando",

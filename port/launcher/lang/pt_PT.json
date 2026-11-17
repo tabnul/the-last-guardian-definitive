@@ -153,6 +153,7 @@
     "launcher.update_check": "Procurar novas versões ao iniciar",
     "launcher.update_available": "Saiu a nova versão {tag}: clique para abrir a página de transferência",
     "launcher.old_version": "Versão do jogo {version}: instale a atualização 01.03 (o port foi feito para ela)",
+    "launcher.fps_unsupported": "eboot.bin não é o código do jogo 1.03: 60 FPS e Sem limite não funcionam, o jogo corre a 30 FPS (ver o README)",
     "launcher.debug": "Depuração (ao iniciar)",
     "launcher.bench_title": "Benchmark",
     "launcher.bench_text": "Mede a velocidade do jogo neste PC, cena por cena, sozinho: cada cena é carregada de um save limpo, a câmara fica parada e a taxa de fotogramas de cada segundo é registada. Os seus próprios saves são guardados antes e devolvidos depois.\n\nNão mexa enquanto corre: o jogo abre em ecrã inteiro para cada cena, cerca de um minuto cada. O resultado é um único ficheiro .zip — anexe-o a uma issue no GitHub para os desenvolvedores verem exatamente como cada cena corre no seu PC.",

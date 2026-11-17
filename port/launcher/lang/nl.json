@@ -153,6 +153,7 @@
     "launcher.update_check": "Bij de start op nieuwe releases controleren",
     "launcher.update_available": "Nieuwe release {tag} is uit: klik om de downloadpagina te openen",
     "launcher.old_version": "Gameversie {version}: installeer update 01.03 (de port is daarvoor gemaakt)",
+    "launcher.fps_unsupported": "eboot.bin is niet de 1.03-gamecode: 60 FPS en Onbeperkt werken niet, de game draait op 30 FPS (zie de README)",
     "launcher.debug": "Debug (bij de start)",
     "launcher.bench_title": "Benchmark",
     "launcher.bench_text": "Meet hoe snel de game op deze pc draait, scène voor scène, helemaal vanzelf: elke scène wordt geladen vanaf een schone save, de camera staat stil en de framerate van elke seconde wordt vastgelegd. Je eigen saves worden eerst apart gezet en daarna teruggezet.\n\nNiet aanraken terwijl het loopt: de game opent voor elke scène op volledig scherm, ongeveer een minuut per scène. Het resultaat is één .zip-rapportbestand — voeg het toe aan een issue op GitHub zodat de ontwikkelaars precies zien hoe elke scène op jouw pc draait.",
