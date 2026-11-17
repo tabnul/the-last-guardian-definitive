@@ -316,18 +316,21 @@
     "launcher.shadow_scale": "그림자 해상도",
     "launcher.shadow_game": "게임(2048)",
     "launcher.graphics_preset": "그래픽 프리셋",
-    "launcher.graphics_preset_hint": "모든 화질 설정과 텍스처 팩을 한 번에 바꿉니다. 기본은 출시 당시의 게임입니다. 여기나 게임 내 메뉴(Insert, 이미지 탭)에서 자신만의 프리셋을 저장하세요. Steam Deck(실험적)은 기본에 1280x800, 30 FPS, 업스케일링 없음, 프레임 생성 끔을 더한 것입니다: 실행 결과를 알려 주세요.",
+    "launcher.graphics_preset_hint": "모든 화면 설정과 텍스처 팩을 한 번에 바꿉니다. Stock은 출시 그대로의 게임입니다. 직접 만든 프리셋은 여기나 게임 내 메뉴(Insert, 이미지 탭)에서 저장하세요. 오래되었거나 사양이 낮은 PC: 저사양 PC를 고르세요(Stock에 그림자 거리 50%와 가벼운 그림자, 해상도와 FPS는 그대로). Steam Deck: Steam Deck(실험적)을 고르세요. 저사양 PC에 1280x800, 30 FPS, 업스케일링 없음, 프레임 생성 끔이 더해집니다. 어떻게 돌아가는지 알려주세요.",
     "launcher.preset_save": "프리셋으로 저장",
     "launcher.preset_save_button": "저장",
-    "launcher.preset_save_bad": "이름을 입력하세요(문자, 숫자, 공백, - 또는 _. Stock, Recommended, Steam Deck은 불가).",
+    "launcher.preset_save_bad": "이름을 입력하세요(영문자, 숫자, 공백, - 또는 _; Stock, Recommended, Low-end PC, Steam Deck은 안 됨).",
     "launcher.preset_stock": "출시 원본",
     "launcher.preset_recommended": "권장(기본값)",
+    "launcher.preset_lowend": "저사양 PC",
     "launcher.preset_custom": "사용자 지정",
     "launcher.shadow_hint": "섀도 맵을 게임의 2048x2048의 2배 또는 4배로 그립니다(기본값: 게임). 가장 큰 이점은 어떤 안티에일리어싱에서도 나무와 잎 그림자의 반짝임이 크게 줄어드는 것입니다. 8192는 약 8 FPS와 최대 약 2GB의 비디오 메모리를 사용합니다(4096은 그 4분의 1 정도). 비디오 메모리가 8GB 이하라면 게임을 유지하세요: 부족하면 끊김과 충돌이 생깁니다.",
     "launcher.grass_smooth": "풀을 매 프레임 애니메이션(기본값)",
     "launcher.grass_hint": "게임은 대부분의 풀을 4프레임마다 한 번만 움직여 높은 프레임 레이트에서 끊겨 보입니다. 끔은 출시 상태입니다.",
     "launcher.effect_fog_distance": "안개 거리",
     "launcher.effect_fog_distance_hint": "안개가 시작되고 최대 농도에 이르는 거리입니다. 기본값 100%는 출시 상태이며, 낮추면 안개가 가까워집니다.",
+    "launcher.effect_shadow_distance": "그림자 거리",
+    "launcher.effect_shadow_distance_hint": "얼마나 멀리 있는 물체까지 선명한 그림자를 받는지. 기본값 100%는 출시 그대로입니다. 50%는 오래된 CPU와 Steam Deck에서 FPS를 몇 %에서 10%까지 올립니다. 먼 그림자는 부드러워지고 가까운 그림자는 그대로입니다.",
     "launcher.effect_haze_fringe": "연무 색수차",
     "launcher.effect_haze_fringe_hint": "옅은 연무에 적용되는 게임의 색수차입니다: 안개를 배경으로 한 물체 주위에 노란색과 파란색 테두리가 생기며 화면 가장자리로 갈수록 강해집니다. 선명한 안티에일리어싱(DLAA, DLSS)에서는 더 두드러집니다. 기본값 0%는 깨끗한 가장자리, 100%는 출시 상태입니다.",
     "launcher.effect_boy_wind": "소년의 바람(머리카락 + 옷)",
@@ -446,7 +449,7 @@
     "pad.combo_qa": "QA 메뉴",
     "pad.combo_photo": "포토 모드 켜기 / 끄기",
     "pad.combo_press": "버튼을 누른 채로 있다가 떼세요…",
-    "pad.combo_help": "두 개 이상의 버튼을 함께. 키보드: Alt+Q는 종료, Insert는 게임 내 메뉴를 엽니다.",
+    "pad.combo_help": "두 개 이상의 버튼을 함께. 키보드 종료 키는 Ctrl 또는 Alt와 문자나 숫자, 또는 F 키가 필요합니다. Insert는 게임 내 메뉴를 엽니다.",
     "pad.photo": "사진 모드",
     "pad.photo_invert": "위 / 아래 시점 반전",
     "pad.photo_shot": "스크린샷",
@@ -460,7 +463,14 @@
     "pad.remap_touchpad_left": "터치패드 (왼쪽): 사진 모드",
     "pad.remap_touchpad_right": "터치패드 (오른쪽): 일시 정지",
     "pad.photo_press": "버튼을 누르세요…",
-    "pad.photo_note": "항목마다 버튼 하나, 사진 모드에서만. 왼쪽 스틱으로 날고 오른쪽 스틱으로 둘러봅니다. 키보드: 같은 버튼의 키. Print Screen으로도 스크린샷을 찍습니다."
+    "pad.photo_note": "항목마다 버튼 하나, 사진 모드에서만. 왼쪽 스틱으로 날고 오른쪽 스틱으로 둘러봅니다. 키보드: 같은 버튼의 키. Print Screen으로도 스크린샷을 찍습니다.",
+    "launcher.shadow_lite": "가벼운 그림자",
+    "launcher.shadow_lite_hint": "게임의 그림자 레이어 네 개 중 카메라에 가장 가까운 것을 뺍니다. 게임도 일부 지역에서 직접 그렇게 합니다. 오래된 CPU와 Steam Deck에서 FPS가 몇 % 오르고, 카메라 가까운 그림자가 조금 부드러워집니다. 끔은 출시 그대로입니다.",
+    "pad.quit_key": "게임 종료 (키보드)",
+    "pad.quit_key_press": "키를 누르세요, 예: Ctrl+X…",
+    "pad.quit_key_bad": "이 키는 안 됩니다: Ctrl 또는 Alt와 문자나 숫자, 또는 F 키를 쓰세요",
+    "pad.quit_key_off": "끔",
+    "pad.off_button": "끔"
   },
   "items": {
     "menu:sharpen": {
@@ -551,9 +561,17 @@
       "name": "트리코 깃털 바람",
       "what": "바람이 트리코의 깃털을 얼마나 강하게 움직이는지 정합니다. 기본값 100%는 출시 상태이며, 0%는 움직이지 않습니다."
     },
+    "menu:trico_fur": {
+      "name": "트리코 털과 깃털 밀도",
+      "what": "트리코의 털과 깃털이 얼마나 풍성한지 정합니다. 기본값 100%는 원본 그대로(권장)이며, 높이면 트리코가 더 복슬복슬해집니다. 재미용입니다."
+    },
     "menu:fog_distance": {
       "name": "안개 거리",
       "what": "안개가 시작되고 최대 농도에 이르는 거리입니다. 기본값 100%는 출시 상태이며, 낮추면 안개가 가까워집니다."
+    },
+    "menu:shadow_distance": {
+      "name": "그림자 거리",
+      "what": "얼마나 멀리 있는 물체까지 선명한 그림자를 받는지. 기본값 100%는 출시 그대로입니다. 50%는 오래된 CPU와 Steam Deck에서 FPS를 몇 %에서 10%까지 올립니다. 먼 그림자는 부드러워지고 가까운 그림자는 그대로입니다."
     },
     "menu:haze_fringe": {
       "name": "연무 색수차",
@@ -789,6 +807,10 @@
     "menu:mod_hints": {
       "name": "삭제된 내레이터 힌트",
       "what": "개발자가 2016년 9월에 삭제한 내레이터 힌트 23개입니다. 켜기: 막힌 것 같을 때, 처음 배치한 곳에서 내레이터가 다시 도와줍니다. 퍼즐 해법이 드러납니다."
+    },
+    "menu:shadow_lite": {
+      "name": "가벼운 그림자",
+      "what": "게임의 그림자 레이어 네 개 중 카메라에 가장 가까운 것을 뺍니다. 게임도 일부 지역에서 직접 그렇게 합니다. 오래된 CPU와 Steam Deck에서 FPS가 몇 % 오르고, 카메라 가까운 그림자가 조금 부드러워집니다. 끔은 출시 그대로입니다."
     }
   },
   "menu": {
@@ -800,9 +822,9 @@
     "Back to the value on PS4.": "PS4의 값으로 되돌립니다.",
     "Stock (as shipped)": "출시 원본",
     "Recommended (default)": "권장(기본값)",
+    "Low-end PC": "저사양 PC",
     "Graphics preset": "그래픽 프리셋",
     "Custom": "사용자 지정",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default. Your own presets are files in the presets folder, also listed in the launcher.": "이 탭의 모든 설정과 텍스처 팩을 한 번에 실시간 전환합니다. 출시 원본은 출시된 그대로의 게임이고, 권장은 기본값입니다. 직접 만든 프리셋은 presets 폴더의 파일이며 런처에도 표시됩니다.",
     "Save as preset": "프리셋으로 저장",
     "Save": "저장",
     "Delete": "삭제",
@@ -868,6 +890,8 @@
     "The game's own sharpening filter. On by default: 100% is the original and the maximum (recommended).": "게임 자체의 샤프닝 필터입니다. 기본값은 켬: 100%가 원본이자 최대값입니다(권장).",
     "Fog distance": "안개 거리",
     "Where the fog starts and reaches full strength. Default 100% is as shipped; lower brings the fog closer.": "안개가 시작되고 최대 농도에 이르는 거리입니다. 기본값 100%는 출시 상태이며, 낮추면 안개가 가까워집니다.",
+    "Shadow distance": "그림자 거리",
+    "How far away objects still get sharp shadows. Default 100% is as shipped. 50% gives a few to 10% more FPS on older CPUs and the Steam Deck; far shadows get softer, near ones stay the same.": "얼마나 멀리 있는 물체까지 선명한 그림자를 받는지. 기본값 100%는 출시 그대로입니다. 50%는 오래된 CPU와 Steam Deck에서 FPS를 몇 %에서 10%까지 올립니다. 먼 그림자는 부드러워지고 가까운 그림자는 그대로입니다.",
     "Haze color fringe": "연무 색수차",
     "The game's chromatic aberration on the light haze: yellow and blue edges around objects against fog, strongest toward the screen edges. Sharp anti-aliasing (DLAA, DLSS) makes it stand out more. Default 0% gives clean edges; 100% is as shipped.": "옅은 연무에 적용되는 게임의 색수차입니다: 안개를 배경으로 한 물체 주위에 노란색과 파란색 테두리가 생기며 화면 가장자리로 갈수록 강해집니다. 선명한 안티에일리어싱(DLAA, DLSS)에서는 더 두드러집니다. 기본값 0%는 깨끗한 가장자리, 100%는 출시 상태입니다.",
     "Wind and foliage": "바람 및 식물",
@@ -881,6 +905,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "바람이 나무, 잎, 담쟁이를 얼마나 강하게 움직이는지 정합니다. 기본값 100%는 출시 상태입니다. 50%가 더 자연스러우며(권장), 0%는 움직이지 않습니다.",
     "Trico feather wind": "트리코 깃털 바람",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "바람이 트리코의 깃털을 얼마나 강하게 움직이는지 정합니다. 기본값 100%는 출시 상태이며, 0%는 움직이지 않습니다.",
+    "Trico fur and feather density": "트리코 털과 깃털 밀도",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "트리코의 털과 깃털이 얼마나 풍성한지 정합니다. 기본값 100%는 원본 그대로(권장)이며, 높이면 트리코가 더 복슬복슬해집니다. 재미용입니다.",
     "Textures": "텍스처",
     "Texture LOD bias (DLAA)": "텍스처 LOD 바이어스(DLAA)",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "DLAA 사용 시 장면 텍스처를 더 선명하게(0 미만) 또는 더 부드럽게(0 초과) 합니다. DLAA 없이는 효과가 없습니다. -1.00은 네이티브 해상도에 대한 NVIDIA 권장값입니다. 낮출수록 주로 풀에서 미세한 디테일이 살아나지만(-3.00은 +1.00보다 미세 디테일이 31% 많음) 움직일 때 반짝일 수 있습니다.",
@@ -1097,7 +1123,6 @@
     "QA menu": "QA 메뉴",
     "Hold the buttons, then release...": "버튼을 누른 채로 있다가 떼세요...",
     "Set": "설정",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "설정: 두 개 이상의 버튼을 함께 누르고 있다가 떼세요. 키보드: Alt+Q는 종료, Insert는 이 메뉴를 엽니다.",
     "Quitting...": "종료하는 중...",
     "Quitting... (release to cancel)": "종료하는 중... (떼면 취소)",
     "Photo mode": "사진 모드",
@@ -1162,6 +1187,14 @@
     "Photo mode: freeze world on / off": "사진 모드: 세계 정지 켜기 / 끄기",
     "Photo mode: sticks camera / boy": "사진 모드: 스틱 카메라 / 소년",
     "Photo mode: playing as the boy": "사진 모드: 소년 조작 중",
-    "Let the world run first": "먼저 세계를 움직이게 하세요"
+    "Let the world run first": "먼저 세계를 움직이게 하세요",
+    "Lite shadows": "가벼운 그림자",
+    "On (lighter)": "켬(더 가볍게)",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "게임의 그림자 레이어 네 개 중 카메라에 가장 가까운 것을 뺍니다. 게임도 일부 지역에서 직접 그렇게 합니다. 오래된 CPU와 Steam Deck에서 FPS가 몇 % 오르고, 카메라 가까운 그림자가 조금 부드러워집니다. 끔은 출시 그대로입니다.",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "이 탭의 모든 설정과 텍스처 팩을 한 번에 실시간으로 바꿉니다. Stock은 출시 그대로, 권장은 기본값, 저사양 PC는 Stock에 그림자 거리 50%와 가벼운 그림자로 오래되었거나 사양이 낮은 PC용입니다. 직접 만든 프리셋은 presets 폴더의 파일이며 런처에도 표시됩니다.",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "설정: 두 개 이상의 버튼을 함께 누르고 있다가 떼세요. 키보드 종료 키는 Ctrl 또는 Alt와 문자나 숫자, 또는 F 키가 필요합니다. Insert는 이 메뉴를 엽니다.",
+    "Quit game (keyboard)": "게임 종료 (키보드)",
+    "Press the key, for example Ctrl+X...": "키를 누르세요, 예: Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "이 키는 안 됩니다: Ctrl 또는 Alt와 문자나 숫자, 또는 F 키를 쓰세요."
   }
 }

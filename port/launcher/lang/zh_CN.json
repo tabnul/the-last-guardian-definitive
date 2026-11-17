@@ -294,18 +294,21 @@
     "launcher.shadow_scale": "阴影分辨率",
     "launcher.shadow_game": "游戏（2048）",
     "launcher.graphics_preset": "画面预设",
-    "launcher.graphics_preset_hint": "一次性应用所有画面设置和纹理包。“原版”即游戏原样；可在这里或游戏内菜单（Insert，画面页）保存你自己的预设。“Steam Deck（实验性）”是原版加上 1280x800、30 FPS、不使用超分辨率并关闭帧生成：欢迎告诉我们运行效果。",
+    "launcher.graphics_preset_hint": "一次切换所有画面设置和纹理包。Stock 为游戏发售时的原样;可在这里或游戏内菜单(Insert,图像页)保存自己的预设。较旧或较弱的电脑:选择 低配电脑(Stock 加阴影距离 50% 和轻量阴影;保留你的分辨率和 FPS)。Steam Deck:选择 Steam Deck(实验性),即 低配电脑 加 1280x800、30 FPS、不放大、关闭帧生成:告诉我们运行得怎样。",
     "launcher.preset_save": "保存为预设",
     "launcher.preset_save_button": "保存",
-    "launcher.preset_save_bad": "请输入名称（字母、数字、空格、- 或 _；不能是 Stock、Recommended 或 Steam Deck）。",
+    "launcher.preset_save_bad": "请输入名称(字母、数字、空格、- 或 _;不能是 Stock、Recommended、Low-end PC 或 Steam Deck)。",
     "launcher.preset_stock": "原版（游戏原样）",
     "launcher.preset_recommended": "推荐（默认）",
+    "launcher.preset_lowend": "低配电脑",
     "launcher.preset_custom": "自定义",
     "launcher.shadow_hint": "以游戏 2048x2048 的 2 倍或 4 倍绘制阴影贴图（默认：游戏）。主要好处是树木和树叶阴影的闪烁大大减少，与任何抗锯齿都适用。8192 约消耗 8 FPS 和最多约 2 GB 显存（4096 约为其四分之一）。显存为 8 GB 或更少时请保持“游戏”：显存不足会导致卡顿和崩溃。",
     "launcher.grass_smooth": "草地每帧动画（默认）",
     "launcher.grass_hint": "游戏只在每 4 帧移动一次大部分草地，在高帧率下看起来一顿一顿的。关闭即游戏原样。",
     "launcher.effect_fog_distance": "雾气距离",
     "launcher.effect_fog_distance_hint": "雾气开始出现以及达到最大浓度的位置。默认 100% 即游戏原样；更低会让雾气更近。",
+    "launcher.effect_shadow_distance": "阴影距离",
+    "launcher.effect_shadow_distance_hint": "多远的物体仍然有清晰的阴影。默认 100% 与发售时相同。50% 在较旧的 CPU 和 Steam Deck 上可提高几个百分点到 10% 的 FPS;远处阴影变柔和,近处不变。",
     "launcher.effect_haze_fringe": "雾霭色边",
     "launcher.effect_haze_fringe_hint": "游戏在光雾上的色差效果：物体在雾气前出现黄蓝色边缘，越靠近屏幕边缘越明显。锐利的抗锯齿（DLAA、DLSS）会让它更显眼。默认 0% 边缘干净；100% 即游戏原样。",
     "launcher.effect_boy_wind": "少年风效（头发 + 衣服）",
@@ -439,7 +442,7 @@
     "pad.combo_qa": "QA 菜单",
     "pad.combo_photo": "拍照模式 开 / 关",
     "pad.combo_press": "按住按键，然后松开…",
-    "pad.combo_help": "两个或更多按键同时按下。键盘：Alt+Q 退出，Insert 打开游戏内菜单。",
+    "pad.combo_help": "两个或更多按键同时按下。键盘退出键需要 Ctrl 或 Alt 加字母或数字，或 F 键。Insert 打开游戏内菜单。",
     "pad.photo": "拍照模式",
     "pad.photo_invert": "反转上下视角",
     "pad.photo_shot": "截图",
@@ -453,7 +456,14 @@
     "pad.remap_touchpad_left": "触控板（左）：拍照模式",
     "pad.remap_touchpad_right": "触控板（右）：暂停",
     "pad.photo_press": "请按一个按键…",
-    "pad.photo_note": "每项一个按键，仅在拍照模式中。左摇杆飞行，右摇杆环顾。键盘：相同按键对应的键；Print Screen 也会截图。"
+    "pad.photo_note": "每项一个按键，仅在拍照模式中。左摇杆飞行，右摇杆环顾。键盘：相同按键对应的键；Print Screen 也会截图。",
+    "launcher.shadow_lite": "轻量阴影",
+    "launcher.shadow_lite_hint": "去掉游戏四层阴影中离镜头最近的一层,游戏自己在某些区域也这样做。在较旧的 CPU 和 Steam Deck 上 FPS 高几个百分点;镜头附近的阴影会稍微柔和一些。关闭为发售时的原样。",
+    "pad.quit_key": "退出游戏（键盘）",
+    "pad.quit_key_press": "请按键，例如 Ctrl+X…",
+    "pad.quit_key_bad": "不能用这个键：请用 Ctrl 或 Alt 加字母或数字，或 F 键",
+    "pad.quit_key_off": "关",
+    "pad.off_button": "关闭"
   },
   "items": {
     "menu:sharpen": {
@@ -544,9 +554,17 @@
       "name": "特里科羽毛风效",
       "what": "风吹动特里科羽毛的强度。默认 100% 即游戏原样；0% 则静止不动。"
     },
+    "menu:trico_fur": {
+      "name": "特里科毛发与羽毛密度",
+      "what": "特里科的毛发和羽毛有多浓密。默认 100% 为原版效果(推荐);调高会让特里科更蓬松。仅供娱乐。"
+    },
     "menu:fog_distance": {
       "name": "雾气距离",
       "what": "雾气开始出现以及达到最大浓度的位置。默认 100% 即游戏原样；更低会让雾气更近。"
+    },
+    "menu:shadow_distance": {
+      "name": "阴影距离",
+      "what": "多远的物体仍然有清晰的阴影。默认 100% 与发售时相同。50% 在较旧的 CPU 和 Steam Deck 上可提高几个百分点到 10% 的 FPS;远处阴影变柔和,近处不变。"
     },
     "menu:haze_fringe": {
       "name": "雾霭色边",
@@ -782,6 +800,10 @@
     "menu:mod_hints": {
       "name": "被删减的旁白提示",
       "what": "开发者在 2016 年 9 月删减的 23 条旁白提示。开启：当你看起来卡住时，旁白会在最初安排的位置再次提供帮助。会透露谜题的解法。"
+    },
+    "menu:shadow_lite": {
+      "name": "轻量阴影",
+      "what": "去掉游戏四层阴影中离镜头最近的一层,游戏自己在某些区域也这样做。在较旧的 CPU 和 Steam Deck 上 FPS 高几个百分点;镜头附近的阴影会稍微柔和一些。关闭为发售时的原样。"
     }
   },
   "menu": {
@@ -793,9 +815,9 @@
     "Back to the value on PS4.": "恢复为 PS4 上的值。",
     "Stock (as shipped)": "原版（游戏原样）",
     "Recommended (default)": "推荐（默认）",
+    "Low-end PC": "低配电脑",
     "Graphics preset": "画面预设",
     "Custom": "自定义",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default. Your own presets are files in the presets folder, also listed in the launcher.": "实时一次性切换此页上的所有设置和纹理包。“原版”即游戏原样；“推荐”为默认。你自己的预设是 presets 文件夹中的文件，也会列在启动器中。",
     "Save as preset": "保存为预设",
     "Save": "保存",
     "Delete": "删除",
@@ -857,6 +879,8 @@
     "The game's own sharpening filter. On by default: 100% is the original and the maximum (recommended).": "游戏自带的锐化滤镜。默认开启：100% 即原始值，也是最大值（推荐）。",
     "Fog distance": "雾气距离",
     "Where the fog starts and reaches full strength. Default 100% is as shipped; lower brings the fog closer.": "雾气开始出现以及达到最大浓度的位置。默认 100% 即游戏原样；更低会让雾气更近。",
+    "Shadow distance": "阴影距离",
+    "How far away objects still get sharp shadows. Default 100% is as shipped. 50% gives a few to 10% more FPS on older CPUs and the Steam Deck; far shadows get softer, near ones stay the same.": "多远的物体仍然有清晰的阴影。默认 100% 与发售时相同。50% 在较旧的 CPU 和 Steam Deck 上可提高几个百分点到 10% 的 FPS;远处阴影变柔和,近处不变。",
     "Haze color fringe": "雾霭色边",
     "The game's chromatic aberration on the light haze: yellow and blue edges around objects against fog, strongest toward the screen edges. Sharp anti-aliasing (DLAA, DLSS) makes it stand out more. Default 0% gives clean edges; 100% is as shipped.": "游戏在光雾上的色差效果：物体在雾气前出现黄蓝色边缘，越靠近屏幕边缘越明显。锐利的抗锯齿（DLAA、DLSS）会让它更显眼。默认 0% 边缘干净；100% 即游戏原样。",
     "Wind and foliage": "风与植被",
@@ -870,6 +894,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "风吹动树木、树叶和藤蔓的强度。默认 100% 即游戏原样；50% 看起来更自然（推荐），0% 则静止不动。",
     "Trico feather wind": "特里科羽毛风效",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "风吹动特里科羽毛的强度。默认 100% 即游戏原样；0% 则静止不动。",
+    "Trico fur and feather density": "特里科毛发与羽毛密度",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "特里科的毛发和羽毛有多浓密。默认 100% 为原版效果(推荐);调高会让特里科更蓬松。仅供娱乐。",
     "Textures": "纹理",
     "Texture LOD bias (DLAA)": "纹理 LOD 偏移（DLAA）",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "在 DLAA 下让场景纹理更锐利（低于 0）或更柔和（高于 0）；不使用 DLAA 时无效。-1.00 是 NVIDIA 针对原生分辨率的建议值。更低的值可显现更多细节，主要体现在草地上（-3.00 比 +1.00 多 31% 的细节），但运动时可能闪烁。",
@@ -1084,7 +1110,6 @@
     "QA menu": "QA 菜单",
     "Hold the buttons, then release...": "按住按键，然后松开...",
     "Set": "设置",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "设置：同时按住两个或更多按键，然后松开。键盘：Alt+Q 退出，Insert 打开此菜单。",
     "Quitting...": "正在退出...",
     "Quitting... (release to cancel)": "正在退出...（松开以取消）",
     "Photo mode": "拍照模式",
@@ -1149,6 +1174,14 @@
     "Photo mode: freeze world on / off": "拍照模式：冻结世界 开 / 关",
     "Photo mode: sticks camera / boy": "拍照模式：摇杆 镜头 / 男孩",
     "Photo mode: playing as the boy": "拍照模式：正在操控男孩",
-    "Let the world run first": "请先让世界继续运行"
+    "Let the world run first": "请先让世界继续运行",
+    "Lite shadows": "轻量阴影",
+    "On (lighter)": "开启（更轻）",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "去掉游戏四层阴影中离镜头最近的一层,游戏自己在某些区域也这样做。在较旧的 CPU 和 Steam Deck 上 FPS 高几个百分点;镜头附近的阴影会稍微柔和一些。关闭为发售时的原样。",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "一次实时切换此页的所有设置和纹理包。Stock 为游戏发售时的原样;推荐 为默认值;低配电脑 是阴影距离 50% 并开启轻量阴影的 Stock,适合较旧或较弱的电脑。你自己的预设是 presets 文件夹里的文件,启动器中也会列出。",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "设置：同时按住两个或更多按键，然后松开。键盘退出键需要 Ctrl 或 Alt 加字母或数字，或 F 键。Insert 打开此菜单。",
+    "Quit game (keyboard)": "退出游戏（键盘）",
+    "Press the key, for example Ctrl+X...": "请按键，例如 Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "不能用这个键：请用 Ctrl 或 Alt 加字母或数字，或 F 键。"
   }
 }

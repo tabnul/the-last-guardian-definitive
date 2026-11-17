@@ -316,18 +316,21 @@
     "launcher.shadow_scale": "Schaduwresolutie",
     "launcher.shadow_game": "Game (2048)",
     "launcher.graphics_preset": "Grafische preset",
-    "launcher.graphics_preset_hint": "Alle beeldinstellingen en het texturepack in één keer. Stock is de game zoals hij uitkwam; bewaar hier of in het in-game menu (Insert, tabblad Beeld) je eigen preset. Steam Deck (experimenteel) is Stock plus 1280x800, 30 FPS, geen upscaling en framegeneratie uit: laat ons weten hoe het draait.",
+    "launcher.graphics_preset_hint": "Alle beeldinstellingen en het texturepakket in één keer. Stock is de game zoals uitgebracht; sla je eigen op hier of in het in-game menu (Insert, tab Beeld). Oudere of zwakkere pc: kies Low-end pc (Stock met schaduwen op 50% afstand en lichte schaduwen; houdt je resolutie en FPS). Steam Deck: kies Steam Deck (experimenteel), Low-end pc plus 1280x800, 30 FPS, geen upscaling en framegeneratie uit: laat ons weten hoe het loopt.",
     "launcher.preset_save": "Opslaan als preset",
     "launcher.preset_save_button": "Opslaan",
-    "launcher.preset_save_bad": "Typ een naam (letters, cijfers, spatie, - of _; niet Stock, Recommended of Steam Deck).",
+    "launcher.preset_save_bad": "Typ een naam (letters, cijfers, spatie, - of _; niet Stock, Recommended, Low-end PC of Steam Deck).",
     "launcher.preset_stock": "Stock (zoals uitgebracht)",
     "launcher.preset_recommended": "Aanbevolen (standaard)",
+    "launcher.preset_lowend": "Low-end pc",
     "launcher.preset_custom": "Aangepast",
     "launcher.shadow_hint": "Tekent de schaduwkaarten op 2x of 4x de 2048x2048 van de game (standaard: Game). De grootste winst is veel minder flikkering van schaduwen van bomen en bladeren, met elke anti-aliasing. 8192 kost ongeveer 8 FPS en tot ongeveer 2 GB videogeheugen (4096 ongeveer een kwart daarvan). Met 8 GB videogeheugen of minder houd je Game: een tekort veroorzaakt haperingen en crashes.",
     "launcher.grass_smooth": "Gras elk frame geanimeerd (standaard)",
     "launcher.grass_hint": "De game beweegt het meeste gras maar elk 4e frame, wat schokkerig oogt bij hoge framerates. Uit is zoals uitgebracht.",
     "launcher.effect_fog_distance": "Mistafstand",
     "launcher.effect_fog_distance_hint": "Waar de mist begint en zijn volle sterkte bereikt. Standaard 100% is zoals uitgebracht; lager haalt de mist dichterbij.",
+    "launcher.effect_shadow_distance": "Schaduwafstand",
+    "launcher.effect_shadow_distance_hint": "Hoe ver weg objecten nog scherpe schaduwen krijgen. Standaard 100% is zoals uitgebracht. 50% geeft een paar tot 10% meer FPS op oudere CPU's en de Steam Deck; verre schaduwen worden zachter, dichtbij blijft gelijk.",
     "launcher.effect_haze_fringe": "Kleurrand in de nevel",
     "launcher.effect_haze_fringe_hint": "De chromatische aberratie van de game op de lichte nevel: gele en blauwe randen rond objecten tegen mist, het sterkst richting de randen van het scherm. Scherpe anti-aliasing (DLAA, DLSS) laat het meer opvallen. Standaard 0% geeft schone randen; 100% is zoals uitgebracht.",
     "launcher.effect_boy_wind": "Wind bij de jongen (haar + kleding)",
@@ -446,7 +449,7 @@
     "pad.combo_qa": "QA-menu",
     "pad.combo_photo": "Fotomodus aan / uit",
     "pad.combo_press": "houd de knoppen vast en laat los…",
-    "pad.combo_help": "Twee of meer knoppen samen. Toetsenbord: Alt+Q sluit af, Insert opent het menu in het spel.",
+    "pad.combo_help": "Twee of meer knoppen samen. De afsluittoets op het toetsenbord heeft Ctrl of Alt met een letter of cijfer nodig, of een F-toets. Insert opent het menu in het spel.",
     "pad.photo": "Fotomodus",
     "pad.photo_invert": "Omhoog / omlaag kijken omkeren",
     "pad.photo_shot": "Screenshot",
@@ -460,7 +463,14 @@
     "pad.remap_touchpad_left": "Touchpad (links): fotomodus",
     "pad.remap_touchpad_right": "Touchpad (rechts): pauze",
     "pad.photo_press": "druk op een knop…",
-    "pad.photo_note": "Eén knop per actie, alleen in fotomodus. Linkerstick vliegt, rechterstick kijkt rond. Toetsenbord: de toetsen van dezelfde knoppen; Print Screen maakt ook een screenshot."
+    "pad.photo_note": "Eén knop per actie, alleen in fotomodus. Linkerstick vliegt, rechterstick kijkt rond. Toetsenbord: de toetsen van dezelfde knoppen; Print Screen maakt ook een screenshot.",
+    "launcher.shadow_lite": "Lichte schaduwen",
+    "launcher.shadow_lite_hint": "Laat de dichtstbijzijnde van de vier schaduwlagen van de game weg, zoals de game zelf in sommige gebieden doet. Een paar % meer FPS op oudere cpu's en de Steam Deck; schaduwen dicht bij de camera worden iets zachter. Uit is zoals uitgebracht.",
+    "pad.quit_key": "Spel afsluiten (toetsenbord)",
+    "pad.quit_key_press": "Druk op de toets, bijvoorbeeld Ctrl+X…",
+    "pad.quit_key_bad": "Niet deze toets: gebruik Ctrl of Alt met een letter of cijfer, of een F-toets",
+    "pad.quit_key_off": "uit",
+    "pad.off_button": "Uit"
   },
   "items": {
     "menu:sharpen": {
@@ -551,9 +561,17 @@
       "name": "Wind in Trico's veren",
       "what": "Hoe sterk de wind de veren van Trico beweegt. Standaard 100% is zoals uitgebracht; 0% houdt ze stil."
     },
+    "menu:trico_fur": {
+      "name": "Dichtheid van Trico's vacht en veren",
+      "what": "Hoe dik Trico's vacht van haar en veren is. Standaard 100% is zoals uitgebracht (aanbevolen); hoger geeft een pluizigere Trico. Gewoon voor de lol."
+    },
     "menu:fog_distance": {
       "name": "Mistafstand",
       "what": "Waar de mist begint en zijn volle sterkte bereikt. Standaard 100% is zoals uitgebracht; lager haalt de mist dichterbij."
+    },
+    "menu:shadow_distance": {
+      "name": "Schaduwafstand",
+      "what": "Hoe ver weg objecten nog scherpe schaduwen krijgen. Standaard 100% is zoals uitgebracht. 50% geeft een paar tot 10% meer FPS op oudere CPU's en de Steam Deck; verre schaduwen worden zachter, dichtbij blijft gelijk."
     },
     "menu:haze_fringe": {
       "name": "Kleurrand in de nevel",
@@ -789,6 +807,10 @@
     "menu:mod_hints": {
       "name": "Geschrapte vertellerhints",
       "what": "De 23 hints van de verteller die de ontwikkelaars in september 2016 schrapten. Aan: als je vast lijkt te zitten, helpt de verteller weer, op de plekken waar ze zijn zinnen eerst hadden gezet. Ze verklappen oplossingen van puzzels."
+    },
+    "menu:shadow_lite": {
+      "name": "Lichte schaduwen",
+      "what": "Laat de dichtstbijzijnde van de vier schaduwlagen van de game weg, zoals de game zelf in sommige gebieden doet. Een paar % meer FPS op oudere cpu's en de Steam Deck; schaduwen dicht bij de camera worden iets zachter. Uit is zoals uitgebracht."
     }
   },
   "menu": {
@@ -800,9 +822,9 @@
     "Back to the value on PS4.": "Terug naar de waarde op PS4.",
     "Stock (as shipped)": "Stock (zoals uitgebracht)",
     "Recommended (default)": "Aanbevolen (standaard)",
+    "Low-end PC": "Low-end pc",
     "Graphics preset": "Grafische preset",
     "Custom": "Aangepast",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default. Your own presets are files in the presets folder, also listed in the launcher.": "Wisselt alle instellingen op dit tabblad en het texturepack in één keer, live. Stock is de game zoals uitgebracht; Aanbevolen is de standaard. Je eigen presets zijn bestanden in de map presets, ook te zien in de launcher.",
     "Save as preset": "Opslaan als preset",
     "Save": "Opslaan",
     "Delete": "Verwijderen",
@@ -868,6 +890,8 @@
     "The game's own sharpening filter. On by default: 100% is the original and the maximum (recommended).": "Het eigen verscherpingsfilter van de game. Standaard aan: 100% is het origineel en het maximum (aanbevolen).",
     "Fog distance": "Mistafstand",
     "Where the fog starts and reaches full strength. Default 100% is as shipped; lower brings the fog closer.": "Waar de mist begint en zijn volle sterkte bereikt. Standaard 100% is zoals uitgebracht; lager haalt de mist dichterbij.",
+    "Shadow distance": "Schaduwafstand",
+    "How far away objects still get sharp shadows. Default 100% is as shipped. 50% gives a few to 10% more FPS on older CPUs and the Steam Deck; far shadows get softer, near ones stay the same.": "Hoe ver weg objecten nog scherpe schaduwen krijgen. Standaard 100% is zoals uitgebracht. 50% geeft een paar tot 10% meer FPS op oudere CPU's en de Steam Deck; verre schaduwen worden zachter, dichtbij blijft gelijk.",
     "Haze color fringe": "Kleurrand in de nevel",
     "The game's chromatic aberration on the light haze: yellow and blue edges around objects against fog, strongest toward the screen edges. Sharp anti-aliasing (DLAA, DLSS) makes it stand out more. Default 0% gives clean edges; 100% is as shipped.": "De chromatische aberratie van de game op de lichte nevel: gele en blauwe randen rond objecten tegen mist, het sterkst richting de randen van het scherm. Scherpe anti-aliasing (DLAA, DLSS) laat het meer opvallen. Standaard 0% geeft schone randen; 100% is zoals uitgebracht.",
     "Wind and foliage": "Wind en begroeiing",
@@ -881,6 +905,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "Hoe sterk de wind bomen, bladeren en klimop beweegt. Standaard 100% is zoals uitgebracht; 50% oogt natuurlijker (aanbevolen), 0% houdt ze stil.",
     "Trico feather wind": "Wind in Trico's veren",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "Hoe sterk de wind de veren van Trico beweegt. Standaard 100% is zoals uitgebracht; 0% houdt ze stil.",
+    "Trico fur and feather density": "Dichtheid van Trico's vacht en veren",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "Hoe dik Trico's vacht van haar en veren is. Standaard 100% is zoals uitgebracht (aanbevolen); hoger geeft een pluizigere Trico. Gewoon voor de lol.",
     "Textures": "Textures",
     "Texture LOD bias (DLAA)": "Texture-LOD-bias (DLAA)",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "Scherpere (onder 0) of zachtere (boven 0) scènetextures met DLAA; geen effect zonder DLAA. -1.00 is het advies van NVIDIA voor native resolutie. Lager haalt fijne details naar voren, vooral op gras (-3.00 heeft 31% meer fijne details dan +1.00), maar kan flikkeren in beweging.",
@@ -1097,7 +1123,6 @@
     "QA menu": "QA-menu",
     "Hold the buttons, then release...": "Houd de knoppen vast en laat los...",
     "Set": "Instellen",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Instellen: houd twee of meer knoppen samen vast en laat dan los. Toetsenbord: Alt+Q sluit af, Insert opent dit menu.",
     "Quitting...": "Afsluiten...",
     "Quitting... (release to cancel)": "Afsluiten... (loslaten om te annuleren)",
     "Photo mode": "Fotomodus",
@@ -1162,6 +1187,14 @@
     "Photo mode: freeze world on / off": "Fotomodus: wereld bevriezen aan / uit",
     "Photo mode: sticks camera / boy": "Fotomodus: sticks camera / jongen",
     "Photo mode: playing as the boy": "Fotomodus: je speelt de jongen",
-    "Let the world run first": "Laat eerst de wereld lopen"
+    "Let the world run first": "Laat eerst de wereld lopen",
+    "Lite shadows": "Lichte schaduwen",
+    "On (lighter)": "Aan (lichter)",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Laat de dichtstbijzijnde van de vier schaduwlagen van de game weg, zoals de game zelf in sommige gebieden doet. Een paar % meer FPS op oudere cpu's en de Steam Deck; schaduwen dicht bij de camera worden iets zachter. Uit is zoals uitgebracht.",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Zet alle instellingen op dit tabblad en het texturepakket in één keer om, live. Stock is de game zoals uitgebracht; Aanbevolen is de standaard; Low-end pc is Stock met schaduwen op 50% afstand en lichte schaduwen, voor oudere of zwakkere pc's. Je eigen presets zijn bestanden in de map presets, ook te zien in de launcher.",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Instellen: houd twee of meer knoppen samen vast en laat dan los. De afsluittoets op het toetsenbord heeft Ctrl of Alt met een letter of cijfer nodig, of een F-toets. Insert opent dit menu.",
+    "Quit game (keyboard)": "Spel afsluiten (toetsenbord)",
+    "Press the key, for example Ctrl+X...": "Druk op de toets, bijvoorbeeld Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Niet deze toets: gebruik Ctrl of Alt met een letter of cijfer, of een F-toets."
   }
 }

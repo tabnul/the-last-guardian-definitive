@@ -294,18 +294,21 @@
     "launcher.shadow_scale": "Résolution des ombres",
     "launcher.shadow_game": "Jeu (2048)",
     "launcher.graphics_preset": "Préréglage graphique",
-    "launcher.graphics_preset_hint": "Tous les réglages visuels et le pack de textures d'un coup. Origine correspond au jeu d'origine ; enregistrez les vôtres ici ou dans le menu en jeu (Insert, onglet Image). Steam Deck (expérimental) correspond à Origine plus 1280x800, 30 FPS, pas de mise à l'échelle et génération d'images désactivée : dites-nous comment ça tourne.",
+    "launcher.graphics_preset_hint": "Tous les réglages d'image et le pack de textures en une fois. Stock est le jeu tel que sorti ; enregistrez les vôtres ici ou dans le menu du jeu (Inser, onglet Image). PC ancien ou modeste : choisissez PC modeste (Stock avec les ombres à 50 % de distance et les ombres allégées ; garde votre résolution et vos FPS). Steam Deck : choisissez Steam Deck (expérimental), PC modeste plus 1280x800, 30 FPS, sans upscaling et sans génération d'images : dites-nous comment ça tourne.",
     "launcher.preset_save": "Enregistrer comme préréglage",
     "launcher.preset_save_button": "Enregistrer",
-    "launcher.preset_save_bad": "Saisissez un nom (lettres, chiffres, espace, - ou _ ; pas Stock, Recommended ni Steam Deck).",
+    "launcher.preset_save_bad": "Tapez un nom (lettres, chiffres, espace, - ou _ ; pas Stock, Recommended, Low-end PC ni Steam Deck).",
     "launcher.preset_stock": "Origine (jeu d'origine)",
     "launcher.preset_recommended": "Recommandé (par défaut)",
+    "launcher.preset_lowend": "PC modeste",
     "launcher.preset_custom": "Personnalisé",
     "launcher.shadow_hint": "Dessine les cartes d'ombres à 2x ou 4x les 2048x2048 du jeu (par défaut : Jeu). Le principal gain est beaucoup moins de scintillement des ombres des arbres et des feuilles, quel que soit l'anticrénelage. 8192 coûte environ 8 FPS et jusqu'à environ 2 Go de mémoire vidéo (4096 environ un quart de cela). Avec 8 Go de mémoire vidéo ou moins, gardez Jeu : en manquer provoque des saccades et des plantages.",
     "launcher.grass_smooth": "Herbe animée à chaque image (par défaut)",
     "launcher.grass_hint": "Le jeu n'anime la plupart de l'herbe qu'une image sur 4, ce qui paraît saccadé à haute fréquence d'images. Désactivé correspond au jeu d'origine.",
     "launcher.effect_fog_distance": "Distance du brouillard",
     "launcher.effect_fog_distance_hint": "Où le brouillard commence et atteint sa pleine intensité. Par défaut 100% correspond au jeu d'origine ; plus bas rapproche le brouillard.",
+    "launcher.effect_shadow_distance": "Distance des ombres",
+    "launcher.effect_shadow_distance_hint": "Jusqu'à quelle distance les objets gardent des ombres nettes. 100 % par défaut, comme à la sortie. 50 % donne de quelques % à 10 % de FPS en plus sur les anciens CPU et le Steam Deck ; les ombres lointaines deviennent plus douces, les proches restent identiques.",
     "launcher.effect_haze_fringe": "Frange colorée de la brume",
     "launcher.effect_haze_fringe_hint": "L'aberration chromatique du jeu sur la brume lumineuse : bords jaunes et bleus autour des objets devant le brouillard, plus forts vers les bords de l'écran. Un anticrénelage net (DLAA, DLSS) la fait davantage ressortir. Par défaut 0% donne des bords propres ; 100% correspond au jeu d'origine.",
     "launcher.effect_boy_wind": "Vent sur le garçon (cheveux + vêtements)",
@@ -439,7 +442,7 @@
     "pad.combo_qa": "Menu QA",
     "pad.combo_photo": "Mode photo oui / non",
     "pad.combo_press": "maintenez les boutons, puis relâchez…",
-    "pad.combo_help": "Deux boutons ou plus ensemble. Clavier : Alt+Q quitte, Inser ouvre le menu en jeu.",
+    "pad.combo_help": "Deux boutons ou plus ensemble. La touche clavier pour quitter demande Ctrl ou Alt avec une lettre ou un chiffre, ou une touche F. Inser ouvre le menu en jeu.",
     "pad.photo": "Mode photo",
     "pad.photo_invert": "Inverser regarder haut / bas",
     "pad.photo_shot": "Capture d'écran",
@@ -453,7 +456,14 @@
     "pad.remap_touchpad_left": "Pavé tactile (gauche) : mode photo",
     "pad.remap_touchpad_right": "Pavé tactile (droite) : pause",
     "pad.photo_press": "appuyez sur un bouton…",
-    "pad.photo_note": "Un bouton chacun, seulement en mode photo. Le stick gauche vole, le stick droit regarde autour. Clavier : les touches des mêmes boutons ; Impr. écran prend aussi une capture."
+    "pad.photo_note": "Un bouton chacun, seulement en mode photo. Le stick gauche vole, le stick droit regarde autour. Clavier : les touches des mêmes boutons ; Impr. écran prend aussi une capture.",
+    "launcher.shadow_lite": "Ombres allégées",
+    "launcher.shadow_lite_hint": "Supprime la plus proche des quatre couches d'ombre du jeu, comme le jeu le fait lui-même dans certaines zones. Quelques % de FPS en plus sur les CPU anciens et le Steam Deck ; les ombres proches de la caméra deviennent un peu plus douces. Désactivé est comme à la sortie.",
+    "pad.quit_key": "Quitter le jeu (clavier)",
+    "pad.quit_key_press": "Appuyez sur la touche, par exemple Ctrl+X…",
+    "pad.quit_key_bad": "Pas cette touche : utilisez Ctrl ou Alt avec une lettre ou un chiffre, ou une touche F",
+    "pad.quit_key_off": "désactivé",
+    "pad.off_button": "Désactivé"
   },
   "items": {
     "menu:sharpen": {
@@ -544,9 +554,17 @@
       "name": "Vent dans les plumes de Trico",
       "what": "La force avec laquelle le vent agite les plumes de Trico. Par défaut 100% correspond au jeu d'origine ; 0% les garde immobiles."
     },
+    "menu:trico_fur": {
+      "name": "Densité du pelage et des plumes de Trico",
+      "what": "Épaisseur du pelage et du plumage de Trico. Par défaut, 100% correspond au jeu d'origine (recommandé) ; plus haut donne un Trico plus duveteux. Juste pour le plaisir."
+    },
     "menu:fog_distance": {
       "name": "Distance du brouillard",
       "what": "Où le brouillard commence et atteint sa pleine intensité. Par défaut 100% correspond au jeu d'origine ; plus bas rapproche le brouillard."
+    },
+    "menu:shadow_distance": {
+      "name": "Distance des ombres",
+      "what": "Jusqu'à quelle distance les objets gardent des ombres nettes. 100 % par défaut, comme à la sortie. 50 % donne de quelques % à 10 % de FPS en plus sur les anciens CPU et le Steam Deck ; les ombres lointaines deviennent plus douces, les proches restent identiques."
     },
     "menu:haze_fringe": {
       "name": "Frange colorée de la brume",
@@ -782,6 +800,10 @@
     "menu:mod_hints": {
       "name": "Indices du narrateur coupés",
       "what": "Les 23 indices du narrateur que les développeurs ont coupés en septembre 2016. Activé : quand vous semblez bloqué, le narrateur vous aide à nouveau, là où ils avaient placé ses phrases au départ. Ils dévoilent des solutions d'énigmes."
+    },
+    "menu:shadow_lite": {
+      "name": "Ombres allégées",
+      "what": "Supprime la plus proche des quatre couches d'ombre du jeu, comme le jeu le fait lui-même dans certaines zones. Quelques % de FPS en plus sur les CPU anciens et le Steam Deck ; les ombres proches de la caméra deviennent un peu plus douces. Désactivé est comme à la sortie."
     }
   },
   "menu": {
@@ -793,9 +815,9 @@
     "Back to the value on PS4.": "Retour à la valeur de la PS4.",
     "Stock (as shipped)": "Origine (jeu d'origine)",
     "Recommended (default)": "Recommandé (par défaut)",
+    "Low-end PC": "PC modeste",
     "Graphics preset": "Préréglage graphique",
     "Custom": "Personnalisé",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default. Your own presets are files in the presets folder, also listed in the launcher.": "Change d'un coup, en direct, tous les réglages de cet onglet et le pack de textures. Origine correspond au jeu d'origine ; Recommandé est la valeur par défaut. Vos propres préréglages sont des fichiers dans le dossier des préréglages, également listés dans le lanceur.",
     "Save as preset": "Enregistrer comme préréglage",
     "Save": "Enregistrer",
     "Delete": "Supprimer",
@@ -857,6 +879,8 @@
     "The game's own sharpening filter. On by default: 100% is the original and the maximum (recommended).": "Le filtre de netteté propre au jeu. Activé par défaut : 100% est l'original et le maximum (recommandé).",
     "Fog distance": "Distance du brouillard",
     "Where the fog starts and reaches full strength. Default 100% is as shipped; lower brings the fog closer.": "Où le brouillard commence et atteint sa pleine intensité. Par défaut 100% correspond au jeu d'origine ; plus bas rapproche le brouillard.",
+    "Shadow distance": "Distance des ombres",
+    "How far away objects still get sharp shadows. Default 100% is as shipped. 50% gives a few to 10% more FPS on older CPUs and the Steam Deck; far shadows get softer, near ones stay the same.": "Jusqu'à quelle distance les objets gardent des ombres nettes. 100 % par défaut, comme à la sortie. 50 % donne de quelques % à 10 % de FPS en plus sur les anciens CPU et le Steam Deck ; les ombres lointaines deviennent plus douces, les proches restent identiques.",
     "Haze color fringe": "Frange colorée de la brume",
     "The game's chromatic aberration on the light haze: yellow and blue edges around objects against fog, strongest toward the screen edges. Sharp anti-aliasing (DLAA, DLSS) makes it stand out more. Default 0% gives clean edges; 100% is as shipped.": "L'aberration chromatique du jeu sur la brume lumineuse : bords jaunes et bleus autour des objets devant le brouillard, plus forts vers les bords de l'écran. Un anticrénelage net (DLAA, DLSS) la fait davantage ressortir. Par défaut 0% donne des bords propres ; 100% correspond au jeu d'origine.",
     "Wind and foliage": "Vent et végétation",
@@ -870,6 +894,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "La force avec laquelle le vent agite les arbres, les feuilles et le lierre. Par défaut 100% correspond au jeu d'origine ; 50% paraît plus naturel (recommandé), 0% les garde immobiles.",
     "Trico feather wind": "Vent dans les plumes de Trico",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "La force avec laquelle le vent agite les plumes de Trico. Par défaut 100% correspond au jeu d'origine ; 0% les garde immobiles.",
+    "Trico fur and feather density": "Densité du pelage et des plumes de Trico",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "Épaisseur du pelage et du plumage de Trico. Par défaut, 100% correspond au jeu d'origine (recommandé) ; plus haut donne un Trico plus duveteux. Juste pour le plaisir.",
     "Textures": "Textures",
     "Texture LOD bias (DLAA)": "Biais de LOD des textures (DLAA)",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "Textures de la scène plus nettes (sous 0) ou plus douces (au-dessus de 0) avec DLAA ; sans effet sans DLAA. -1.00 est la recommandation de NVIDIA pour la résolution native. Plus bas fait ressortir les fins détails, surtout sur l'herbe (-3.00 a 31% de détails fins en plus que +1.00), mais peut scintiller en mouvement.",
@@ -1084,7 +1110,6 @@
     "QA menu": "Menu QA",
     "Hold the buttons, then release...": "Maintenez les boutons, puis relâchez...",
     "Set": "Définir",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Définir : maintenez deux boutons ou plus ensemble, puis relâchez. Clavier : Alt+Q quitte, Inser ouvre ce menu.",
     "Quitting...": "Fermeture...",
     "Quitting... (release to cancel)": "Fermeture... (relâchez pour annuler)",
     "Photo mode": "Mode photo",
@@ -1149,6 +1174,14 @@
     "Photo mode: freeze world on / off": "Mode photo : figer le monde oui / non",
     "Photo mode: sticks camera / boy": "Mode photo : sticks caméra / garçon",
     "Photo mode: playing as the boy": "Mode photo : vous jouez le garçon",
-    "Let the world run first": "Laissez d'abord le monde reprendre"
+    "Let the world run first": "Laissez d'abord le monde reprendre",
+    "Lite shadows": "Ombres allégées",
+    "On (lighter)": "Activé (plus léger)",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Supprime la plus proche des quatre couches d'ombre du jeu, comme le jeu le fait lui-même dans certaines zones. Quelques % de FPS en plus sur les CPU anciens et le Steam Deck ; les ombres proches de la caméra deviennent un peu plus douces. Désactivé est comme à la sortie.",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Change tous les réglages de cet onglet et le pack de textures en une fois, en direct. Stock est le jeu tel que sorti ; Recommandé est le réglage par défaut ; PC modeste est Stock avec les ombres à 50 % de distance et les ombres allégées, pour les PC anciens ou modestes. Vos propres presets sont des fichiers dans le dossier presets, aussi listés dans le launcher.",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Définir : maintenez deux boutons ou plus ensemble, puis relâchez. La touche clavier pour quitter demande Ctrl ou Alt avec une lettre ou un chiffre, ou une touche F. Inser ouvre ce menu.",
+    "Quit game (keyboard)": "Quitter le jeu (clavier)",
+    "Press the key, for example Ctrl+X...": "Appuyez sur la touche, par exemple Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Pas cette touche : utilisez Ctrl ou Alt avec une lettre ou un chiffre, ou une touche F."
   }
 }

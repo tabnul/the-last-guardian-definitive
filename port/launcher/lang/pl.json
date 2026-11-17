@@ -316,18 +316,21 @@
     "launcher.shadow_scale": "Rozdzielczość cieni",
     "launcher.shadow_game": "Gra (2048)",
     "launcher.graphics_preset": "Profil grafiki",
-    "launcher.graphics_preset_hint": "Wszystkie ustawienia wyglądu i pakiet tekstur naraz. Oryginał to gra w wersji wydanej; zapisz własny tutaj lub w menu w grze (Insert, karta Obraz). Steam Deck (eksperymentalne) to Oryginał plus 1280x800, 30 FPS, bez skalowania i bez generowania klatek: daj znać, jak działa.",
+    "launcher.graphics_preset_hint": "Wszystkie ustawienia wyglądu i paczka tekstur naraz. Stock to gra jak w dniu premiery; własne zapisz tutaj lub w menu w grze (Insert, karta Obraz). Starszy lub słabszy PC: wybierz Słabszy PC (Stock z cieniami na 50% odległości i lekkimi cieniami; zostawia twoją rozdzielczość i FPS). Steam Deck: wybierz Steam Deck (eksperymentalny), Słabszy PC plus 1280x800, 30 FPS, bez skalowania i bez generowania klatek: daj znać, jak działa.",
     "launcher.preset_save": "Zapisz jako profil",
     "launcher.preset_save_button": "Zapisz",
-    "launcher.preset_save_bad": "Wpisz nazwę (litery, cyfry, spacja, - lub _; nie Stock, Recommended ani Steam Deck).",
+    "launcher.preset_save_bad": "Wpisz nazwę (litery, cyfry, spacja, - lub _; nie Stock, Recommended, Low-end PC ani Steam Deck).",
     "launcher.preset_stock": "Oryginał (jak wydano)",
     "launcher.preset_recommended": "Zalecane (domyślne)",
+    "launcher.preset_lowend": "Słabszy PC",
     "launcher.preset_custom": "Własne",
     "launcher.shadow_hint": "Rysuje mapy cieni w 2x lub 4x względem 2048x2048 gry (domyślnie: Gra). Główny zysk to dużo mniejsze migotanie cieni drzew i liści, przy dowolnym antyaliasingu. 8192 kosztuje około 8 FPS i do około 2 GB pamięci wideo (4096 około ćwierć tego). Przy 8 GB pamięci wideo lub mniej zostaw Gra: jej brak powoduje przycięcia i awarie.",
     "launcher.grass_smooth": "Trawa animowana w każdej klatce (domyślnie)",
     "launcher.grass_hint": "Gra porusza większość trawy tylko co 4. klatkę, co wygląda skokowo przy wysokiej liczbie klatek. Wył. = jak wydano.",
     "launcher.effect_fog_distance": "Odległość mgły",
     "launcher.effect_fog_distance_hint": "Gdzie mgła się zaczyna i osiąga pełną siłę. Domyślne 100% = jak wydano; niżej przybliża mgłę.",
+    "launcher.effect_shadow_distance": "Odległość cieni",
+    "launcher.effect_shadow_distance_hint": "Jak daleko obiekty wciąż dostają ostre cienie. Domyślne 100% to stan z premiery. 50% daje od kilku do 10% więcej FPS na starszych procesorach i Steam Deck; dalekie cienie stają się miększe, bliskie bez zmian.",
     "launcher.effect_haze_fringe": "Kolorowa obwódka mgiełki",
     "launcher.effect_haze_fringe_hint": "Aberracja chromatyczna gry na jasnej mgiełce: żółte i niebieskie krawędzie wokół obiektów na tle mgły, najsilniejsze ku krawędziom ekranu. Ostry antyaliasing (DLAA, DLSS) bardziej ją uwydatnia. Domyślne 0% daje czyste krawędzie; 100% = jak wydano.",
     "launcher.effect_boy_wind": "Wiatr chłopca (włosy + ubranie)",
@@ -446,7 +449,7 @@
     "pad.combo_qa": "Menu QA",
     "pad.combo_photo": "Tryb zdjęć wł. / wył.",
     "pad.combo_press": "przytrzymaj przyciski, potem puść…",
-    "pad.combo_help": "Dwa lub więcej przycisków razem. Klawiatura: Alt+Q wychodzi, Insert otwiera menu w grze.",
+    "pad.combo_help": "Dwa lub więcej przycisków razem. Klawisz wyjścia na klawiaturze wymaga Ctrl lub Alt z literą lub cyfrą albo klawisza F. Insert otwiera menu w grze.",
     "pad.photo": "Tryb zdjęć",
     "pad.photo_invert": "Odwróć patrzenie góra / dół",
     "pad.photo_shot": "Zrzut ekranu",
@@ -460,7 +463,14 @@
     "pad.remap_touchpad_left": "Touchpad (lewo): tryb zdjęć",
     "pad.remap_touchpad_right": "Touchpad (prawo): pauza",
     "pad.photo_press": "naciśnij przycisk…",
-    "pad.photo_note": "Po jednym przycisku, tylko w trybie zdjęć. Lewa gałka lata, prawa rozgląda się. Klawiatura: klawisze tych samych przycisków; Print Screen też robi zrzut ekranu."
+    "pad.photo_note": "Po jednym przycisku, tylko w trybie zdjęć. Lewa gałka lata, prawa rozgląda się. Klawiatura: klawisze tych samych przycisków; Print Screen też robi zrzut ekranu.",
+    "launcher.shadow_lite": "Lekkie cienie",
+    "launcher.shadow_lite_hint": "Pomija najbliższą z czterech warstw cieni gry, tak jak gra sama robi w niektórych miejscach. Kilka % więcej FPS na starszych procesorach i Steam Decku; cienie blisko kamery są trochę bardziej miękkie. Wył. to gra jak w dniu premiery.",
+    "pad.quit_key": "Wyjście z gry (klawiatura)",
+    "pad.quit_key_press": "Naciśnij klawisz, na przykład Ctrl+X…",
+    "pad.quit_key_bad": "Nie ten klawisz: użyj Ctrl lub Alt z literą lub cyfrą albo klawisza F",
+    "pad.quit_key_off": "wył.",
+    "pad.off_button": "Wył."
   },
   "items": {
     "menu:sharpen": {
@@ -551,9 +561,17 @@
       "name": "Wiatr piór Trico",
       "what": "Jak mocno wiatr porusza piórami Trico. Domyślne 100% = jak wydano; 0% je unieruchamia."
     },
+    "menu:trico_fur": {
+      "name": "Gęstość futra i piór Trico",
+      "what": "Jak gęste jest futro i upierzenie Trico. Domyślne 100% to wartość oryginalna (zalecana); wyższa daje bardziej puszystego Trico. Tylko dla zabawy."
+    },
     "menu:fog_distance": {
       "name": "Odległość mgły",
       "what": "Gdzie mgła się zaczyna i osiąga pełną siłę. Domyślne 100% = jak wydano; niżej przybliża mgłę."
+    },
+    "menu:shadow_distance": {
+      "name": "Odległość cieni",
+      "what": "Jak daleko obiekty wciąż dostają ostre cienie. Domyślne 100% to stan z premiery. 50% daje od kilku do 10% więcej FPS na starszych procesorach i Steam Deck; dalekie cienie stają się miększe, bliskie bez zmian."
     },
     "menu:haze_fringe": {
       "name": "Kolorowa obwódka mgiełki",
@@ -789,6 +807,10 @@
     "menu:mod_hints": {
       "name": "Wycięte podpowiedzi narratora",
       "what": "23 podpowiedzi narratora, które twórcy wycięli we wrześniu 2016. Włączone: gdy wygląda na to, że utknąłeś, narrator znów pomaga, tam gdzie pierwotnie umieszczono jego kwestie. Zdradzają rozwiązania zagadek."
+    },
+    "menu:shadow_lite": {
+      "name": "Lekkie cienie",
+      "what": "Pomija najbliższą z czterech warstw cieni gry, tak jak gra sama robi w niektórych miejscach. Kilka % więcej FPS na starszych procesorach i Steam Decku; cienie blisko kamery są trochę bardziej miękkie. Wył. to gra jak w dniu premiery."
     }
   },
   "menu": {
@@ -800,9 +822,9 @@
     "Back to the value on PS4.": "Z powrotem do wartości z PS4.",
     "Stock (as shipped)": "Oryginał (jak wydano)",
     "Recommended (default)": "Zalecane (domyślne)",
+    "Low-end PC": "Słabszy PC",
     "Graphics preset": "Profil grafiki",
     "Custom": "Własne",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default. Your own presets are files in the presets folder, also listed in the launcher.": "Przełącza naraz, na żywo, wszystkie ustawienia z tej karty i pakiet tekstur. Oryginał to gra jak wydano; Zalecane to domyślne. Twoje własne profile to pliki w folderze presets, widoczne też w launcherze.",
     "Save as preset": "Zapisz jako profil",
     "Save": "Zapisz",
     "Delete": "Usuń",
@@ -868,6 +890,8 @@
     "The game's own sharpening filter. On by default: 100% is the original and the maximum (recommended).": "Własny filtr wyostrzający gry. Domyślnie włączony: 100% to oryginał i maksimum (zalecane).",
     "Fog distance": "Odległość mgły",
     "Where the fog starts and reaches full strength. Default 100% is as shipped; lower brings the fog closer.": "Gdzie mgła się zaczyna i osiąga pełną siłę. Domyślne 100% = jak wydano; niżej przybliża mgłę.",
+    "Shadow distance": "Odległość cieni",
+    "How far away objects still get sharp shadows. Default 100% is as shipped. 50% gives a few to 10% more FPS on older CPUs and the Steam Deck; far shadows get softer, near ones stay the same.": "Jak daleko obiekty wciąż dostają ostre cienie. Domyślne 100% to stan z premiery. 50% daje od kilku do 10% więcej FPS na starszych procesorach i Steam Deck; dalekie cienie stają się miększe, bliskie bez zmian.",
     "Haze color fringe": "Kolorowa obwódka mgiełki",
     "The game's chromatic aberration on the light haze: yellow and blue edges around objects against fog, strongest toward the screen edges. Sharp anti-aliasing (DLAA, DLSS) makes it stand out more. Default 0% gives clean edges; 100% is as shipped.": "Aberracja chromatyczna gry na jasnej mgiełce: żółte i niebieskie krawędzie wokół obiektów na tle mgły, najsilniejsze ku krawędziom ekranu. Ostry antyaliasing (DLAA, DLSS) bardziej ją uwydatnia. Domyślne 0% daje czyste krawędzie; 100% = jak wydano.",
     "Wind and foliage": "Wiatr i roślinność",
@@ -881,6 +905,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "Jak mocno wiatr porusza drzewami, liśćmi i bluszczem. Domyślne 100% = jak wydano; 50% wygląda naturalniej (zalecane), 0% je unieruchamia.",
     "Trico feather wind": "Wiatr piór Trico",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "Jak mocno wiatr porusza piórami Trico. Domyślne 100% = jak wydano; 0% je unieruchamia.",
+    "Trico fur and feather density": "Gęstość futra i piór Trico",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "Jak gęste jest futro i upierzenie Trico. Domyślne 100% to wartość oryginalna (zalecana); wyższa daje bardziej puszystego Trico. Tylko dla zabawy.",
     "Textures": "Tekstury",
     "Texture LOD bias (DLAA)": "Przesunięcie LOD tekstur (DLAA)",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "Ostrzejsze (poniżej 0) lub miększe (powyżej 0) tekstury sceny przy DLAA; bez DLAA nie działa. -1.00 to zalecenie NVIDII dla natywnej rozdzielczości. Niżej wydobywa drobne detale, głównie na trawie (-3.00 ma o 31% więcej drobnych detali niż +1.00), ale może migotać w ruchu.",
@@ -1097,7 +1123,6 @@
     "QA menu": "Menu QA",
     "Hold the buttons, then release...": "Przytrzymaj przyciski, potem puść...",
     "Set": "Ustaw",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Ustaw: przytrzymaj razem dwa lub więcej przycisków, potem puść. Klawiatura: Alt+Q wychodzi, Insert otwiera to menu.",
     "Quitting...": "Zamykanie...",
     "Quitting... (release to cancel)": "Zamykanie... (puść, aby anulować)",
     "Photo mode": "Tryb fotograficzny",
@@ -1162,6 +1187,14 @@
     "Photo mode: freeze world on / off": "Tryb foto: zamrożenie świata wł. / wył.",
     "Photo mode: sticks camera / boy": "Tryb foto: gałki kamera / chłopiec",
     "Photo mode: playing as the boy": "Tryb foto: sterujesz chłopcem",
-    "Let the world run first": "Najpierw wznów świat"
+    "Let the world run first": "Najpierw wznów świat",
+    "Lite shadows": "Lekkie cienie",
+    "On (lighter)": "Wł. (lżej)",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Pomija najbliższą z czterech warstw cieni gry, tak jak gra sama robi w niektórych miejscach. Kilka % więcej FPS na starszych procesorach i Steam Decku; cienie blisko kamery są trochę bardziej miękkie. Wył. to gra jak w dniu premiery.",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Przełącza naraz wszystkie ustawienia tej karty i paczkę tekstur, na żywo. Stock to gra jak w dniu premiery; Zalecane to domyślne; Słabszy PC to Stock z cieniami na 50% odległości i lekkimi cieniami, dla starszych lub słabszych komputerów. Twoje presety to pliki w folderze presets, widoczne też w launcherze.",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Ustaw: przytrzymaj razem dwa lub więcej przycisków, potem puść. Klawisz wyjścia na klawiaturze wymaga Ctrl lub Alt z literą lub cyfrą albo klawisza F. Insert otwiera to menu.",
+    "Quit game (keyboard)": "Wyjście z gry (klawiatura)",
+    "Press the key, for example Ctrl+X...": "Naciśnij klawisz, na przykład Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Nie ten klawisz: użyj Ctrl lub Alt z literą lub cyfrą albo klawisza F."
   }
 }

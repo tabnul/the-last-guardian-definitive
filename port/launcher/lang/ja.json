@@ -294,18 +294,21 @@
     "launcher.shadow_scale": "影の解像度",
     "launcher.shadow_game": "ゲーム（2048）",
     "launcher.graphics_preset": "グラフィックプリセット",
-    "launcher.graphics_preset_hint": "見た目の設定すべてとテクスチャパックを一括で変更します。「標準」は発売時のゲームのままです。独自のプリセットはここかゲーム内メニュー（Insert、画像タブ）で保存できます。「Steam Deck（試験的）」は「標準」に加えて1280x800、30 FPS、アップスケールなし、フレーム生成オフにします。動作の様子を教えてください。",
+    "launcher.graphics_preset_hint": "すべての見た目設定とテクスチャパックを一度に切り替えます。Stockは発売時のままのゲームです。自分のプリセットはここかゲーム内メニュー(Insert、画像タブ)で保存できます。古いPCや性能の低いPC:低スペックPCを選んでください(Stockで影の距離50%、軽量シャドウ。解像度とFPSはそのまま)。Steam Deck:Steam Deck(実験的)を選んでください。低スペックPCに加えて1280x800、30 FPS、アップスケーリングなし、フレーム生成オフです。動作の様子を教えてください。",
     "launcher.preset_save": "プリセットとして保存",
     "launcher.preset_save_button": "保存",
-    "launcher.preset_save_bad": "名前を入力してください（英字、数字、スペース、- または _。Stock、Recommended、Steam Deck は不可）。",
+    "launcher.preset_save_bad": "名前を入力してください(英字、数字、スペース、- または _。Stock、Recommended、Low-end PC、Steam Deck は不可)。",
     "launcher.preset_stock": "標準（発売時のまま）",
     "launcher.preset_recommended": "推奨（デフォルト）",
+    "launcher.preset_lowend": "低スペックPC",
     "launcher.preset_custom": "カスタム",
     "launcher.shadow_hint": "シャドウマップをゲームの2048x2048の2倍または4倍で描画します（デフォルト：ゲーム）。主な効果は、どのアンチエイリアスでも木や葉の影のちらつきが大幅に減ることです。8192は約8 FPSと最大約2 GBのビデオメモリを消費します（4096はその約4分の1）。ビデオメモリが8 GB以下ならゲームのままにしてください。不足するとカクつきやクラッシュの原因になります。",
     "launcher.grass_smooth": "草を毎フレームアニメーション（デフォルト）",
     "launcher.grass_hint": "ゲームはほとんどの草を4フレームに1回しか動かさないため、高フレームレートではカクカクして見えます。オフは発売時のままです。",
     "launcher.effect_fog_distance": "霧の距離",
     "launcher.effect_fog_distance_hint": "霧が始まり、最大の濃さになる位置です。デフォルトの100%は発売時のまま。下げると霧が近づきます。",
+    "launcher.effect_shadow_distance": "影の距離",
+    "launcher.effect_shadow_distance_hint": "どこまで離れたオブジェクトにくっきりした影を付けるか。既定の100%は発売時のままです。50%で古いCPUやSteam DeckのFPSが数%から10%上がります。遠くの影は柔らかくなり、近くの影は変わりません。",
     "launcher.effect_haze_fringe": "もやの色にじみ",
     "launcher.effect_haze_fringe_hint": "明るいもやにかかるゲームの色収差です。霧を背にした物体の周りに黄色と青の縁が出て、画面端ほど強くなります。シャープなアンチエイリアス（DLAA、DLSS）では目立ちやすくなります。デフォルトの0%ではきれいな縁に、100%は発売時のままです。",
     "launcher.effect_boy_wind": "少年への風（髪 + 服）",
@@ -439,7 +442,7 @@
     "pad.combo_qa": "QAメニュー",
     "pad.combo_photo": "フォトモード オン / オフ",
     "pad.combo_press": "ボタンを押したまま、離してください…",
-    "pad.combo_help": "2つ以上のボタンを同時に。キーボード: Alt+Qで終了、Insertでゲーム内メニューを開きます。",
+    "pad.combo_help": "2つ以上のボタンを同時に。キーボードの終了キーには、CtrlかAltと文字または数字、またはFキーが必要です。Insertでゲーム内メニューを開きます。",
     "pad.photo": "フォトモード",
     "pad.photo_invert": "上下の視点操作を反転",
     "pad.photo_shot": "スクリーンショット",
@@ -453,7 +456,14 @@
     "pad.remap_touchpad_left": "タッチパッド（左）：フォトモード",
     "pad.remap_touchpad_right": "タッチパッド（右）：ポーズ",
     "pad.photo_press": "ボタンを押してください…",
-    "pad.photo_note": "1つにつき1ボタン、フォトモード中だけ。左スティックで移動、右スティックで見回します。キーボード：同じボタンのキー。Print Screen でもスクリーンショットを撮れます。"
+    "pad.photo_note": "1つにつき1ボタン、フォトモード中だけ。左スティックで移動、右スティックで見回します。キーボード：同じボタンのキー。Print Screen でもスクリーンショットを撮れます。",
+    "launcher.shadow_lite": "軽量シャドウ",
+    "launcher.shadow_lite_hint": "ゲームの4つの影レイヤーのうち、カメラに最も近いものを省きます。ゲーム自体も一部のエリアでそうしています。古いCPUやSteam DeckでFPSが数%上がり、カメラ近くの影が少しやわらかくなります。オフは発売時のままです。",
+    "pad.quit_key": "ゲーム終了（キーボード）",
+    "pad.quit_key_press": "キーを押してください（例: Ctrl+X）…",
+    "pad.quit_key_bad": "このキーは使えません: CtrlかAltと文字または数字、またはFキーを使ってください",
+    "pad.quit_key_off": "オフ",
+    "pad.off_button": "オフ"
   },
   "items": {
     "menu:sharpen": {
@@ -544,9 +554,17 @@
       "name": "トリコの羽への風",
       "what": "風がトリコの羽を動かす強さです。デフォルトの100%は発売時のまま。0%で静止します。"
     },
+    "menu:trico_fur": {
+      "name": "トリコの毛と羽の密度",
+      "what": "トリコの毛と羽の厚み。標準の100%は製品版のまま(推奨)。高くするとトリコがふわふわになります。お遊び用です。"
+    },
     "menu:fog_distance": {
       "name": "霧の距離",
       "what": "霧が始まり、最大の濃さになる位置です。デフォルトの100%は発売時のまま。下げると霧が近づきます。"
+    },
+    "menu:shadow_distance": {
+      "name": "影の距離",
+      "what": "どこまで離れたオブジェクトにくっきりした影を付けるか。既定の100%は発売時のままです。50%で古いCPUやSteam DeckのFPSが数%から10%上がります。遠くの影は柔らかくなり、近くの影は変わりません。"
     },
     "menu:haze_fringe": {
       "name": "もやの色にじみ",
@@ -782,6 +800,10 @@
     "menu:mod_hints": {
       "name": "カットされた語りのヒント",
       "what": "開発者が2016年9月にカットした語り手のヒント23件です。オン: 行き詰まっているようなとき、最初に配置された場所で語り手が再び助けてくれます。謎解きの答えが分かってしまいます。"
+    },
+    "menu:shadow_lite": {
+      "name": "軽量シャドウ",
+      "what": "ゲームの4つの影レイヤーのうち、カメラに最も近いものを省きます。ゲーム自体も一部のエリアでそうしています。古いCPUやSteam DeckでFPSが数%上がり、カメラ近くの影が少しやわらかくなります。オフは発売時のままです。"
     }
   },
   "menu": {
@@ -793,9 +815,9 @@
     "Back to the value on PS4.": "PS4での値に戻します。",
     "Stock (as shipped)": "標準（発売時のまま）",
     "Recommended (default)": "推奨（デフォルト）",
+    "Low-end PC": "低スペックPC",
     "Graphics preset": "グラフィックプリセット",
     "Custom": "カスタム",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default. Your own presets are files in the presets folder, also listed in the launcher.": "このタブのすべての設定とテクスチャパックを、即時に一括で切り替えます。「標準」は発売時のゲームのまま、「推奨」がデフォルトです。独自のプリセットは presets フォルダー内のファイルで、ランチャーにも表示されます。",
     "Save as preset": "プリセットとして保存",
     "Save": "保存",
     "Delete": "削除",
@@ -857,6 +879,8 @@
     "The game's own sharpening filter. On by default: 100% is the original and the maximum (recommended).": "ゲーム自身のシャープ化フィルターです。デフォルトでオン：100%がオリジナルかつ最大です（推奨）。",
     "Fog distance": "霧の距離",
     "Where the fog starts and reaches full strength. Default 100% is as shipped; lower brings the fog closer.": "霧が始まり、最大の濃さになる位置です。デフォルトの100%は発売時のまま。下げると霧が近づきます。",
+    "Shadow distance": "影の距離",
+    "How far away objects still get sharp shadows. Default 100% is as shipped. 50% gives a few to 10% more FPS on older CPUs and the Steam Deck; far shadows get softer, near ones stay the same.": "どこまで離れたオブジェクトにくっきりした影を付けるか。既定の100%は発売時のままです。50%で古いCPUやSteam DeckのFPSが数%から10%上がります。遠くの影は柔らかくなり、近くの影は変わりません。",
     "Haze color fringe": "もやの色にじみ",
     "The game's chromatic aberration on the light haze: yellow and blue edges around objects against fog, strongest toward the screen edges. Sharp anti-aliasing (DLAA, DLSS) makes it stand out more. Default 0% gives clean edges; 100% is as shipped.": "明るいもやにかかるゲームの色収差です。霧を背にした物体の周りに黄色と青の縁が出て、画面端ほど強くなります。シャープなアンチエイリアス（DLAA、DLSS）では目立ちやすくなります。デフォルトの0%ではきれいな縁に、100%は発売時のままです。",
     "Wind and foliage": "風と植物",
@@ -870,6 +894,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "風が木、葉、ツタを動かす強さです。デフォルトの100%は発売時のまま。50%はより自然に見え（推奨）、0%では静止します。",
     "Trico feather wind": "トリコの羽への風",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "風がトリコの羽を動かす強さです。デフォルトの100%は発売時のまま。0%で静止します。",
+    "Trico fur and feather density": "トリコの毛と羽の密度",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "トリコの毛と羽の厚み。標準の100%は製品版のまま(推奨)。高くするとトリコがふわふわになります。お遊び用です。",
     "Textures": "テクスチャ",
     "Texture LOD bias (DLAA)": "テクスチャLODバイアス（DLAA）",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "DLAA使用時のシーンテクスチャを、よりシャープ（0未満）または柔らかく（0超）します。DLAAなしでは効果はありません。-1.00はネイティブ解像度でのNVIDIAの推奨値です。下げると主に草の細部が出ます（-3.00は+1.00より細部が31%多い）が、動きの中でちらつくことがあります。",
@@ -1084,7 +1110,6 @@
     "QA menu": "QAメニュー",
     "Hold the buttons, then release...": "ボタンを押したまま、離してください...",
     "Set": "設定",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "設定: 2つ以上のボタンを同時に長押しして離します。キーボード: Alt+Qで終了、Insertでこのメニューを開きます。",
     "Quitting...": "終了中...",
     "Quitting... (release to cancel)": "終了中...（離すとキャンセル）",
     "Photo mode": "フォトモード",
@@ -1149,6 +1174,14 @@
     "Photo mode: freeze world on / off": "フォトモード: 世界の停止 オン / オフ",
     "Photo mode: sticks camera / boy": "フォトモード: スティック カメラ / 少年",
     "Photo mode: playing as the boy": "フォトモード: 少年を操作中",
-    "Let the world run first": "先に世界を動かしてください"
+    "Let the world run first": "先に世界を動かしてください",
+    "Lite shadows": "軽量シャドウ",
+    "On (lighter)": "オン（軽量）",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "ゲームの4つの影レイヤーのうち、カメラに最も近いものを省きます。ゲーム自体も一部のエリアでそうしています。古いCPUやSteam DeckでFPSが数%上がり、カメラ近くの影が少しやわらかくなります。オフは発売時のままです。",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "このタブのすべての設定とテクスチャパックを一度にライブで切り替えます。Stockは発売時のまま、推奨は既定値、低スペックPCはStockで影の距離50%、軽量シャドウの、古いPCや性能の低いPC向けです。自分のプリセットはpresetsフォルダー内のファイルで、ランチャーにも表示されます。",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "設定: 2つ以上のボタンを同時に長押しして離します。キーボードの終了キーには、CtrlかAltと文字または数字、またはFキーが必要です。Insertでこのメニューを開きます。",
+    "Quit game (keyboard)": "ゲーム終了（キーボード）",
+    "Press the key, for example Ctrl+X...": "キーを押してください（例: Ctrl+X）...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "このキーは使えません: CtrlかAltと文字または数字、またはFキーを使ってください。"
   }
 }

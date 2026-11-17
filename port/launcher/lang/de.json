@@ -294,18 +294,21 @@
     "launcher.shadow_scale": "Schattenauflösung",
     "launcher.shadow_game": "Spiel (2048)",
     "launcher.graphics_preset": "Grafik-Preset",
-    "launcher.graphics_preset_hint": "Alle Bildeinstellungen und das Texturpaket auf einmal. Original ist das Spiel wie ausgeliefert; speichere hier oder im Spielmenü (Insert, Reiter Bild) deine eigenen. Steam Deck (experimentell) ist Original plus 1280x800, 30 FPS, kein Upscaling und Frame Generation aus: Sag uns, wie es läuft.",
+    "launcher.graphics_preset_hint": "Alle Look-Einstellungen und das Texturpaket auf einmal. Stock ist das Spiel wie ausgeliefert; eigene hier oder im Spielmenü speichern (Einfg, Bild-Tab). Älterer oder schwächerer PC: Schwacher PC wählen (Stock mit Schatten auf 50% Distanz und leichten Schatten; behält deine Auflösung und FPS). Steam Deck: Steam Deck (experimentell) wählen, Schwacher PC plus 1280x800, 30 FPS, kein Upscaling und Frame Generation aus: sag uns, wie es läuft.",
     "launcher.preset_save": "Als Preset speichern",
     "launcher.preset_save_button": "Speichern",
-    "launcher.preset_save_bad": "Gib einen Namen ein (Buchstaben, Ziffern, Leerzeichen, - oder _; nicht Stock, Recommended oder Steam Deck).",
+    "launcher.preset_save_bad": "Gib einen Namen ein (Buchstaben, Ziffern, Leerzeichen, - oder _; nicht Stock, Recommended, Low-end PC oder Steam Deck).",
     "launcher.preset_stock": "Original (wie ausgeliefert)",
     "launcher.preset_recommended": "Empfohlen (Standard)",
+    "launcher.preset_lowend": "Schwacher PC",
     "launcher.preset_custom": "Eigene",
     "launcher.shadow_hint": "Zeichnet die Schattenkarten mit dem 2- oder 4-Fachen der 2048x2048 des Spiels (Standard: Spiel). Der Hauptgewinn ist viel weniger Flimmern bei Baum- und Blattschatten, mit jeder Kantenglättung. 8192 kostet etwa 8 FPS und bis zu etwa 2 GB Videospeicher (4096 etwa ein Viertel davon). Mit 8 GB Videospeicher oder weniger bleib bei Spiel: Zu wenig Speicher führt zu Rucklern und Abstürzen.",
     "launcher.grass_smooth": "Gras in jedem Bild animiert (Standard)",
     "launcher.grass_hint": "Das Spiel bewegt das meiste Gras nur in jedem 4. Bild, was bei hohen Bildraten ruckelig aussieht. Aus ist wie ausgeliefert.",
     "launcher.effect_fog_distance": "Nebeldistanz",
     "launcher.effect_fog_distance_hint": "Wo der Nebel beginnt und seine volle Stärke erreicht. Standard 100% ist wie ausgeliefert; niedriger holt den Nebel näher.",
+    "launcher.effect_shadow_distance": "Schattendistanz",
+    "launcher.effect_shadow_distance_hint": "Wie weit entfernt Objekte noch scharfe Schatten bekommen. Standard 100% ist wie ausgeliefert. 50% bringt ein paar bis 10% mehr FPS auf älteren CPUs und dem Steam Deck; ferne Schatten werden weicher, nahe bleiben gleich.",
     "launcher.effect_haze_fringe": "Farbsaum im Dunst",
     "launcher.effect_haze_fringe_hint": "Die chromatische Aberration des Spiels im hellen Dunst: gelbe und blaue Ränder um Objekte vor Nebel, am stärksten zu den Bildrändern hin. Scharfe Kantenglättung (DLAA, DLSS) lässt sie stärker hervortreten. Standard 0% gibt saubere Kanten; 100% ist wie ausgeliefert.",
     "launcher.effect_boy_wind": "Wind beim Jungen (Haare + Kleidung)",
@@ -439,7 +442,7 @@
     "pad.combo_qa": "QA-Menü",
     "pad.combo_photo": "Fotomodus ein / aus",
     "pad.combo_press": "Tasten halten, dann loslassen…",
-    "pad.combo_help": "Zwei oder mehr Tasten zusammen. Tastatur: Alt+Q beendet, Einfg öffnet das Spielmenü.",
+    "pad.combo_help": "Zwei oder mehr Tasten zusammen. Die Tastatur-Taste zum Beenden braucht Ctrl oder Alt mit einem Buchstaben oder einer Zahl, oder eine F-Taste. Einfg öffnet das Spielmenü.",
     "pad.photo": "Fotomodus",
     "pad.photo_invert": "Hoch / runter umkehren",
     "pad.photo_shot": "Screenshot",
@@ -453,7 +456,14 @@
     "pad.remap_touchpad_left": "Touchpad (links): Fotomodus",
     "pad.remap_touchpad_right": "Touchpad (rechts): Pause",
     "pad.photo_press": "Taste drücken…",
-    "pad.photo_note": "Je eine Taste, nur im Fotomodus. Linker Stick fliegt, rechter Stick schaut umher. Tastatur: die Tasten derselben Knöpfe; Druck macht auch einen Screenshot."
+    "pad.photo_note": "Je eine Taste, nur im Fotomodus. Linker Stick fliegt, rechter Stick schaut umher. Tastatur: die Tasten derselben Knöpfe; Druck macht auch einen Screenshot.",
+    "launcher.shadow_lite": "Leichte Schatten",
+    "launcher.shadow_lite_hint": "Lässt die nächste der vier Schattenebenen des Spiels weg, wie es das Spiel in manchen Gebieten selbst tut. Ein paar % mehr FPS auf älteren CPUs und dem Steam Deck; Schatten nah an der Kamera werden etwas weicher. Aus ist wie ausgeliefert.",
+    "pad.quit_key": "Spiel beenden (Tastatur)",
+    "pad.quit_key_press": "Taste drücken, zum Beispiel Ctrl+X…",
+    "pad.quit_key_bad": "Diese Taste geht nicht: Ctrl oder Alt mit einem Buchstaben oder einer Zahl, oder eine F-Taste",
+    "pad.quit_key_off": "aus",
+    "pad.off_button": "Aus"
   },
   "items": {
     "menu:sharpen": {
@@ -544,9 +554,17 @@
       "name": "Wind in Tricos Federn",
       "what": "Wie stark der Wind Tricos Federn bewegt. Standard 100% ist wie ausgeliefert; 0% hält sie still."
     },
+    "menu:trico_fur": {
+      "name": "Tricos Fell- und Federdichte",
+      "what": "Wie dicht Tricos Fell und Gefieder ist. Standard 100% ist wie ausgeliefert (empfohlen); höher macht Trico flauschiger. Nur zum Spaß."
+    },
     "menu:fog_distance": {
       "name": "Nebeldistanz",
       "what": "Wo der Nebel beginnt und seine volle Stärke erreicht. Standard 100% ist wie ausgeliefert; niedriger holt den Nebel näher."
+    },
+    "menu:shadow_distance": {
+      "name": "Schattendistanz",
+      "what": "Wie weit entfernt Objekte noch scharfe Schatten bekommen. Standard 100% ist wie ausgeliefert. 50% bringt ein paar bis 10% mehr FPS auf älteren CPUs und dem Steam Deck; ferne Schatten werden weicher, nahe bleiben gleich."
     },
     "menu:haze_fringe": {
       "name": "Farbsaum im Dunst",
@@ -782,6 +800,10 @@
     "menu:mod_hints": {
       "name": "Gestrichene Erzählerhinweise",
       "what": "Die 23 Hinweise des Erzählers, die die Entwickler im September 2016 gestrichen haben. An: Wenn du feststeckst, hilft der Erzähler wieder, dort, wo sie seine Sätze ursprünglich platziert hatten. Sie verraten Rätsellösungen."
+    },
+    "menu:shadow_lite": {
+      "name": "Leichte Schatten",
+      "what": "Lässt die nächste der vier Schattenebenen des Spiels weg, wie es das Spiel in manchen Gebieten selbst tut. Ein paar % mehr FPS auf älteren CPUs und dem Steam Deck; Schatten nah an der Kamera werden etwas weicher. Aus ist wie ausgeliefert."
     }
   },
   "menu": {
@@ -793,9 +815,9 @@
     "Back to the value on PS4.": "Zurück zum Wert auf PS4.",
     "Stock (as shipped)": "Original (wie ausgeliefert)",
     "Recommended (default)": "Empfohlen (Standard)",
+    "Low-end PC": "Schwacher PC",
     "Graphics preset": "Grafik-Preset",
     "Custom": "Eigene",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default. Your own presets are files in the presets folder, also listed in the launcher.": "Schaltet alle Einstellungen auf diesem Reiter und das Texturpaket auf einmal um, live. Original ist das Spiel wie ausgeliefert; Empfohlen ist der Standard. Deine eigenen Presets sind Dateien im Presets-Ordner und stehen auch im Launcher.",
     "Save as preset": "Als Preset speichern",
     "Save": "Speichern",
     "Delete": "Löschen",
@@ -857,6 +879,8 @@
     "The game's own sharpening filter. On by default: 100% is the original and the maximum (recommended).": "Der eigene Schärfefilter des Spiels. Standardmäßig an: 100% ist das Original und das Maximum (empfohlen).",
     "Fog distance": "Nebeldistanz",
     "Where the fog starts and reaches full strength. Default 100% is as shipped; lower brings the fog closer.": "Wo der Nebel beginnt und seine volle Stärke erreicht. Standard 100% ist wie ausgeliefert; niedriger holt den Nebel näher.",
+    "Shadow distance": "Schattendistanz",
+    "How far away objects still get sharp shadows. Default 100% is as shipped. 50% gives a few to 10% more FPS on older CPUs and the Steam Deck; far shadows get softer, near ones stay the same.": "Wie weit entfernt Objekte noch scharfe Schatten bekommen. Standard 100% ist wie ausgeliefert. 50% bringt ein paar bis 10% mehr FPS auf älteren CPUs und dem Steam Deck; ferne Schatten werden weicher, nahe bleiben gleich.",
     "Haze color fringe": "Farbsaum im Dunst",
     "The game's chromatic aberration on the light haze: yellow and blue edges around objects against fog, strongest toward the screen edges. Sharp anti-aliasing (DLAA, DLSS) makes it stand out more. Default 0% gives clean edges; 100% is as shipped.": "Die chromatische Aberration des Spiels im hellen Dunst: gelbe und blaue Ränder um Objekte vor Nebel, am stärksten zu den Bildrändern hin. Scharfe Kantenglättung (DLAA, DLSS) lässt sie stärker hervortreten. Standard 0% gibt saubere Kanten; 100% ist wie ausgeliefert.",
     "Wind and foliage": "Wind und Pflanzen",
@@ -870,6 +894,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "Wie stark der Wind Bäume, Blätter und Efeu bewegt. Standard 100% ist wie ausgeliefert; 50% wirkt natürlicher (empfohlen), 0% hält sie still.",
     "Trico feather wind": "Wind in Tricos Federn",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "Wie stark der Wind Tricos Federn bewegt. Standard 100% ist wie ausgeliefert; 0% hält sie still.",
+    "Trico fur and feather density": "Tricos Fell- und Federdichte",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "Wie dicht Tricos Fell und Gefieder ist. Standard 100% ist wie ausgeliefert (empfohlen); höher macht Trico flauschiger. Nur zum Spaß.",
     "Textures": "Texturen",
     "Texture LOD bias (DLAA)": "Textur-LOD-Bias (DLAA)",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "Schärfere (unter 0) oder weichere (über 0) Szenentexturen unter DLAA; ohne DLAA keine Wirkung. -1.00 ist NVIDIAs Empfehlung für native Auflösung. Niedriger holt feine Details hervor, vor allem im Gras (-3.00 hat 31% mehr feine Details als +1.00), kann aber in Bewegung flimmern.",
@@ -1084,7 +1110,6 @@
     "QA menu": "QA-Menü",
     "Hold the buttons, then release...": "Tasten halten, dann loslassen...",
     "Set": "Festlegen",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Festlegen: zwei oder mehr Tasten zusammen drücken und halten, dann loslassen. Tastatur: Alt+Q beendet, Einfg öffnet dieses Menü.",
     "Quitting...": "Wird beendet...",
     "Quitting... (release to cancel)": "Wird beendet... (loslassen zum Abbrechen)",
     "Photo mode": "Fotomodus",
@@ -1149,6 +1174,14 @@
     "Photo mode: freeze world on / off": "Fotomodus: Welt einfrieren an / aus",
     "Photo mode: sticks camera / boy": "Fotomodus: Sticks Kamera / Junge",
     "Photo mode: playing as the boy": "Fotomodus: du spielst den Jungen",
-    "Let the world run first": "Lass zuerst die Welt laufen"
+    "Let the world run first": "Lass zuerst die Welt laufen",
+    "Lite shadows": "Leichte Schatten",
+    "On (lighter)": "An (leichter)",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Lässt die nächste der vier Schattenebenen des Spiels weg, wie es das Spiel in manchen Gebieten selbst tut. Ein paar % mehr FPS auf älteren CPUs und dem Steam Deck; Schatten nah an der Kamera werden etwas weicher. Aus ist wie ausgeliefert.",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Schaltet alle Einstellungen dieses Tabs und das Texturpaket auf einmal um, live. Stock ist das Spiel wie ausgeliefert; Empfohlen ist der Standard; Schwacher PC ist Stock mit Schatten auf 50% Distanz und leichten Schatten, für ältere oder schwächere PCs. Eigene Presets sind Dateien im Ordner presets, auch im Launcher aufgelistet.",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Festlegen: zwei oder mehr Tasten zusammen drücken und halten, dann loslassen. Die Tastatur-Taste zum Beenden braucht Ctrl oder Alt mit einem Buchstaben oder einer Zahl, oder eine F-Taste. Einfg öffnet dieses Menü.",
+    "Quit game (keyboard)": "Spiel beenden (Tastatur)",
+    "Press the key, for example Ctrl+X...": "Taste drücken, zum Beispiel Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Diese Taste geht nicht: Ctrl oder Alt mit einem Buchstaben oder einer Zahl, oder eine F-Taste."
   }
 }

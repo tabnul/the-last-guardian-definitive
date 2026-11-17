@@ -316,18 +316,21 @@
     "launcher.shadow_scale": "Роздільність тіней",
     "launcher.shadow_game": "Гра (2048)",
     "launcher.graphics_preset": "Графічний пресет",
-    "launcher.graphics_preset_hint": "Усі налаштування вигляду й пакет текстур разом. Стандарт — гра як випущена; збережіть власний тут або в меню гри (Insert, вкладка Зображення). Steam Deck (експериментально) — це Стандарт плюс 1280x800, 30 FPS, без масштабування й без генерації кадрів: розкажіть нам, як працює.",
+    "launcher.graphics_preset_hint": "Усі налаштування вигляду та пакет текстур одразу. Stock — гра як у релізі; свої зберігайте тут або в меню гри (Insert, вкладка Зображення). Старий чи слабкий ПК: виберіть Слабкий ПК (Stock із тінями на 50% відстані та легкими тінями; ваша роздільність і FPS лишаються). Steam Deck: виберіть Steam Deck (експериментально) — Слабкий ПК плюс 1280x800, 30 FPS, без масштабування й без генерації кадрів: розкажіть, як працює.",
     "launcher.preset_save": "Зберегти як пресет",
     "launcher.preset_save_button": "Зберегти",
-    "launcher.preset_save_bad": "Введіть назву (літери, цифри, пробіл, - або _; не Stock, Recommended чи Steam Deck).",
+    "launcher.preset_save_bad": "Введіть назву (літери, цифри, пробіл, - або _; не Stock, Recommended, Low-end PC чи Steam Deck).",
     "launcher.preset_stock": "Стандарт (як випущено)",
     "launcher.preset_recommended": "Рекомендований (типово)",
+    "launcher.preset_lowend": "Слабкий ПК",
     "launcher.preset_custom": "Власний",
     "launcher.shadow_hint": "Малює карти тіней у 2x або 4x від ігрових 2048x2048 (типово: Гра). Головна користь — значно менше мерехтіння тіней дерев і листя з будь-яким згладжуванням. 8192 коштує близько 8 FPS і до 2 ГБ відеопам'яті (4096 — приблизно чверть цього). Якщо відеопам'яті 8 ГБ або менше, залиште Гра: нестача спричиняє підвисання й збої.",
     "launcher.grass_smooth": "Трава анімується кожен кадр (типово)",
     "launcher.grass_hint": "Гра рухає більшість трави лише кожен 4-й кадр, що виглядає ривками при високій частоті кадрів. Вимк. — як випущено.",
     "launcher.effect_fog_distance": "Відстань туману",
     "launcher.effect_fog_distance_hint": "Де туман починається й досягає повної сили. Типові 100% — як випущено; нижче наближає туман.",
+    "launcher.effect_shadow_distance": "Відстань тіней",
+    "launcher.effect_shadow_distance_hint": "Наскільки далекі об'єкти ще отримують чіткі тіні. Типово 100% — як у релізі. 50% дає від кількох до 10% більше FPS на старіших процесорах і Steam Deck; далекі тіні стають м'якшими, близькі не змінюються.",
     "launcher.effect_haze_fringe": "Кольорова облямівка серпанку",
     "launcher.effect_haze_fringe_hint": "Хроматична аберація гри на світловому серпанку: жовті й сині краї навколо об'єктів на тлі туману, найсильніші до країв екрана. Чітке згладжування (DLAA, DLSS) робить її помітнішою. Типові 0% дають чисті краї; 100% — як випущено.",
     "launcher.effect_boy_wind": "Вітер хлопчика (волосся + одяг)",
@@ -446,7 +449,7 @@
     "pad.combo_qa": "Меню QA",
     "pad.combo_photo": "Фоторежим увімк. / вимк.",
     "pad.combo_press": "утримуйте кнопки, потім відпустіть…",
-    "pad.combo_help": "Дві або більше кнопок разом. Клавіатура: Alt+Q — вихід, Insert відкриває меню в грі.",
+    "pad.combo_help": "Дві або більше кнопок разом. Клавіша виходу на клавіатурі потребує Ctrl або Alt з літерою чи цифрою, або клавішу F. Insert відкриває меню в грі.",
     "pad.photo": "Режим фото",
     "pad.photo_invert": "Інвертувати погляд вгору / вниз",
     "pad.photo_shot": "Знімок екрана",
@@ -460,7 +463,14 @@
     "pad.remap_touchpad_left": "Сенсорна панель (ліворуч): фоторежим",
     "pad.remap_touchpad_right": "Сенсорна панель (праворуч): пауза",
     "pad.photo_press": "натисніть кнопку…",
-    "pad.photo_note": "По одній кнопці на дію, лише в режимі фото. Лівий стік — політ, правий — огляд. Клавіатура: клавіші тих самих кнопок; Print Screen теж робить знімок екрана."
+    "pad.photo_note": "По одній кнопці на дію, лише в режимі фото. Лівий стік — політ, правий — огляд. Клавіатура: клавіші тих самих кнопок; Print Screen теж робить знімок екрана.",
+    "launcher.shadow_lite": "Легкі тіні",
+    "launcher.shadow_lite_hint": "Прибирає найближчий із чотирьох шарів тіней гри, як сама гра робить у деяких місцях. На кілька % більше FPS на старих процесорах і Steam Deck; тіні біля камери стають трохи м'якшими. Вимк. — як у релізі.",
+    "pad.quit_key": "Вийти з гри (клавіатура)",
+    "pad.quit_key_press": "Натисніть клавішу, наприклад Ctrl+X…",
+    "pad.quit_key_bad": "Не ця клавіша: використайте Ctrl або Alt з літерою чи цифрою, або клавішу F",
+    "pad.quit_key_off": "вимк.",
+    "pad.off_button": "Вимк."
   },
   "items": {
     "menu:sharpen": {
@@ -551,9 +561,17 @@
       "name": "Вітер пір'я Trico",
       "what": "Наскільки сильно вітер рухає пір'я Trico. Типові 100% — як випущено; 0% тримає його нерухомим."
     },
+    "menu:trico_fur": {
+      "name": "Густота шерсті й пір'я Тріко",
+      "what": "Наскільки густі шерсть і пір'я Тріко. Стандартні 100% — як в оригіналі (рекомендовано); вище значення робить Тріко пухнастішим. Просто для розваги."
+    },
     "menu:fog_distance": {
       "name": "Відстань туману",
       "what": "Де туман починається й досягає повної сили. Типові 100% — як випущено; нижче наближає туман."
+    },
+    "menu:shadow_distance": {
+      "name": "Відстань тіней",
+      "what": "Наскільки далекі об'єкти ще отримують чіткі тіні. Типово 100% — як у релізі. 50% дає від кількох до 10% більше FPS на старіших процесорах і Steam Deck; далекі тіні стають м'якшими, близькі не змінюються."
     },
     "menu:haze_fringe": {
       "name": "Кольорова облямівка серпанку",
@@ -789,6 +807,10 @@
     "menu:mod_hints": {
       "name": "Вирізані підказки оповідача",
       "what": "23 підказки оповідача, які розробники вирізали у вересні 2016 року. Увімк.: коли здається, що ви застрягли, оповідач знову допомагає там, де спочатку стояли його репліки. Вони видають розв'язки головоломок."
+    },
+    "menu:shadow_lite": {
+      "name": "Легкі тіні",
+      "what": "Прибирає найближчий із чотирьох шарів тіней гри, як сама гра робить у деяких місцях. На кілька % більше FPS на старих процесорах і Steam Deck; тіні біля камери стають трохи м'якшими. Вимк. — як у релізі."
     }
   },
   "menu": {
@@ -800,9 +822,9 @@
     "Back to the value on PS4.": "Назад до значення на PS4.",
     "Stock (as shipped)": "Стандарт (як випущено)",
     "Recommended (default)": "Рекомендований (типово)",
+    "Low-end PC": "Слабкий ПК",
     "Graphics preset": "Графічний пресет",
     "Custom": "Власний",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default. Your own presets are files in the presets folder, also listed in the launcher.": "Перемикає всі налаштування на цій вкладці й пакет текстур разом, наживо. Стандарт — гра як випущена; Рекомендований — типовий. Ваші власні пресети — це файли в теці presets, вони також є в лаунчері.",
     "Save as preset": "Зберегти як пресет",
     "Save": "Зберегти",
     "Delete": "Видалити",
@@ -868,6 +890,8 @@
     "The game's own sharpening filter. On by default: 100% is the original and the maximum (recommended).": "Власний фільтр різкості гри. Типово ввімкнено: 100% — оригінал і максимум (рекомендовано).",
     "Fog distance": "Відстань туману",
     "Where the fog starts and reaches full strength. Default 100% is as shipped; lower brings the fog closer.": "Де туман починається й досягає повної сили. Типові 100% — як випущено; нижче наближає туман.",
+    "Shadow distance": "Відстань тіней",
+    "How far away objects still get sharp shadows. Default 100% is as shipped. 50% gives a few to 10% more FPS on older CPUs and the Steam Deck; far shadows get softer, near ones stay the same.": "Наскільки далекі об'єкти ще отримують чіткі тіні. Типово 100% — як у релізі. 50% дає від кількох до 10% більше FPS на старіших процесорах і Steam Deck; далекі тіні стають м'якшими, близькі не змінюються.",
     "Haze color fringe": "Кольорова облямівка серпанку",
     "The game's chromatic aberration on the light haze: yellow and blue edges around objects against fog, strongest toward the screen edges. Sharp anti-aliasing (DLAA, DLSS) makes it stand out more. Default 0% gives clean edges; 100% is as shipped.": "Хроматична аберація гри на світловому серпанку: жовті й сині краї навколо об'єктів на тлі туману, найсильніші до країв екрана. Чітке згладжування (DLAA, DLSS) робить її помітнішою. Типові 0% дають чисті краї; 100% — як випущено.",
     "Wind and foliage": "Вітер і рослинність",
@@ -881,6 +905,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "Наскільки сильно вітер рухає дерева, листя й плющ. Типові 100% — як випущено; 50% виглядає природніше (рекомендовано), 0% тримає їх нерухомими.",
     "Trico feather wind": "Вітер пір'я Trico",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "Наскільки сильно вітер рухає пір'я Trico. Типові 100% — як випущено; 0% тримає його нерухомим.",
+    "Trico fur and feather density": "Густота шерсті й пір'я Тріко",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "Наскільки густі шерсть і пір'я Тріко. Стандартні 100% — як в оригіналі (рекомендовано); вище значення робить Тріко пухнастішим. Просто для розваги.",
     "Textures": "Текстури",
     "Texture LOD bias (DLAA)": "Зміщення LOD текстур (DLAA)",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "Чіткіші (нижче 0) або м'якші (вище 0) текстури сцени з DLAA; без DLAA не діє. -1.00 — порада NVIDIA для рідної роздільності. Нижче виявляє дрібні деталі, переважно на траві (-3.00 має на 31% більше дрібних деталей, ніж +1.00), але може мерехтіти в русі.",
@@ -1097,7 +1123,6 @@
     "QA menu": "Меню QA",
     "Hold the buttons, then release...": "Утримуйте кнопки, потім відпустіть...",
     "Set": "Призначити",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Призначити: утримуйте разом дві або більше кнопок, потім відпустіть. Клавіатура: Alt+Q — вихід, Insert відкриває це меню.",
     "Quitting...": "Вихід...",
     "Quitting... (release to cancel)": "Вихід... (відпустіть, щоб скасувати)",
     "Photo mode": "Фоторежим",
@@ -1162,6 +1187,14 @@
     "Photo mode: freeze world on / off": "Фоторежим: заморозити світ увімк. / вимк.",
     "Photo mode: sticks camera / boy": "Фоторежим: стіки камера / хлопчик",
     "Photo mode: playing as the boy": "Фоторежим: ви керуєте хлопчиком",
-    "Let the world run first": "Спочатку відновіть рух світу"
+    "Let the world run first": "Спочатку відновіть рух світу",
+    "Lite shadows": "Легкі тіні",
+    "On (lighter)": "Увімк. (легше)",
+    "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Прибирає найближчий із чотирьох шарів тіней гри, як сама гра робить у деяких місцях. На кілька % більше FPS на старих процесорах і Steam Deck; тіні біля камери стають трохи м'якшими. Вимк. — як у релізі.",
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Перемикає всі налаштування цієї вкладки та пакет текстур одразу, наживо. Stock — гра як у релізі; Рекомендовано — типові значення; Слабкий ПК — це Stock із тінями на 50% відстані та легкими тінями, для старих чи слабких ПК. Ваші пресети — файли в теці presets, їх також видно в лаунчері.",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Призначити: утримуйте разом дві або більше кнопок, потім відпустіть. Клавіша виходу на клавіатурі потребує Ctrl або Alt з літерою чи цифрою, або клавішу F. Insert відкриває це меню.",
+    "Quit game (keyboard)": "Вийти з гри (клавіатура)",
+    "Press the key, for example Ctrl+X...": "Натисніть клавішу, наприклад Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Не ця клавіша: використайте Ctrl або Alt з літерою чи цифрою, або клавішу F."
   }
 }

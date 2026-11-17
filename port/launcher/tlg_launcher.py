@@ -426,14 +426,16 @@ TEXT = {
     'shadow_game': 'Game (2048)',
     'graphics_preset': 'Graphics preset',
     'graphics_preset_hint': ('All look settings and the texture pack at once. Stock is the game as shipped; '
-                             'save your own here or in the in-game menu (Insert, Image tab). Steam Deck '
-                             '(experimental) is Stock plus 1280x800, 30 FPS, no upscaling and frame '
-                             'generation off: tell us how it runs.'),
+                             'save your own here or in the in-game menu (Insert, Image tab). Older or '
+                             'weaker PC: pick Low-end PC (Stock with shadows at 50% distance and Lite shadows; keeps your '
+                             'resolution and FPS). Steam Deck: pick Steam Deck (experimental), Low-end PC '
+                             'plus 1280x800, 30 FPS, no upscaling and frame generation off: tell us how it runs.'),
     'preset_save': 'Save as preset',
     'preset_save_button': 'Save',
-    'preset_save_bad': 'Type a name (letters, digits, space, - or _; not Stock, Recommended or Steam Deck).',
+    'preset_save_bad': 'Type a name (letters, digits, space, - or _; not Stock, Recommended, Low-end PC or Steam Deck).',
     'preset_stock': 'Stock (as shipped)',
     'preset_recommended': 'Recommended (default)',
+    'preset_lowend': 'Low-end PC',
     'preset_custom': 'Custom',
     'shadow_hint': ("Draws the shadow maps at 2x or 4x the game's 2048x2048 (default: Game). The main gain is much "
                     'less shimmer of tree and leaf shadows, with any anti-aliasing. '
@@ -441,10 +443,18 @@ TEXT = {
     'grass_smooth': 'Grass animated every frame (default)',
     'grass_hint': ('The game moves most grass only every 4th frame, which looks choppy at high frame rates. '
                    'Off is as shipped.'),
+    'shadow_lite': 'Lite shadows',
+    'shadow_lite_hint': ("Leaves out the closest of the game's four shadow layers, as the game itself does in "
+                         'some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the '
+                         'camera get a little softer. Off is as shipped.'),
     'effect_fog_distance': 'Fog distance',
     'effect_fog_distance_hint': ('Where the fog starts and reaches full strength. Default 100% is as shipped; lower '
                                  'brings the fog closer.'),
-    'effect_haze_fringe': 'Haze color fringe',
+    'effect_shadow_distance': 'Shadow distance',
+    'effect_shadow_distance_hint': ('How far away objects still get sharp shadows. Default 100% is as shipped. '
+                                    '50% gives a few to 10% more FPS on older CPUs and the Steam Deck; far '
+                                    'shadows get softer, near ones stay the same.'),
+    'effect_haze_fringe':'Haze color fringe',
     'effect_haze_fringe_hint': ("The game's chromatic aberration on the light haze: yellow and blue edges around "
                                 'objects against fog, strongest toward the screen edges. Sharp anti-aliasing (DLAA, '
                                 'DLSS) makes it stand out more. Default 0% gives clean edges; 100% is as shipped.'),
@@ -636,7 +646,8 @@ LOD_BIAS_DEFAULT = -4
 ANISO_LEVELS = [0, 2, 4, 8, 16]  # 0 = the game's own (PS4); default 16
 EFFECTS = {'ssao': (100, 0, 400), 'bloom': (100, 0, 400), 'ssr': (100, 0, 400), 'motion_blur': (100, 0, 400),
            'vignette_add': (0, 0, 100), 'game_sharpen': (100, 0, 100),
-           'fog_distance': (100, 25, 400), 'haze_fringe': (0, 0, 100), 'boy_wind': (100, 0, 200),
+           'fog_distance': (100, 25, 400), 'shadow_distance': (100, 10, 100), 'haze_fringe': (0, 0, 100),
+           'boy_wind': (100, 0, 200),
            'tree_wind': (100, 0, 200), 'trico_feathers': (100, 0, 400),
            'fov': (70, 50, 110, '°')}
 
@@ -751,7 +762,10 @@ class BenchmarkWindow:
         custom_bar = ttk.Scrollbar(custom_box, orient='vertical', command=self.custom.yview)
         custom_bar.grid(row=0, column=1, sticky='ns')
         self.custom.configure(yscrollcommand=custom_bar.set)
-        self.custom.bind('<KeyRelease>', lambda _e: (self.remember_custom(), self.refresh()))
+        # Save on every change, not only on a key: a mouse paste (middle click, the Deck's
+        # on-screen keyboard) sends no key event, and closing the window skips close().
+        self.custom.edit_modified(False)
+        self.custom.bind('<<Modified>>', self.custom_changed)
 
         line = ttk.Frame(win)
         line.grid(row=7, column=0, columnspan=3, sticky='w', pady=(8, 0))
@@ -810,6 +824,13 @@ class BenchmarkWindow:
             points = self.bm.default_points()
             return [points[i] for i in self.pick.curselection()], []
         return self.bm.parse_points(self.custom.get('1.0', 'end'))
+
+    def custom_changed(self, _event=None):
+        if not self.custom.edit_modified():
+            return
+        self.custom.edit_modified(False)   # re-arms <<Modified>> for the next change
+        self.remember_custom()
+        self.refresh()
 
     def remember_custom(self):
         """Save the custom list when it changed (settings.json), so it is back next time."""
@@ -1249,7 +1270,9 @@ class Launcher:
             child.destroy()
         self.building = False
         root = self.root
-        root.title(TITLE)
+        if not hasattr(self, 'version'):
+            self.version = update_check.shown_version(tlg_run.PORT_DIR)
+        root.title(f'{TITLE} — {self.version}' if self.version else TITLE)
         self.load_art()
         self.home = tk.Canvas(root, highlightthickness=0, bd=0, background=BG,
                               width=HOME_SIZE[0], height=HOME_SIZE[1])
@@ -1399,7 +1422,7 @@ class Launcher:
         ttk.Label(box, text=drool.what, foreground=DIM, wraplength=420, justify='left').grid(
             row=1, column=0, sticky='w', pady=(6, 0))
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
-        for key in ('mod_treasures', 'mod_horns', 'mod_plays', 'mod_throw_up', 'mod_hints'):
+        for key in ('trico_fur', 'mod_treasures', 'mod_horns', 'mod_plays', 'mod_throw_up', 'mod_hints'):
             item = next(i for i in backports_table.MENU if i.key == key)
             mod = section(parent, item.name)
             mod.pack(fill='x', anchor='w', pady=(0, 8))
@@ -1408,7 +1431,24 @@ class Launcher:
                 tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {k: value})
                 self.ini_stamp = self.ini_files_stamp()
 
-            if item.choices:  # a list setting
+            if item.vtype == 'int':  # a slider (steps of 5)
+                try:
+                    start = min(max(int(ini.get(key, item.default)), item.lo), item.hi)
+                except ValueError:
+                    start = int(item.default)
+                shown = ttk.Label(mod, text=f'{start}{item.unit}', width=6)
+                shown.grid(row=0, column=1, sticky='w', padx=(6, 0))
+
+                def moved(raw, shown=shown, w=write, unit=item.unit, current={'value': start}):
+                    step = int(round(float(raw) / 5) * 5)
+                    shown.configure(text=f'{step}{unit}')
+                    if step != current['value']:
+                        current['value'] = step
+                        w(step)
+
+                ttk.Scale(mod, from_=item.lo, to=item.hi, value=start, length=240, command=moved).grid(
+                    row=0, column=0, sticky='w')
+            elif item.choices:  # a list setting
                 keys = [choice[0] for choice in item.choices]
                 pick = ttk.Combobox(mod, values=[choice[1] for choice in item.choices], state='readonly', width=28)
                 now = ini.get(key, item.default)
@@ -2038,6 +2078,9 @@ class Launcher:
         c.tag_bind('music', '<Enter>', lambda _: (c.itemconfig(music, fill=ACCENT), c.configure(cursor='hand2')))
         c.tag_bind('music', '<Leave>', lambda _: (c.itemconfig(music, fill=DIM), c.configure(cursor='')))
         c.tag_bind('music', '<Button-1>', lambda _: self.toggle_music(music))
+        # This build's version (VERSION file, written by every package build), bottom right.
+        if getattr(self, 'version', ''):
+            c.create_text(width - 12, height - 10, anchor='se', fill=DIM, font=(SERIF, 8), text=self.version)
         # A newer release on GitHub (update_check.py): one clickable line above the status.
         if getattr(self, 'update_found', None):
             tag, url = self.update_found
@@ -2286,7 +2329,7 @@ class Launcher:
         self.refresh_preset()
 
     def preset_label(self, index, name):
-        builtin = ('preset_stock', 'preset_recommended', 'deck_preset')
+        builtin = ('preset_stock', 'preset_recommended', 'preset_lowend', 'deck_preset')
         return self.t(builtin[index]) if index < len(builtin) else name
 
     def refresh_preset(self):
@@ -2589,8 +2632,13 @@ class Launcher:
                         command=lambda: write({'grass_smooth': int(grass.get())})).grid(
             row=5, column=0, columnspan=4, sticky='w')
         hint(scene, 6, 'grass_hint', on_off(True), on_off(False))
+        lite = tk.BooleanVar(value=number('shadow_lite', 0) != 0)
+        ttk.Checkbutton(scene, text=self.t('shadow_lite'), variable=lite,
+                        command=lambda: write({'shadow_lite': int(lite.get())})).grid(
+            row=7, column=0, columnspan=4, sticky='w')
+        hint(scene, 8, 'shadow_lite_hint', on_off(False), on_off(False))
         # Textures (the in-game menu's Image tab): LOD bias, anisotropic filtering.
-        row = 7
+        row = 9
         ttk.Separator(scene).grid(row=row, column=0, columnspan=5, sticky='ew', pady=(8, 4))
         ttk.Label(scene, text=self.t('textures'), foreground=MUTED).grid(row=row + 1, column=0, columnspan=4, sticky='w')
         bias_text = lambda quarters: f'{quarters * 0.25:+.2f}'
@@ -2664,8 +2712,9 @@ class Launcher:
         def reset():
             shadow.current(0)
             grass.set(True)
+            lite.set(False)
             aniso.current(len(ANISO_LEVELS) - 1)
-            write({'shadow_scale': 1, 'grass_smooth': 1, 'aniso': 16, 'texture_pack': 'off'})
+            write({'shadow_scale': 1, 'grass_smooth': 1, 'shadow_lite': 0, 'aniso': 16, 'texture_pack': 'off'})
             self.refresh_texture_pack()
             bias_slider.set(LOD_BIAS_DEFAULT)
             bias_moved(LOD_BIAS_DEFAULT)
