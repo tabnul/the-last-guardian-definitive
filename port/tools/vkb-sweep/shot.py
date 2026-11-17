@@ -11,7 +11,7 @@ Usage: shot.py OUT STAGE SCENE VKB TAKES [--cam "X Y Z PITCH YAW"] [NAME=VALUE .
 The fixed camera is taken from the game's own camera in the first take ever made of that scene and kept in
 OUT/STAGE__SCENE/camera.txt; every later take, of either renderer, uses the same one. --cam overrides it.
 Run with the build environment loaded (source /home/runner/loop/build-env on the test box)."""
-import os, re, shutil, signal, subprocess, sys, time
+import glob, os, re, shutil, signal, subprocess, sys, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import compare  # noqa: E402  (blank picture check)
@@ -22,6 +22,8 @@ START = os.path.join(PORT, "tools", "scene-check", "start.save")
 USER = os.environ.get("TLG_USER_DIR", os.path.expanduser("~/tlgrun/user"))
 DISPLAY = os.environ.get("SHOT_DISPLAY", ":93")
 TITLE_S, LOAD_S, WAIT_S, SETTLE_S = 400, 240, 8, 4
+GB = 1 << 30
+JOURNAL = os.environ.get("SHOT_JOURNAL", "/home/runner/loop/journal.md")
 
 HEAD = ("local ls = loadstring or load\n"
         "local function L(s) local g = ls('--TLGLOG ' .. tostring(s)) if g then g() end end\n")
@@ -116,6 +118,103 @@ def picture(path):
     return f"{win[1]}x{win[2]}" if r.returncode == 0 and os.path.exists(path) else "import failed: " + r.stderr.strip()
 
 
+class MemoryGuard:
+    """GPU memory guard. A run that filled the GPU memory once hung the game inside the kernel driver
+    (unkillable, the host had to be power-cycled: issue 11). While the game runs, a thread reads the GTT use
+    of every AMD card from sysfs every 0.25 s; above the limit it kills the whole process group of the game at
+    once, before the driver can block. SHOT_GTT_LIMIT_GB (default 8, 0 = off) is the switch."""
+    FILES = "/sys/class/drm/card[0-9]*/device/mem_info_gtt_used"
+
+    def __init__(self):
+        text = os.environ.get("SHOT_GTT_LIMIT_GB", "8")
+        try:
+            self.limit = float(text) * GB
+        except ValueError:
+            sys.exit(f"SHOT_GTT_LIMIT_GB={text!r} is not a number")
+        self.files, self.unreadable = sorted(glob.glob(self.FILES)), set()
+        if self.limit <= 0:
+            print("GPU memory guard: OFF (SHOT_GTT_LIMIT_GB=0)", flush=True)
+            self.files = []
+        elif not self.files:
+            print("GPU memory guard: NOT ACTIVE, no mem_info_gtt_used in sysfs (not an AMD card on Linux?)", flush=True)
+        else:
+            print(f"GPU memory guard: limit {self.limit / GB:.2f} GB GTT, cards: "
+                  + " ".join(f.split("/")[4] for f in self.files), flush=True)
+
+    @staticmethod
+    def read(path):
+        try:
+            with open(path) as f:
+                return int(f.read())
+        except (OSError, ValueError):
+            return None
+
+    def use(self):
+        """(highest GTT use, its VRAM use, card) over the cards, in bytes."""
+        best = (0, 0, "")
+        for f in self.files:
+            gtt = self.read(f)
+            if gtt is None:  # an unreadable file is said once, never counted as 0 silently
+                if f not in self.unreadable:
+                    self.unreadable.add(f)
+                    print(f"  GPU memory guard: cannot read {f}; that card is not guarded", flush=True)
+                continue
+            if gtt >= best[0]:
+                best = (gtt, self.read(f.replace("gtt_used", "vram_used")) or 0, f.split("/")[4])
+        return best
+
+    def before(self):
+        """Before the game starts: the start value. Returns a failure reason when the limit is already passed."""
+        self.fired, self.peak, self.stop, self.thread = "", (0, 0, ""), threading.Event(), None
+        if not self.files:
+            return ""
+        gtt, vram, card = self.use()
+        print(f"  GPU memory at start: GTT {gtt / GB:.2f} GB, VRAM {vram / GB:.2f} GB ({card})", flush=True)
+        if gtt > self.limit:
+            return self.trip(gtt, card, "before the game started; not started")
+        return ""
+
+    def watch(self, proc):
+        self.proc = proc
+        if self.files:
+            self.thread = threading.Thread(target=self.loop, daemon=True)
+            self.thread.start()
+
+    def loop(self):
+        while not self.stop.is_set():
+            gtt, vram, card = self.use()
+            if gtt > self.peak[0]:
+                self.peak = (gtt, vram, card)
+            if gtt > self.limit:
+                try:
+                    os.killpg(self.proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                self.trip(gtt, card, "game killed")
+                return
+            self.stop.wait(0.25)
+
+    def trip(self, gtt, card, what):
+        self.fired = f"GPU memory guard: {gtt / GB:.2f} GB used, limit {self.limit / GB:.2f} GB ({card}, {what})"
+        print("  " + self.fired, flush=True)
+        line = f"{time.strftime('%F %T')} MAJOR: shot.py stopped a take because the GPU memory passed the guard ({self.fired})."
+        if os.path.isfile(JOURNAL):
+            with open(JOURNAL, "a") as f:
+                f.write(line + "\n")
+        else:
+            print(f"  (no journal at {JOURNAL}: {line})", flush=True)
+        return self.fired
+
+    def end(self):
+        if not self.files:
+            return
+        self.stop.set()
+        if self.thread:
+            self.thread.join(5)
+        gtt, vram, card = self.peak
+        print(f"  GPU memory peak during the take: GTT {gtt / GB:.2f} GB, VRAM {vram / GB:.2f} GB ({card})", flush=True)
+
+
 class Game:
     def __init__(self, env, log_path, exec_path):
         self.log_path, self.seen = log_path, []
@@ -172,7 +271,7 @@ def gone(seconds=20):
     return True
 
 
-def take(out, tag, stage, scene, env, cam_file, cam_arg):
+def take(guard, out, tag, stage, scene, env, cam_file, cam_arg):
     exec_path = os.path.join(out, "exec.lua")
 
     def send(text):
@@ -180,65 +279,77 @@ def take(out, tag, stage, scene, env, cam_file, cam_arg):
             f.write(text + f"-- {time.time()}\n")
         os.replace(exec_path + ".new", exec_path)  # the game never reads a half written file
     send("-- idle\n")
+    why = guard.before()
+    if why:
+        return why
     game = Game(env, os.path.join(out, tag + ".log"), exec_path)
+    guard.watch(game.proc)
     try:
-        if not game.wait(TITLE_S, lambda ls: any("opA_010 titleScreen" in l for l in ls)):
-            return "no title" if game.proc.poll() is None else "ended before title"
-        # the renderer that really runs: the new engine says so in its log, the normal renderer does not
-        new_engine = any(l.startswith("Renderer: engine-to-Vulkan backend") for l in game.seen)
-        if new_engine != (env["TLG_VKB"] == "1"):
-            return f"wrong renderer: TLG_VKB={env['TLG_VKB']} but the new engine {'ran' if new_engine else 'did not run'}"
-        game.wait(1)
-        send(WARP.replace("@STAGE@", stage).replace("@SCENE@", scene))
-        if not game.wait(20, lambda ls: any("Lua: shot retarget" in l or "Lua: shot warp error" in l for l in ls)):
-            return "no continue"
-        seen = next(i for i, l in enumerate(game.seen) if "Lua: shot retarget" in l or "shot warp error" in l)
-        if "error" in game.seen[seen]:
-            return game.seen[seen]
-
-        def loaded(ls):
-            new = ls[seen:]
-            i = next((j for j, l in enumerate(new) if "blocking overlay started" in l), None)
-            return i is not None and any("blocking overlay ended" in l for l in new[i:])
-        if not game.wait(LOAD_S, loaded):
-            return "no load" if game.proc.poll() is None else "ended during load"
-        game.wait(WAIT_S)
-        cam = cam_arg or (open(cam_file).read().split() if os.path.exists(cam_file) else None)
-        if not cam:
-            mark = len(game.lines())
-            send(CAM)
-            game.wait(5, lambda ls: any("Lua: shot cam" in l for l in ls[mark:]))
-            m = re.search(r"shot cam (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)", game.find("Lua: shot cam", mark))
-            if not m:
-                return "no camera position: " + game.find("Lua: shot cam", mark)
-            cam = list(m.groups())
-            with open(cam_file, "w") as f:
-                f.write(" ".join(cam) + "\n")
-            print(f"  camera taken from the game in this take: {' '.join(cam)}", flush=True)
-        lua = PHOTO
-        for k, v in zip(("PX", "PY", "PZ", "PITCH", "YAW"), cam):
-            lua = lua.replace(f"@{k}@", v)
-        mark = len(game.lines())
-        send(lua)
-        game.wait(5, lambda ls: any("Lua: shot photo" in l for l in ls[mark:]))
-        for text in ("Lua: shot trico hide", "Lua: shot photo"):
-            print("  " + (game.find(text, mark)[5:] or f"no '{text}' line"), flush=True)
-        if "photo on" not in game.find("Lua: shot photo", mark):
-            return "photo setup failed"
-        game.wait(SETTLE_S)
-        png = os.path.join(out, tag + ".png")
-        size = picture(png)
-        if size.startswith(("no", "import")):
-            return "picture failed: " + size
-        # a blank picture (black screen) can never be compared: the take fails and the picture is set aside
-        why = compare.blank(compare.rgb(png)[2])
-        if why:
-            os.replace(png, os.path.join(out, tag + ".blank.png"))
-            return f"picture failed: {why} (kept as {tag}.blank.png)"
-        faults = sum(1 for l in game.lines() if "Fault: exception" in l)
-        return f"ok {size}, faults {faults}"
+        status = steps(game, send, out, tag, stage, scene, env, cam_file, cam_arg)
     finally:
-        game.close()
+        try:
+            game.close()
+        finally:
+            guard.end()
+    return guard.fired or status
+
+
+def steps(game, send, out, tag, stage, scene, env, cam_file, cam_arg):
+    if not game.wait(TITLE_S, lambda ls: any("opA_010 titleScreen" in l for l in ls)):
+        return "no title" if game.proc.poll() is None else "ended before title"
+    # the renderer that really runs: the new engine says so in its log, the normal renderer does not
+    new_engine = any(l.startswith("Renderer: engine-to-Vulkan backend") for l in game.seen)
+    if new_engine != (env["TLG_VKB"] == "1"):
+        return f"wrong renderer: TLG_VKB={env['TLG_VKB']} but the new engine {'ran' if new_engine else 'did not run'}"
+    game.wait(1)
+    send(WARP.replace("@STAGE@", stage).replace("@SCENE@", scene))
+    if not game.wait(20, lambda ls: any("Lua: shot retarget" in l or "Lua: shot warp error" in l for l in ls)):
+        return "no continue"
+    seen = next(i for i, l in enumerate(game.seen) if "Lua: shot retarget" in l or "shot warp error" in l)
+    if "error" in game.seen[seen]:
+        return game.seen[seen]
+
+    def loaded(ls):
+        new = ls[seen:]
+        i = next((j for j, l in enumerate(new) if "blocking overlay started" in l), None)
+        return i is not None and any("blocking overlay ended" in l for l in new[i:])
+    if not game.wait(LOAD_S, loaded):
+        return "no load" if game.proc.poll() is None else "ended during load"
+    game.wait(WAIT_S)
+    cam = cam_arg or (open(cam_file).read().split() if os.path.exists(cam_file) else None)
+    if not cam:
+        mark = len(game.lines())
+        send(CAM)
+        game.wait(5, lambda ls: any("Lua: shot cam" in l for l in ls[mark:]))
+        m = re.search(r"shot cam (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)", game.find("Lua: shot cam", mark))
+        if not m:
+            return "no camera position: " + game.find("Lua: shot cam", mark)
+        cam = list(m.groups())
+        with open(cam_file, "w") as f:
+            f.write(" ".join(cam) + "\n")
+        print(f"  camera taken from the game in this take: {' '.join(cam)}", flush=True)
+    lua = PHOTO
+    for k, v in zip(("PX", "PY", "PZ", "PITCH", "YAW"), cam):
+        lua = lua.replace(f"@{k}@", v)
+    mark = len(game.lines())
+    send(lua)
+    game.wait(5, lambda ls: any("Lua: shot photo" in l for l in ls[mark:]))
+    for text in ("Lua: shot trico hide", "Lua: shot photo"):
+        print("  " + (game.find(text, mark)[5:] or f"no '{text}' line"), flush=True)
+    if "photo on" not in game.find("Lua: shot photo", mark):
+        return "photo setup failed"
+    game.wait(SETTLE_S)
+    png = os.path.join(out, tag + ".png")
+    size = picture(png)
+    if size.startswith(("no", "import")):
+        return "picture failed: " + size
+    # a blank picture (black screen) can never be compared: the take fails and the picture is set aside
+    why = compare.blank(compare.rgb(png)[2])
+    if why:
+        os.replace(png, os.path.join(out, tag + ".blank.png"))
+        return f"picture failed: {why} (kept as {tag}.blank.png)"
+    faults = sum(1 for l in game.lines() if "Fault: exception" in l)
+    return f"ok {size}, faults {faults}"
 
 
 def main():
@@ -263,6 +374,7 @@ def main():
     backup = os.path.join(root, "save_backup")
     if os.path.exists(backup):
         sys.exit(f"{backup} is left from a run that did not finish: put it back by hand, then delete it")
+    guard = MemoryGuard()
     screen = Screen()
     if os.path.exists(save):
         shutil.copytree(save, backup)
@@ -277,9 +389,12 @@ def main():
             shutil.rmtree(save, ignore_errors=True)
             shutil.copytree(START, save)
             t = time.monotonic()
-            status = take(out, tag, stage, scene, env, os.path.join(out, "camera.txt"), cam_arg)
+            status = take(guard, out, tag, stage, scene, env, os.path.join(out, "camera.txt"), cam_arg)
             print(f"{tag}: {status}  ({time.monotonic() - t:.0f} s)", flush=True)
             failed += not status.startswith("ok ")
+            if guard.fired:
+                print(f"remaining takes not started: {guard.fired}", flush=True)
+                break
     finally:
         screen.close()
         shutil.rmtree(save, ignore_errors=True)
