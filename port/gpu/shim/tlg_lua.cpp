@@ -129,6 +129,15 @@ local function Feathers(pct)
   end
   B.swd=pct~=100
 end
+-- Trico's coat: the x and y of furScale on his FurTypes (one per model part) set its length.
+-- At the default nothing runs once restored.
+local function Fur(pct)
+  if pct==100 and not B.fud or not Due('fua',pct) then return end
+  for _,n in ipairs(Each('ful','FurType','_fur')) do
+    Scale(FindObject(n),'fu|'..n,'furScale',pct,XY)
+  end
+  B.fud=pct~=100
+end
 -- Trico's drool (tlg.ini trico_drool): the game's own drool code (Ai2.Condor.Slaver,
 -- condorcommonslaver.lua) stops before it shows the drool ("we were asked to remove the drool for
 -- now"). While the setting is on, its step is ours: 1 = always thick, 2 = the developers' plan
@@ -729,13 +738,14 @@ std::string SetChunk() {
                   "Scale(pp,'fogd','fogParam',%d,XY)\n"
                   "Scale(pp,'lvca','lightVolumeChromaticAberration',%d,X)\n"
                   "Scale(cs,'shd','splitDistances',%d,ALL,nil,%s)\n"
-                  "Feathers(%d) Fov(%d) Grass(%s) BoyWind(%d) TreeWind(%d)\n",
+                  "Feathers(%d) Fur(%d) Fov(%d) Grass(%s) BoyWind(%d) TreeWind(%d)\n",
                   s.bloom.load(), s.bloom.load(), s.ssao.load(), s.ssao.load(), s.ssr.load(),
                   s.ssr.load(), s.motion_blur.load(), s.motion_blur.load(),
                   s.vignette.load() * 0.01, std::min(s.game_sharpen.load(), 100),
                   s.fog_distance.load(), s.haze_fringe.load(),
                   std::clamp(s.shadow_distance.load(), 10, 100),
-                  s.shadow_lite.load() ? "{-1}" : "nil", s.trico_feathers.load(), s.fov.load(),
+                  s.shadow_lite.load() ? "{-1}" : "nil", s.trico_feathers.load(),
+                  std::clamp(s.trico_fur.load(), 50, 250), s.fov.load(),
                   s.grass_smooth.load() ? "true" : "false", s.boy_wind.load(), s.tree_wind.load());
     code += line;
     code += "Drool(" + std::to_string(std::clamp(s.trico_drool.load(), 0, 2)) + ")\n";

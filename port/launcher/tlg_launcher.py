@@ -1422,7 +1422,7 @@ class Launcher:
         ttk.Label(box, text=drool.what, foreground=DIM, wraplength=420, justify='left').grid(
             row=1, column=0, sticky='w', pady=(6, 0))
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
-        for key in ('mod_treasures', 'mod_horns', 'mod_plays', 'mod_throw_up', 'mod_hints'):
+        for key in ('trico_fur', 'mod_treasures', 'mod_horns', 'mod_plays', 'mod_throw_up', 'mod_hints'):
             item = next(i for i in backports_table.MENU if i.key == key)
             mod = section(parent, item.name)
             mod.pack(fill='x', anchor='w', pady=(0, 8))
@@ -1431,7 +1431,24 @@ class Launcher:
                 tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {k: value})
                 self.ini_stamp = self.ini_files_stamp()
 
-            if item.choices:  # a list setting
+            if item.vtype == 'int':  # a slider (steps of 5)
+                try:
+                    start = min(max(int(ini.get(key, item.default)), item.lo), item.hi)
+                except ValueError:
+                    start = int(item.default)
+                shown = ttk.Label(mod, text=f'{start}{item.unit}', width=6)
+                shown.grid(row=0, column=1, sticky='w', padx=(6, 0))
+
+                def moved(raw, shown=shown, w=write, unit=item.unit, current={'value': start}):
+                    step = int(round(float(raw) / 5) * 5)
+                    shown.configure(text=f'{step}{unit}')
+                    if step != current['value']:
+                        current['value'] = step
+                        w(step)
+
+                ttk.Scale(mod, from_=item.lo, to=item.hi, value=start, length=240, command=moved).grid(
+                    row=0, column=0, sticky='w')
+            elif item.choices:  # a list setting
                 keys = [choice[0] for choice in item.choices]
                 pick = ttk.Combobox(mod, values=[choice[1] for choice in item.choices], state='readonly', width=28)
                 now = ini.get(key, item.default)

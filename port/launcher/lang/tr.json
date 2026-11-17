@@ -561,6 +561,10 @@
       "name": "Trico tüylerinde rüzgâr",
       "what": "Rüzgârın Trico'nun tüylerini ne kadar güçlü hareket ettirdiği. Varsayılan %100 çıktığı hâlidir; %0 onları sabit tutar."
     },
+    "menu:trico_fur": {
+      "name": "Trico kürk ve tüy yoğunluğu",
+      "what": "Trico'nun kürkünün ve tüylerinin ne kadar gür olduğu. Varsayılan %100 oyunun özgün hâlidir (önerilir); daha yüksek değer daha pofuduk bir Trico verir. Sadece eğlence için."
+    },
     "menu:fog_distance": {
       "name": "Sis mesafesi",
       "what": "Sisin nerede başladığı ve tam yoğunluğa ulaştığı. Varsayılan %100 çıktığı hâlidir; daha düşük değer sisi yaklaştırır."
@@ -901,6 +905,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "Rüzgârın ağaçları, yaprakları ve sarmaşıkları ne kadar güçlü hareket ettirdiği. Varsayılan %100 çıktığı hâlidir; %50 daha doğal görünür (önerilen), %0 onları sabit tutar.",
     "Trico feather wind": "Trico tüylerinde rüzgâr",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "Rüzgârın Trico'nun tüylerini ne kadar güçlü hareket ettirdiği. Varsayılan %100 çıktığı hâlidir; %0 onları sabit tutar.",
+    "Trico fur and feather density": "Trico kürk ve tüy yoğunluğu",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "Trico'nun kürkünün ve tüylerinin ne kadar gür olduğu. Varsayılan %100 oyunun özgün hâlidir (önerilir); daha yüksek değer daha pofuduk bir Trico verir. Sadece eğlence için.",
     "Textures": "Dokular",
     "Texture LOD bias (DLAA)": "Doku LOD sapması (DLAA)",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "DLAA altında daha keskin (0'ın altı) veya daha yumuşak (0'ın üstü) sahne dokuları; DLAA olmadan etkisi yoktur. -1.00, NVIDIA'nın yerel çözünürlük için önerisidir. Daha düşük değer ince ayrıntıyı ortaya çıkarır, çoğunlukla çimde (-3.00, +1.00'a göre %31 daha fazla ince ayrıntı verir), ama hareket halinde titreyebilir.",

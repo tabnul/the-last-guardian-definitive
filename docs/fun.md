@@ -17,6 +17,7 @@ Open the in-game menu with **Insert** (or **R3 + L2** on a controller) and go to
 - [Trico's drool](#tricos-drool), a feature cut just before release
 - [Outfits](#outfits)
 - [Trico's size](#tricos-size)
+- [Trico's coat](#tricos-coat), only in this port
 - [Extra Tricos](#extra-tricos)
 - [Trico's eyes](#tricos-eyes)
 - [Photo mode](#photo-mode), only in this port
@@ -97,6 +98,17 @@ brings back his normal size.
 ![A small Trico](screenshots/fun/small.jpg)
 ![The boy riding a small Trico](screenshots/fun/small2.jpg)
 ![A small Trico next to the big one](screenshots/fun/baby-trico.jpg)
+
+## Trico's coat
+
+Makes Trico's fur and feathers thicker or thinner: **Trico fur and feather density** in the
+port's menu (**Insert**), Fun tab, or on the launcher's Mods page. 100% is as the game shipped
+(default and recommended), up to 250% gives a very fluffy Trico, down to 50% a thin one. It
+changes while you play and is kept for the next start. Just for fun.
+
+![A very fluffy Trico on a cliff edge, with the subtitle: Oh. You can't fly? Are your wings broken?](screenshots/fun/fluffy.jpg)
+
+<sub>No, he is just too feathered to fly.</sub>
 
 ## Extra Tricos
 

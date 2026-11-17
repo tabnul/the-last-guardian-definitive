@@ -561,6 +561,10 @@
       "name": "트리코 깃털 바람",
       "what": "바람이 트리코의 깃털을 얼마나 강하게 움직이는지 정합니다. 기본값 100%는 출시 상태이며, 0%는 움직이지 않습니다."
     },
+    "menu:trico_fur": {
+      "name": "트리코 털과 깃털 밀도",
+      "what": "트리코의 털과 깃털이 얼마나 풍성한지 정합니다. 기본값 100%는 원본 그대로(권장)이며, 높이면 트리코가 더 복슬복슬해집니다. 재미용입니다."
+    },
     "menu:fog_distance": {
       "name": "안개 거리",
       "what": "안개가 시작되고 최대 농도에 이르는 거리입니다. 기본값 100%는 출시 상태이며, 낮추면 안개가 가까워집니다."
@@ -901,6 +905,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "바람이 나무, 잎, 담쟁이를 얼마나 강하게 움직이는지 정합니다. 기본값 100%는 출시 상태입니다. 50%가 더 자연스러우며(권장), 0%는 움직이지 않습니다.",
     "Trico feather wind": "트리코 깃털 바람",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "바람이 트리코의 깃털을 얼마나 강하게 움직이는지 정합니다. 기본값 100%는 출시 상태이며, 0%는 움직이지 않습니다.",
+    "Trico fur and feather density": "트리코 털과 깃털 밀도",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "트리코의 털과 깃털이 얼마나 풍성한지 정합니다. 기본값 100%는 원본 그대로(권장)이며, 높이면 트리코가 더 복슬복슬해집니다. 재미용입니다.",
     "Textures": "텍스처",
     "Texture LOD bias (DLAA)": "텍스처 LOD 바이어스(DLAA)",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "DLAA 사용 시 장면 텍스처를 더 선명하게(0 미만) 또는 더 부드럽게(0 초과) 합니다. DLAA 없이는 효과가 없습니다. -1.00은 네이티브 해상도에 대한 NVIDIA 권장값입니다. 낮출수록 주로 풀에서 미세한 디테일이 살아나지만(-3.00은 +1.00보다 미세 디테일이 31% 많음) 움직일 때 반짝일 수 있습니다.",

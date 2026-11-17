@@ -1624,6 +1624,13 @@ void FunTab() {
     ImGui::EndDisabled();
     Help(TR("Trico's eyes keep changing to random colours: the game's own hidden effect, normally only seen in a few story moments. Turning it off brings the normal colours back. A jump turns it off."));
 
+    ImGui::SeparatorText("Trico's coat");
+    if (BeginRows("##coat")) {
+        SliderRow(TR("Trico fur and feather density"), TlgSettings::Get().trico_fur, 50, 250, "%d%%",
+                  TR("How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun."), 100);
+        ImGui::EndTable();
+    }
+
     ImGui::SeparatorText("Trico's drool");
     if (BeginRows("##drool")) {
         static const char* const drool_labels[] = {"Off (as released)", "Always", "As the developers planned"};

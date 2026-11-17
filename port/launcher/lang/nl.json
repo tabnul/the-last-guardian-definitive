@@ -561,6 +561,10 @@
       "name": "Wind in Trico's veren",
       "what": "Hoe sterk de wind de veren van Trico beweegt. Standaard 100% is zoals uitgebracht; 0% houdt ze stil."
     },
+    "menu:trico_fur": {
+      "name": "Dichtheid van Trico's vacht en veren",
+      "what": "Hoe dik Trico's vacht van haar en veren is. Standaard 100% is zoals uitgebracht (aanbevolen); hoger geeft een pluizigere Trico. Gewoon voor de lol."
+    },
     "menu:fog_distance": {
       "name": "Mistafstand",
       "what": "Waar de mist begint en zijn volle sterkte bereikt. Standaard 100% is zoals uitgebracht; lager haalt de mist dichterbij."
@@ -901,6 +905,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "Hoe sterk de wind bomen, bladeren en klimop beweegt. Standaard 100% is zoals uitgebracht; 50% oogt natuurlijker (aanbevolen), 0% houdt ze stil.",
     "Trico feather wind": "Wind in Trico's veren",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "Hoe sterk de wind de veren van Trico beweegt. Standaard 100% is zoals uitgebracht; 0% houdt ze stil.",
+    "Trico fur and feather density": "Dichtheid van Trico's vacht en veren",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "Hoe dik Trico's vacht van haar en veren is. Standaard 100% is zoals uitgebracht (aanbevolen); hoger geeft een pluizigere Trico. Gewoon voor de lol.",
     "Textures": "Textures",
     "Texture LOD bias (DLAA)": "Texture-LOD-bias (DLAA)",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "Scherpere (onder 0) of zachtere (boven 0) scènetextures met DLAA; geen effect zonder DLAA. -1.00 is het advies van NVIDIA voor native resolutie. Lager haalt fijne details naar voren, vooral op gras (-3.00 heeft 31% meer fijne details dan +1.00), maar kan flikkeren in beweging.",

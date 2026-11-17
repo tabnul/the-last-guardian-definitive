@@ -554,6 +554,10 @@
       "name": "トリコの羽への風",
       "what": "風がトリコの羽を動かす強さです。デフォルトの100%は発売時のまま。0%で静止します。"
     },
+    "menu:trico_fur": {
+      "name": "トリコの毛と羽の密度",
+      "what": "トリコの毛と羽の厚み。標準の100%は製品版のまま(推奨)。高くするとトリコがふわふわになります。お遊び用です。"
+    },
     "menu:fog_distance": {
       "name": "霧の距離",
       "what": "霧が始まり、最大の濃さになる位置です。デフォルトの100%は発売時のまま。下げると霧が近づきます。"
@@ -890,6 +894,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "風が木、葉、ツタを動かす強さです。デフォルトの100%は発売時のまま。50%はより自然に見え（推奨）、0%では静止します。",
     "Trico feather wind": "トリコの羽への風",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "風がトリコの羽を動かす強さです。デフォルトの100%は発売時のまま。0%で静止します。",
+    "Trico fur and feather density": "トリコの毛と羽の密度",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "トリコの毛と羽の厚み。標準の100%は製品版のまま(推奨)。高くするとトリコがふわふわになります。お遊び用です。",
     "Textures": "テクスチャ",
     "Texture LOD bias (DLAA)": "テクスチャLODバイアス（DLAA）",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "DLAA使用時のシーンテクスチャを、よりシャープ（0未満）または柔らかく（0超）します。DLAAなしでは効果はありません。-1.00はネイティブ解像度でのNVIDIAの推奨値です。下げると主に草の細部が出ます（-3.00は+1.00より細部が31%多い）が、動きの中でちらつくことがあります。",

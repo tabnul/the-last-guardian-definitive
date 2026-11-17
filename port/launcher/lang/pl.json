@@ -561,6 +561,10 @@
       "name": "Wiatr piór Trico",
       "what": "Jak mocno wiatr porusza piórami Trico. Domyślne 100% = jak wydano; 0% je unieruchamia."
     },
+    "menu:trico_fur": {
+      "name": "Gęstość futra i piór Trico",
+      "what": "Jak gęste jest futro i upierzenie Trico. Domyślne 100% to wartość oryginalna (zalecana); wyższa daje bardziej puszystego Trico. Tylko dla zabawy."
+    },
     "menu:fog_distance": {
       "name": "Odległość mgły",
       "what": "Gdzie mgła się zaczyna i osiąga pełną siłę. Domyślne 100% = jak wydano; niżej przybliża mgłę."
@@ -901,6 +905,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "Jak mocno wiatr porusza drzewami, liśćmi i bluszczem. Domyślne 100% = jak wydano; 50% wygląda naturalniej (zalecane), 0% je unieruchamia.",
     "Trico feather wind": "Wiatr piór Trico",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "Jak mocno wiatr porusza piórami Trico. Domyślne 100% = jak wydano; 0% je unieruchamia.",
+    "Trico fur and feather density": "Gęstość futra i piór Trico",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "Jak gęste jest futro i upierzenie Trico. Domyślne 100% to wartość oryginalna (zalecana); wyższa daje bardziej puszystego Trico. Tylko dla zabawy.",
     "Textures": "Tekstury",
     "Texture LOD bias (DLAA)": "Przesunięcie LOD tekstur (DLAA)",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "Ostrzejsze (poniżej 0) lub miększe (powyżej 0) tekstury sceny przy DLAA; bez DLAA nie działa. -1.00 to zalecenie NVIDII dla natywnej rozdzielczości. Niżej wydobywa drobne detale, głównie na trawie (-3.00 ma o 31% więcej drobnych detali niż +1.00), ale może migotać w ruchu.",
