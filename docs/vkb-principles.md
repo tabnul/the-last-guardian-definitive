@@ -43,6 +43,9 @@ assumption.
 **7. Every change has a switch.**
 The old behaviour stays reachable until the new one is proven, preferably switchable while
 the game runs. Switches for proven changes are removed later, in a separate cleanup.
+Exception: a change that cannot be switched, because it only makes the code build or start
+and changes no behaviour where it already worked, gets no switch. The change says so in place
+of the switch name.
 
 **8. The normal renderer is not touched.**
 `port/gpu/shadps4` stays as it is. With the new engine off, the game behaves exactly as before.
