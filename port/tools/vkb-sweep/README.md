@@ -52,4 +52,4 @@ Keep `OUT` outside the repository: pictures of the game go only to the `shots` b
 Prints the mean absolute difference per channel (0..255), the share of pixels whose largest channel
 difference is above 8, 16 and 32, and the largest difference. With a third path it writes a difference
 picture (4x brighter). It refuses a blank picture (exit code 2), so a black screen is never compared.
-No thresholds are applied here: what counts as clean is the owner's call.
+No clean / not clean limits are applied here: those are the owner's call (issue 9). The blank limits (8 and 99.5%) only decide whether a picture can be compared at all.
