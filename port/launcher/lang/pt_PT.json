@@ -561,6 +561,10 @@
       "name": "Vento nas penas do Trico",
       "what": "Quanto o vento mexe as penas do Trico. Padrão 100% é o original; 0% as deixa paradas."
     },
+    "menu:trico_fur": {
+      "name": "Densidade do pelo e das penas do Trico",
+      "what": "Quão espessa é a pelagem e a plumagem do Trico. A predefinição 100% é a original (recomendado); mais alto dá um Trico mais fofo. Só por diversão."
+    },
     "menu:fog_distance": {
       "name": "Distância do nevoeiro",
       "what": "Onde o nevoeiro começa e chega à força total. Padrão 100% é o original; mais baixo traz o nevoeiro mais perto."
@@ -901,6 +905,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "Quanto o vento mexe árvores, folhas e hera. Padrão 100% é o original; 50% parece mais natural (recomendado), 0% as deixa paradas.",
     "Trico feather wind": "Vento nas penas do Trico",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "Quanto o vento mexe as penas do Trico. Padrão 100% é o original; 0% as deixa paradas.",
+    "Trico fur and feather density": "Densidade do pelo e das penas do Trico",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "Quão espessa é a pelagem e a plumagem do Trico. A predefinição 100% é a original (recomendado); mais alto dá um Trico mais fofo. Só por diversão.",
     "Textures": "Texturas",
     "Texture LOD bias (DLAA)": "LOD bias das texturas (DLAA)",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "Texturas da cena mais nítidas (abaixo de 0) ou mais suaves (acima de 0) com DLAA; sem efeito sem DLAA. -1,00 é o conselho da NVIDIA para resolução nativa. Mais baixo realça detalhes finos, sobretudo na relva (-3,00 tem 31% mais detalhe fino que +1,00), mas pode cintilar em movimento.",

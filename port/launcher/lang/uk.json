@@ -561,6 +561,10 @@
       "name": "Вітер пір'я Trico",
       "what": "Наскільки сильно вітер рухає пір'я Trico. Типові 100% — як випущено; 0% тримає його нерухомим."
     },
+    "menu:trico_fur": {
+      "name": "Густота шерсті й пір'я Тріко",
+      "what": "Наскільки густі шерсть і пір'я Тріко. Стандартні 100% — як в оригіналі (рекомендовано); вище значення робить Тріко пухнастішим. Просто для розваги."
+    },
     "menu:fog_distance": {
       "name": "Відстань туману",
       "what": "Де туман починається й досягає повної сили. Типові 100% — як випущено; нижче наближає туман."
@@ -901,6 +905,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "Наскільки сильно вітер рухає дерева, листя й плющ. Типові 100% — як випущено; 50% виглядає природніше (рекомендовано), 0% тримає їх нерухомими.",
     "Trico feather wind": "Вітер пір'я Trico",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "Наскільки сильно вітер рухає пір'я Trico. Типові 100% — як випущено; 0% тримає його нерухомим.",
+    "Trico fur and feather density": "Густота шерсті й пір'я Тріко",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "Наскільки густі шерсть і пір'я Тріко. Стандартні 100% — як в оригіналі (рекомендовано); вище значення робить Тріко пухнастішим. Просто для розваги.",
     "Textures": "Текстури",
     "Texture LOD bias (DLAA)": "Зміщення LOD текстур (DLAA)",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "Чіткіші (нижче 0) або м'якші (вище 0) текстури сцени з DLAA; без DLAA не діє. -1.00 — порада NVIDIA для рідної роздільності. Нижче виявляє дрібні деталі, переважно на траві (-3.00 має на 31% більше дрібних деталей, ніж +1.00), але може мерехтіти в русі.",

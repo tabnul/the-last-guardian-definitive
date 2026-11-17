@@ -554,6 +554,10 @@
       "name": "特里科羽毛风效",
       "what": "风吹动特里科羽毛的强度。默认 100% 即游戏原样；0% 则静止不动。"
     },
+    "menu:trico_fur": {
+      "name": "特里科毛发与羽毛密度",
+      "what": "特里科的毛发和羽毛有多浓密。默认 100% 为原版效果(推荐);调高会让特里科更蓬松。仅供娱乐。"
+    },
     "menu:fog_distance": {
       "name": "雾气距离",
       "what": "雾气开始出现以及达到最大浓度的位置。默认 100% 即游戏原样；更低会让雾气更近。"
@@ -890,6 +894,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "风吹动树木、树叶和藤蔓的强度。默认 100% 即游戏原样；50% 看起来更自然（推荐），0% 则静止不动。",
     "Trico feather wind": "特里科羽毛风效",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "风吹动特里科羽毛的强度。默认 100% 即游戏原样；0% 则静止不动。",
+    "Trico fur and feather density": "特里科毛发与羽毛密度",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "特里科的毛发和羽毛有多浓密。默认 100% 为原版效果(推荐);调高会让特里科更蓬松。仅供娱乐。",
     "Textures": "纹理",
     "Texture LOD bias (DLAA)": "纹理 LOD 偏移（DLAA）",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "在 DLAA 下让场景纹理更锐利（低于 0）或更柔和（高于 0）；不使用 DLAA 时无效。-1.00 是 NVIDIA 针对原生分辨率的建议值。更低的值可显现更多细节，主要体现在草地上（-3.00 比 +1.00 多 31% 的细节），但运动时可能闪烁。",

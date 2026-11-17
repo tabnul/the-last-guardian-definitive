@@ -554,6 +554,10 @@
       "name": "Wind in Tricos Federn",
       "what": "Wie stark der Wind Tricos Federn bewegt. Standard 100% ist wie ausgeliefert; 0% hält sie still."
     },
+    "menu:trico_fur": {
+      "name": "Tricos Fell- und Federdichte",
+      "what": "Wie dicht Tricos Fell und Gefieder ist. Standard 100% ist wie ausgeliefert (empfohlen); höher macht Trico flauschiger. Nur zum Spaß."
+    },
     "menu:fog_distance": {
       "name": "Nebeldistanz",
       "what": "Wo der Nebel beginnt und seine volle Stärke erreicht. Standard 100% ist wie ausgeliefert; niedriger holt den Nebel näher."
@@ -890,6 +894,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "Wie stark der Wind Bäume, Blätter und Efeu bewegt. Standard 100% ist wie ausgeliefert; 50% wirkt natürlicher (empfohlen), 0% hält sie still.",
     "Trico feather wind": "Wind in Tricos Federn",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "Wie stark der Wind Tricos Federn bewegt. Standard 100% ist wie ausgeliefert; 0% hält sie still.",
+    "Trico fur and feather density": "Tricos Fell- und Federdichte",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "Wie dicht Tricos Fell und Gefieder ist. Standard 100% ist wie ausgeliefert (empfohlen); höher macht Trico flauschiger. Nur zum Spaß.",
     "Textures": "Texturen",
     "Texture LOD bias (DLAA)": "Textur-LOD-Bias (DLAA)",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "Schärfere (unter 0) oder weichere (über 0) Szenentexturen unter DLAA; ohne DLAA keine Wirkung. -1.00 ist NVIDIAs Empfehlung für native Auflösung. Niedriger holt feine Details hervor, vor allem im Gras (-3.00 hat 31% mehr feine Details als +1.00), kann aber in Bewegung flimmern.",

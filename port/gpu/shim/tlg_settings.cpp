@@ -248,6 +248,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.credits_fps = i == 0 ? 0 : i == 60 ? 60 : 30;
     } else if (key == "slow_motion") {
         v.slow_motion = i == 1 ? 1 : 0;
+    } else if (key == "trico_fur") {
+        v.trico_fur = std::clamp(i, 50, 250);
     } else if (key == "trico_drool") {
         v.trico_drool = i == 1 || i == 2 ? i : 0;
     } else if (key == "button_icons") {
@@ -844,6 +846,7 @@ void Save() {
                  ComboText(v.photo_world).c_str(), ComboText(v.photo_sticks).c_str(),
                  int(v.photo_invert_y.load()));
     std::fprintf(file, "trico_drool=%d\n", v.trico_drool.load());
+    std::fprintf(file, "trico_fur=%d\n", v.trico_fur.load());
     std::fprintf(file, "button_icons=%d\n", v.button_icons.load());
     std::fprintf(file, "trico_favourites=%s\ntrico_bar_group=%d\n", v.trico_favourites.c_str(),
                  v.trico_bar_group.load());

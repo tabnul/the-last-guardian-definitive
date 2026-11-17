@@ -554,6 +554,10 @@
       "name": "Viento en las plumas de Trico",
       "what": "Con qué fuerza mueve el viento las plumas de Trico. El 100% predeterminado es como salió; 0% las deja quietas."
     },
+    "menu:trico_fur": {
+      "name": "Densidad de pelo y plumas de Trico",
+      "what": "Lo espeso que es el pelaje y el plumaje de Trico. El valor por defecto, 100%, es el original (recomendado); más alto da un Trico más esponjoso. Solo por diversión."
+    },
     "menu:fog_distance": {
       "name": "Distancia de la niebla",
       "what": "Dónde empieza la niebla y dónde alcanza su máxima intensidad. El 100% predeterminado es como salió; más bajo acerca la niebla."
@@ -890,6 +894,8 @@
     "How strongly the wind moves trees, leaves and ivy. Default 100% is as shipped; 50% looks more natural (recommended), 0% keeps them still.": "Con qué fuerza mueve el viento árboles, hojas y hiedra. El 100% predeterminado es como salió; 50% se ve más natural (recomendado), 0% los deja quietos.",
     "Trico feather wind": "Viento en las plumas de Trico",
     "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.": "Con qué fuerza mueve el viento las plumas de Trico. El 100% predeterminado es como salió; 0% las deja quietas.",
+    "Trico fur and feather density": "Densidad de pelo y plumas de Trico",
+    "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.": "Lo espeso que es el pelaje y el plumaje de Trico. El valor por defecto, 100%, es el original (recomendado); más alto da un Trico más esponjoso. Solo por diversión.",
     "Textures": "Texturas",
     "Texture LOD bias (DLAA)": "Sesgo de LOD de texturas (DLAA)",
     "Sharper (below 0) or softer (above 0) scene textures under DLAA; no effect without DLAA. -1.00 is NVIDIA's advice for native resolution. Lower brings out fine detail, mostly on grass (-3.00 has 31% more fine detail than +1.00), but can shimmer in motion.": "Texturas de la escena más nítidas (por debajo de 0) o más suaves (por encima de 0) con DLAA; sin efecto sin DLAA. -1.00 es lo que aconseja NVIDIA para resolución nativa. Más bajo saca el detalle fino, sobre todo en la hierba (-3.00 tiene un 31% más de detalle fino que +1.00), pero puede parpadear en movimiento.",
