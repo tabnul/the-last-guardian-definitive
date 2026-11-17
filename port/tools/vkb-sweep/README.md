@@ -37,6 +37,29 @@ is what the game presented, taken the same way for both renderers. Fixed setting
 `VKB` argument. Extra `NAME=VALUE` arguments go into the game's environment; no other `TLG_` setting of the
 calling shell reaches the game.
 
+## GPU memory guard
+
+Why: on 2026-11-17 a test run of the new engine filled the GPU memory (GTT 31.5 of 33.4 GB). A game thread
+then hung inside the AMD kernel driver, the process could not be killed, and the host had to be
+power-cycled (issue 11). Killing the game before the memory is full avoids that.
+
+- Before each take the script reads the GPU memory use (`/sys/class/drm/card*/device/mem_info_gtt_used`
+  and `mem_info_vram_used`) and prints it. While the game runs, a thread reads it every 0.5 s.
+- When GTT use of any card passes the limit, the whole process group of the game gets SIGKILL at once.
+  The take fails with `GPU memory guard: X GB used, limit Y GB (card, game killed)`, the remaining takes
+  of the run are not started, and a line starting with `MAJOR:` is written to the journal
+  (`SHOT_JOURNAL`, default `/home/runner/loop/journal.md`; printed instead when that file does not exist).
+- The limit is on the absolute use, not on the growth during the take. When the use is already above the
+  limit before the game starts, the take is not started.
+- After each take the peak GTT and VRAM use of that take is printed.
+- Switch: `SHOT_GTT_LIMIT_GB` (default `8`; 1 GB = 2^30 bytes). `0` switches the guard off. The normal
+  renderer's garden take peaks at about 4.4 GB; runs that need more (for example a new engine change
+  with a large GPU pool) raise the limit, they do not switch the guard off.
+- Without those sysfs files (another GPU maker, Windows) the script says once
+  `GPU memory guard: NOT ACTIVE` and runs without the guard.
+- It is part of this test tool only: nothing in the game or the engine changes, and it costs nothing when
+  the tool is not used.
+
 ## Output
 
 `OUT/STAGE__SCENE/` holds `vkbV_takeN.png`, the game log of each take (`vkbV_takeN.log`) and `camera.txt`.
