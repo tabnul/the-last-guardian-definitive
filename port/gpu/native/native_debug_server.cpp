@@ -846,7 +846,8 @@ void AppendStatsHistory(const nlohmann::json& snapshot) {
     }
     line["rare_events"] = rare_total;
     nlohmann::json invariants;
-    for (const auto& [name, value] : Core::Invariant::Report().items()) {
+    const nlohmann::json report = Core::Invariant::Report(); // kept alive: items() only refers to it (a temporary dies before the loop body)
+    for (const auto& [name, value] : report.items()) {
         invariants[name] = value["count"];
     }
     line["invariants"] = invariants;
