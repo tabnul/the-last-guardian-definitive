@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
 #include <boost/container/static_vector.hpp>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -226,7 +227,7 @@ bool Instance::CreateDevice() {
         return false;
     }
 
-    boost::container::static_vector<const char*, 48> enabled_extensions;
+    boost::container::static_vector<const char*, 64> enabled_extensions;
     const auto add_extension = [&](std::string_view extension) -> bool {
         const auto result =
             std::find_if(available_extensions.begin(), available_extensions.end(),
@@ -355,6 +356,16 @@ bool Instance::CreateDevice() {
     external_memory_host = add_extension(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
     const bool calibrated_timestamps = add_extension(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
     calibrated_timestamps_supported = calibrated_timestamps;
+    // RT prototype (TLG_VKB_RT=1): transform feedback captures the game's vertex positions, ray queries trace them
+    if (const char* e = std::getenv("TLG_VKB_RT"); e != nullptr && e[0] == '1') {
+        const bool xfb = add_extension(VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME);
+        const bool dho = add_extension(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+        const bool as = add_extension(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+        const bool rq = add_extension(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+        rt_supported = xfb && dho && as && rq;
+        LOG_WARNING(Render_Vulkan, "RT prototype: transform feedback {} acceleration structure {} ray query {} -> {}", xfb, as, rq,
+                    rt_supported ? "on" : "off");
+    }
 
     const auto family_properties = physical_device.getQueueFamilyProperties();
     if (family_properties.empty()) {
@@ -606,6 +617,15 @@ bool Instance::CreateDevice() {
     }
     if (!shader_clock) {
         device_chain.unlink<vk::PhysicalDeviceShaderClockFeaturesKHR>();
+    }
+    vk::PhysicalDeviceTransformFeedbackFeaturesEXT rt_xfb{.transformFeedback = true, .geometryStreams = false};
+    vk::PhysicalDeviceAccelerationStructureFeaturesKHR rt_as{.accelerationStructure = true};
+    vk::PhysicalDeviceRayQueryFeaturesKHR rt_rq{.rayQuery = true};
+    if (rt_supported) {
+        rt_rq.pNext = &rt_as;
+        rt_as.pNext = &rt_xfb;
+        rt_xfb.pNext = const_cast<void*>(device_chain.get().pNext);
+        device_chain.get().pNext = &rt_rq;
     }
 
     auto [device_result, dev] = physical_device.createDeviceUnique(device_chain.get());

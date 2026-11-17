@@ -402,6 +402,7 @@ struct PushData {
     u32 motion_param; ///< tlg: object motion parameter index (0: off)
     u32 scene_size; ///< reduced width | height << 16; zero means native pixel coordinates
     u32 row_base;   ///< tlg C9: first entry of this draw's row in the indexed data table
+    float tlg_test{}; ///< test: stone depth (0: off); read only by hand-patched pixel shaders
     static constexpr u32 RowBaseIndex = 7;
 
     void AddOffset(u32 binding, u32 offset) {

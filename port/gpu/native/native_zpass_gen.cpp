@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -4632,6 +4633,65 @@ bool HandleDecal(u64 render_device, u64 view, u64 a3, u64 a4, u64 desc, u32 flag
 
 bool SkinEnabled() {
     return SCfg().on;
+}
+
+void ViewDumpView(u64 view) {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_VIEWDUMP"); return e != nullptr && e[0] == '1'; }();
+    if (!on) {
+        return;
+    }
+    static u32 calls = 0;
+    const u32 c = calls++;
+    if (c % 120 != 0) {
+        return;
+    }
+    static u32 n = 0;
+    TLG_LOG(GEN, Error, "RT viewdump: gbuffer call {} view {:x} dump {}", c, view, n);
+    if (view == 0 || n >= 20) {
+        return;
+    }
+    char name[512];
+    const char* dir = std::getenv("TLG_VKB_VIEWDUMP_DIR");
+    std::snprintf(name, sizeof(name), "%s/gview_%03u.bin", dir != nullptr ? dir : ".", n++);
+    if (FILE* f = std::fopen(name, "wb")) {
+        static const std::array<u8, 0x400> zeros{};
+        const u64 cg = R<u64>(Global(GlobalContext));
+        const u64 h = cg != 0 ? R<u64>(cg + 0x108) : 0;
+        const u64 cam_obj = h != 0 ? R<u64>(h + 0x2c8) : 0;
+        const u64 cam = h != 0 && R<u64>(h + 0x2e0) != 0 ? R<u64>(R<u64>(h + 0x2e0) + 0x2c0) : 0;
+        std::fwrite(reinterpret_cast<const void*>(view), 0xa60, 1, f);
+        std::fwrite(cam_obj != 0 ? reinterpret_cast<const void*>(cam_obj) : zeros.data(), 0x400, 1, f);
+        std::fwrite(cam != 0 ? reinterpret_cast<const void*>(cam) : zeros.data(), 0x400, 1, f);
+        std::fclose(f);
+    }
+}
+
+void ViewDump(u64 scene) {
+    // RT prototype (TLG_VKB_VIEWDUMP=1): every 300 frames dump the frame's view slots + camera objects for offline matrix search
+    static const bool view_dump = [] { const char* e = std::getenv("TLG_VKB_VIEWDUMP"); return e != nullptr && e[0] == '1'; }();
+    if (view_dump) {
+        static u32 frame = 0;
+        if (frame == 0) { TLG_LOG(GEN, Error, "RT viewdump: first call, scene {:x}", scene); }
+        if (scene != 0 && (frame++ % 300) == 150) {
+            static u32 n = 0;
+            char name[512];
+            const char* dir = std::getenv("TLG_VKB_VIEWDUMP_DIR");
+            std::snprintf(name, sizeof(name), "%s/viewdump_%03u.bin", dir != nullptr ? dir : ".", n++);
+            if (FILE* f = std::fopen(name, "wb")) {
+                const u64 cg = R<u64>(Global(GlobalContext));
+                const u64 h = cg != 0 ? R<u64>(cg + 0x108) : 0;
+                const u64 cam_obj = h != 0 ? R<u64>(h + 0x2c8) : 0;
+                const u64 cam = h != 0 && R<u64>(h + 0x2e0) != 0 ? R<u64>(R<u64>(h + 0x2e0) + 0x2c0) : 0;
+                const u32 count = std::min<u32>(R<u32>(scene + 0x29dd0), 64);
+                std::fwrite(&count, 4, 1, f);
+                std::fwrite(reinterpret_cast<const void*>(scene + 0x5d0), 0xa60, count, f);
+                static const std::array<u8, 0x400> zeros{};
+                std::fwrite(cam_obj != 0 ? reinterpret_cast<const void*>(cam_obj) : zeros.data(), 0x400, 1, f);
+                std::fwrite(cam != 0 ? reinterpret_cast<const void*>(cam) : zeros.data(), 0x400, 1, f);
+                std::fclose(f);
+            }
+        }
+    }
 }
 
 bool HandleSkin(u64 system, u64 scene, u64 async_flag, u64 original_loop) {

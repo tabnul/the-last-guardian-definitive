@@ -1638,7 +1638,7 @@ std::vector<Stamps> FinishedStamps() {
         }
         static const bool dump = [] { const char* e = std::getenv("TLG_VKB_PASS_DUMP"); return e != nullptr && e[0] == '1'; }();
         static u64 dump_seen = 0;
-        static u32 dump_left = 6; // the submissions of about one frame, after 9,000 timed ones (gameplay)
+        static u32 dump_left = 24; // the submissions of about two frames, after 9,000 timed ones (gameplay)
         static FILE* dump_file = nullptr;
         if (dump && ++dump_seen > 9000 && dump_left != 0) {
             if (dump_file == nullptr) {

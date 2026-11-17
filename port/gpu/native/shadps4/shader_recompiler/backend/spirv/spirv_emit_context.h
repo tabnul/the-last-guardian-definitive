@@ -253,6 +253,7 @@ public:
     boost::container::small_vector<Id, 16> interfaces;
 
     Id output_position{};
+    bool rt_xfb{}; // RT prototype
     Id output_point_size{};
     Id output_layer{};
     Id output_viewport_index{};

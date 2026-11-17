@@ -1,0 +1,40 @@
+#version 460
+// RT prototype: the captured clip-space vertices (one slot per draw) become one packed triangle list in (x_clip, y_clip, w) space; the rest is NaN (inactive)
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) readonly buffer Xfb { vec4 xfb[]; };
+layout(std430, binding = 1) readonly buffer Counters { uint counter[]; };
+layout(std430, binding = 2) writeonly buffer Out { float outv[]; };
+layout(push_constant) uniform P { uint max_tris; uint slot_verts; uint draws; uint pad; } pc;
+shared uint prefix[257];
+void main() {
+    if (gl_LocalInvocationID.x == 0) {
+        uint sum = 0;
+        for (uint i = 0; i < pc.draws; ++i) {
+            prefix[i] = sum;
+            sum += min(counter[i] / 16u, pc.slot_verts) / 3u;
+        }
+        prefix[pc.draws] = sum;
+    }
+    barrier();
+    const uint total = prefix[pc.draws];
+    for (uint t = gl_GlobalInvocationID.x; t < pc.max_tris; t += gl_NumWorkGroups.x * 256u) {
+        vec3 p[3];
+        bool ok = t < total;
+        if (ok) {
+            uint lo = 0, hi = pc.draws;
+            while (hi - lo > 1u) { uint mid = (lo + hi) / 2u; if (prefix[mid] <= t) lo = mid; else hi = mid; }
+            const uint base = lo * pc.slot_verts + (t - prefix[lo]) * 3u;
+            for (int k = 0; k < 3; ++k) {
+                const vec4 c = xfb[base + k];
+                ok = ok && c.w > 0.001 && !any(isnan(c)) && !any(isinf(c));
+                p[k] = vec3(c.x, c.y, c.w);
+            }
+        }
+        for (int k = 0; k < 3; ++k) {
+            const vec3 v = ok ? p[k] : vec3(uintBitsToFloat(0x7fc00000u));
+            outv[(t * 3u + k) * 3u + 0u] = v.x;
+            outv[(t * 3u + k) * 3u + 1u] = v.y;
+            outv[(t * 3u + k) * 3u + 2u] = v.z;
+        }
+    }
+}

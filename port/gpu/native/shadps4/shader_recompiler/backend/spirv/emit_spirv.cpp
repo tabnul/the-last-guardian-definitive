@@ -402,6 +402,10 @@ void DefineEntryPoint(const Info& info, const RuntimeInfo& runtime_info, EmitCon
     }
     case SwStage::Vertex:
         execution_model = spv::ExecutionModel::Vertex;
+        if (ctx.rt_xfb) { // RT prototype: capture gl_Position with transform feedback
+            ctx.AddCapability(spv::Capability::TransformFeedback);
+            ctx.AddExecutionMode(main, spv::ExecutionMode::Xfb);
+        }
         break;
     case SwStage::TessellationControl:
         execution_model = spv::ExecutionModel::TessellationControl;

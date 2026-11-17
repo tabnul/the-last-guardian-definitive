@@ -17,8 +17,11 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <map>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
+#include <vk_mem_alloc.h>
 #include <boost/container/small_vector.hpp>
 #include <nlohmann/json.hpp>
 
@@ -548,6 +551,26 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
         }
         spv = VkbShader::Backend::SPIRV::EmitSPIRV(profile, out.runtime, program, binding);
     }
+    // test: TLG_VKB_PS_DIR=<folder>: every pixel shader is written there as <hash>.spv; a file <hash>.new.spv in that folder takes the shader's place
+    if (sw == VkbShader::SwStage::Fragment) {
+        static const char* dir = std::getenv("TLG_VKB_PS_DIR");
+        if (dir != nullptr) {
+            const std::string base = fmt::format("{}/{:08x}", dir, static_cast<u32>(out.info->pgm_hash));
+            if (std::FILE* f = std::fopen((base + ".new.spv").c_str(), "rb")) {
+                std::vector<u32> repl(1u << 18);
+                const size_t n = std::fread(repl.data(), 4, repl.size(), f);
+                std::fclose(f);
+                if (n > 5) {
+                    repl.resize(n);
+                    spv = std::move(repl);
+                    LOG_ERROR(Render_Vulkan, "vkb ps {:#x}: replaced from the test folder ({} words)", out.info->pgm_hash, n);
+                }
+            } else if (std::FILE* f = std::fopen((base + ".spv").c_str(), "wb")) {
+                std::fwrite(spv.data(), 4, spv.size(), f);
+                std::fclose(f);
+            }
+        }
+    }
     out.module = VkbVulkan::CompileSPV(spv, instance->GetDevice());
     // the slot map: the same layout with a tag per slot, flattened by the shader's own table walker
     Core::NativeDraw::UserLayout tagged;
@@ -904,6 +927,8 @@ struct DrawJob final : Stream::Job {
     }
     std::vector<std::pair<u64, std::string>> dump_views;
     bool dump_buffers{};
+    float rt_sun[3]{};
+    bool rt_sun_set{};
     boost::container::small_vector<Stream::Use, 64> uses;
     boost::container::small_vector<Stream::Use, 9> attachment_uses;
     Stream::Pass pass{};
@@ -930,8 +955,10 @@ struct DrawJob final : Stream::Job {
     u64 args_offset{};
     u32 kind{};
     u64 a1{}, a2{}, a3{};
+    u64 guest_key{}; ///< RT: the guest index address + counts (the same object in the sun view and the camera view)
     u32 instances{};
     u64 ps_hash{};
+    bool ps_discard{}; ///< the pixel shader cuts pixels out (leaves, grass): solid in a ray trace, so left out of it
     u32 color_format0{};
     void Run(vk::CommandBuffer cmd) override;
     static void* operator new(size_t) {
@@ -1354,6 +1381,7 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
             return;
         }
         pass.depth = a.view;
+        pass.depth_image = a.image, pass.depth_format = Core::Vkb::ViewFormat(Rd<u64>(dsv, 0x10));
         attachment_uses.push_back(Stream::ImageUse(a.image, true));
         pass.depth_has_stencil = a.has_stencil && v.key.stencil_format != Core::NativeTarget::DepthTarget::StencilFormat::Invalid;
         width = std::min(width, a.extent.width), height = std::min(height, a.extent.height), layers = std::min(layers, a.layers);
@@ -1447,6 +1475,7 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         const u32 type = Rd<u32>(ctx, 0x64);
         const u64 address = view != 0 ? (static_cast<u64>(Rd<u32>(view, 0x64) & 0xff) << 32 | (Rd<u32>(view, 0x60) & 0xfffffffeu)) : 0;
         index_type = type == 1 ? vk::IndexType::eUint32 : vk::IndexType::eUint16;
+        job->guest_key = address * 0x9E3779B97F4A7C15ull ^ (a1 << 40) ^ (a2 << 20) ^ a3 ^ (static_cast<u64>(kind) << 62);
         const u64 index_bytes = type == 1 ? 4 : 2;
         // an indirect draw's index count is in its arguments: the whole index range of the view (its max index size, as the console's VGT_INDX_MAX_SIZE)
         const u64 index_range = kind == 0 ? (a2 + a1) * index_bytes : static_cast<u64>(view != 0 ? Rd<u32>(view, 0x68) : 0) * index_bytes;
@@ -1647,7 +1676,38 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     job->masks = v.key.write_masks;
     job->kind = kind, job->a1 = a1, job->a2 = a2, job->a3 = a3;
     job->ps_hash = v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0ull;
+    job->ps_discard = v.has_ps && v.ps.info && v.ps.info->has_discard;
     job->color_format0 = static_cast<u32>(v.color_formats[0]);
+    // RT sun shadow: the game's sun shadow step carries the camera matrix and the shadow matrices; the sun's direction comes out of them
+    if (job->ps_hash == 0x85df4ad2ull) {
+        const float* vm = nullptr;
+        const float* cm = nullptr;
+        for (const auto& [address, size] : b.guest) {
+            if (address != 0 && size == 688) {
+                vm = reinterpret_cast<const float*>(address + 80);
+            } else if (address != 0 && size == 848) {
+                cm = reinterpret_cast<const float*>(address);
+            }
+        }
+        static u32 said = 0;
+        if (vm && cm) {
+            float sw[3]{cm[4] * cm[9] - cm[8] * cm[5], cm[8] * cm[1] - cm[0] * cm[9], cm[0] * cm[5] - cm[4] * cm[1]};
+            const float len = std::sqrt(sw[0] * sw[0] + sw[1] * sw[1] + sw[2] * sw[2]);
+            const float sg = (sw[1] < 0.0f ? -1.0f : 1.0f) / std::max(len, 1e-20f);
+            for (float& c : sw) {
+                c *= sg;
+            }
+            job->rt_sun[0] = sw[0] * vm[0] + sw[1] * vm[4] + sw[2] * vm[8];
+            job->rt_sun[1] = sw[0] * vm[1] + sw[1] * vm[5] + sw[2] * vm[9];
+            job->rt_sun[2] = -(sw[0] * vm[2] + sw[1] * vm[6] + sw[2] * vm[10]);
+            job->rt_sun_set = true;
+            if (said++ % 600 == 0) {
+                LOG_ERROR(Render_Vulkan, "RT sun: world {:.3f} {:.3f} {:.3f}, view {:.3f} {:.3f} {:.3f}", sw[0], sw[1], sw[2], job->rt_sun[0], job->rt_sun[1], job->rt_sun[2]);
+            }
+        } else if (said++ % 600 == 0) {
+            LOG_ERROR(Render_Vulkan, "RT sun: the shadow step's buffers were not found ({} buffers)", b.guest.size());
+        }
+    }
     job->work = Stream::Work::Draw;
     Stream::Enqueue(std::move(job));
     phase(3);
@@ -1746,6 +1806,7 @@ bool DrawJob::ResolveLate() {
             }
             if (t.cb == 0xff) {
                 pass.depth = a.view;
+                pass.depth_image = a.image, pass.depth_format = Core::Vkb::ViewFormat(t.view_id);
                 pass.depth_has_stencil = a.has_stencil && want_stencil;
             } else {
                 pass.colors[t.cb] = a.view;
@@ -1771,6 +1832,915 @@ bool DrawJob::ResolveLate() {
     return true;
 }
 
+// RT prototype (TLG_VKB_RT=1): main-view vertex positions (clip space) of every draw are captured with transform feedback into one buffer per frame
+namespace RtCapture {
+} // namespace RtCapture
+bool RtNoWriteToo() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RT_ALLDEPTH"); return e == nullptr || e[0] != '0'; }();
+    return on;
+}
+void RtBuildHook(vk::CommandBuffer cmd);
+namespace RtCapture {
+bool On() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RT"); return e != nullptr && e[0] == '1' && instance != nullptr && instance->IsRtSupported(); }();
+    return on;
+}
+constexpr u64 kXfbBytes = 256ull << 20; ///< 16M vertices (vec4)
+constexpr u32 kSlots = 8;
+constexpr u32 kDraws = 256; ///< per-draw slots of the capture buffer
+constexpr u64 kSlotBytes = kXfbBytes / kDraws;
+std::atomic<u32> slot_next{0};
+VkBuffer xfb{}, counter{}, readback{};
+VmaAllocation xfb_a{}, counter_a{}, readback_a{};
+const u32* readback_ptr = nullptr;
+VkBuffer sample{};
+VmaAllocation sample_a{};
+const float* sample_ptr = nullptr;
+constexpr u32 kSampleSlots = 256, kSampleVerts = 16;
+constexpr u32 kShadowDraws = 2048; ///< sun-view (shadow map) draws sampled per frame, 16 vertices each
+u64 main_keys[8][256]{};
+u64 slot_keys[256]{}; ///< this frame's draw keys per capture slot, snapshot with the sample copy
+u64 shadow_keys[8][kShadowDraws]{};
+struct SunInfo {
+    u64 view;
+    float vp[4];
+    u32 indices, inst, kind, prim;
+    bool discard;
+};
+SunInfo shadow_info[kShadowDraws]{}; ///< diagnosis: what each sampled sun-view draw was
+double shadow_fit[kShadowDraws][12]{};
+bool shadow_fit_ok[kShadowDraws]{};
+std::atomic<u32> shadow_next{0};
+std::atomic<u64> shadow_frame{~0ull};
+VkBuffer shadow_xfb{};
+VmaAllocation shadow_xfb_a{};
+const float* shadow_ptr = nullptr;
+constexpr u32 kMainDraws = 2048; ///< camera draws beyond the capture slots, 16 vertices each, written straight to host memory (same frame index as the sun view)
+u64 cam_keys[8][kMainDraws]{};
+std::atomic<u32> cam_next{0};
+std::atomic<u64> cam_frame{~0ull};
+VkBuffer cam_xfb{};
+VmaAllocation cam_xfb_a{};
+const float* cam_ptr = nullptr;
+// v2: the geometry of the far sun view (the game's own shadow pass) is the ray-trace scene, captured whole into xfb each frame; objects the camera draws too
+// give vertex pairs for the camera -> sun view map of the same frame
+constexpr u32 kSunVerts = 12u << 20; ///< 201 MB of the capture buffer
+constexpr u32 kCutBase = 8u << 20;   ///< from this vertex on: the cut-out draws (leaves, grass), a geometry of their own in the ray scene
+u32 cut_cursor = 0;                  ///< vertices of cut-out draws captured since the last trace
+constexpr u32 kPairs = 256;
+std::mutex sun_mutex;
+std::atomic<u64> sun_view{0}; ///< the depth view of the chosen sun pass (0: not chosen yet)
+u32 sun_cursor = 0;           ///< vertices captured since the last trace
+std::unordered_map<u64, u32> sun_at; ///< draw key -> its first vertex (~0u: drawn more than once, or already paired)
+u32 pair_next = 0, pair_ring = 0;
+VkBuffer pair_xfb{}, pair_tab{}, fit_out{}, fit_read{};
+VmaAllocation pair_xfb_a{}, pair_tab_a{}, fit_out_a{}, fit_read_a{};
+u32* pair_tab_ptr = nullptr;
+const float* fit_read_ptr = nullptr;
+std::atomic<u32> last_tris{0}, last_pairs{0}, last_ring{0}, empty_frames{0}, c_empty{0}, c_built{0};
+bool ready = false, failed = false;
+u64 recorded_frame = ~0ull;
+std::atomic<u64> claimed{~0ull};
+u64 draws_frame = 0;
+std::atomic<u64> draws_last{0}, c_all{0}, c_dw{0}, c_cap{0};
+bool Make(VkDeviceSize size, VkBufferUsageFlags usage, bool host, VkBuffer& b, VmaAllocation& a, void** mapped) {
+    const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = size, .usage = usage, .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+    VmaAllocationCreateInfo alloc{};
+    alloc.usage = host ? VMA_MEMORY_USAGE_AUTO_PREFER_HOST : VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    if (host) {
+        alloc.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    }
+    VmaAllocationInfo info{};
+    if (vmaCreateBuffer(instance->GetAllocator(), &ci, &alloc, &b, &a, &info) != VK_SUCCESS) {
+        return false;
+    }
+    if (mapped != nullptr) {
+        *mapped = info.pMappedData;
+    }
+    return true;
+}
+bool Ready() {
+    if (ready || failed) {
+        return ready;
+    }
+    void* m = nullptr;
+    const VkBufferUsageFlags xfb_usage = VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                                         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    if (!Make(kXfbBytes, xfb_usage, false, xfb, xfb_a, nullptr) ||
+        !Make(kDraws * 4, VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_COUNTER_BUFFER_BIT_EXT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+              false, counter, counter_a, nullptr) ||
+        !Make(kSlots * kDraws * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, readback, readback_a, &m) || m == nullptr) {
+        failed = true;
+        LOG_ERROR(Render_Vulkan, "RT prototype: capture buffers failed");
+        return false;
+    }
+    readback_ptr = static_cast<const u32*>(m);
+    void* sm = nullptr;
+    if (!Make(kSlots * kSampleSlots * kSampleVerts * 16, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, sample, sample_a, &sm) || sm == nullptr) {
+        failed = true;
+        return false;
+    }
+    std::memset(sm, 0, kSlots * kSampleSlots * kSampleVerts * 16);
+    sample_ptr = static_cast<const float*>(sm);
+    void* shm = nullptr;
+    if (!Make(8 * kShadowDraws * kSampleVerts * 16, VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT, true, shadow_xfb, shadow_xfb_a, &shm) || shm == nullptr) {
+        failed = true;
+        return false;
+    }
+    std::memset(shm, 0, 8 * kShadowDraws * kSampleVerts * 16);
+    shadow_ptr = static_cast<const float*>(shm);
+    void* cm = nullptr;
+    if (!Make(8 * kMainDraws * kSampleVerts * 16, VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT, true, cam_xfb, cam_xfb_a, &cm) || cm == nullptr) {
+        failed = true;
+        return false;
+    }
+    std::memset(cm, 0, 8 * kMainDraws * kSampleVerts * 16);
+    cam_ptr = static_cast<const float*>(cm);
+    void* tm = nullptr;
+    void* fm = nullptr;
+    if (!Make(kPairs * 256, VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false, pair_xfb, pair_xfb_a, nullptr) ||
+        !Make(8 * kPairs * 8, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, pair_tab, pair_tab_a, &tm) || tm == nullptr ||
+        !Make(64, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false, fit_out, fit_out_a, nullptr) ||
+        !Make(8 * 64, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, fit_read, fit_read_a, &fm) || fm == nullptr) {
+        failed = true;
+        return false;
+    }
+    std::memset(tm, 0, 8 * kPairs * 8);
+    std::memset(fm, 0, 8 * 64);
+    pair_tab_ptr = static_cast<u32*>(tm);
+    fit_read_ptr = static_cast<const float*>(fm);
+    std::memset(m, 0, kSlots * kDraws * 4);
+    ready = true;
+    LOG_ERROR(Render_Vulkan, "RT prototype: capture buffers made ({} MB)", kXfbBytes >> 20);
+    return true;
+}
+void MemBarrier(vk::CommandBuffer cmd) {
+    const vk::MemoryBarrier2 mb{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands, .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead,
+                                .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands, .dstAccessMask = vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead};
+    cmd.pipelineBarrier2(vk::DependencyInfo{.memoryBarrierCount = 1, .pMemoryBarriers = &mb});
+}
+/// Called outside a pass (before UsePass): at the first captured draw of a new frame, the old count goes to the host and the counter starts at zero
+void FrameStart(vk::CommandBuffer cmd, u64 frame) {
+    if (frame == recorded_frame) {
+        return;
+    }
+    if (recorded_frame != ~0ull) {
+        draws_last.store(draws_frame, std::memory_order_relaxed);
+        MemBarrier(cmd);
+        const vk::BufferCopy copy{0, (recorded_frame % kSlots) * kDraws * 4, kDraws * 4};
+        cmd.copyBuffer(counter, readback, copy);
+        static std::array<vk::BufferCopy, kSampleSlots> sc;
+        for (u32 i = 0; i < kSampleSlots; ++i) {
+            sc[i] = vk::BufferCopy{i * kSlotBytes, ((recorded_frame % kSlots) * kSampleSlots + i) * kSampleVerts * 16, kSampleVerts * 16};
+        }
+        std::memcpy(main_keys[recorded_frame % kSlots], slot_keys, sizeof(slot_keys));
+        std::memset(slot_keys, 0, sizeof(slot_keys));
+    }
+    MemBarrier(cmd);
+    cmd.fillBuffer(counter, 0, kDraws * 4, 0);
+    slot_next.store(0, std::memory_order_relaxed);
+    MemBarrier(cmd);
+    recorded_frame = frame;
+    draws_frame = 0;
+}
+u32 main_w = 0, main_h = 0;
+std::unordered_map<u64, u64> census;
+u64 census_draws = 0;
+bool census_done = false;
+/// once: the depth-writing draws of ~2000 draws by pass size and color count
+void Census(u32 w, u32 h, u32 colors) {
+    if (census_done) {
+        return;
+    }
+    ++census[(static_cast<u64>(w) << 32) | (static_cast<u64>(h) << 8) | colors];
+    if (++census_draws == 200000) {
+        census_done = true;
+        for (const auto& [k, n] : census) {
+            LOG_ERROR(Render_Vulkan, "RT census: pass {}x{} colors {}: {} depth-writing draws", k >> 32, (k >> 8) & 0xffffff, k & 0xff, n);
+        }
+    }
+}
+u32 BytesOfFrame(u64 frame) {
+    u32 sum = 0;
+    for (u32 i = 0; readback_ptr != nullptr && i < kDraws; ++i) {
+        sum += readback_ptr[(frame % kSlots) * kDraws + i];
+    }
+    return sum;
+}
+} // namespace RtCapture
+std::atomic<u64> rt_present_frame{0};
+// RT prototype, part 2: pack the captured triangles, build the acceleration structures, trace one shadow ray per pixel toward the sun
+namespace RtTrace {
+static const u32 kPackSpv[] =
+#include "rt_shaders/rt_fit.comp.inc"
+;
+static const u32 kFullSpv[] =
+#include "rt_shaders/rt_full.vert.inc"
+;
+static const u32 kShadowSpv[] =
+#include "rt_shaders/rt_gi.frag.inc"
+;
+extern "C" __declspec(dllimport) short __stdcall GetAsyncKeyState(int);
+static const u32 kBeamSpv[] =
+#include "rt_shaders/rt_beam.frag.inc"
+    ;
+static const u32 kSunSpv[] =
+#include "rt_shaders/rt_sun.frag.inc"
+    ;
+static const u32 kBlurSpv[] =
+#include "rt_shaders/rt_blur.frag.inc"
+;
+constexpr u32 kMaxTris = RtCapture::kSunVerts / 3;
+bool ready = false, failed = false, built = false;
+VkBuffer verts{}, blas_buf{}, tlas_buf{}, scratch{}, inst{};
+VmaAllocation verts_a{}, blas_a{}, tlas_a{}, scratch_a{}, inst_a{};
+vk::AccelerationStructureKHR blas{}, tlas{};
+vk::DeviceAddress verts_addr{}, scratch_addr{}, inst_addr{};
+vk::DeviceSize blas_scratch{}, tlas_scratch{};
+vk::DescriptorSetLayout pack_dsl{}, shadow_dsl{};
+vk::PipelineLayout pack_layout{}, shadow_layout{};
+vk::Pipeline pack_pipe{}, shadow_pipe{}, raw_pipe{};
+VkImage ao_image{};
+VmaAllocation ao_alloc{};
+vk::ImageView ao_view{};
+u32 ao_w = 0, ao_h = 0;
+vk::Format shadow_format{};
+vk::Sampler sampler{};
+std::atomic<u64> traced{~0ull};
+std::atomic<u64> c_traces{0};
+// the main pass of the frame (from a captured draw)
+vk::ImageView main_colors[8]{};
+vk::Format main_formats[8]{};
+vk::ImageView main_depth{};
+bool main_stencil = false;
+float fit_a = 1.0f, fit_b = 0.0f;
+bool fit_ok = false;
+std::atomic<bool> strips_on{false}; // off at the start: the first run with strips froze in the driver while a scene loaded
+std::atomic<u32> c_strip{0};
+std::atomic<u32> c_skip_ind{0}, c_skip_prim{0}, c_skip_nowrite{0}; ///< main pass draws that did not go into the ray scene, by reason
+u32 cut_tris = 0;                 ///< cut-out triangles for the next Build
+bool skip_as = false;             ///< Build: the ray scene of this frame is already there, only the bookkeeping
+bool sun_built = false, sun_seen = false;
+float beam_sun[3]{};
+void NoteSun(const float* s) {
+    beam_sun[0] = s[0], beam_sun[1] = s[1], beam_sun[2] = s[2];
+    sun_seen = true;
+}
+float sun_dir[3]{0.3f, 1.0f, -0.3f};
+double sun_rms[3]{};
+double sun_rows[6]{};
+bool sun_ok = false;
+
+vk::DeviceAddress Addr(VkBuffer b) {
+    return instance->GetDevice().getBufferAddress(vk::BufferDeviceAddressInfo{.buffer = b});
+}
+std::array<float, 4> EnvVec(const char* name, std::array<float, 4> def) {
+    if (const char* e = std::getenv(name)) {
+        std::sscanf(e, "%f,%f,%f,%f", &def[0], &def[1], &def[2], &def[3]);
+    }
+    return def;
+}
+vk::ShaderModule Module(const u32* code, size_t bytes) {
+    return instance->GetDevice().createShaderModule(vk::ShaderModuleCreateInfo{.codeSize = bytes, .pCode = code}).value;
+}
+bool Init() {
+    if (ready || failed) {
+        return ready;
+    }
+    failed = true;
+    const vk::Device dev = instance->GetDevice();
+    const VkBufferUsageFlags build_in = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+    verts_addr = Addr(RtCapture::xfb); // the capture buffer itself: vec4 per vertex, xyz used
+    // sizes
+    const vk::AccelerationStructureGeometryKHR geo{.geometryType = vk::GeometryTypeKHR::eTriangles,
+                                                   .geometry = {.triangles = vk::AccelerationStructureGeometryTrianglesDataKHR{
+                                                                    .vertexFormat = vk::Format::eR32G32B32Sfloat, .vertexData = {.deviceAddress = verts_addr}, .vertexStride = 16,
+                                                                    .maxVertex = kMaxTris * 3 - 1, .indexType = vk::IndexType::eNoneKHR}},
+                                                   .flags = vk::GeometryFlagBitsKHR::eOpaque};
+    vk::AccelerationStructureGeometryKHR geo_cut = geo; // the cut-out draws: not opaque, the shader decides per hit
+    geo_cut.geometry.triangles.vertexData.deviceAddress = verts_addr + u64{RtCapture::kCutBase} * 16;
+    geo_cut.flags = {};
+    const std::array<vk::AccelerationStructureGeometryKHR, 2> geos{geo, geo_cut};
+    vk::AccelerationStructureBuildGeometryInfoKHR bi{.type = vk::AccelerationStructureTypeKHR::eBottomLevel, .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild,
+                                                    .mode = vk::BuildAccelerationStructureModeKHR::eBuild, .geometryCount = 2, .pGeometries = geos.data()};
+    const std::array<u32, 2> max_prims{RtCapture::kCutBase / 3, (RtCapture::kSunVerts - RtCapture::kCutBase) / 3};
+    const auto bs = dev.getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eDevice, bi, max_prims);
+    const VkBufferUsageFlags as_usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    if (!RtCapture::Make(bs.accelerationStructureSize, as_usage, false, blas_buf, blas_a, nullptr)) {
+        return false;
+    }
+    blas = dev.createAccelerationStructureKHR(vk::AccelerationStructureCreateInfoKHR{.buffer = blas_buf, .size = bs.accelerationStructureSize, .type = vk::AccelerationStructureTypeKHR::eBottomLevel}).value;
+    blas_scratch = bs.buildScratchSize;
+    // the instance (identity, host written once)
+    void* m = nullptr;
+    if (!RtCapture::Make(sizeof(VkAccelerationStructureInstanceKHR), build_in, true, inst, inst_a, &m) || m == nullptr) {
+        return false;
+    }
+    VkAccelerationStructureInstanceKHR in{};
+    in.transform.matrix[0][0] = in.transform.matrix[1][1] = in.transform.matrix[2][2] = 1.0f;
+    in.mask = 0xff;
+    in.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR | VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
+    in.accelerationStructureReference = dev.getAccelerationStructureAddressKHR(vk::AccelerationStructureDeviceAddressInfoKHR{.accelerationStructure = blas});
+    std::memcpy(m, &in, sizeof(in));
+    inst_addr = Addr(inst);
+    const vk::AccelerationStructureGeometryKHR tgeo{.geometryType = vk::GeometryTypeKHR::eInstances,
+                                                    .geometry = {.instances = vk::AccelerationStructureGeometryInstancesDataKHR{.data = {.deviceAddress = inst_addr}}}};
+    vk::AccelerationStructureBuildGeometryInfoKHR ti{.type = vk::AccelerationStructureTypeKHR::eTopLevel, .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace,
+                                                    .mode = vk::BuildAccelerationStructureModeKHR::eBuild, .geometryCount = 1, .pGeometries = &tgeo};
+    const u32 one = 1;
+    const auto ts = dev.getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eDevice, ti, one);
+    if (!RtCapture::Make(ts.accelerationStructureSize, as_usage, false, tlas_buf, tlas_a, nullptr)) {
+        return false;
+    }
+    tlas = dev.createAccelerationStructureKHR(vk::AccelerationStructureCreateInfoKHR{.buffer = tlas_buf, .size = ts.accelerationStructureSize, .type = vk::AccelerationStructureTypeKHR::eTopLevel}).value;
+    tlas_scratch = ts.buildScratchSize;
+    const u64 align = 256;
+    if (!RtCapture::Make(blas_scratch + tlas_scratch + 2 * align, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, false, scratch, scratch_a, nullptr)) {
+        return false;
+    }
+    scratch_addr = (Addr(scratch) + align - 1) & ~(align - 1);
+    // fit pipeline (camera -> sun view map)
+    const std::array<vk::DescriptorSetLayoutBinding, 4> pb{{{0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+                                                            {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+                                                            {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+                                                            {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute}}};
+    pack_dsl = dev.createDescriptorSetLayout(vk::DescriptorSetLayoutCreateInfo{.flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR, .bindingCount = 4, .pBindings = pb.data()}).value;
+    const vk::PushConstantRange ppc{vk::ShaderStageFlagBits::eCompute, 0, 8};
+    pack_layout = dev.createPipelineLayout(vk::PipelineLayoutCreateInfo{.setLayoutCount = 1, .pSetLayouts = &pack_dsl, .pushConstantRangeCount = 1, .pPushConstantRanges = &ppc}).value;
+    const vk::ShaderModule pm = Module(kPackSpv, sizeof(kPackSpv));
+    const auto pr = dev.createComputePipeline({}, vk::ComputePipelineCreateInfo{.stage = {.stage = vk::ShaderStageFlagBits::eCompute, .module = pm, .pName = "main"}, .layout = pack_layout});
+    if (pr.result != vk::Result::eSuccess) {
+        LOG_ERROR(Render_Vulkan, "RT: fit pipeline failed ({})", vk::to_string(pr.result));
+        return false;
+    }
+    pack_pipe = pr.value;
+    // shadow layout (pipeline per color format, made at the first trace)
+    const std::array<vk::DescriptorSetLayoutBinding, 4> sb{{{0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment},
+                                                            {1, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eFragment},
+                                                            {2, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment},
+                                                            {3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment}}};
+    shadow_dsl = dev.createDescriptorSetLayout(vk::DescriptorSetLayoutCreateInfo{.flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR, .bindingCount = 4, .pBindings = sb.data()}).value;
+    const vk::PushConstantRange spc{vk::ShaderStageFlagBits::eFragment, 0, 64};
+    shadow_layout = dev.createPipelineLayout(vk::PipelineLayoutCreateInfo{.setLayoutCount = 1, .pSetLayouts = &shadow_dsl, .pushConstantRangeCount = 1, .pPushConstantRanges = &spc}).value;
+    sampler = dev.createSampler(vk::SamplerCreateInfo{.magFilter = vk::Filter::eNearest, .minFilter = vk::Filter::eNearest}).value;
+    LOG_ERROR(Render_Vulkan, "RT prototype: acceleration structures made (BLAS {} MB, scratch {} MB, max {} triangles)", bs.accelerationStructureSize >> 20,
+              (blas_scratch + tlas_scratch) >> 20, kMaxTris);
+    failed = false;
+    ready = true;
+    return true;
+}
+std::mutex depth_mutex;
+vk::Image depth_image{};
+vk::Format depth_format{};
+std::unordered_map<VkImage, vk::ImageView> depth_views;
+VkBuffer probe{};
+VmaAllocation probe_a{};
+const u32* probe_ptr = nullptr;
+std::atomic<u32> logged_format{0};
+void NoteDepth(vk::Image image, vk::Format format, bool stencil) {
+    if (!image) {
+        return;
+    }
+    std::scoped_lock lock{depth_mutex};
+    depth_image = image, depth_format = format, main_stencil = stencil;
+}
+/// a view of the depth aspect only (a depth+stencil view cannot be sampled)
+vk::ImageView DepthView(vk::Image& image_out) {
+    std::scoped_lock lock{depth_mutex};
+    image_out = depth_image;
+    if (!depth_image || depth_format == vk::Format::eUndefined) {
+        return {};
+    }
+    auto it = depth_views.find(depth_image);
+    if (it != depth_views.end()) {
+        return it->second;
+    }
+    const auto r = instance->GetDevice().createImageView(vk::ImageViewCreateInfo{.image = depth_image, .viewType = vk::ImageViewType::e2D, .format = depth_format,
+                                                                                .subresourceRange = {vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1}});
+    if (r.result != vk::Result::eSuccess) {
+        return {};
+    }
+    if (logged_format.exchange(1) == 0) {
+        LOG_ERROR(Render_Vulkan, "RT prototype: depth view format {} (stencil {})", vk::to_string(depth_format), main_stencil);
+    }
+    depth_views.emplace(depth_image, r.value);
+    return r.value;
+}
+bool MaskMode() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RT_VIEW"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+u32 full_pipe_sun = 0;
+vk::Pipeline FullPipe(const u32* spv, size_t size, vk::Format format, bool multiply) {
+    const vk::Device dev = instance->GetDevice();
+    const vk::ShaderModule vm = Module(kFullSpv, sizeof(kFullSpv)), fm = Module(spv, size);
+    const std::array<vk::PipelineShaderStageCreateInfo, 2> stages{{{.stage = vk::ShaderStageFlagBits::eVertex, .module = vm, .pName = "main"},
+                                                                   {.stage = vk::ShaderStageFlagBits::eFragment, .module = fm, .pName = "main"}}};
+    const vk::PipelineVertexInputStateCreateInfo vi{};
+    const vk::PipelineInputAssemblyStateCreateInfo ia{.topology = vk::PrimitiveTopology::eTriangleList};
+    const vk::PipelineViewportStateCreateInfo vp{.viewportCount = 1, .scissorCount = 1};
+    const vk::PipelineRasterizationStateCreateInfo rs{.cullMode = vk::CullModeFlagBits::eNone, .lineWidth = 1.0f};
+    const vk::PipelineMultisampleStateCreateInfo ms{.rasterizationSamples = vk::SampleCountFlagBits::e1};
+    const vk::PipelineDepthStencilStateCreateInfo ds{};
+    vk::PipelineColorBlendAttachmentState att{.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB};
+    float history = 0.0f;
+    if (format == vk::Format::eR8G8B8A8Unorm) {
+        // the raw result is mixed into the results of the frames before it (takes out frame-to-frame jumps)
+        history = std::clamp(EnvVec("TLG_VKB_RT_BOUNCE", {0.4f, 0.85f, 2.0f, 0.0f})[1], 0.0f, 0.98f);
+        att.colorWriteMask |= vk::ColorComponentFlagBits::eA;
+        att.blendEnable = true;
+        att.srcColorBlendFactor = vk::BlendFactor::eOneMinusConstantAlpha, att.dstColorBlendFactor = vk::BlendFactor::eConstantAlpha, att.colorBlendOp = vk::BlendOp::eAdd;
+        att.srcAlphaBlendFactor = vk::BlendFactor::eOneMinusConstantAlpha, att.dstAlphaBlendFactor = vk::BlendFactor::eConstantAlpha, att.alphaBlendOp = vk::BlendOp::eAdd;
+    }
+    if (multiply) {
+        att.blendEnable = true;
+        att.srcColorBlendFactor = vk::BlendFactor::eDstColor, att.dstColorBlendFactor = vk::BlendFactor::eSrcColor, att.colorBlendOp = vk::BlendOp::eAdd;
+        att.srcAlphaBlendFactor = vk::BlendFactor::eZero, att.dstAlphaBlendFactor = vk::BlendFactor::eOne, att.alphaBlendOp = vk::BlendOp::eAdd;
+    }
+    if (full_pipe_sun != 0) { // the sun shadow: only the green channel, the darker of the game's value and ours (1) or ours alone (2)
+        att = vk::PipelineColorBlendAttachmentState{.colorWriteMask = vk::ColorComponentFlagBits::eG};
+        if (full_pipe_sun == 1) {
+            att.blendEnable = true;
+            att.srcColorBlendFactor = vk::BlendFactor::eOne, att.dstColorBlendFactor = vk::BlendFactor::eOne, att.colorBlendOp = vk::BlendOp::eMin;
+            att.srcAlphaBlendFactor = vk::BlendFactor::eOne, att.dstAlphaBlendFactor = vk::BlendFactor::eOne, att.alphaBlendOp = vk::BlendOp::eMin;
+        }
+    }
+    if (full_pipe_sun == 3) { // the sun beams: light added to the picture
+        att = vk::PipelineColorBlendAttachmentState{.blendEnable = true, .srcColorBlendFactor = vk::BlendFactor::eOne, .dstColorBlendFactor = vk::BlendFactor::eOne,
+                                                    .colorBlendOp = vk::BlendOp::eAdd, .srcAlphaBlendFactor = vk::BlendFactor::eZero, .dstAlphaBlendFactor = vk::BlendFactor::eOne,
+                                                    .alphaBlendOp = vk::BlendOp::eAdd,
+                                                    .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB};
+    }
+    vk::PipelineColorBlendStateCreateInfo cb{.attachmentCount = 1, .pAttachments = &att};
+    cb.blendConstants[3] = history;
+    const std::array<vk::DynamicState, 2> dyn{vk::DynamicState::eViewport, vk::DynamicState::eScissor};
+    const vk::PipelineDynamicStateCreateInfo dy{.dynamicStateCount = 2, .pDynamicStates = dyn.data()};
+    const vk::PipelineRenderingCreateInfo ri{.colorAttachmentCount = 1, .pColorAttachmentFormats = &format};
+    const vk::GraphicsPipelineCreateInfo ci{.pNext = &ri, .stageCount = 2, .pStages = stages.data(), .pVertexInputState = &vi, .pInputAssemblyState = &ia, .pViewportState = &vp,
+                                            .pRasterizationState = &rs, .pMultisampleState = &ms, .pDepthStencilState = &ds, .pColorBlendState = &cb, .pDynamicState = &dy,
+                                            .layout = shadow_layout};
+    const auto r = dev.createGraphicsPipeline({}, ci);
+    if (r.result != vk::Result::eSuccess) {
+        LOG_ERROR(Render_Vulkan, "RT: pipeline failed ({})", vk::to_string(r.result));
+        return {};
+    }
+    return r.value;
+}
+bool ShadowPipe(vk::Format format) {
+    if (shadow_pipe && raw_pipe && shadow_format == format) {
+        return true;
+    }
+    if (!raw_pipe) {
+        raw_pipe = FullPipe(kShadowSpv, sizeof(kShadowSpv), vk::Format::eR8G8B8A8Unorm, false);
+    }
+    shadow_pipe = FullPipe(kBlurSpv, sizeof(kBlurSpv), format, !MaskMode());
+    shadow_format = format;
+    LOG_ERROR(Render_Vulkan, "RT: pipelines made for format {} (mode {})", vk::to_string(format), MaskMode() ? "check view" : "multiply");
+    return shadow_pipe && raw_pipe;
+}
+/// the picture the raw (unsmoothed) ambient shading is drawn into; a new one when the size changes (the old one stays behind: rare, prototype)
+bool AoTarget(vk::CommandBuffer cmd, u32 w, u32 h) {
+    if (ao_view && ao_w == w && ao_h == h) {
+        return true;
+    }
+    const VkImageCreateInfo ici{.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = VK_FORMAT_R8G8B8A8_UNORM, .extent = {w, h, 1}, .mipLevels = 1,
+                                .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+                                .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
+    VmaAllocationCreateInfo alloc{};
+    alloc.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    ao_view = vk::ImageView{};
+    if (vmaCreateImage(instance->GetAllocator(), &ici, &alloc, &ao_image, &ao_alloc, nullptr) != VK_SUCCESS) {
+        return false;
+    }
+    const auto r = instance->GetDevice().createImageView(vk::ImageViewCreateInfo{.image = vk::Image{ao_image}, .viewType = vk::ImageViewType::e2D, .format = vk::Format::eR8G8B8A8Unorm,
+                                                                                .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}});
+    if (r.result != vk::Result::eSuccess) {
+        return false;
+    }
+    ao_view = r.value, ao_w = w, ao_h = h;
+    const vk::ImageMemoryBarrier ib{.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eShaderRead, .oldLayout = vk::ImageLayout::eUndefined,
+                                    .newLayout = vk::ImageLayout::eGeneral, .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                    .image = vk::Image{ao_image}, .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}};
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eAllCommands, {}, {}, {}, ib);
+    return true;
+}
+/// Outside a pass: the whole RT work of a frame
+void Trace(vk::CommandBuffer cmd, vk::ImageView target_view, vk::Format target_format, u32 extent_w, u32 extent_h) {
+    static const u32 target = [] { const char* e = std::getenv("TLG_VKB_RT_TARGET"); return e != nullptr ? static_cast<u32>(std::atoi(e)) : 0u; }();
+    (void)target, (void)target_view, (void)target_format, (void)extent_w, (void)extent_h, (void)cmd;
+}
+void Build(vk::CommandBuffer cmd, u32 tris, u32 pairs, u32 ring) {
+    RtCapture::MemBarrier(cmd);
+    // 1. the camera -> sun view map of this frame
+    const vk::DescriptorBufferInfo b0{RtCapture::xfb, 0, VK_WHOLE_SIZE}, b1{RtCapture::pair_xfb, 0, VK_WHOLE_SIZE}, b2{RtCapture::pair_tab, 0, VK_WHOLE_SIZE}, b3{RtCapture::fit_out, 0, VK_WHOLE_SIZE};
+    const std::array<vk::WriteDescriptorSet, 4> pw{{{.dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &b0},
+                                                    {.dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &b1},
+                                                    {.dstBinding = 2, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &b2},
+                                                    {.dstBinding = 3, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &b3}}};
+    cmd.bindPipeline(vk::PipelineBindPoint::eCompute, pack_pipe);
+    cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, pack_layout, 0, pw);
+    const std::array<u32, 2> ppc{pairs, ring * RtCapture::kPairs};
+    cmd.pushConstants(pack_layout, vk::ShaderStageFlagBits::eCompute, 0, 8, ppc.data());
+    cmd.dispatch(1, 1, 1);
+    RtCapture::MemBarrier(cmd);
+    cmd.copyBuffer(RtCapture::fit_out, RtCapture::fit_read, vk::BufferCopy{0, ring * 64, 64});
+    if (skip_as && built) {
+        return;
+    }
+    // 2. BLAS, then TLAS
+    const vk::AccelerationStructureGeometryKHR geo{.geometryType = vk::GeometryTypeKHR::eTriangles,
+                                                   .geometry = {.triangles = vk::AccelerationStructureGeometryTrianglesDataKHR{
+                                                                    .vertexFormat = vk::Format::eR32G32B32Sfloat, .vertexData = {.deviceAddress = verts_addr}, .vertexStride = 16,
+                                                                    .maxVertex = kMaxTris * 3 - 1, .indexType = vk::IndexType::eNoneKHR}},
+                                                   .flags = vk::GeometryFlagBitsKHR::eOpaque};
+    vk::AccelerationStructureGeometryKHR geo_cut = geo;
+    geo_cut.geometry.triangles.vertexData.deviceAddress = verts_addr + u64{RtCapture::kCutBase} * 16;
+    geo_cut.flags = {};
+    const std::array<vk::AccelerationStructureGeometryKHR, 2> geos{geo, geo_cut};
+    const vk::AccelerationStructureBuildGeometryInfoKHR bi{.type = vk::AccelerationStructureTypeKHR::eBottomLevel, .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild,
+                                                          .mode = vk::BuildAccelerationStructureModeKHR::eBuild, .dstAccelerationStructure = blas, .geometryCount = 2, .pGeometries = geos.data(),
+                                                          .scratchData = {.deviceAddress = scratch_addr}};
+    const std::array<vk::AccelerationStructureBuildRangeInfoKHR, 2> br{{{.primitiveCount = std::min(tris, RtCapture::kCutBase / 3)}, {.primitiveCount = cut_tris}}};
+    const vk::AccelerationStructureBuildRangeInfoKHR* brp = br.data();
+    cmd.buildAccelerationStructuresKHR(1, &bi, &brp);
+    RtCapture::MemBarrier(cmd);
+    const vk::AccelerationStructureGeometryKHR tgeo{.geometryType = vk::GeometryTypeKHR::eInstances,
+                                                    .geometry = {.instances = vk::AccelerationStructureGeometryInstancesDataKHR{.data = {.deviceAddress = inst_addr}}}};
+    const vk::AccelerationStructureBuildGeometryInfoKHR ti{.type = vk::AccelerationStructureTypeKHR::eTopLevel, .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace,
+                                                          .mode = vk::BuildAccelerationStructureModeKHR::eBuild, .dstAccelerationStructure = tlas, .geometryCount = 1, .pGeometries = &tgeo,
+                                                          .scratchData = {.deviceAddress = (scratch_addr + blas_scratch + 255) & ~u64{255}}};
+    const vk::AccelerationStructureBuildRangeInfoKHR tr{.primitiveCount = 1};
+    const vk::AccelerationStructureBuildRangeInfoKHR* trp = &tr;
+    cmd.buildAccelerationStructuresKHR(1, &ti, &trp);
+    RtCapture::MemBarrier(cmd);
+    built = true;
+}
+/// the sun beams: lit air between the camera and the surface, added to the final picture. TLG_VKB_RT_BEAM=strength,density,steps,reach; live file
+/// TLG_VKB_RT_BEAMLIVE "strength,density,steps,reach,forward"; F4 switches it off and on.
+void Beams(vk::CommandBuffer cmd, vk::ImageView target_view, vk::Format format, u32 w, u32 h, vk::ImageView dview) {
+    static std::array<float, 4> opt = EnvVec("TLG_VKB_RT_BEAM", {2.0f, 0.02f, 32.0f, 150.0f});
+    static float forward = 0.5f;
+    static const char* live_path = std::getenv("TLG_VKB_RT_BEAMLIVE");
+    static u32 live_tick = 0;
+    if (live_path && live_tick++ % 30 == 0) {
+        if (std::FILE* lf = std::fopen(live_path, "r")) {
+            float v[5];
+            const int n = std::fscanf(lf, "%f,%f,%f,%f,%f", &v[0], &v[1], &v[2], &v[3], &v[4]);
+            if (n >= 4) {
+                opt = {v[0], v[1], v[2], v[3]};
+            }
+            if (n >= 5) {
+                forward = std::clamp(v[4], 0.0f, 0.95f);
+            }
+            std::fclose(lf);
+        }
+    }
+    static bool on = true, was = false;
+    const bool down = (GetAsyncKeyState(0x73) & 0x8000) != 0;
+    if (down && !was) {
+        on = !on;
+        LOG_ERROR(Render_Vulkan, "RT: sun beams {}", on ? "on" : "off");
+    }
+    was = down;
+    const bool seen = sun_seen;
+    sun_seen = false;
+    if (!on || !seen || opt[0] <= 0.0f || !built) {
+        return;
+    }
+    static const std::array<float, 4> sgn = EnvVec("TLG_VKB_RT_SUNSIGN", {1.0f, 1.0f, 1.0f, 0.0f});
+    static const std::array<float, 4> lens = EnvVec("TLG_VKB_RT_LENS", {1.06f, 2.54f, -1.0f, 3.0f});
+    // a picture of its own at half size (the ambient shading's picture stays its own)
+    static decltype(ao_image) b_image{};
+    static decltype(ao_alloc) b_alloc{};
+    static vk::ImageView b_view{};
+    static u32 b_w = 0, b_h = 0;
+    const u32 rw = std::max(w / 2, 1u), rh = std::max(h / 2, 1u);
+    std::swap(ao_image, b_image), std::swap(ao_alloc, b_alloc), std::swap(ao_view, b_view), std::swap(ao_w, b_w), std::swap(ao_h, b_h);
+    const bool target_ok = AoTarget(cmd, rw, rh);
+    std::swap(ao_image, b_image), std::swap(ao_alloc, b_alloc), std::swap(ao_view, b_view), std::swap(ao_w, b_w), std::swap(ao_h, b_h);
+    static vk::Pipeline raw{}, add{};
+    static vk::Format add_format{};
+    if (!raw) {
+        raw = FullPipe(kBeamSpv, sizeof(kBeamSpv), vk::Format::eR8G8B8A8Unorm, false);
+    }
+    if (!add || add_format != format) {
+        full_pipe_sun = 3;
+        add = FullPipe(kBlurSpv, sizeof(kBlurSpv), format, false);
+        full_pipe_sun = 0;
+        add_format = format;
+        LOG_ERROR(Render_Vulkan, "RT beams: pipeline for {} ({}x{})", vk::to_string(format), w, h);
+    }
+    if (!target_ok || !raw || !add) {
+        return;
+    }
+    const vk::RenderingAttachmentInfo color{.imageView = target_view, .imageLayout = vk::ImageLayout::eGeneral, .loadOp = vk::AttachmentLoadOp::eLoad, .storeOp = vk::AttachmentStoreOp::eStore};
+    const vk::RenderingAttachmentInfo rawc{.imageView = b_view, .imageLayout = vk::ImageLayout::eGeneral, .loadOp = vk::AttachmentLoadOp::eLoad, .storeOp = vk::AttachmentStoreOp::eStore};
+    const vk::DescriptorImageInfo di{sampler, dview, vk::ImageLayout::eGeneral};
+    const vk::DescriptorImageInfo ai{sampler, b_view, vk::ImageLayout::eGeneral};
+    const vk::WriteDescriptorSetAccelerationStructureKHR wa{.accelerationStructureCount = 1, .pAccelerationStructures = &tlas};
+    const std::array<vk::WriteDescriptorSet, 2> sw{{{.dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &di},
+                                                    {.pNext = &wa, .dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eAccelerationStructureKHR}}};
+    const std::array<vk::WriteDescriptorSet, 2> bw{{{.dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &di},
+                                                    {.dstBinding = 3, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &ai}}};
+    static u32 frame = 0;
+    const std::array<float, 16> pr{beam_sun[0] * sgn[0], beam_sun[1] * sgn[1], beam_sun[2] * sgn[2], opt[2], fit_a, fit_b, lens[2], opt[3],
+                                   static_cast<float>(frame++ % 64), 1.0f / rw, 1.0f / rh, opt[0], lens[0], lens[1], forward, opt[1]};
+    const std::array<float, 16> pb{0.0f, 0.0f, 0.0f, 0.0f, fit_a, fit_b, lens[2], 2.0f, 0.0f, 1.0f / w, 1.0f / h, 1.0f, lens[0], lens[1], 0.0f, 2.0f};
+    RtCapture::MemBarrier(cmd);
+    cmd.beginRendering(vk::RenderingInfo{.renderArea = {{0, 0}, {rw, rh}}, .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &rawc});
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, raw);
+    cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, shadow_layout, 0, sw);
+    cmd.pushConstants(shadow_layout, vk::ShaderStageFlagBits::eFragment, 0, 64, pr.data());
+    cmd.setViewport(0, vk::Viewport{0.0f, 0.0f, static_cast<float>(rw), static_cast<float>(rh), 0.0f, 1.0f});
+    cmd.setScissor(0, vk::Rect2D{{0, 0}, {rw, rh}});
+    cmd.draw(3, 1, 0, 0);
+    cmd.endRendering();
+    RtCapture::MemBarrier(cmd);
+    cmd.beginRendering(vk::RenderingInfo{.renderArea = {{0, 0}, {w, h}}, .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &color});
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, add);
+    cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, shadow_layout, 0, bw);
+    cmd.pushConstants(shadow_layout, vk::ShaderStageFlagBits::eFragment, 0, 64, pb.data());
+    cmd.setViewport(0, vk::Viewport{0.0f, 0.0f, static_cast<float>(w), static_cast<float>(h), 0.0f, 1.0f});
+    cmd.setScissor(0, vk::Rect2D{{0, 0}, {w, h}});
+    cmd.draw(3, 1, 0, 0);
+    cmd.endRendering();
+    RtCapture::MemBarrier(cmd);
+}
+void Shade(vk::CommandBuffer cmd, vk::ImageView target_view, vk::Format target_format, u32 extent_w, u32 extent_h) {
+    if (!Init()) {
+        return;
+    }
+    // what was captured since the last trace: this frame's sun view geometry and the pairs
+    u32 tris = 0, pairs = 0, ring = 0;
+    {
+        std::scoped_lock lock{RtCapture::sun_mutex};
+        tris = RtCapture::sun_cursor / 3, pairs = RtCapture::pair_next, ring = RtCapture::pair_ring;
+        cut_tris = RtCapture::cut_cursor / 3;
+        RtCapture::cut_cursor = 0;
+        RtCapture::sun_cursor = 0, RtCapture::pair_next = 0, RtCapture::pair_ring = (ring + 1) % 8;
+        RtCapture::sun_at.clear();
+    }
+    // a frame that arrives with only a fraction of the scene (the snapshot fell in the middle of the frame's draws) keeps the scene of the frame before
+    static u32 good_tris = 0;
+    const bool whole = tris > 0 && u64{tris} * 10 >= u64{good_tris} * 9;
+    {
+        static u32 lo = ~0u, hi = 0, n = 0, part = 0;
+        lo = std::min(lo, tris), hi = std::max(hi, tris), part += whole ? 0 : 1;
+        if (++n == 120) {
+            LOG_ERROR(Render_Vulkan, "RT scene size over 120 frames: {} .. {} triangles (+{} cut-out now), {} frames held back as incomplete; {} strip draws taken; draws left out: {} indirect, {} not triangle lists, {} without depth write",
+                      lo, hi, cut_tris, part, c_strip.exchange(0), c_skip_ind.exchange(0), c_skip_prim.exchange(0), c_skip_nowrite.exchange(0));
+            lo = ~0u, hi = 0, n = 0, part = 0;
+        }
+    }
+    good_tris = whole ? tris : good_tris - good_tris / 4;
+    if (!whole && tris > 0 && built) {
+        RtCapture::c_empty.fetch_add(1, std::memory_order_relaxed);
+    } else if (tris > 0) {
+        skip_as = sun_built; // the sun shadow step already built this frame's ray scene
+        Build(cmd, tris, pairs, ring);
+        skip_as = false;
+        RtCapture::last_tris.store(tris, std::memory_order_relaxed), RtCapture::last_pairs.store(pairs, std::memory_order_relaxed), RtCapture::last_ring.store(ring, std::memory_order_relaxed);
+        RtCapture::empty_frames.store(0, std::memory_order_relaxed);
+        RtCapture::c_built.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        RtCapture::c_empty.fetch_add(1, std::memory_order_relaxed);
+        if (RtCapture::empty_frames.fetch_add(1, std::memory_order_relaxed) > 120) { // the chosen sun pass is gone: choose again
+            RtCapture::sun_view.store(0, std::memory_order_relaxed);
+            RtCapture::empty_frames.store(0, std::memory_order_relaxed);
+        }
+    }
+    sun_built = false;
+    {
+        static bool was = false;
+        const bool down = (GetAsyncKeyState(0x74) & 0x8000) != 0; // F5: strips in the ray scene on / off
+        if (down && !was) {
+            strips_on.store(!strips_on.load());
+            LOG_ERROR(Render_Vulkan, "RT: strips {}", strips_on.load() ? "on" : "off");
+        }
+        was = down;
+    }
+    vk::Image dimg{};
+    const vk::ImageView dview = DepthView(dimg);
+    if (!built || !dview || !fit_ok || !ShadowPipe(target_format)) {
+        sun_seen = false;
+        return;
+    }
+    if (probe_ptr == nullptr) {
+        void* m = nullptr;
+        if (RtCapture::Make(64, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, probe, probe_a, &m) && m != nullptr) {
+            probe_ptr = static_cast<const u32*>(m);
+        }
+    }
+    RtCapture::MemBarrier(cmd);
+    if (probe != VkBuffer{}) {
+        const vk::BufferImageCopy pc0{.bufferOffset = 0, .imageSubresource = {vk::ImageAspectFlagBits::eDepth, 0, 0, 1},
+                                      .imageOffset = {static_cast<s32>(RtCapture::main_w / 2), static_cast<s32>(RtCapture::main_h * 3 / 4), 0}, .imageExtent = {1, 1, 1}};
+        cmd.copyImageToBuffer(dimg, vk::ImageLayout::eGeneral, probe, pc0);
+        RtCapture::MemBarrier(cmd);
+    }
+    // live switch: F2 turns the effect off and on
+    {
+        static bool on = false, was = false; // off at the start: F2 turns the corner shading on
+        const bool down = (GetAsyncKeyState(0x71) & 0x8000) != 0;
+        if (down && !was) {
+            on = !on;
+            LOG_ERROR(Render_Vulkan, "RT: effect {}", on ? "on" : "off");
+        }
+        was = down;
+        if (!on) {
+            Beams(cmd, target_view, target_format, extent_w, extent_h, dview);
+            return;
+        }
+    }
+    // 3. the raw ambient shading into its own picture, then smoothed onto the main pass's color target
+    // the rays run at a fraction of the picture's size (2 = half in both directions); the smoothing pass brings it back to full size
+    static const u32 div = static_cast<u32>(std::clamp(EnvVec("TLG_VKB_RT_BOUNCE", {0.4f, 0.85f, 2.0f, 0.0f})[2], 1.0f, 4.0f));
+    const u32 raw_w = std::max(extent_w / div, 1u), raw_h = std::max(extent_h / div, 1u);
+    if (!AoTarget(cmd, raw_w, raw_h)) {
+        return;
+    }
+    const vk::RenderingAttachmentInfo color{.imageView = target_view, .imageLayout = vk::ImageLayout::eGeneral, .loadOp = vk::AttachmentLoadOp::eLoad, .storeOp = vk::AttachmentStoreOp::eStore};
+    const vk::RenderingAttachmentInfo raw{.imageView = ao_view, .imageLayout = vk::ImageLayout::eGeneral, .loadOp = vk::AttachmentLoadOp::eLoad, .storeOp = vk::AttachmentStoreOp::eStore};
+    const vk::DescriptorImageInfo di{sampler, dview, vk::ImageLayout::eGeneral};
+    const vk::DescriptorImageInfo ai{sampler, ao_view, vk::ImageLayout::eGeneral};
+    const vk::WriteDescriptorSetAccelerationStructureKHR wa{.accelerationStructureCount = 1, .pAccelerationStructures = &tlas};
+    const vk::DescriptorBufferInfo mb{RtCapture::fit_out, 0, 64};
+    const vk::DescriptorImageInfo ci{sampler, target_view, vk::ImageLayout::eGeneral};
+    const std::array<vk::WriteDescriptorSet, 4> sw{{{.dstBinding = 3, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &ci},
+                                                    {.dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &di},
+                                                    {.pNext = &wa, .dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eAccelerationStructureKHR},
+                                                    {.dstBinding = 2, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &mb}}};
+    const std::array<vk::WriteDescriptorSet, 2> bw{{{.dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &di},
+                                                    {.dstBinding = 3, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &ai}}};
+    static std::array<float, 4> gi = EnvVec("TLG_VKB_RT_GI", {1.5f, 0.8f, 4.0f, 0.01f});     // radius, strength, rays per pixel, bias
+    static const std::array<float, 4> lens = EnvVec("TLG_VKB_RT_LENS", {1.06f, 2.54f, -1.0f, 3.0f}); // fx, fy, y flip, smoothing reach in pixels
+    static u32 gi_frame = 0;
+    static float bounce_k = EnvVec("TLG_VKB_RT_BOUNCE", {0.4f, 0.85f, 2.0f, 0.0f})[0];
+    // live tuning: a text file "radius,strength,rays,bias,bounce" (path in TLG_VKB_RT_LIVE) is read again twice a second
+    static const char* live_path = std::getenv("TLG_VKB_RT_LIVE");
+    static u32 live_tick = 0;
+    if (live_path && live_tick++ % 30 == 0) {
+        if (std::FILE* lf = std::fopen(live_path, "r")) {
+            float v[5];
+            if (std::fscanf(lf, "%f,%f,%f,%f,%f", &v[0], &v[1], &v[2], &v[3], &v[4]) == 5) {
+                gi = {v[0], v[1], v[2], v[3]};
+                bounce_k = v[4];
+            }
+            std::fclose(lf);
+        }
+    }
+    static const float bounce_unused_ = 0.0f; // strength of the bounce light, share of the earlier frames
+    const std::array<float, 16> pc{gi[0], gi[1], gi[2], gi[3], fit_a, fit_b, lens[2], MaskMode() ? 1.0f : 0.0f,
+                                   static_cast<float>(gi_frame++ % 64), 1.0f / extent_w, 1.0f / extent_h, built ? 1.0f : 0.0f, lens[0], lens[1], bounce_k, lens[3]};
+    std::array<float, 16> pc_raw = pc;
+    pc_raw[7] = 0.0f, pc_raw[9] = 1.0f / raw_w, pc_raw[10] = 1.0f / raw_h;
+    cmd.beginRendering(vk::RenderingInfo{.renderArea = {{0, 0}, {raw_w, raw_h}}, .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &raw});
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, raw_pipe);
+    cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, shadow_layout, 0, sw);
+    cmd.pushConstants(shadow_layout, vk::ShaderStageFlagBits::eFragment, 0, 64, pc_raw.data());
+    cmd.setViewport(0, vk::Viewport{0.0f, 0.0f, static_cast<float>(raw_w), static_cast<float>(raw_h), 0.0f, 1.0f});
+    cmd.setScissor(0, vk::Rect2D{{0, 0}, {raw_w, raw_h}});
+    cmd.draw(3, 1, 0, 0);
+    cmd.endRendering();
+    RtCapture::MemBarrier(cmd);
+    cmd.beginRendering(vk::RenderingInfo{.renderArea = {{0, 0}, {extent_w, extent_h}}, .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &color});
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, shadow_pipe);
+    cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, shadow_layout, 0, bw);
+    cmd.pushConstants(shadow_layout, vk::ShaderStageFlagBits::eFragment, 0, 64, pc.data());
+    cmd.setViewport(0, vk::Viewport{0.0f, 0.0f, static_cast<float>(extent_w), static_cast<float>(extent_h), 0.0f, 1.0f});
+    cmd.setScissor(0, vk::Rect2D{{0, 0}, {extent_w, extent_h}});
+    cmd.draw(3, 1, 0, 0);
+    cmd.endRendering();
+    RtCapture::MemBarrier(cmd);
+    c_traces.fetch_add(1, std::memory_order_relaxed);
+    Beams(cmd, target_view, target_format, extent_w, extent_h, dview);
+}
+/// the sun shadow, right after the game's own sun shadow step, into that step's picture. TLG_VKB_RT_SUN=cone,rays,bias,mode (mode 0 off, 1 darker of game and
+/// ours, 2 ours alone); F3 switches it off and on.
+bool SunOn() { // F3: off = the frame is exactly the game's own again
+    static bool on = true, was = false;
+    const bool down = (GetAsyncKeyState(0x72) & 0x8000) != 0;
+    if (down && !was) {
+        on = !on;
+    }
+    was = down;
+    return on;
+}
+void SunShadow(vk::CommandBuffer cmd, vk::ImageView target_view, vk::Format format, u32 w, u32 h, const float* sun) {
+    static std::array<float, 4> opt = EnvVec("TLG_VKB_RT_SUN", {0.03f, 12.0f, 0.02f, 1.0f});
+    // leaves and grass (cut-out cards): the share of a card that blocks the sun (1 solid, 0 no shadow) and the number of cells per card edge
+    static std::array<float, 4> leaf = EnvVec("TLG_VKB_RT_LEAF", {0.6f, 4.0f, 0.0f, 0.0f});
+    // live tuning: a text file "cone,rays,bias,mode" (path in TLG_VKB_RT_SUNLIVE) is read again twice a second
+    static const char* live_path = std::getenv("TLG_VKB_RT_SUNLIVE");
+    static u32 live_tick = 0;
+    if (live_path && live_tick++ % 30 == 0) {
+        if (std::FILE* lf = std::fopen(live_path, "r")) {
+            float v[6];
+            const int n = std::fscanf(lf, "%f,%f,%f,%f,%f,%f", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5]);
+            if (n >= 4) {
+                opt = {v[0], v[1], v[2], v[3]};
+            }
+            if (n >= 5) {
+                leaf[0] = v[4];
+            }
+            if (n >= 6) {
+                leaf[1] = v[5];
+            }
+            std::fclose(lf);
+        }
+    }
+    static const std::array<float, 4> sgn = EnvVec("TLG_VKB_RT_SUNSIGN", {1.0f, 1.0f, 1.0f, 0.0f});
+    static const std::array<float, 4> lens = EnvVec("TLG_VKB_RT_LENS", {1.06f, 2.54f, -1.0f, 3.0f});
+    if (opt[3] < 0.5f || !Init() || !fit_ok || !target_view) {
+        return;
+    }
+    u32 tris = 0;
+    {
+        std::scoped_lock lock{RtCapture::sun_mutex};
+        tris = RtCapture::sun_cursor / 3;
+        cut_tris = RtCapture::cut_cursor / 3;
+    }
+    vk::Image dimg{};
+    const vk::ImageView dview = DepthView(dimg);
+    if (tris == 0 || !dview) {
+        return;
+    }
+    static vk::Pipeline pipes[2]{};
+    static vk::Format pipe_format{};
+    if (!pipes[0] || pipe_format != format) {
+        full_pipe_sun = 1;
+        pipes[0] = FullPipe(kSunSpv, sizeof(kSunSpv), format, false);
+        full_pipe_sun = 2;
+        pipes[1] = FullPipe(kSunSpv, sizeof(kSunSpv), format, false);
+        full_pipe_sun = 0;
+        pipe_format = format;
+        LOG_ERROR(Render_Vulkan, "RT sun: pipeline for {} ({}x{}), {} triangles", vk::to_string(format), w, h, tris);
+    }
+    const vk::Pipeline pipe = pipes[opt[3] > 1.5f ? 1 : 0];
+    if (!pipe) {
+        return;
+    }
+    Build(cmd, tris, 0, 0);
+    if (!built) {
+        return;
+    }
+    sun_built = true;
+    const vk::RenderingAttachmentInfo color{.imageView = target_view, .imageLayout = vk::ImageLayout::eGeneral, .loadOp = vk::AttachmentLoadOp::eLoad, .storeOp = vk::AttachmentStoreOp::eStore};
+    const vk::DescriptorImageInfo di{sampler, dview, vk::ImageLayout::eGeneral};
+    const vk::WriteDescriptorSetAccelerationStructureKHR wa{.accelerationStructureCount = 1, .pAccelerationStructures = &tlas};
+    const std::array<vk::WriteDescriptorSet, 2> sw{{{.dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &di},
+                                                    {.pNext = &wa, .dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eAccelerationStructureKHR}}};
+    static u32 frame = 0;
+    const std::array<float, 16> pc{sun[0] * sgn[0], sun[1] * sgn[1], sun[2] * sgn[2], opt[2], fit_a, fit_b, lens[2], opt[0],
+                                   static_cast<float>(frame++ % 64), 1.0f / w, 1.0f / h, opt[1], lens[0], lens[1], leaf[0], std::max(leaf[1], 1.0f)};
+    cmd.beginRendering(vk::RenderingInfo{.renderArea = {{0, 0}, {w, h}}, .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &color});
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipe);
+    cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, shadow_layout, 0, sw);
+    cmd.pushConstants(shadow_layout, vk::ShaderStageFlagBits::eFragment, 0, 64, pc.data());
+    cmd.setViewport(0, vk::Viewport{0.0f, 0.0f, static_cast<float>(w), static_cast<float>(h), 0.0f, 1.0f});
+    cmd.setScissor(0, vk::Rect2D{{0, 0}, {w, h}});
+    cmd.draw(3, 1, 0, 0);
+    cmd.endRendering();
+    RtCapture::MemBarrier(cmd);
+}
+} // namespace RtTrace
+thread_local bool rt_state_dirty = false;
+void RtBuildHook(vk::CommandBuffer) {
+}
+
+
+/// test: stone depth. The value goes to every pixel shader (a spare per-draw field); only patched shaders read it. F6 switches it off and on; a text file
+/// "depth" (path in TLG_VKB_STONELIVE) is read again about twice a second. 0 = off.
+static float StoneKnob() {
+    static std::atomic<float> value{0.0f};
+    static std::atomic<u32> tick{0};
+    static std::mutex m;
+    if (tick.fetch_add(1, std::memory_order_relaxed) % 4096 == 0) {
+        std::scoped_lock lock{m};
+        static const char* live_path = std::getenv("TLG_VKB_STONELIVE");
+        static float depth = 0.05f;
+        static bool on = true, was = false;
+        const bool down = (RtTrace::GetAsyncKeyState(0x78) & 0x8000) != 0; // F9
+        if (down && !was) {
+            on = !on;
+            LOG_ERROR(Render_Vulkan, "stone depth {}", on ? "on" : "off");
+        }
+        was = down;
+        static u32 n = 0;
+        if (live_path && n++ % 8 == 0) {
+            if (std::FILE* lf = std::fopen(live_path, "r")) {
+                float v;
+                if (std::fscanf(lf, "%f", &v) == 1) {
+                    depth = v;
+                }
+                std::fclose(lf);
+            }
+        }
+        value.store(on && live_path ? depth : 0.0f, std::memory_order_relaxed);
+    }
+    return value.load(std::memory_order_relaxed);
+}
 void DrawJob::Run(vk::CommandBuffer cmd) {
     const VkbVulkan::FixedState& fixed = *fixed_state;
     struct JobTime {
@@ -1811,6 +2781,33 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
         Stream::SetHazardTag(ps_hash);
         (void)Stream::Hazard(cmd, std::span<const Stream::Use>{uses.data(), uses.size()});
     }
+    const bool rt_dw = RtCapture::On() && fixed.depth_test && fixed.depth_target && pass.depth && (fixed.depth_write || RtNoWriteToo()) && !fixed.depth_clear && !fixed.rasterizer_discard;
+    if (RtCapture::On()) {
+        RtCapture::c_all.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (rt_dw) {
+        RtCapture::c_dw.fetch_add(1, std::memory_order_relaxed);
+        RtCapture::Census(pass.extent.width, pass.extent.height, pass.color_count);
+        if (pass.color_count > 0) {
+            RtCapture::main_w = pass.extent.width, RtCapture::main_h = pass.extent.height;
+        }
+    }
+    const bool rt_capture = rt_dw && pass.extent.width == RtCapture::main_w && pass.extent.height == RtCapture::main_h && RtCapture::Ready();
+    if (rt_capture && pass.color_count > 0) {
+        for (u32 i = 0; i < 8; ++i) {
+            RtTrace::main_colors[i] = i < pass.color_count ? pass.colors[i] : vk::ImageView{};
+        }
+        RtTrace::main_formats[0] = static_cast<vk::Format>(color_format0);
+        RtTrace::NoteDepth(pass.depth_image, pass.depth_format, pass.depth_has_stencil);
+    }
+    if (rt_capture) {
+        const u64 now = rt_present_frame.load(std::memory_order_relaxed);
+        u64 seen = RtCapture::claimed.load(std::memory_order_relaxed);
+        if (seen != now && RtCapture::claimed.compare_exchange_strong(seen, now)) {
+            Stream::BreakPass(cmd);
+            RtCapture::FrameStart(cmd, now);
+        }
+    }
     if (Stream::UsePass(cmd, pass, std::span<const Stream::Use>{attachment_uses.data(), attachment_uses.size()})) {
         c_new_passes.fetch_add(1, std::memory_order_relaxed);
     }
@@ -1834,7 +2831,8 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
     };
     thread_local DrawStateCache state;
     static const bool all_state = [] { const char* e = std::getenv("TLG_VKB_ALL_STATE"); return e != nullptr && e[0] == '1'; }();
-    if (all_state || state.generation != Stream::RecordingGeneration() || state.cmd != static_cast<VkCommandBuffer>(cmd)) {
+    if (all_state || rt_state_dirty || state.generation != Stream::RecordingGeneration() || state.cmd != static_cast<VkCommandBuffer>(cmd)) {
+        rt_state_dirty = false;
         state = {};
         state.generation = Stream::RecordingGeneration();
         state.cmd = static_cast<VkCommandBuffer>(cmd);
@@ -1874,6 +2872,7 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
             cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, set, {});
         }
     }
+    push.tlg_test = StoneKnob();
     cmd.pushConstants(layout, VkbVulkan::Vkb::AllGraphicsStageBits, 0, sizeof(push), &push);
     // note 59 bound, kill experiment only (TLG_VKB_TEST_STATE_ONCE=1, the picture is wrong): the dynamic state sent once per command buffer, not every draw
     static const bool state_once = [] { const char* e = std::getenv("TLG_VKB_TEST_STATE_ONCE"); return e != nullptr && e[0] == '1'; }();
@@ -1981,6 +2980,134 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
         state.vertex_offsets.assign(vertex_offsets.begin(), vertex_offsets.end());
     }
     static const bool no_draw = [] { const char* e = std::getenv("TLG_VKB_NO_DRAW"); return e != nullptr && *e == '1'; }(); // kill experiment: everything but the draw
+    u32 rt_shadow_slot = ~0u;
+    u64 rt_key = 0;
+    if (RtCapture::On()) {
+        rt_key = guest_key;
+    }
+    // triangle strips (without restart marks) come out of the capture as loose triangles: 3 * (n - 2) vertices. F5 leaves them out again.
+    const bool rt_strip = fixed.primitive_type == Core::NativePrimitive::Kind::TriangleStrip && !fixed.primitive_restart && kind != 2 && a1 >= 3 && instances >= 1 &&
+                          RtTrace::strips_on.load(std::memory_order_relaxed);
+    const bool rt_tri = (fixed.primitive_type == Core::NativePrimitive::Kind::TriangleList && kind != 2 && a1 >= 3 && instances >= 1) || rt_strip;
+    const u64 rt_verts = (rt_strip ? u64{3} * (static_cast<u32>(a1) - 2) : static_cast<u64>(static_cast<u32>(a1))) * instances;
+    if (rt_strip) {
+        RtTrace::c_strip.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (false && RtCapture::On() && RtCapture::ready && pass.color_count == 0 && pass.depth && pass.extent.width == 2048 && pass.extent.height == 2048 && fixed.depth_write &&
+        !fixed.rasterizer_discard && kind != 2) {
+        const u64 now = rt_present_frame.load(std::memory_order_relaxed);
+        if (reinterpret_cast<u64>(static_cast<VkImageView>(pass.depth)) == RtCapture::sun_view.load(std::memory_order_relaxed)) {
+            // the chosen sun pass: the whole draw goes into the ray-trace scene of this frame (vertex count known here: no readback)
+            u32 at = ~0u;
+            if (rt_tri) {
+                std::scoped_lock lock{RtCapture::sun_mutex};
+                if (RtCapture::sun_cursor + rt_verts <= u64{RtCapture::kSunVerts}) {
+                    at = RtCapture::sun_cursor;
+                    RtCapture::sun_cursor += static_cast<u32>(rt_verts);
+                    const auto [it, fresh] = RtCapture::sun_at.try_emplace(rt_key, at);
+                    if (!fresh) {
+                        it->second = ~0u;
+                    }
+                }
+            }
+            if (at != ~0u) {
+                const vk::Buffer xb{RtCapture::xfb};
+                const vk::DeviceSize off = u64{at} * 16, size = rt_verts * 16;
+                cmd.bindTransformFeedbackBuffersEXT(0, 1, &xb, &off, &size);
+                cmd.beginTransformFeedbackEXT(0, 0, nullptr, nullptr);
+                rt_shadow_slot = 0;
+            }
+        } else if (now % 8 == 0) {
+            u64 seen = RtCapture::shadow_frame.load(std::memory_order_relaxed);
+            if (seen != now && RtCapture::shadow_frame.compare_exchange_strong(seen, now)) {
+                RtCapture::shadow_next.store(0, std::memory_order_relaxed);
+            }
+            const u32 sl = RtCapture::shadow_next.fetch_add(1, std::memory_order_relaxed);
+            if (sl < RtCapture::kShadowDraws) {
+                rt_shadow_slot = sl;
+                RtCapture::shadow_keys[now % 8][sl] = rt_key;
+                RtCapture::shadow_info[sl] = RtCapture::SunInfo{reinterpret_cast<u64>(static_cast<VkImageView>(pass.depth)), {fixed.viewports[0].x, fixed.viewports[0].y, fixed.viewports[0].width, fixed.viewports[0].height},
+                                                                static_cast<u32>(a1), instances, kind, static_cast<u32>(fixed.primitive_type), ps_discard};
+                const vk::Buffer xb{RtCapture::shadow_xfb};
+                const vk::DeviceSize off = ((now % 8) * RtCapture::kShadowDraws + sl) * RtCapture::kSampleVerts * 16, size = RtCapture::kSampleVerts * 16;
+                cmd.bindTransformFeedbackBuffersEXT(0, 1, &xb, &off, &size);
+                cmd.beginTransformFeedbackEXT(0, 0, nullptr, nullptr);
+            }
+        }
+    }
+    { // test: TLG_VKB_PS_TOP=1: which pixel shaders draw the most triangles into the main picture (passes with 3+ colour targets)
+        static const bool top_on = std::getenv("TLG_VKB_PS_TOP") != nullptr;
+        if (top_on && pass.color_count >= 3 && fixed.depth_test && pass.depth) {
+            static std::mutex m;
+            static std::unordered_map<u64, std::pair<u64, u32>> tally;
+            static u32 calls = 0;
+            std::scoped_lock lock{m};
+            auto& t = tally[ps_hash];
+            t.first += static_cast<u64>(a1) * std::max<u32>(instances, 1) / 3;
+            t.second++;
+            if (++calls >= 150000) {
+                std::vector<std::pair<u64, std::pair<u64, u32>>> v(tally.begin(), tally.end());
+                std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.second.first > b.second.first; });
+                std::string line;
+                for (size_t i = 0; i < std::min<size_t>(v.size(), 14); ++i) {
+                    line += fmt::format(" {:08x}:{}k/{}", static_cast<u32>(v[i].first), v[i].second.first / 1000, v[i].second.second);
+                }
+                LOG_ERROR(Render_Vulkan, "PS top ({} shaders, {} targets {}x{}):{}", v.size(), pass.color_count, pass.extent.width, pass.extent.height, line);
+                tally.clear();
+                calls = 0;
+            }
+        }
+    }
+    if (rt_capture && !rt_tri) {
+        (kind == 2 ? RtTrace::c_skip_ind : RtTrace::c_skip_prim).fetch_add(1, std::memory_order_relaxed);
+    } else if (RtCapture::On() && !rt_capture && fixed.depth_test && pass.depth && !fixed.depth_write && pass.extent.width == RtCapture::main_w && pass.extent.height == RtCapture::main_h) {
+        RtTrace::c_skip_nowrite.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (rt_capture) {
+        RtCapture::c_cap.fetch_add(1, std::memory_order_relaxed);
+        RtCapture::slot_next.fetch_add(1, std::memory_order_relaxed);
+        const u64 now = rt_present_frame.load(std::memory_order_relaxed);
+        u32 pair = ~0u, at = ~0u;
+        if (rt_tri && !fixed.rasterizer_discard && (RtTrace::fit_ok || now % 8 != 0)) {
+            std::scoped_lock lock{RtCapture::sun_mutex};
+            if (ps_discard) {
+                if (RtCapture::cut_cursor + rt_verts <= u64{RtCapture::kSunVerts - RtCapture::kCutBase}) {
+                    at = RtCapture::kCutBase + RtCapture::cut_cursor;
+                    RtCapture::cut_cursor += static_cast<u32>(rt_verts);
+                }
+            } else if (RtCapture::sun_cursor + rt_verts <= u64{RtCapture::kCutBase}) {
+                at = RtCapture::sun_cursor;
+                RtCapture::sun_cursor += static_cast<u32>(rt_verts);
+            }
+        }
+        if (at != ~0u) {
+            const vk::Buffer xb{RtCapture::xfb};
+            const vk::DeviceSize off = u64{at} * 16, size = rt_verts * 16;
+            cmd.bindTransformFeedbackBuffersEXT(0, 1, &xb, &off, &size);
+            cmd.beginTransformFeedbackEXT(0, 0, nullptr, nullptr);
+            rt_shadow_slot = 0;
+        } else if (pair != ~0u) {
+            const vk::Buffer xb{RtCapture::pair_xfb};
+            const vk::DeviceSize off = pair * 256, size = 240;
+            cmd.bindTransformFeedbackBuffersEXT(0, 1, &xb, &off, &size);
+            cmd.beginTransformFeedbackEXT(0, 0, nullptr, nullptr);
+            rt_shadow_slot = 0;
+        } else if (kind != 2 && now % 8 == 0 && !RtTrace::fit_ok) {
+            u64 seen = RtCapture::cam_frame.load(std::memory_order_relaxed);
+            if (seen != now && RtCapture::cam_frame.compare_exchange_strong(seen, now)) {
+                RtCapture::cam_next.store(0, std::memory_order_relaxed);
+            }
+            const u32 sl = RtCapture::cam_next.fetch_add(1, std::memory_order_relaxed);
+            if (sl < RtCapture::kMainDraws) {
+                rt_shadow_slot = sl; // ends the same way as a sun-view sample
+                RtCapture::cam_keys[now % 8][sl] = rt_key;
+                const vk::Buffer xb{RtCapture::cam_xfb};
+                const vk::DeviceSize off = ((now % 8) * RtCapture::kMainDraws + sl) * RtCapture::kSampleVerts * 16, size = RtCapture::kSampleVerts * 16;
+                cmd.bindTransformFeedbackBuffersEXT(0, 1, &xb, &off, &size);
+                cmd.beginTransformFeedbackEXT(0, 0, nullptr, nullptr);
+            }
+        }
+    }
     if (no_draw) {
     } else if (kind == 0) {
         if (state.index_buffer != static_cast<VkBuffer>(index_buffer) || state.index_offset != index_offset || state.index_type != index_type) {
@@ -1996,6 +3123,17 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
         cmd.drawIndexedIndirect(args_buffer, args_offset, 1, 20);
     } else {
         cmd.draw(static_cast<u32>(a1), instances, static_cast<u32>(a2), 0);
+    }
+    if (rt_shadow_slot != ~0u) {
+        cmd.endTransformFeedbackEXT(0, 0, nullptr, nullptr);
+    }
+    if (rt_sun_set && RtCapture::On()) {
+        RtTrace::NoteSun(rt_sun);
+    }
+    if (rt_sun_set && RtCapture::On() && pass.color_count > 0 && RtTrace::SunOn()) {
+        Stream::BreakPass(cmd);
+        RtTrace::SunShadow(cmd, pass.colors[0], static_cast<vk::Format>(color_format0), pass.extent.width, pass.extent.height, rt_sun);
+        rt_state_dirty = true;
     }
     if (!dump_views.empty()) {
         Stream::BreakPass(cmd);
@@ -2145,3 +3283,314 @@ nlohmann::json Report() {
 }
 
 } // namespace Core::Vkb::Graphics
+
+/// RT prototype: the presenter's frame tick; every 120 frames the captured vertex count of a frame a few frames back goes to the log
+void TlgVkbRtOnPresent() {
+    const u64 f = Core::Vkb::Graphics::rt_present_frame.fetch_add(1, std::memory_order_relaxed) + 1;
+    const bool rt_log = f % 30 == 0;
+    if (!Core::Vkb::Graphics::RtCapture::ready || f < 4) {
+        return;
+    }
+    const u32 bytes = Core::Vkb::Graphics::RtCapture::BytesOfFrame(f - 4);
+    if (rt_log) LOG_ERROR(Render_Vulkan, "RT draws over the last 120 presents: captured {} all {} depth-tested {} (main size {}x{})", Core::Vkb::Graphics::RtCapture::c_cap.exchange(0), Core::Vkb::Graphics::RtCapture::c_all.exchange(0),
+              Core::Vkb::Graphics::RtCapture::c_dw.exchange(0), Core::Vkb::Graphics::RtCapture::main_w, Core::Vkb::Graphics::RtCapture::main_h);
+    namespace G = Core::Vkb::Graphics;
+    {
+        const float* v = G::RtCapture::cam_ptr; // the camera samples of the last sampled frame (ring place 0)
+        // one fit per sampled draw (draws differ in near plane); the value most draws share wins
+        double n = 0;
+        std::vector<std::pair<float, float>> fits;
+        for (u32 slot = 0; slot < G::RtCapture::kSampleSlots; ++slot) {
+            double m = 0, sw = 0, sz = 0, sww = 0, swz = 0;
+            for (u32 i = 0; i < G::RtCapture::kSampleVerts; ++i) {
+                const float* x = v + (slot * G::RtCapture::kSampleVerts + i) * 4;
+                const double z = x[2], w = x[3];
+                if (w > 0.001 && std::isfinite(z) && std::isfinite(w)) {
+                    m += 1, sw += w, sz += z, sww += w * w, swz += w * z;
+                }
+            }
+            const double det = m * sww - sw * sw;
+            if (m >= 3 && std::abs(det) > 1e-9) {
+                const double fa = (m * swz - sw * sz) / det;
+                fits.emplace_back(static_cast<float>(fa), static_cast<float>((sz - fa * sw) / m));
+                n += m;
+            }
+        }
+        u32 best = 0, best_votes = 0;
+        for (u32 i = 0; i < fits.size(); ++i) {
+            u32 votes = 0;
+            for (const auto& f2 : fits) {
+                votes += std::abs(f2.second - fits[i].second) < std::abs(fits[i].second) * 0.05f ? 1 : 0;
+            }
+            if (votes > best_votes) {
+                best = i, best_votes = votes;
+            }
+        }
+        static const float fixed_b = [] { const char* e = std::getenv("TLG_VKB_RT_NEAR"); return e != nullptr ? -static_cast<float>(std::atof(e)) : 0.0f; }();
+        if (!fits.empty()) {
+            G::RtTrace::fit_a = fits[best].first;
+            G::RtTrace::fit_b = fixed_b != 0.0f ? fixed_b : fits[best].second;
+            G::RtTrace::fit_ok = true;
+        }
+        {
+            // the sun direction in (x_clip, y_clip, w) space, from draws seen both by the camera and by the sun view (shadow map): the affine map camera -> sun view;
+            // the direction along which sun-view x and y stay the same is the light direction (cross product of the two rows); sign: toward smaller sun-view depth
+            const u64 fr = (f - 4) % 8;
+            const u64 fm = (f - 4) % G::RtCapture::kSlots;
+            if (fr == 0) {
+            const float* sv = G::RtCapture::shadow_ptr + fr * G::RtCapture::kShadowDraws * G::RtCapture::kSampleVerts * 4;
+            const float* mv = G::RtCapture::cam_ptr + fr * G::RtCapture::kMainDraws * G::RtCapture::kSampleVerts * 4;
+            std::unordered_map<u64, u32> main_slot;
+            for (u32 i = 0; i < G::RtCapture::kMainDraws; ++i) {
+                if (G::RtCapture::cam_keys[fr][i] != 0) {
+                    main_slot.emplace(G::RtCapture::cam_keys[fr][i], i);
+                }
+            }
+            std::unordered_map<u64, u32> main_count;
+            for (u32 i = 0; i < G::RtCapture::kMainDraws; ++i) {
+                if (G::RtCapture::cam_keys[fr][i] != 0) {
+                    ++main_count[G::RtCapture::cam_keys[fr][i]];
+                }
+            }
+            // one fit per matched pair (the sun map holds several cascades: one object, several sun matrices, but the same light direction);
+            // objects the camera draws more than once are skipped (which copy pairs with which is unknown); fits that do not close are dropped
+            double acc[3]{};
+            u32 matched = 0, tried = 0;
+            double rms_sum = 0;
+            std::memset(G::RtCapture::shadow_fit_ok, 0, sizeof(G::RtCapture::shadow_fit_ok));
+            for (u32 k = 0; k < G::RtCapture::kShadowDraws; ++k) {
+                const u64 key = G::RtCapture::shadow_keys[fr][k];
+                const auto it = main_slot.find(key);
+                if (key == 0 || it == main_slot.end() || main_count[key] != 1) {
+                    continue;
+                }
+                double mtx[4][7]{}, so2[3]{};
+                u32 used = 0;
+                for (u32 i = 0; i < G::RtCapture::kSampleVerts; ++i) {
+                    const float* m = mv + (it->second * G::RtCapture::kSampleVerts + i) * 4;
+                    const float* t = sv + (k * G::RtCapture::kSampleVerts + i) * 4;
+                    if (!(m[3] > 0.001f) || !std::isfinite(m[0]) || !std::isfinite(t[0]) || std::abs(t[3] - 1.0f) > 1e-3f) { // the sun view is orthographic (w = 1); perspective 2048 views are lamps
+                        continue;
+                    }
+                    const double r[4]{m[0], m[1], m[3], 1.0};
+                    const double o[3]{t[0], t[1], t[2]};
+                    for (u32 x = 0; x < 4; ++x) {
+                        for (u32 y = 0; y < 4; ++y) {
+                            mtx[x][y] += r[x] * r[y];
+                        }
+                        for (u32 c = 0; c < 3; ++c) {
+                            mtx[x][4 + c] += r[x] * o[c];
+                        }
+                    }
+                    for (u32 c = 0; c < 3; ++c) {
+                        so2[c] += o[c] * o[c];
+                    }
+                    ++used;
+                }
+                if (used < 8) {
+                    continue;
+                }
+                ++tried;
+                double orig[4][7];
+                std::memcpy(orig, mtx, sizeof(mtx));
+                bool ok = true;
+                for (u32 c = 0; c < 4 && ok; ++c) {
+                    u32 piv = c;
+                    for (u32 r2 = c + 1; r2 < 4; ++r2) {
+                        if (std::abs(mtx[r2][c]) > std::abs(mtx[piv][c])) {
+                            piv = r2;
+                        }
+                    }
+                    if (std::abs(mtx[piv][c]) < 1e-9 * (1.0 + std::abs(orig[c][c]))) {
+                        ok = false;
+                        break;
+                    }
+                    for (u32 c2 = 0; c2 < 7; ++c2) {
+                        std::swap(mtx[c][c2], mtx[piv][c2]);
+                    }
+                    for (u32 r2 = 0; r2 < 4; ++r2) {
+                        if (r2 != c) {
+                            const double q = mtx[r2][c] / mtx[c][c];
+                            for (u32 c2 = 0; c2 < 7; ++c2) {
+                                mtx[r2][c2] -= q * mtx[c][c2];
+                            }
+                        }
+                    }
+                }
+                if (!ok) {
+                    continue;
+                }
+                double row[3][3], rms[3];
+                for (u32 c = 0; c < 3; ++c) {
+                    double fit = 0;
+                    for (u32 r2 = 0; r2 < 4; ++r2) {
+                        fit += mtx[r2][4 + c] / mtx[r2][r2] * orig[r2][4 + c];
+                    }
+                    rms[c] = std::sqrt(std::max(0.0, so2[c] - fit) / used);
+                    for (u32 r2 = 0; r2 < 3; ++r2) {
+                        row[c][r2] = mtx[r2][4 + c] / mtx[r2][r2];
+                    }
+                }
+                if (!(rms[0] < 0.002 && rms[1] < 0.002)) {
+                    continue;
+                }
+                const double d[3]{row[0][1] * row[1][2] - row[0][2] * row[1][1], row[0][2] * row[1][0] - row[0][0] * row[1][2], row[0][0] * row[1][1] - row[0][1] * row[1][0]};
+                const double len = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+                if (!(len > 1e-12)) {
+                    continue;
+                }
+                const double sgn = (d[0] * row[2][0] + d[1] * row[2][1] + d[2] * row[2][2]) > 0 ? -1.0 : 1.0;
+                for (u32 c = 0; c < 3; ++c) {
+                    acc[c] += sgn * d[c] / len;
+                }
+                rms_sum += rms[0] + rms[1];
+                for (u32 c = 0; c < 3; ++c) {
+                    for (u32 r2 = 0; r2 < 4; ++r2) {
+                        G::RtCapture::shadow_fit[k][c * 4 + r2] = mtx[r2][4 + c] / mtx[r2][r2];
+                    }
+                }
+                G::RtCapture::shadow_fit_ok[k] = true;
+                G::RtTrace::sun_rms[0] = rms[0], G::RtTrace::sun_rms[1] = rms[1], G::RtTrace::sun_rms[2] = rms[2];
+                G::RtTrace::sun_rows[0] = row[0][0], G::RtTrace::sun_rows[1] = row[0][1], G::RtTrace::sun_rows[2] = row[0][2];
+                G::RtTrace::sun_rows[3] = row[1][0], G::RtTrace::sun_rows[4] = row[1][1], G::RtTrace::sun_rows[5] = row[1][2];
+                ++matched;
+            }
+            if (rt_log) {
+                LOG_ERROR(Render_Vulkan, "RT sun per pair: {} tried, {} clean", tried, matched);
+            }
+            static u32 sun_dumps = 0;
+            if (G::RtCapture::sun_view.load(std::memory_order_relaxed) == 0 && G::RtCapture::shadow_next.load(std::memory_order_relaxed) > 20) {
+                ++sun_dumps;
+                struct Grp {
+                    u32 draws = 0, ortho = 0, persp = 0, discard = 0, clean = 0, indirect = 0, first = ~0u;
+                    u64 indices = 0;
+                    double dev = 0;
+                    u32 order = 0;
+                };
+                std::map<std::tuple<u64, float, float, float, float>, Grp> grp;
+                u32 order = 0;
+                const u32 total = std::min<u32>(G::RtCapture::shadow_next.load(std::memory_order_relaxed), G::RtCapture::kShadowDraws);
+                for (u32 k = 0; k < total; ++k) {
+                    const auto& in = G::RtCapture::shadow_info[k];
+                    auto [gi, fresh] = grp.try_emplace({in.view, in.vp[0], in.vp[1], in.vp[2], in.vp[3]});
+                    Grp& g = gi->second;
+                    if (fresh) {
+                        g.order = order++;
+                    }
+                    ++g.draws;
+                    g.indices += static_cast<u64>(in.indices) * std::max<u32>(in.inst, 1);
+                    g.discard += in.discard;
+                    g.indirect += in.kind == 2;
+                    const float w0 = sv[k * G::RtCapture::kSampleVerts * 4 + 3];
+                    (std::abs(w0 - 1.0f) < 1e-3f ? g.ortho : g.persp) += 1;
+                    if (G::RtCapture::shadow_fit_ok[k]) {
+                        ++g.clean;
+                        if (g.first == ~0u) {
+                            g.first = k;
+                        } else {
+                            for (u32 c = 0; c < 12; ++c) {
+                                g.dev = std::max(g.dev, std::abs(G::RtCapture::shadow_fit[k][c] - G::RtCapture::shadow_fit[g.first][c]));
+                            }
+                        }
+                    }
+                }
+                for (const auto& [key, g] : grp) {
+                    std::string m;
+                    if (g.first != ~0u) {
+                        for (u32 c = 0; c < 12; ++c) {
+                            m += fmt::format(" {:.5f}", G::RtCapture::shadow_fit[g.first][c]);
+                        }
+                    }
+                    LOG_ERROR(Render_Vulkan, "RT sunpass #{}: view {:#x} viewport {} {} {} {}: draws {} indices {} ortho {} persp {} cutout {} indirect {} prim {} clean fits {} (spread {:.5f}) M ={}", g.order,
+                              std::get<0>(key), std::get<1>(key), std::get<2>(key), std::get<3>(key), std::get<4>(key), g.draws, g.indices, g.ortho, g.persp, g.discard, g.indirect,
+                              G::RtCapture::shadow_info[g.first != ~0u ? g.first : 0].prim, g.clean, g.dev, m);
+                }
+                // the sun pass with the most draws among the parallel-light ones (the far cascade: the whole shadow scene)
+                u64 pick = 0;
+                u32 pick_draws = 0;
+                for (const auto& [key, g] : grp) {
+                    if (g.ortho > g.persp && g.draws > pick_draws) {
+                        pick = std::get<0>(key), pick_draws = g.draws;
+                    }
+                }
+                if (pick != 0) {
+                    G::RtCapture::sun_view.store(pick, std::memory_order_relaxed);
+                    LOG_ERROR(Render_Vulkan, "RT sun pass chosen: view {:#x} ({} draws)", pick, pick_draws);
+                }
+            }
+            if (matched < 3) {
+                matched = 0;
+            }
+            const double al = std::sqrt(acc[0] * acc[0] + acc[1] * acc[1] + acc[2] * acc[2]);
+            if (matched > 0 && al > 1e-6) {
+                // smoothed over time (the matched set changes per frame): about 0.5 s
+                const float k = G::RtTrace::sun_ok ? 0.03f : 1.0f;
+                float sd[3];
+                for (u32 c = 0; c < 3; ++c) {
+                    sd[c] = G::RtTrace::sun_dir[c] + k * (static_cast<float>(acc[c] / al) - G::RtTrace::sun_dir[c]);
+                }
+                const float sl = std::sqrt(sd[0] * sd[0] + sd[1] * sd[1] + sd[2] * sd[2]);
+                for (u32 c = 0; c < 3; ++c) {
+                    G::RtTrace::sun_dir[c] = sd[c] / sl;
+                }
+                G::RtTrace::sun_ok = true;
+            }
+            if (rt_log) {
+                std::unordered_map<u64, u32> anyf;
+                u32 mains = 0;
+                for (u32 q = 0; q < 8; ++q) {
+                    for (u32 i = 0; i < 256; ++i) {
+                        if (G::RtCapture::main_keys[q][i] != 0) {
+                            anyf.emplace(G::RtCapture::main_keys[q][i], q);
+                            mains += q == fr;
+                        }
+                    }
+                }
+                u32 hit_any = 0, sh = 0;
+                std::string fs;
+                for (u32 k = 0; k < G::RtCapture::kShadowDraws; ++k) {
+                    const u64 key = G::RtCapture::shadow_keys[fr][k];
+                    sh += key != 0;
+                    const auto it = anyf.find(key);
+                    if (key != 0 && it != anyf.end()) {
+                        ++hit_any;
+                        if (fs.size() < 60) fs += std::to_string(it->second) + " ";
+                    }
+                }
+                LOG_ERROR(Render_Vulkan, "RT sun keys: frame {} main keys {} shadow keys {} found in any frame {} (frames {})", fr, mains, sh, hit_any, fs);
+                LOG_ERROR(Render_Vulkan, "RT sun fit: error x {:.4f} y {:.4f} z {:.4f}; sun x = {:.4f} {:.4f} {:.4f}, sun y = {:.4f} {:.4f} {:.4f}", G::RtTrace::sun_rms[0], G::RtTrace::sun_rms[1], G::RtTrace::sun_rms[2], G::RtTrace::sun_rows[0], G::RtTrace::sun_rows[1], G::RtTrace::sun_rows[2], G::RtTrace::sun_rows[3], G::RtTrace::sun_rows[4], G::RtTrace::sun_rows[5]);
+                LOG_ERROR(Render_Vulkan, "RT sun: {} matched draws ({} sun-view draws), direction {:.3f} {:.3f} {:.3f} (agreement {:.2f})", matched,
+                          G::RtCapture::shadow_next.load(std::memory_order_relaxed), G::RtTrace::sun_dir[0], G::RtTrace::sun_dir[1], G::RtTrace::sun_dir[2],
+                          matched > 0 ? al / matched : 0.0);
+            }
+            }
+        }
+        if (rt_log) {
+            const float* r = G::RtCapture::fit_read_ptr + G::RtCapture::last_ring.load(std::memory_order_relaxed) * 16;
+            LOG_ERROR(Render_Vulkan, "RT v2: sun triangles {} pairs {} (kept {}, worst error {:.5f}, valid {}) frames built {} empty {}; map x = {:.5f} {:.5f} {:.5f} {:.5f}, y = {:.5f} {:.5f} {:.5f} {:.5f}, z = {:.6f} {:.6f} {:.6f} {:.5f}",
+                      G::RtCapture::last_tris.load(std::memory_order_relaxed), G::RtCapture::last_pairs.load(std::memory_order_relaxed), r[12], r[13], r[15],
+                      G::RtCapture::c_built.exchange(0), G::RtCapture::c_empty.exchange(0), r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11]);
+        }
+        std::string all;
+        for (const auto& f2 : fits) {
+            all += fmt::format(" {:.4f}", f2.second);
+        }
+        if (rt_log) LOG_ERROR(Render_Vulkan, "RT fit per draw (B):{} -> chosen B {} ({} votes)", all, G::RtTrace::fit_b, best_votes);
+        const u32 raw = G::RtTrace::probe_ptr != nullptr ? G::RtTrace::probe_ptr[0] : 0;
+        float as_float = 0;
+        std::memcpy(&as_float, &raw, 4);
+        LOG_ERROR(Render_Vulkan, "RT fit: z = {} * w + {} from {} vertices ({}), traces {}, depth probe raw {:#x} float {} unorm24 {}", G::RtTrace::fit_a, G::RtTrace::fit_b, n,
+                  G::RtTrace::fit_ok ? "ok" : "none", G::RtTrace::c_traces.exchange(0), raw, as_float, (raw & 0xffffff) / 16777215.0);
+    }
+    if (rt_log) LOG_ERROR(Render_Vulkan, "RT capture: frame {} vertices {} ({} triangles), draws {}", f - 4, bytes / 16, bytes / 48, Core::Vkb::Graphics::RtCapture::draws_last.load(std::memory_order_relaxed));
+}
+
+/// RT prototype: the shadow pass on the frame's final picture (presenter, after all of the frame's draws were submitted)
+void TlgVkbRtTraceDisplay(vk::CommandBuffer cmd, vk::ImageView view, vk::Format format, u32 w, u32 h) {
+    namespace G = Core::Vkb::Graphics;
+    if (!G::RtCapture::On() || !G::RtCapture::ready || G::RtCapture::slot_next.load(std::memory_order_relaxed) == 0) {
+        return;
+    }
+    G::RtTrace::Shade(cmd, view, format, w, h);
+    G::RtTrace::c_traces.fetch_add(1, std::memory_order_relaxed);
+}

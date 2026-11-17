@@ -610,6 +610,15 @@ void EmitContext::DefineVertexBlock() {
     const std::array<Id, 8> zero{f32_zero_value, f32_zero_value, f32_zero_value, f32_zero_value,
                                  f32_zero_value, f32_zero_value, f32_zero_value, f32_zero_value};
     output_position = DefineVariable(F32[4], spv::BuiltIn::Position, spv::StorageClass::Output);
+    {
+        static const bool rt = [] { const char* e = std::getenv("TLG_VKB_RT"); return e != nullptr && e[0] == '1'; }();
+        if (rt && sw_stage == SwStage::Vertex && hw_stage == HwStage::Vertex) {
+            rt_xfb = true;
+            Decorate(output_position, spv::Decoration::XfbBuffer, 0U);
+            Decorate(output_position, spv::Decoration::XfbStride, 16U);
+            Decorate(output_position, spv::Decoration::Offset, 0U);
+        }
+    }
     const bool needs_clip_distance_emulation = sw_stage == SwStage::Vertex &&
                                                hw_stage == HwStage::Vertex &&
                                                profile.needs_clip_distance_emulation;

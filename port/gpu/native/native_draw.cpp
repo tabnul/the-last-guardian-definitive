@@ -8597,6 +8597,9 @@ void SkinRingRestore(const SkinRename& r) {
 
 u64 PS4_SYSV_ABI SkinWrites(u64 ring, u64 scene, u64 flag, u64 a3, u64 a4, u64 a5, u64 ret, u64 caller_rsp) {
     (void)a3, (void)a4, (void)a5, (void)ret, (void)caller_rsp;
+    if (IsHeapPointer(scene)) {
+        Guarded([&]() -> u64 { NativeZPassGen::ViewDump(scene); return 0; });
+    }
     if (SkinRingOn() && IsHeapPointer(ring) && IsHeapPointer(scene)) {
         bool work = false;
         Guarded([&]() -> u64 {
@@ -11266,6 +11269,9 @@ u64 PS4_SYSV_ABI InstanceGroupBind(u64 inner, u64 group, u64 view, u64 a3, u64 a
 u64 PS4_SYSV_ABI GBufferEnter(u64 render_device, u64 mode, u64 list, u64 a3, u64 flags, u64 query_mode, u64 ret, u64 caller_rsp) {
     (void)ret;
     const u64 param7 = Rd<u8>(caller_rsp, 0);
+    if (IsHeapPointer(a3)) {
+        Guarded([&]() -> u64 { NativeZPassGen::ViewDumpView(a3); return 0; });
+    }
     if (NativeZPassGen::GBufferEnabled()) {
         static const u64 loop_entry = Core::GuestHooks::OriginalEntry("DrawGBufferPrimitives");
         if (NativeZPassGen::HandleGBuffer(render_device, mode, list, a3, flags, query_mode, param7, loop_entry)) {

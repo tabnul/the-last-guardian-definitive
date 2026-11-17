@@ -21,6 +21,8 @@ namespace VkbVulkan {
 
 class Instance {
 public:
+    bool IsRtSupported() const { return rt_supported; } // RT prototype
+
     explicit Instance(bool validation = false, bool crash_diagnostic = false);
     explicit Instance(Frontend::WindowSDL& window, s32 physical_device_index,
                       bool enable_validation = false, bool enable_crash_diagnostic = false);
@@ -584,6 +586,7 @@ private:
     bool supports_block_texel_view{};
     u64 total_memory_budget{};
     std::vector<size_t> valid_heaps;
+    bool rt_supported{};
 };
 
 } // namespace VkbVulkan

@@ -6,6 +6,9 @@
 #include "native/vkb_core/vkb_presenter.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <limits>
 #include "common/assert.h"
 #include "common/logging/log.h"
@@ -27,6 +30,9 @@
 #undef MemoryBarrier // winnt.h macro (through fmt), clashes with vk::MemoryBarrier
 #endif
 
+void TlgVkbRtOnPresent(); // native_vkb_graphics.cpp, RT prototype
+void TlgVkbRtTraceDisplay(vk::CommandBuffer cmd, vk::ImageView view, vk::Format format, u32 w, u32 h);
+
 namespace VkbVulkan {
 
 std::unique_ptr<Presenter> g_presenter;
@@ -40,6 +46,43 @@ constexpr vk::ImageSubresourceRange ColorRange{
     .baseArrayLayer = 0,
     .layerCount = VK_REMAINING_ARRAY_LAYERS,
 };
+
+/// TLG_FRAME_STATS=1: the same "Frame stats:" line as the default renderer (videoout driver.cpp), so the
+/// scene check and bench tools read both renderers. TLG_FRAME_STATS_MS sets the window (default 5 s).
+/// Also logs the game frame size whenever it changes.
+void NoteFrameStats(const Frame* frame) {
+    static const bool on = std::getenv("TLG_FRAME_STATS") != nullptr;
+    if (!on) {
+        return;
+    }
+    static const double window_s = [] {
+        const char* env = std::getenv("TLG_FRAME_STATS_MS");
+        const int ms = env ? std::atoi(env) : 0;
+        return ms > 0 ? ms / 1000.0 : 5.0;
+    }();
+    using Clock = std::chrono::steady_clock;
+    static Clock::time_point start = Clock::now(), last = start;
+    static u32 frames = 0, last_w = 0, last_h = 0;
+    static double worst_ms = 0.0;
+    if (frame && (frame->width != last_w || frame->height != last_h)) {
+        last_w = frame->width;
+        last_h = frame->height;
+        std::printf("VKB game frame size %ux%u\n", last_w, last_h);
+    }
+    const auto now = Clock::now();
+    worst_ms = std::max(worst_ms, std::chrono::duration<double, std::milli>(now - last).count());
+    last = now;
+    ++frames;
+    const double window = std::chrono::duration<double>(now - start).count();
+    if (window >= window_s) {
+        std::printf("Frame stats: %.1f FPS, worst frame %.1f ms (vblank 0 Hz); 0 shader/pipeline compiles, 0.0 ms\n",
+                    frames / window, worst_ms);
+        std::fflush(stdout);
+        frames = 0;
+        worst_ms = 0.0;
+        start = now;
+    }
+}
 
 vk::ImageBlit BlitFit(s32 frame_width, s32 frame_height, s32 swapchain_width, s32 swapchain_height) {
     const float frame_aspect = static_cast<float>(frame_width) / frame_height;
@@ -246,6 +289,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VkbVideoOut::BufferAttributeGrou
         .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
     }));
     const vk::Extent2D image_size{display.width, display.height};
+    TlgVkbRtTraceDisplay(cmdbuf, image_view, view_format, display.width, display.height);
     const vk::ImageMemoryBarrier2 to_read{
         .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
         .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
@@ -391,6 +435,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         // the frame counter of the debug server (fps, frame time) and the frame tick of the guest hooks
         Core::DebugServer::NotePresent();
         Core::GuestHooks::OnFrame();
+        NoteFrameStats(frame);
+        TlgVkbRtOnPresent();
     }
     const auto free_frame = [&] {
         if (!is_reusing_frame) {

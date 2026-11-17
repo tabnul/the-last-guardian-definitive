@@ -1,0 +1,146 @@
+#version 460
+// RT: the affine map from camera space (x_clip, y_clip, w) to the clip space of the sun view, fitted in the same frame from objects drawn by both views
+// (the first vertices of each such object, captured from both draws). Pairs that do not agree with the rest (moving parts, wrong twins) are dropped.
+layout(local_size_x = 1) in;
+layout(std430, binding = 0) readonly buffer Sun { vec4 sun[]; };
+layout(std430, binding = 1) readonly buffer Cam { vec4 cam[]; };  // 16 vertices per pair
+layout(std430, binding = 2) readonly buffer Tab { uvec2 tab[]; }; // per pair: first sun vertex, vertex count
+layout(std430, binding = 3) buffer Out { vec4 row[3]; vec4 stat; } o; // stat: pairs kept, worst error of a kept pair, pairs offered, valid
+layout(push_constant) uniform P { uint pairs; uint tab_base; } pc;
+const uint kMax = 256;
+double M[12];
+bool use[kMax];
+float err[kMax];
+uint n;
+bool Good(vec4 c, vec4 s) {
+    return c.w > 0.001 && !any(isnan(c)) && !any(isinf(c)) && !any(isnan(s)) && !any(isinf(s)) && abs(s.w - 1.0) < 1e-3;
+}
+bool Fit() {
+    double a[4][7];
+    for (uint i = 0; i < 4; ++i) {
+        for (uint j = 0; j < 7; ++j) {
+            a[i][j] = 0.0lf;
+        }
+    }
+    uint pts = 0;
+    for (uint p = 0; p < n; ++p) {
+        if (!use[p]) {
+            continue;
+        }
+        const uvec2 t = tab[pc.tab_base + p];
+        for (uint i = 0; i < t.y; ++i) {
+            const vec4 c = cam[p * 16 + i], s = sun[t.x + i];
+            if (!Good(c, s)) {
+                continue;
+            }
+            double r[4];
+            r[0] = c.x, r[1] = c.y, r[2] = c.w, r[3] = 1.0lf;
+            double q[3];
+            q[0] = s.x, q[1] = s.y, q[2] = s.z;
+            for (uint x = 0; x < 4; ++x) {
+                for (uint y = 0; y < 4; ++y) {
+                    a[x][y] += r[x] * r[y];
+                }
+                for (uint k = 0; k < 3; ++k) {
+                    a[x][4 + k] += r[x] * q[k];
+                }
+            }
+            ++pts;
+        }
+    }
+    if (pts < 12) {
+        return false;
+    }
+    for (uint c = 0; c < 4; ++c) {
+        uint piv = c;
+        for (uint r2 = c + 1; r2 < 4; ++r2) {
+            if (abs(a[r2][c]) > abs(a[piv][c])) {
+                piv = r2;
+            }
+        }
+        if (abs(a[piv][c]) < 1e-12lf) {
+            return false;
+        }
+        for (uint j = 0; j < 7; ++j) {
+            const double tmp = a[c][j];
+            a[c][j] = a[piv][j];
+            a[piv][j] = tmp;
+        }
+        for (uint r2 = 0; r2 < 4; ++r2) {
+            if (r2 != c) {
+                const double f = a[r2][c] / a[c][c];
+                for (uint j = 0; j < 7; ++j) {
+                    a[r2][j] -= f * a[c][j];
+                }
+            }
+        }
+    }
+    for (uint k = 0; k < 3; ++k) {
+        for (uint j = 0; j < 4; ++j) {
+            M[k * 4 + j] = a[j][4 + k] / a[j][j];
+        }
+    }
+    return true;
+}
+void Errors() {
+    for (uint p = 0; p < n; ++p) {
+        const uvec2 t = tab[pc.tab_base + p];
+        float e = 0.0;
+        uint pts = 0;
+        for (uint i = 0; i < t.y; ++i) {
+            const vec4 c = cam[p * 16 + i], s = sun[t.x + i];
+            if (!Good(c, s)) {
+                continue;
+            }
+            const double x = M[0] * c.x + M[1] * c.y + M[2] * c.w + M[3], y = M[4] * c.x + M[5] * c.y + M[6] * c.w + M[7];
+            e = max(e, max(abs(float(x - s.x)), abs(float(y - s.y))));
+            ++pts;
+        }
+        err[p] = pts > 0 ? e : 1e30;
+    }
+}
+void main() {
+    n = min(pc.pairs, kMax);
+    for (uint p = 0; p < kMax; ++p) {
+        use[p] = p < n;
+    }
+    for (uint i = 0; i < 12; ++i) {
+        M[i] = 0.0lf;
+    }
+    bool ok = Fit();
+    if (ok) {
+        // keep the better half
+        Errors();
+        for (uint p = 0; p < n; ++p) {
+            uint better = 0;
+            for (uint q = 0; q < n; ++q) {
+                better += err[q] < err[p] ? 1 : 0;
+            }
+            use[p] = err[p] < 1e29 && better * 2 <= n;
+        }
+        ok = Fit();
+    }
+    const float limit[2] = float[2](0.01, 0.002);
+    for (uint round = 0; ok && round < 2; ++round) {
+        Errors();
+        for (uint p = 0; p < n; ++p) {
+            use[p] = err[p] < limit[round];
+        }
+        ok = Fit();
+    }
+    uint kept = 0;
+    float worst = 0.0;
+    if (ok) {
+        Errors();
+        for (uint p = 0; p < n; ++p) {
+            if (err[p] < 0.002) {
+                ++kept;
+                worst = max(worst, err[p]);
+            }
+        }
+    }
+    for (uint k = 0; k < 3; ++k) {
+        o.row[k] = vec4(float(M[k * 4]), float(M[k * 4 + 1]), float(M[k * 4 + 2]), float(M[k * 4 + 3]));
+    }
+    o.stat = vec4(float(kept), worst, float(n), ok && kept >= 4 ? 1.0 : 0.0);
+}

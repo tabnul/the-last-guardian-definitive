@@ -197,6 +197,8 @@ struct Pass {
     u32 color_count{};
     vk::ImageView depth{};
     bool depth_has_stencil{};
+    vk::Image depth_image{};      ///< RT prototype: for a depth-only sampling view
+    vk::Format depth_format{};
     vk::Extent2D extent{};
     u32 layers{1};
     bool operator==(const Pass&) const = default;
