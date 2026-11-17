@@ -8182,7 +8182,7 @@ u64 PS4_SYSV_ABI NoteAsyncMap(u64 resource, u64 out, u64 a2, u64 a3, u64 a4, u64
     const u64 mapped = Rd<u64>(out, 0);
     const u32 mapped_size = Rd<u32>(out, 8);
     if (Core::Vkb::On() && mapped != 0 && mapped_size != 0 && Rd<u32>(resource, 0x124) == 1) {
-        Core::Vkb::BufferCpuAddressable(mapped, mapped_size); // api-contract.md Y6: the buffer lives where this pointer writes
+        Core::Vkb::BufferCpuAddressable(Rd<u64>(resource, 0x10)); // api-contract.md Y6: the buffer lives where this pointer writes (by its engine id)
     }
     if (Core::Vkb::On() && Core::Vkb::ContractCensusOn() && mapped != 0) { // api-contract.md Y6 (debug): the CPU reads this memory in place
         const u32 kind = Rd<u32>(resource, 0x124);
@@ -8191,6 +8191,30 @@ u64 PS4_SYSV_ABI NoteAsyncMap(u64 resource, u64 out, u64 a2, u64 a3, u64 a4, u64
                                           : fmt::format("Y6 AsyncMap of a texture (kind {}, caller {:#x}): our image never writes the memory back", kind, ret - ImageBase() + 0x1000000));
     }
     return 1;
+}
+
+/// RenderTexture_CopyToNewMemory (01c97a00, from GpuHeap_MoveOneResource / GpuHeap_DropTopMipsOverBudget): (old render texture, compute queue, mip) -> the new render
+/// texture, whose memory the engine fills by a raw copy of the old one's (mip -1: the whole texture; else from that mip on into a half-size texture). The engine's function
+/// runs; then our new image gets the old image's contents (api-contract.md W5, by the two engine objects: each render texture's Js texture at + 0x40, its id at + 0x10).
+u64 PS4_SYSV_ABI TextureMove(u64 old_texture, u64 queue, u64 mip, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)ret;
+    if (!Core::Vkb::On() || old_texture == 0) {
+        return 0; // the original runs
+    }
+    static const u64 original = Core::GuestHooks::OriginalEntry("TextureMove");
+    if (original == 0) {
+        return 0;
+    }
+    const u64 old_js = Rd<u64>(old_texture, 0x40);
+    const u64 moved = reinterpret_cast<GuestFunction6>(original)(old_texture, queue, mip, a3, a4, a5);
+    if (moved != 0 && old_js != 0 && IsHeapPointer(moved)) {
+        const u64 new_js = Rd<u64>(moved, 0x40);
+        const s32 first = static_cast<s32>(mip);
+        if (new_js != 0) {
+            Core::Vkb::TextureMoved(Rd<u64>(new_js, 0x10), Rd<u64>(old_js, 0x10), first < 0 ? 0u : static_cast<u32>(first));
+        }
+    }
+    return moved | (1ull << 63); // the original ran here: its result is the hooked function's value
 }
 
 /// FUN_01c4c570: the worker job that reads the four staging ranges. The window between entering and leaving it is the time the CPU may read
@@ -11621,6 +11645,9 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "asyncmap_note") {
         return reinterpret_cast<u64>(&NoteAsyncMap);
+    }
+    if (name == "texture_move") {
+        return reinterpret_cast<u64>(&TextureMove);
     }
     if (name == "tag_fence") {
         return reinterpret_cast<u64>(&TagFenceSignal);

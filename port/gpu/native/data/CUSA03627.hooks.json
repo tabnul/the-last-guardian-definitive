@@ -809,6 +809,13 @@
       "handler": "native_material_pressure"
     },
     {
+      "name": "TextureMove",
+      "ghidra": "0x1c97a00",
+      "mode": "call",
+      "expect": "554889e541574156",
+      "handler": "texture_move"
+    },
+    {
       "name": "MaterialMove",
       "ghidra": "0x1f7e850",
       "mode": "call",

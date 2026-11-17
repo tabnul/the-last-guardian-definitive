@@ -104,7 +104,9 @@ void BufferCpuWritten(u64 address, u64 size);
 /// queue runs before the frame stream: a dispatch earlier in the same frame sees the new contents too)
 void TextureCpuWritten(u64 texture_id);
 /// api-contract.md Y6: the engine handed the CPU a plain pointer to this buffer range (AsyncMap): its bytes live where the pointer writes (our device copy is retired)
-void BufferCpuAddressable(u64 address, u64 size);
+void BufferCpuAddressable(u64 buffer_id);
+/// api-contract.md W5: the engine moved texture `old_id` to new memory as texture `new_id` (from mip `first_mip` on): our new image gets the old image's contents
+void TextureMoved(u64 new_id, u64 old_id, u32 first_mip);
 /// API contract census (debug, TLG_VKB_CONTRACT_CENSUS=1): counts by key, in the objects report under "contract_census"
 bool ContractCensusOn();
 void ContractNote(const std::string& key);
