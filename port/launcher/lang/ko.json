@@ -449,7 +449,7 @@
     "pad.combo_qa": "QA 메뉴",
     "pad.combo_photo": "포토 모드 켜기 / 끄기",
     "pad.combo_press": "버튼을 누른 채로 있다가 떼세요…",
-    "pad.combo_help": "두 개 이상의 버튼을 함께. 키보드: Alt+Q는 종료, Insert는 게임 내 메뉴를 엽니다.",
+    "pad.combo_help": "두 개 이상의 버튼을 함께. 키보드 종료 키는 Ctrl 또는 Alt와 문자나 숫자, 또는 F 키가 필요합니다. Insert는 게임 내 메뉴를 엽니다.",
     "pad.photo": "사진 모드",
     "pad.photo_invert": "위 / 아래 시점 반전",
     "pad.photo_shot": "스크린샷",
@@ -465,7 +465,12 @@
     "pad.photo_press": "버튼을 누르세요…",
     "pad.photo_note": "항목마다 버튼 하나, 사진 모드에서만. 왼쪽 스틱으로 날고 오른쪽 스틱으로 둘러봅니다. 키보드: 같은 버튼의 키. Print Screen으로도 스크린샷을 찍습니다.",
     "launcher.shadow_lite": "가벼운 그림자",
-    "launcher.shadow_lite_hint": "게임의 그림자 레이어 네 개 중 카메라에 가장 가까운 것을 뺍니다. 게임도 일부 지역에서 직접 그렇게 합니다. 오래된 CPU와 Steam Deck에서 FPS가 몇 % 오르고, 카메라 가까운 그림자가 조금 부드러워집니다. 끔은 출시 그대로입니다."
+    "launcher.shadow_lite_hint": "게임의 그림자 레이어 네 개 중 카메라에 가장 가까운 것을 뺍니다. 게임도 일부 지역에서 직접 그렇게 합니다. 오래된 CPU와 Steam Deck에서 FPS가 몇 % 오르고, 카메라 가까운 그림자가 조금 부드러워집니다. 끔은 출시 그대로입니다.",
+    "pad.quit_key": "게임 종료 (키보드)",
+    "pad.quit_key_press": "키를 누르세요, 예: Ctrl+X…",
+    "pad.quit_key_bad": "이 키는 안 됩니다: Ctrl 또는 Alt와 문자나 숫자, 또는 F 키를 쓰세요",
+    "pad.quit_key_off": "끔",
+    "pad.off_button": "끔"
   },
   "items": {
     "menu:sharpen": {
@@ -1112,7 +1117,6 @@
     "QA menu": "QA 메뉴",
     "Hold the buttons, then release...": "버튼을 누른 채로 있다가 떼세요...",
     "Set": "설정",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "설정: 두 개 이상의 버튼을 함께 누르고 있다가 떼세요. 키보드: Alt+Q는 종료, Insert는 이 메뉴를 엽니다.",
     "Quitting...": "종료하는 중...",
     "Quitting... (release to cancel)": "종료하는 중... (떼면 취소)",
     "Photo mode": "사진 모드",
@@ -1181,6 +1185,10 @@
     "Lite shadows": "가벼운 그림자",
     "On (lighter)": "켬(더 가볍게)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "게임의 그림자 레이어 네 개 중 카메라에 가장 가까운 것을 뺍니다. 게임도 일부 지역에서 직접 그렇게 합니다. 오래된 CPU와 Steam Deck에서 FPS가 몇 % 오르고, 카메라 가까운 그림자가 조금 부드러워집니다. 끔은 출시 그대로입니다.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "이 탭의 모든 설정과 텍스처 팩을 한 번에 실시간으로 바꿉니다. Stock은 출시 그대로, 권장은 기본값, 저사양 PC는 Stock에 그림자 거리 50%와 가벼운 그림자로 오래되었거나 사양이 낮은 PC용입니다. 직접 만든 프리셋은 presets 폴더의 파일이며 런처에도 표시됩니다."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "이 탭의 모든 설정과 텍스처 팩을 한 번에 실시간으로 바꿉니다. Stock은 출시 그대로, 권장은 기본값, 저사양 PC는 Stock에 그림자 거리 50%와 가벼운 그림자로 오래되었거나 사양이 낮은 PC용입니다. 직접 만든 프리셋은 presets 폴더의 파일이며 런처에도 표시됩니다.",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "설정: 두 개 이상의 버튼을 함께 누르고 있다가 떼세요. 키보드 종료 키는 Ctrl 또는 Alt와 문자나 숫자, 또는 F 키가 필요합니다. Insert는 이 메뉴를 엽니다.",
+    "Quit game (keyboard)": "게임 종료 (키보드)",
+    "Press the key, for example Ctrl+X...": "키를 누르세요, 예: Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "이 키는 안 됩니다: Ctrl 또는 Alt와 문자나 숫자, 또는 F 키를 쓰세요."
   }
 }

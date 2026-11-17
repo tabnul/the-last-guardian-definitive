@@ -442,7 +442,7 @@
     "pad.combo_qa": "Menu QA",
     "pad.combo_photo": "Mode photo oui / non",
     "pad.combo_press": "maintenez les boutons, puis relâchez…",
-    "pad.combo_help": "Deux boutons ou plus ensemble. Clavier : Alt+Q quitte, Inser ouvre le menu en jeu.",
+    "pad.combo_help": "Deux boutons ou plus ensemble. La touche clavier pour quitter demande Ctrl ou Alt avec une lettre ou un chiffre, ou une touche F. Inser ouvre le menu en jeu.",
     "pad.photo": "Mode photo",
     "pad.photo_invert": "Inverser regarder haut / bas",
     "pad.photo_shot": "Capture d'écran",
@@ -458,7 +458,12 @@
     "pad.photo_press": "appuyez sur un bouton…",
     "pad.photo_note": "Un bouton chacun, seulement en mode photo. Le stick gauche vole, le stick droit regarde autour. Clavier : les touches des mêmes boutons ; Impr. écran prend aussi une capture.",
     "launcher.shadow_lite": "Ombres allégées",
-    "launcher.shadow_lite_hint": "Supprime la plus proche des quatre couches d'ombre du jeu, comme le jeu le fait lui-même dans certaines zones. Quelques % de FPS en plus sur les CPU anciens et le Steam Deck ; les ombres proches de la caméra deviennent un peu plus douces. Désactivé est comme à la sortie."
+    "launcher.shadow_lite_hint": "Supprime la plus proche des quatre couches d'ombre du jeu, comme le jeu le fait lui-même dans certaines zones. Quelques % de FPS en plus sur les CPU anciens et le Steam Deck ; les ombres proches de la caméra deviennent un peu plus douces. Désactivé est comme à la sortie.",
+    "pad.quit_key": "Quitter le jeu (clavier)",
+    "pad.quit_key_press": "Appuyez sur la touche, par exemple Ctrl+X…",
+    "pad.quit_key_bad": "Pas cette touche : utilisez Ctrl ou Alt avec une lettre ou un chiffre, ou une touche F",
+    "pad.quit_key_off": "désactivé",
+    "pad.off_button": "Désactivé"
   },
   "items": {
     "menu:sharpen": {
@@ -1099,7 +1104,6 @@
     "QA menu": "Menu QA",
     "Hold the buttons, then release...": "Maintenez les boutons, puis relâchez...",
     "Set": "Définir",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Définir : maintenez deux boutons ou plus ensemble, puis relâchez. Clavier : Alt+Q quitte, Inser ouvre ce menu.",
     "Quitting...": "Fermeture...",
     "Quitting... (release to cancel)": "Fermeture... (relâchez pour annuler)",
     "Photo mode": "Mode photo",
@@ -1168,6 +1172,10 @@
     "Lite shadows": "Ombres allégées",
     "On (lighter)": "Activé (plus léger)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Supprime la plus proche des quatre couches d'ombre du jeu, comme le jeu le fait lui-même dans certaines zones. Quelques % de FPS en plus sur les CPU anciens et le Steam Deck ; les ombres proches de la caméra deviennent un peu plus douces. Désactivé est comme à la sortie.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Change tous les réglages de cet onglet et le pack de textures en une fois, en direct. Stock est le jeu tel que sorti ; Recommandé est le réglage par défaut ; PC modeste est Stock avec les ombres à 50 % de distance et les ombres allégées, pour les PC anciens ou modestes. Vos propres presets sont des fichiers dans le dossier presets, aussi listés dans le launcher."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Change tous les réglages de cet onglet et le pack de textures en une fois, en direct. Stock est le jeu tel que sorti ; Recommandé est le réglage par défaut ; PC modeste est Stock avec les ombres à 50 % de distance et les ombres allégées, pour les PC anciens ou modestes. Vos propres presets sont des fichiers dans le dossier presets, aussi listés dans le launcher.",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Définir : maintenez deux boutons ou plus ensemble, puis relâchez. La touche clavier pour quitter demande Ctrl ou Alt avec une lettre ou un chiffre, ou une touche F. Inser ouvre ce menu.",
+    "Quit game (keyboard)": "Quitter le jeu (clavier)",
+    "Press the key, for example Ctrl+X...": "Appuyez sur la touche, par exemple Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Pas cette touche : utilisez Ctrl ou Alt avec une lettre ou un chiffre, ou une touche F."
   }
 }

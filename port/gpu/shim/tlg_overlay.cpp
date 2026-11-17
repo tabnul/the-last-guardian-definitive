@@ -81,6 +81,7 @@ int capture_slot = -1;  // Controls tab: the combo being set (0 quit, 1 menu, 2 
                         // 4.. one photo mode button, PhotoSlots), -1 = none
 u32 capture_mask = 0;   // buttons pressed during the capture
 u32 capture_ignore = 0; // buttons already held when the capture started (the click on "Set")
+bool quit_key_capture = false; // Controls tab: the next key press becomes the keyboard quit key
 std::atomic<bool> screenshot_requested{false}; // Cross in photo mode / Print Screen (TakeScreenshotRequest)
 std::atomic<bool> pause_menu_open{false}; // the game's own pause menu is open (PauseMenuUI.lua)
 std::atomic<int64_t> quit_hold_start{0}; // steady ms when the quit combo was complete, 0 = not held
@@ -166,6 +167,18 @@ void SetOpen(bool value) {
         dirty = false;
         TlgSettings::Save();
     }
+}
+
+// The keyboard quit key in the TlgSettings::QuitKey form: 'a'..'z', '0'..'9', QuitKeyF1 + 1..12, else 0.
+uint32_t QuitKeyCode(SDL_Keycode key) {
+    if (key >= SDLK_A && key <= SDLK_Z) return uint32_t('a' + (key - SDLK_A));
+    if (key >= SDLK_0 && key <= SDLK_9) return uint32_t('0' + (key - SDLK_0));
+    if (key >= SDLK_F1 && key <= SDLK_F12) return TlgSettings::QuitKeyF1 + 1 + uint32_t(key - SDLK_F1);
+    return 0;
+}
+uint32_t QuitKeyMods(SDL_Keymod mod) {
+    return ((mod & SDL_KMOD_CTRL) ? TlgSettings::QuitModCtrl : 0u) | ((mod & SDL_KMOD_ALT) ? TlgSettings::QuitModAlt : 0u) |
+           ((mod & SDL_KMOD_SHIFT) ? TlgSettings::QuitModShift : 0u);
 }
 
 ImGuiKey KeyFromSdl(SDL_Keycode key) {
@@ -1091,10 +1104,42 @@ void ControlsTab() {
             }
             ImGui::PopID();
         }
+        Row(TR("Quit game (keyboard)"));
+        if (quit_key_capture) {
+            ImGui::TextUnformatted(TR("Press the key, for example Ctrl+X..."));
+            ImGui::SameLine();
+            if (ImGui::SmallButton(TR("Cancel"))) {
+                quit_key_capture = false;
+            }
+        } else {
+            const std::string label = TlgSettings::QuitKeyLabel(s.quit_key_mods, s.quit_key);
+            ImGui::TextUnformatted(label.empty() ? TR("off") : label.c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton(TR("Set"))) {
+                quit_key_capture = true;
+            }
+            if (s.quit_key) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton(TR("Off"))) {
+                    s.quit_key = 0;
+                    s.quit_key_mods = 0;
+                    dirty = true;
+                }
+            }
+            if (s.quit_key != TlgSettings::QuitKeyDefaultKey || s.quit_key_mods != TlgSettings::QuitKeyDefaultMods) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton(TR("Default"))) {
+                    s.quit_key = TlgSettings::QuitKeyDefaultKey;
+                    s.quit_key_mods = TlgSettings::QuitKeyDefaultMods;
+                    dirty = true;
+                }
+            }
+        }
+        ImGui::PopID();
         ImGui::EndTable();
     }
     ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextDisabled("%s", TR("Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu."));
+    ImGui::TextDisabled("%s", TR("Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu."));
     ImGui::PopTextWrapPos();
     ImGui::SeparatorText(TR("Photo mode"));
     if (BeginRows("##photobuttons")) {
@@ -2470,7 +2515,9 @@ void QuitHintBox() {
         return text.empty() ? std::string(TR("off")) : text;
     };
     std::string quit = s.combo_quit ? TlgSettings::ComboLabel(s.combo_quit) + " " + TR("(hold 2 s)") : "";
-    quit += (quit.empty() ? "" : " / ") + std::string("Alt+Q");
+    const std::string quit_key = TlgSettings::QuitKeyLabel(s.quit_key_mods, s.quit_key);
+    if (!quit_key.empty()) quit += (quit.empty() ? "" : " / ") + quit_key;
+    if (quit.empty()) quit = TR("off");
     // The keyboard keys (1 + Z) reach the QA menu only through the default combo (game pad map).
     const bool qa_keys = s.combo_qa == TlgSettings::PadComboQa;
     const std::pair<std::string, const char*> rows[] = {
@@ -2861,6 +2908,33 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP: {
         const bool down = event.type == SDL_EVENT_KEY_DOWN;
+        // Controls tab "Set" for the keyboard quit key: the next key press (with its Ctrl / Alt /
+        // Shift) becomes the key. Esc cancels; Ctrl, Alt or Shift alone keep waiting.
+        if (quit_key_capture && is_open) {
+            if (!down || event.key.repeat) return true;
+            const SDL_Keycode k = event.key.key;
+            if (k == SDLK_ESCAPE) {
+                quit_key_capture = false;
+                return true;
+            }
+            if (k == SDLK_LCTRL || k == SDLK_RCTRL || k == SDLK_LALT || k == SDLK_RALT || k == SDLK_LSHIFT ||
+                k == SDLK_RSHIFT || k == SDLK_LGUI || k == SDLK_RGUI) {
+                return true;
+            }
+            const uint32_t mods = QuitKeyMods(event.key.mod);
+            const uint32_t code = QuitKeyCode(k);
+            if (!code || !TlgSettings::QuitKeyAllowed(mods, code)) {
+                NoticeLocked(TR("Not this key: use Ctrl or Alt with a letter or number, or an F key."), 3.0f);
+                return true;
+            }
+            auto& settings = TlgSettings::Get();
+            settings.quit_key_mods = mods;
+            settings.quit_key = code;
+            std::printf("Settings: quit key set to %s\n", TlgSettings::QuitKeyText(mods, code).c_str());
+            dirty = true;
+            quit_key_capture = false;
+            return true;
+        }
         static const bool capture_key = [] {
             const char* env = std::getenv("TLG_FRAME_CAPTURE_KEY");
             return env && *env == '1';
@@ -2933,10 +3007,16 @@ bool HandleEvent(const SDL_Event& event) {
             screenshot_requested = true;
             return true;
         }
-        // tlg: Alt+Q quits through the game's own quit (settings and progress saved).
-        if (down && !event.key.repeat && event.key.key == SDLK_Q && (event.key.mod & SDL_KMOD_ALT)) {
-            TlgQuit::Request("Alt+Q");
-            return true;
+        // tlg: the keyboard quit key (tlg.ini quit_key, default Ctrl+X) quits through the game's own
+        // quit (settings and progress saved). Exact Ctrl / Alt / Shift match. Not while the port's
+        // menu is open: Ctrl+X cuts text there.
+        if (down && !event.key.repeat && !is_open) {
+            const auto& settings = TlgSettings::Get();
+            const uint32_t code = settings.quit_key;
+            if (code && QuitKeyCode(event.key.key) == code && QuitKeyMods(event.key.mod) == settings.quit_key_mods) {
+                TlgQuit::Request(TlgSettings::QuitKeyLabel(settings.quit_key_mods, code).c_str());
+                return true;
+            }
         }
         // tlg: F10 shows or hides the performance overlay (FPS counter) at any time.
         if (down && !event.key.repeat && event.key.key == SDLK_F10) {

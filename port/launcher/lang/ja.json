@@ -442,7 +442,7 @@
     "pad.combo_qa": "QAメニュー",
     "pad.combo_photo": "フォトモード オン / オフ",
     "pad.combo_press": "ボタンを押したまま、離してください…",
-    "pad.combo_help": "2つ以上のボタンを同時に。キーボード: Alt+Qで終了、Insertでゲーム内メニューを開きます。",
+    "pad.combo_help": "2つ以上のボタンを同時に。キーボードの終了キーには、CtrlかAltと文字または数字、またはFキーが必要です。Insertでゲーム内メニューを開きます。",
     "pad.photo": "フォトモード",
     "pad.photo_invert": "上下の視点操作を反転",
     "pad.photo_shot": "スクリーンショット",
@@ -458,7 +458,12 @@
     "pad.photo_press": "ボタンを押してください…",
     "pad.photo_note": "1つにつき1ボタン、フォトモード中だけ。左スティックで移動、右スティックで見回します。キーボード：同じボタンのキー。Print Screen でもスクリーンショットを撮れます。",
     "launcher.shadow_lite": "軽量シャドウ",
-    "launcher.shadow_lite_hint": "ゲームの4つの影レイヤーのうち、カメラに最も近いものを省きます。ゲーム自体も一部のエリアでそうしています。古いCPUやSteam DeckでFPSが数%上がり、カメラ近くの影が少しやわらかくなります。オフは発売時のままです。"
+    "launcher.shadow_lite_hint": "ゲームの4つの影レイヤーのうち、カメラに最も近いものを省きます。ゲーム自体も一部のエリアでそうしています。古いCPUやSteam DeckでFPSが数%上がり、カメラ近くの影が少しやわらかくなります。オフは発売時のままです。",
+    "pad.quit_key": "ゲーム終了（キーボード）",
+    "pad.quit_key_press": "キーを押してください（例: Ctrl+X）…",
+    "pad.quit_key_bad": "このキーは使えません: CtrlかAltと文字または数字、またはFキーを使ってください",
+    "pad.quit_key_off": "オフ",
+    "pad.off_button": "オフ"
   },
   "items": {
     "menu:sharpen": {
@@ -1099,7 +1104,6 @@
     "QA menu": "QAメニュー",
     "Hold the buttons, then release...": "ボタンを押したまま、離してください...",
     "Set": "設定",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "設定: 2つ以上のボタンを同時に長押しして離します。キーボード: Alt+Qで終了、Insertでこのメニューを開きます。",
     "Quitting...": "終了中...",
     "Quitting... (release to cancel)": "終了中...（離すとキャンセル）",
     "Photo mode": "フォトモード",
@@ -1168,6 +1172,10 @@
     "Lite shadows": "軽量シャドウ",
     "On (lighter)": "オン（軽量）",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "ゲームの4つの影レイヤーのうち、カメラに最も近いものを省きます。ゲーム自体も一部のエリアでそうしています。古いCPUやSteam DeckでFPSが数%上がり、カメラ近くの影が少しやわらかくなります。オフは発売時のままです。",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "このタブのすべての設定とテクスチャパックを一度にライブで切り替えます。Stockは発売時のまま、推奨は既定値、低スペックPCはStockで影の距離50%、軽量シャドウの、古いPCや性能の低いPC向けです。自分のプリセットはpresetsフォルダー内のファイルで、ランチャーにも表示されます。"
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "このタブのすべての設定とテクスチャパックを一度にライブで切り替えます。Stockは発売時のまま、推奨は既定値、低スペックPCはStockで影の距離50%、軽量シャドウの、古いPCや性能の低いPC向けです。自分のプリセットはpresetsフォルダー内のファイルで、ランチャーにも表示されます。",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "設定: 2つ以上のボタンを同時に長押しして離します。キーボードの終了キーには、CtrlかAltと文字または数字、またはFキーが必要です。Insertでこのメニューを開きます。",
+    "Quit game (keyboard)": "ゲーム終了（キーボード）",
+    "Press the key, for example Ctrl+X...": "キーを押してください（例: Ctrl+X）...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "このキーは使えません: CtrlかAltと文字または数字、またはFキーを使ってください。"
   }
 }

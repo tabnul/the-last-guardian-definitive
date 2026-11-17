@@ -123,7 +123,7 @@ launcher's Controller page.
 | Key | In game |
 |---|---|
 | Insert (R3 + L2) | The port's menu |
-| Alt+Q (hold Share + Options 2 s) | Quit the game (settings and progress saved) |
+| Ctrl+X (hold Share + Options 2 s) | Quit the game (settings and progress saved) |
 | F9 (L3 + R3) | Photo mode |
 | F8 | Switch between DLSS/FSR and the game's own anti-aliasing |
 | F10 | FPS counter |
@@ -345,7 +345,9 @@ trigger points, check for stick drift, and remap keyboard and mouse. See
   Controller page draws one too. **Button icons**
   (Controller page, or Controls in the port's menu) picks Automatic, PlayStation or Xbox;
   Automatic follows the controller you used last.
-- **Quit from anywhere:** with the quit key on the keyboard, or hold the quit combo for 2 seconds
+- **Quit from anywhere:** with the quit key on the keyboard (Ctrl+X; set your own or turn it off
+  under Controls in the port's menu or on the launcher's Controller page: Ctrl or Alt with a letter
+  or number, or an F key), or hold the quit combo for 2 seconds
   on a controller (a note shows while you hold; let go to cancel). The window's X and Alt+F4 work
   the same way. It quits the way the game's own Quit does, so settings and progress are saved.
   The game's pause menu (Options) shows your current buttons for quit, the port's menu and

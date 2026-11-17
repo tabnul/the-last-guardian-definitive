@@ -52,7 +52,12 @@ TEXT = {
     'combo_qa': 'QA menu',
     'combo_photo': 'Photo mode on / off',
     'combo_press': 'hold the buttons, then release…',
-    'combo_help': 'Two or more buttons together. Keyboard: Alt+Q quits, Insert opens the in-game menu.',
+    'combo_help': 'Two or more buttons together. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens the in-game menu.',
+    'quit_key': 'Quit game (keyboard)',
+    'quit_key_press': 'press the key, for example Ctrl+X…',
+    'quit_key_bad': 'not this key: use Ctrl or Alt with a letter or number, or an F key',
+    'quit_key_off': 'off',
+    'off_button': 'Off',
     'photo': 'Photo mode',
     'photo_invert': 'Invert look up / down',
     'photo_shot': 'Screenshot',
@@ -124,6 +129,34 @@ def parse_combo(text, fallback):
 
 def combo_text(bits):
     return '+'.join(name for name, bit in COMBO_BITS.items() if bits & (1 << bit))
+
+
+# Keyboard quit key (tlg.ini quit_key, default ctrl+x): same rule as tlg_settings.cpp QuitKeyAllowed.
+QUIT_KEY_DEFAULT = 'ctrl+x'
+
+
+def quit_key_allowed(mods, key):
+    if len(key) > 1 and key[0] == 'f' and key[1:].isdigit() and 1 <= int(key[1:]) <= 12:
+        return key not in ('f9', 'f10') or bool(mods)
+    return len(key) == 1 and key.isalnum() and key.isascii() and bool({'ctrl', 'alt'} & set(mods))
+
+
+def parse_quit_key(text):
+    # (mods, key), or None for off / not valid
+    parts = [p for p in (text or '').replace(' ', '').lower().split('+') if p]
+    mods = [m for m in ('ctrl', 'alt', 'shift') if m in parts]
+    keys = [p for p in parts if p not in ('ctrl', 'alt', 'shift')]
+    if len(keys) != 1 or not quit_key_allowed(mods, keys[0]):
+        return None
+    return mods, keys[0]
+
+
+def quit_key_label(text):
+    parsed = parse_quit_key(text)
+    if not parsed:
+        return None
+    mods, key = parsed
+    return '+'.join([m.capitalize() for m in mods] + [key.upper()])
 
 
 def combo_label(bits, xbox=False):
@@ -306,6 +339,23 @@ class ControllerPage:
                        command=lambda k=key, d=default: self.store_combo(k, parse_combo(d, ''))).grid(
                 row=index, column=3, pady=1, padx=(4, 0))
             self.combo_shown[key] = shown
+        row = len(COMBOS)
+        ttk.Label(grid, text=self.t('quit_key'), width=26).grid(row=row, column=0, sticky='w')
+        self.quit_key = ini.get('quit_key', QUIT_KEY_DEFAULT)
+        if self.quit_key != 'off' and not parse_quit_key(self.quit_key):
+            self.quit_key = QUIT_KEY_DEFAULT   # the game also falls back to the default
+        self.quit_key_shown = ttk.Label(grid, text='', width=18, foreground=self.MUTED)
+        self.quit_key_shown.grid(row=row, column=1, sticky='w')
+        ttk.Button(grid, text=self.t('set'), width=8, command=self.start_quit_key).grid(row=row, column=2, pady=1)
+        ttk.Button(grid, text=self.t('default'), width=8,
+                   command=lambda: self.store_quit_key(QUIT_KEY_DEFAULT)).grid(row=row, column=3, pady=1, padx=(4, 0))
+        ttk.Button(grid, text=self.t('off_button'), width=8,
+                   command=lambda: self.store_quit_key('off')).grid(row=row, column=4, pady=1, padx=(4, 0))
+        self.quit_key_capture = None   # held modifier key names while waiting for the key
+        self.store_quit_key(self.quit_key, write=False)
+        top = grid.winfo_toplevel()
+        top.bind('<KeyPress>', self.quit_key_event, add='+')
+        top.bind('<KeyRelease>', self.quit_key_event, add='+')
         ttk.Label(tab_combos, text=self.t('combo_help'), foreground=self.MUTED, wraplength=420).pack(anchor='w')
         self.photo_invert = tk.BooleanVar(value=ini.get('photo_invert_y', '1') != '0')
         ttk.Checkbutton(tab_photo, text=self.t('photo_invert'), variable=self.photo_invert,
@@ -401,6 +451,46 @@ class ControllerPage:
         tlg_run.update_ini(tlg_run.user_dir() / 'tlg.ini', {key: combo_text(bits)})
         self.combo_bits[key] = bits
         self.combo_shown[key].configure(text=combo_label(bits, self.drawn_xbox), foreground=self.MUTED)
+
+    def start_quit_key(self):
+        self.quit_key_capture = set()
+        self.quit_key_shown.configure(text=self.t('quit_key_press'), foreground=self.ACCENT)
+        self.quit_key_shown.winfo_toplevel().focus_set()
+
+    def store_quit_key(self, text, write=True):
+        self.quit_key_capture = None
+        if write:
+            tlg_run.update_ini(tlg_run.user_dir() / 'tlg.ini', {'quit_key': text})
+        self.quit_key = text
+        self.quit_key_shown.configure(text=quit_key_label(text) or self.t('quit_key_off'), foreground=self.MUTED)
+
+    MODIFIER_KEYS = {'Control_L': 'ctrl', 'Control_R': 'ctrl', 'Alt_L': 'alt', 'Alt_R': 'alt',
+                     'Shift_L': 'shift', 'Shift_R': 'shift', 'Meta_L': None, 'Meta_R': None,
+                     'Win_L': None, 'Win_R': None, 'Super_L': None, 'Super_R': None}
+
+    def quit_key_event(self, event):
+        held = self.quit_key_capture
+        if held is None:
+            return None
+        sym = event.keysym or ''
+        down = str(event.type) in ('2', 'KeyPress')
+        if sym in self.MODIFIER_KEYS:
+            name = self.MODIFIER_KEYS[sym]
+            if name:
+                (held.add if down else held.discard)(name)
+            return 'break'
+        if not down:
+            return 'break'
+        if sym == 'Escape':
+            self.store_quit_key(self.quit_key, write=False)
+            return 'break'
+        key = sym.lower()
+        mods = [m for m in ('ctrl', 'alt', 'shift') if m in held]
+        if not quit_key_allowed(mods, key):
+            self.quit_key_shown.configure(text=self.t('quit_key_bad'), foreground=self.ACCENT)
+            return 'break'
+        self.store_quit_key('+'.join(mods + [key]))
+        return 'break'
 
     def combo_poll(self, buttons, lt, rt):
         threshold = self.trigger.get() / 100

@@ -210,7 +210,9 @@
  "Hold the buttons, then release...",
  "Cancel",
  "Set",
- "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.",
+ "Quit game (keyboard)",
+ "Press the key, for example Ctrl+X...",
+ "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.",
  "Photo mode",
  "Invert look up / down",
  "Pushing the right stick forward looks down, as in a plane.",
@@ -375,5 +377,6 @@
  "Photo mode on",
  "Photo mode off",
  "Quitting...",
- "Quitting... (release to cancel)"
+ "Quitting... (release to cancel)",
+ "Not this key: use Ctrl or Alt with a letter or number, or an F key."
 ]

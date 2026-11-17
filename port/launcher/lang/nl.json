@@ -449,7 +449,7 @@
     "pad.combo_qa": "QA-menu",
     "pad.combo_photo": "Fotomodus aan / uit",
     "pad.combo_press": "houd de knoppen vast en laat los…",
-    "pad.combo_help": "Twee of meer knoppen samen. Toetsenbord: Alt+Q sluit af, Insert opent het menu in het spel.",
+    "pad.combo_help": "Twee of meer knoppen samen. De afsluittoets op het toetsenbord heeft Ctrl of Alt met een letter of cijfer nodig, of een F-toets. Insert opent het menu in het spel.",
     "pad.photo": "Fotomodus",
     "pad.photo_invert": "Omhoog / omlaag kijken omkeren",
     "pad.photo_shot": "Screenshot",
@@ -465,7 +465,12 @@
     "pad.photo_press": "druk op een knop…",
     "pad.photo_note": "Eén knop per actie, alleen in fotomodus. Linkerstick vliegt, rechterstick kijkt rond. Toetsenbord: de toetsen van dezelfde knoppen; Print Screen maakt ook een screenshot.",
     "launcher.shadow_lite": "Lichte schaduwen",
-    "launcher.shadow_lite_hint": "Laat de dichtstbijzijnde van de vier schaduwlagen van de game weg, zoals de game zelf in sommige gebieden doet. Een paar % meer FPS op oudere cpu's en de Steam Deck; schaduwen dicht bij de camera worden iets zachter. Uit is zoals uitgebracht."
+    "launcher.shadow_lite_hint": "Laat de dichtstbijzijnde van de vier schaduwlagen van de game weg, zoals de game zelf in sommige gebieden doet. Een paar % meer FPS op oudere cpu's en de Steam Deck; schaduwen dicht bij de camera worden iets zachter. Uit is zoals uitgebracht.",
+    "pad.quit_key": "Spel afsluiten (toetsenbord)",
+    "pad.quit_key_press": "Druk op de toets, bijvoorbeeld Ctrl+X…",
+    "pad.quit_key_bad": "Niet deze toets: gebruik Ctrl of Alt met een letter of cijfer, of een F-toets",
+    "pad.quit_key_off": "uit",
+    "pad.off_button": "Uit"
   },
   "items": {
     "menu:sharpen": {
@@ -1112,7 +1117,6 @@
     "QA menu": "QA-menu",
     "Hold the buttons, then release...": "Houd de knoppen vast en laat los...",
     "Set": "Instellen",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Instellen: houd twee of meer knoppen samen vast en laat dan los. Toetsenbord: Alt+Q sluit af, Insert opent dit menu.",
     "Quitting...": "Afsluiten...",
     "Quitting... (release to cancel)": "Afsluiten... (loslaten om te annuleren)",
     "Photo mode": "Fotomodus",
@@ -1181,6 +1185,10 @@
     "Lite shadows": "Lichte schaduwen",
     "On (lighter)": "Aan (lichter)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Laat de dichtstbijzijnde van de vier schaduwlagen van de game weg, zoals de game zelf in sommige gebieden doet. Een paar % meer FPS op oudere cpu's en de Steam Deck; schaduwen dicht bij de camera worden iets zachter. Uit is zoals uitgebracht.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Zet alle instellingen op dit tabblad en het texturepakket in één keer om, live. Stock is de game zoals uitgebracht; Aanbevolen is de standaard; Low-end pc is Stock met schaduwen op 50% afstand en lichte schaduwen, voor oudere of zwakkere pc's. Je eigen presets zijn bestanden in de map presets, ook te zien in de launcher."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Zet alle instellingen op dit tabblad en het texturepakket in één keer om, live. Stock is de game zoals uitgebracht; Aanbevolen is de standaard; Low-end pc is Stock met schaduwen op 50% afstand en lichte schaduwen, voor oudere of zwakkere pc's. Je eigen presets zijn bestanden in de map presets, ook te zien in de launcher.",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Instellen: houd twee of meer knoppen samen vast en laat dan los. De afsluittoets op het toetsenbord heeft Ctrl of Alt met een letter of cijfer nodig, of een F-toets. Insert opent dit menu.",
+    "Quit game (keyboard)": "Spel afsluiten (toetsenbord)",
+    "Press the key, for example Ctrl+X...": "Druk op de toets, bijvoorbeeld Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Niet deze toets: gebruik Ctrl of Alt met een letter of cijfer, of een F-toets."
   }
 }
