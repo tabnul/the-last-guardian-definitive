@@ -40,7 +40,8 @@ std::string Read(const std::string& serial, std::string_view suffix, std::string
         source = path.string();
         return text.str();
     }
-    if (serial != "CUSA03627") {
+    // US CUSA03627 and EU CUSA03745 v1.03 ship the same code: all hook 'expect' bytes match both.
+    if (serial != "CUSA03627" && serial != "CUSA03745") {
         return {};
     }
     if (suffix == ".hooks.json") {
