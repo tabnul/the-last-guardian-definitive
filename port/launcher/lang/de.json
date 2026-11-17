@@ -442,7 +442,7 @@
     "pad.combo_qa": "QA-Menü",
     "pad.combo_photo": "Fotomodus ein / aus",
     "pad.combo_press": "Tasten halten, dann loslassen…",
-    "pad.combo_help": "Zwei oder mehr Tasten zusammen. Tastatur: Alt+Q beendet, Einfg öffnet das Spielmenü.",
+    "pad.combo_help": "Zwei oder mehr Tasten zusammen. Die Tastatur-Taste zum Beenden braucht Ctrl oder Alt mit einem Buchstaben oder einer Zahl, oder eine F-Taste. Einfg öffnet das Spielmenü.",
     "pad.photo": "Fotomodus",
     "pad.photo_invert": "Hoch / runter umkehren",
     "pad.photo_shot": "Screenshot",
@@ -458,7 +458,12 @@
     "pad.photo_press": "Taste drücken…",
     "pad.photo_note": "Je eine Taste, nur im Fotomodus. Linker Stick fliegt, rechter Stick schaut umher. Tastatur: die Tasten derselben Knöpfe; Druck macht auch einen Screenshot.",
     "launcher.shadow_lite": "Leichte Schatten",
-    "launcher.shadow_lite_hint": "Lässt die nächste der vier Schattenebenen des Spiels weg, wie es das Spiel in manchen Gebieten selbst tut. Ein paar % mehr FPS auf älteren CPUs und dem Steam Deck; Schatten nah an der Kamera werden etwas weicher. Aus ist wie ausgeliefert."
+    "launcher.shadow_lite_hint": "Lässt die nächste der vier Schattenebenen des Spiels weg, wie es das Spiel in manchen Gebieten selbst tut. Ein paar % mehr FPS auf älteren CPUs und dem Steam Deck; Schatten nah an der Kamera werden etwas weicher. Aus ist wie ausgeliefert.",
+    "pad.quit_key": "Spiel beenden (Tastatur)",
+    "pad.quit_key_press": "Taste drücken, zum Beispiel Ctrl+X…",
+    "pad.quit_key_bad": "Diese Taste geht nicht: Ctrl oder Alt mit einem Buchstaben oder einer Zahl, oder eine F-Taste",
+    "pad.quit_key_off": "aus",
+    "pad.off_button": "Aus"
   },
   "items": {
     "menu:sharpen": {
@@ -1099,7 +1104,6 @@
     "QA menu": "QA-Menü",
     "Hold the buttons, then release...": "Tasten halten, dann loslassen...",
     "Set": "Festlegen",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Festlegen: zwei oder mehr Tasten zusammen drücken und halten, dann loslassen. Tastatur: Alt+Q beendet, Einfg öffnet dieses Menü.",
     "Quitting...": "Wird beendet...",
     "Quitting... (release to cancel)": "Wird beendet... (loslassen zum Abbrechen)",
     "Photo mode": "Fotomodus",
@@ -1168,6 +1172,10 @@
     "Lite shadows": "Leichte Schatten",
     "On (lighter)": "An (leichter)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Lässt die nächste der vier Schattenebenen des Spiels weg, wie es das Spiel in manchen Gebieten selbst tut. Ein paar % mehr FPS auf älteren CPUs und dem Steam Deck; Schatten nah an der Kamera werden etwas weicher. Aus ist wie ausgeliefert.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Schaltet alle Einstellungen dieses Tabs und das Texturpaket auf einmal um, live. Stock ist das Spiel wie ausgeliefert; Empfohlen ist der Standard; Schwacher PC ist Stock mit Schatten auf 50% Distanz und leichten Schatten, für ältere oder schwächere PCs. Eigene Presets sind Dateien im Ordner presets, auch im Launcher aufgelistet."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Schaltet alle Einstellungen dieses Tabs und das Texturpaket auf einmal um, live. Stock ist das Spiel wie ausgeliefert; Empfohlen ist der Standard; Schwacher PC ist Stock mit Schatten auf 50% Distanz und leichten Schatten, für ältere oder schwächere PCs. Eigene Presets sind Dateien im Ordner presets, auch im Launcher aufgelistet.",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Festlegen: zwei oder mehr Tasten zusammen drücken und halten, dann loslassen. Die Tastatur-Taste zum Beenden braucht Ctrl oder Alt mit einem Buchstaben oder einer Zahl, oder eine F-Taste. Einfg öffnet dieses Menü.",
+    "Quit game (keyboard)": "Spiel beenden (Tastatur)",
+    "Press the key, for example Ctrl+X...": "Taste drücken, zum Beispiel Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Diese Taste geht nicht: Ctrl oder Alt mit einem Buchstaben oder einer Zahl, oder eine F-Taste."
   }
 }

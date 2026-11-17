@@ -43,6 +43,12 @@ enum PadCombo : uint32_t {
     PadComboQuit = PadShare | PadOptions, PadComboMenu = PadR3 | PadL2, PadComboQa = PadL1 | PadL3,
     PadComboPhoto = PadL3 | PadR3,
 };
+/// Keyboard quit key (tlg.ini quit_key, "ctrl+x"): modifier bits, and the key as 'a'..'z',
+/// '0'..'9' or QuitKeyF1 + n (F1..F12); key 0 = off.
+enum QuitKey : uint32_t {
+    QuitModCtrl = 1u << 0, QuitModAlt = 1u << 1, QuitModShift = 1u << 2, QuitKeyF1 = 0x100,
+    QuitKeyDefaultMods = QuitModCtrl, QuitKeyDefaultKey = 'x',
+};
 
 struct Values {
     std::atomic<int> upscaler{UpscalerFsr3};
@@ -235,6 +241,10 @@ struct Values {
     /// QA menu of level_select (tlg_lua.cpp) and photo mode on/off (tlg_overlay.cpp). Defaults are the combos the port always used.
     std::atomic<uint32_t> combo_quit{PadComboQuit}, combo_menu{PadComboMenu}, combo_qa{PadComboQa},
         combo_photo{PadComboPhoto};
+    /// Keyboard quit (Controls tab + launcher Controller page, tlg.ini quit_key; tlg_overlay.cpp):
+    /// QuitKey modifier bits and key, key 0 = off. Default Ctrl+X (issue #86: the old fixed Alt+Q
+    /// clashed with the RTSS overlay key).
+    std::atomic<uint32_t> quit_key_mods{QuitKeyDefaultMods}, quit_key{QuitKeyDefaultKey};
     /// Photo mode buttons (Controls tab + launcher Controller page, tlg.ini pad_photo_*): one
     /// button each (PadCombo bit). Read by tlg_overlay.cpp, which hands the held state to the
     /// photo camera tick (TlgFun::PhotoPad). photo_invert_y: pushing the right stick forward
@@ -258,6 +268,14 @@ uint32_t ParseCombo(const std::string& text, uint32_t fallback);
 std::string ComboText(uint32_t bits);
 /// "Share + Options" for the menus; Xbox names ("View + Menu") while the game shows Xbox icons.
 std::string ComboLabel(uint32_t bits);
+/// "ctrl+x" / "alt+f4" / "off" (tlg.ini) <-> quit key; false (nothing changed) on unknown or not
+/// allowed text. Allowed: a letter or a number with Ctrl or Alt, or F1..F12 (F9/F10 only with a
+/// modifier: the port uses them alone). Same rule as the launcher (pad_page.py quit_key_allowed).
+bool ParseQuitKey(const std::string& text, uint32_t& mods, uint32_t& key);
+bool QuitKeyAllowed(uint32_t mods, uint32_t key);
+std::string QuitKeyText(uint32_t mods, uint32_t key);
+/// "Ctrl+X" for the menus, empty when off.
+std::string QuitKeyLabel(uint32_t mods, uint32_t key);
 
 /// Pack folders with an index.txt under TLG_TEXPACK_DIR (default "texpack"), sorted; read once.
 const std::vector<std::string>& TexturePackNames();

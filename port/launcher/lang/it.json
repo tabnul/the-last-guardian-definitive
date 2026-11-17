@@ -449,7 +449,7 @@
     "pad.combo_qa": "Menu QA",
     "pad.combo_photo": "Modalità foto sì / no",
     "pad.combo_press": "tieni premuti i tasti, poi rilascia…",
-    "pad.combo_help": "Due o più tasti insieme. Tastiera: Alt+Q esce, Ins apre il menu di gioco.",
+    "pad.combo_help": "Due o più tasti insieme. Il tasto per uscire da tastiera richiede Ctrl o Alt con una lettera o un numero, oppure un tasto F. Ins apre il menu di gioco.",
     "pad.photo": "Modalità foto",
     "pad.photo_invert": "Inverti guarda su / giù",
     "pad.photo_shot": "Screenshot",
@@ -465,7 +465,12 @@
     "pad.photo_press": "premi un tasto…",
     "pad.photo_note": "Un tasto ciascuno, solo in modalità foto. La levetta sinistra vola, la destra guarda intorno. Tastiera: i tasti degli stessi pulsanti; Stamp fa anche uno screenshot.",
     "launcher.shadow_lite": "Ombre leggere",
-    "launcher.shadow_lite_hint": "Toglie il più vicino dei quattro livelli d'ombra del gioco, come fa il gioco stesso in alcune zone. Qualche % di FPS in più su CPU vecchie e su Steam Deck; le ombre vicine alla telecamera diventano un po' più morbide. No è come all'uscita."
+    "launcher.shadow_lite_hint": "Toglie il più vicino dei quattro livelli d'ombra del gioco, come fa il gioco stesso in alcune zone. Qualche % di FPS in più su CPU vecchie e su Steam Deck; le ombre vicine alla telecamera diventano un po' più morbide. No è come all'uscita.",
+    "pad.quit_key": "Esci dal gioco (tastiera)",
+    "pad.quit_key_press": "Premi il tasto, per esempio Ctrl+X…",
+    "pad.quit_key_bad": "Non questo tasto: usa Ctrl o Alt con una lettera o un numero, oppure un tasto F",
+    "pad.quit_key_off": "no",
+    "pad.off_button": "No"
   },
   "items": {
     "menu:sharpen": {
@@ -1112,7 +1117,6 @@
     "QA menu": "Menu QA",
     "Hold the buttons, then release...": "Tieni premuti i tasti, poi rilascia...",
     "Set": "Imposta",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Imposta: tieni premuti insieme due o più tasti, poi rilascia. Tastiera: Alt+Q esce, Ins apre questo menu.",
     "Quitting...": "Uscita...",
     "Quitting... (release to cancel)": "Uscita... (rilascia per annullare)",
     "Photo mode": "Modalità foto",
@@ -1181,6 +1185,10 @@
     "Lite shadows": "Ombre leggere",
     "On (lighter)": "Sì (più leggero)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Toglie il più vicino dei quattro livelli d'ombra del gioco, come fa il gioco stesso in alcune zone. Qualche % di FPS in più su CPU vecchie e su Steam Deck; le ombre vicine alla telecamera diventano un po' più morbide. No è come all'uscita.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Cambia tutte le impostazioni di questa scheda e il pacchetto texture insieme, dal vivo. Stock è il gioco come all'uscita; Consigliato è il predefinito; PC modesto è Stock con le ombre al 50% della distanza e ombre leggere, per PC vecchi o modesti. I tuoi preset sono file nella cartella presets, elencati anche nel launcher."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Cambia tutte le impostazioni di questa scheda e il pacchetto texture insieme, dal vivo. Stock è il gioco come all'uscita; Consigliato è il predefinito; PC modesto è Stock con le ombre al 50% della distanza e ombre leggere, per PC vecchi o modesti. I tuoi preset sono file nella cartella presets, elencati anche nel launcher.",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Imposta: tieni premuti insieme due o più tasti, poi rilascia. Il tasto per uscire da tastiera richiede Ctrl o Alt con una lettera o un numero, oppure un tasto F. Ins apre questo menu.",
+    "Quit game (keyboard)": "Esci dal gioco (tastiera)",
+    "Press the key, for example Ctrl+X...": "Premi il tasto, per esempio Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Non questo tasto: usa Ctrl o Alt con una lettera o un numero, oppure un tasto F."
   }
 }

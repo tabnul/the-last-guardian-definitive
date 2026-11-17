@@ -449,7 +449,7 @@
     "pad.combo_qa": "Menu QA",
     "pad.combo_photo": "Tryb zdjęć wł. / wył.",
     "pad.combo_press": "przytrzymaj przyciski, potem puść…",
-    "pad.combo_help": "Dwa lub więcej przycisków razem. Klawiatura: Alt+Q wychodzi, Insert otwiera menu w grze.",
+    "pad.combo_help": "Dwa lub więcej przycisków razem. Klawisz wyjścia na klawiaturze wymaga Ctrl lub Alt z literą lub cyfrą albo klawisza F. Insert otwiera menu w grze.",
     "pad.photo": "Tryb zdjęć",
     "pad.photo_invert": "Odwróć patrzenie góra / dół",
     "pad.photo_shot": "Zrzut ekranu",
@@ -465,7 +465,12 @@
     "pad.photo_press": "naciśnij przycisk…",
     "pad.photo_note": "Po jednym przycisku, tylko w trybie zdjęć. Lewa gałka lata, prawa rozgląda się. Klawiatura: klawisze tych samych przycisków; Print Screen też robi zrzut ekranu.",
     "launcher.shadow_lite": "Lekkie cienie",
-    "launcher.shadow_lite_hint": "Pomija najbliższą z czterech warstw cieni gry, tak jak gra sama robi w niektórych miejscach. Kilka % więcej FPS na starszych procesorach i Steam Decku; cienie blisko kamery są trochę bardziej miękkie. Wył. to gra jak w dniu premiery."
+    "launcher.shadow_lite_hint": "Pomija najbliższą z czterech warstw cieni gry, tak jak gra sama robi w niektórych miejscach. Kilka % więcej FPS na starszych procesorach i Steam Decku; cienie blisko kamery są trochę bardziej miękkie. Wył. to gra jak w dniu premiery.",
+    "pad.quit_key": "Wyjście z gry (klawiatura)",
+    "pad.quit_key_press": "Naciśnij klawisz, na przykład Ctrl+X…",
+    "pad.quit_key_bad": "Nie ten klawisz: użyj Ctrl lub Alt z literą lub cyfrą albo klawisza F",
+    "pad.quit_key_off": "wył.",
+    "pad.off_button": "Wył."
   },
   "items": {
     "menu:sharpen": {
@@ -1112,7 +1117,6 @@
     "QA menu": "Menu QA",
     "Hold the buttons, then release...": "Przytrzymaj przyciski, potem puść...",
     "Set": "Ustaw",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Ustaw: przytrzymaj razem dwa lub więcej przycisków, potem puść. Klawiatura: Alt+Q wychodzi, Insert otwiera to menu.",
     "Quitting...": "Zamykanie...",
     "Quitting... (release to cancel)": "Zamykanie... (puść, aby anulować)",
     "Photo mode": "Tryb fotograficzny",
@@ -1181,6 +1185,10 @@
     "Lite shadows": "Lekkie cienie",
     "On (lighter)": "Wł. (lżej)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Pomija najbliższą z czterech warstw cieni gry, tak jak gra sama robi w niektórych miejscach. Kilka % więcej FPS na starszych procesorach i Steam Decku; cienie blisko kamery są trochę bardziej miękkie. Wył. to gra jak w dniu premiery.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Przełącza naraz wszystkie ustawienia tej karty i paczkę tekstur, na żywo. Stock to gra jak w dniu premiery; Zalecane to domyślne; Słabszy PC to Stock z cieniami na 50% odległości i lekkimi cieniami, dla starszych lub słabszych komputerów. Twoje presety to pliki w folderze presets, widoczne też w launcherze."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Przełącza naraz wszystkie ustawienia tej karty i paczkę tekstur, na żywo. Stock to gra jak w dniu premiery; Zalecane to domyślne; Słabszy PC to Stock z cieniami na 50% odległości i lekkimi cieniami, dla starszych lub słabszych komputerów. Twoje presety to pliki w folderze presets, widoczne też w launcherze.",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Ustaw: przytrzymaj razem dwa lub więcej przycisków, potem puść. Klawisz wyjścia na klawiaturze wymaga Ctrl lub Alt z literą lub cyfrą albo klawisza F. Insert otwiera to menu.",
+    "Quit game (keyboard)": "Wyjście z gry (klawiatura)",
+    "Press the key, for example Ctrl+X...": "Naciśnij klawisz, na przykład Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Nie ten klawisz: użyj Ctrl lub Alt z literą lub cyfrą albo klawisza F."
   }
 }

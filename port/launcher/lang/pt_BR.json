@@ -440,7 +440,7 @@
     "pad.combo_qa": "Menu QA",
     "pad.combo_photo": "Modo foto liga / desliga",
     "pad.combo_press": "segure os botões e depois solte…",
-    "pad.combo_help": "Dois ou mais botões juntos. Teclado: Alt+Q sai, Insert abre o menu do jogo.",
+    "pad.combo_help": "Dois ou mais botões juntos. A tecla de sair do teclado precisa de Ctrl ou Alt com uma letra ou número, ou uma tecla F. Insert abre o menu do jogo.",
     "pad.photo": "Modo foto",
     "pad.photo_invert": "Inverter olhar para cima / baixo",
     "pad.photo_shot": "Captura de tela",
@@ -456,7 +456,12 @@
     "pad.photo_press": "pressione um botão…",
     "pad.photo_note": "Um botão para cada, só no modo foto. O analógico esquerdo voa, o direito olha ao redor. Teclado: as teclas dos mesmos botões; Print Screen também tira uma captura.",
     "launcher.shadow_lite": "Sombras leves",
-    "launcher.shadow_lite_hint": "Deixa de fora a mais próxima das quatro camadas de sombra do jogo, como o próprio jogo faz em algumas áreas. Alguns % a mais de FPS em CPUs antigas e no Steam Deck; as sombras perto da câmera ficam um pouco mais suaves. Desligado é como foi lançado."
+    "launcher.shadow_lite_hint": "Deixa de fora a mais próxima das quatro camadas de sombra do jogo, como o próprio jogo faz em algumas áreas. Alguns % a mais de FPS em CPUs antigas e no Steam Deck; as sombras perto da câmera ficam um pouco mais suaves. Desligado é como foi lançado.",
+    "pad.quit_key": "Sair do jogo (teclado)",
+    "pad.quit_key_press": "Pressione a tecla, por exemplo Ctrl+X…",
+    "pad.quit_key_bad": "Esta tecla não: use Ctrl ou Alt com uma letra ou número, ou uma tecla F",
+    "pad.quit_key_off": "desligado",
+    "pad.off_button": "Desligado"
   },
   "items": {
     "menu:sharpen": {
@@ -1093,7 +1098,6 @@
     "QA menu": "Menu QA",
     "Hold the buttons, then release...": "Segure os botões e depois solte...",
     "Set": "Definir",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Definir: segure dois ou mais botões juntos e depois solte. Teclado: Alt+Q sai, Insert abre este menu.",
     "Quitting...": "Saindo...",
     "Quitting... (release to cancel)": "Saindo... (solte para cancelar)",
     "Photo mode": "Modo foto",
@@ -1162,6 +1166,10 @@
     "Lite shadows": "Sombras leves",
     "On (lighter)": "Ligado (mais leve)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Deixa de fora a mais próxima das quatro camadas de sombra do jogo, como o próprio jogo faz em algumas áreas. Alguns % a mais de FPS em CPUs antigas e no Steam Deck; as sombras perto da câmera ficam um pouco mais suaves. Desligado é como foi lançado.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Troca todas as configurações desta aba e o pacote de texturas de uma vez, ao vivo. Stock é o jogo como foi lançado; Recomendado é o padrão; PC modesto é Stock com sombras a 50% da distância e sombras leves, para PCs antigos ou mais fracos. Seus presets são arquivos na pasta presets, também listados no launcher."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Troca todas as configurações desta aba e o pacote de texturas de uma vez, ao vivo. Stock é o jogo como foi lançado; Recomendado é o padrão; PC modesto é Stock com sombras a 50% da distância e sombras leves, para PCs antigos ou mais fracos. Seus presets são arquivos na pasta presets, também listados no launcher.",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Definir: segure dois ou mais botões juntos e depois solte. A tecla de sair do teclado precisa de Ctrl ou Alt com uma letra ou número, ou uma tecla F. Insert abre este menu.",
+    "Quit game (keyboard)": "Sair do jogo (teclado)",
+    "Press the key, for example Ctrl+X...": "Pressione a tecla, por exemplo Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Esta tecla não: use Ctrl ou Alt com uma letra ou número, ou uma tecla F."
   }
 }

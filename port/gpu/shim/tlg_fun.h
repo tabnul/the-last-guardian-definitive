@@ -196,7 +196,7 @@ inline constexpr const char* TricopilotHelp =
 bool EyeCustom();
 } // namespace TlgFun
 
-// tlg: quitting from the keyboard (Alt+Q, window close) and the controller (Controls tab combo, held
+// tlg: quitting from the keyboard (Ctrl+X, window close) and the controller (Controls tab combo, held
 // 2 s). Runs the game's own luaCommand("quit") once no load is running, so its exit callbacks save
 // the config and perpetual data; the game then ends in sceSystemServiceLoadExec (src/runtime_tlg.c),
 // which exits instead of restarting. Closes anyway when the game has not finished after a while.

@@ -131,6 +131,14 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         target = ParseCombo(value, target.load());
         return;
     }
+    if (key == "quit_key") {
+        uint32_t mods = 0, code = 0;
+        if (ParseQuitKey(value, mods, code)) {
+            v.quit_key_mods = mods;
+            v.quit_key = code;
+        }
+        return;
+    }
     if (key.rfind("pad_photo_", 0) == 0) {
         auto* target = key == "pad_photo_shot" ? &v.photo_shot : key == "pad_photo_up" ? &v.photo_up
                      : key == "pad_photo_down" ? &v.photo_down : key == "pad_photo_fast" ? &v.photo_fast
@@ -347,6 +355,59 @@ static std::string ComboJoin(uint32_t bits, bool label, bool xbox = false) {
     return out;
 }
 std::string ComboText(uint32_t bits) { return ComboJoin(bits, false); }
+
+bool QuitKeyAllowed(uint32_t mods, uint32_t key) {
+    if (key >= QuitKeyF1 + 1 && key <= QuitKeyF1 + 12) {
+        return (key != QuitKeyF1 + 9 && key != QuitKeyF1 + 10) || mods;
+    }
+    const bool plain = (key >= 'a' && key <= 'z') || (key >= '0' && key <= '9');
+    return plain && (mods & (QuitModCtrl | QuitModAlt));
+}
+
+bool ParseQuitKey(const std::string& text, uint32_t& mods, uint32_t& key) {
+    std::string t;
+    for (char c : text) {
+        if (c != ' ') t += char(std::tolower(static_cast<unsigned char>(c)));
+    }
+    if (t == "off" || t == "none") {
+        mods = 0;
+        key = 0;
+        return true;
+    }
+    uint32_t m = 0, k = 0;
+    size_t start = 0;
+    while (start <= t.size()) {
+        size_t end = t.find('+', start);
+        if (end == std::string::npos) end = t.size();
+        const std::string part = t.substr(start, end - start);
+        start = end + 1;
+        if (part == "ctrl" || part == "control") m |= QuitModCtrl;
+        else if (part == "alt") m |= QuitModAlt;
+        else if (part == "shift") m |= QuitModShift;
+        else if (k) return false;  // two keys
+        else if (part.size() == 1) k = uint32_t(static_cast<unsigned char>(part[0]));
+        else if (part.size() <= 3 && part[0] == 'f' && std::isdigit(static_cast<unsigned char>(part[1])))
+            k = QuitKeyF1 + uint32_t(std::atoi(part.c_str() + 1));
+        else return false;
+    }
+    if (!QuitKeyAllowed(m, k)) return false;
+    mods = m;
+    key = k;
+    return true;
+}
+
+static std::string QuitKeyJoin(uint32_t mods, uint32_t key, bool label) {
+    if (!key) return label ? "" : "off";
+    std::string out;
+    if (mods & QuitModCtrl) out += label ? "Ctrl+" : "ctrl+";
+    if (mods & QuitModAlt) out += label ? "Alt+" : "alt+";
+    if (mods & QuitModShift) out += label ? "Shift+" : "shift+";
+    if (key > QuitKeyF1) out += (label ? "F" : "f") + std::to_string(key - QuitKeyF1);
+    else out += char(label ? std::toupper(int(key)) : int(key));
+    return out;
+}
+std::string QuitKeyText(uint32_t mods, uint32_t key) { return QuitKeyJoin(mods, key, false); }
+std::string QuitKeyLabel(uint32_t mods, uint32_t key) { return QuitKeyJoin(mods, key, true); }
 std::string ComboLabel(uint32_t bits) { return ComboJoin(bits, true, Get().XboxIcons()); }
 
 Values& Get() {
@@ -774,6 +835,7 @@ void Save() {
     std::fprintf(file, "pad_combo_quit=%s\npad_combo_menu=%s\npad_combo_qa=%s\npad_combo_photo=%s\n",
                  ComboText(v.combo_quit).c_str(), ComboText(v.combo_menu).c_str(), ComboText(v.combo_qa).c_str(),
                  ComboText(v.combo_photo).c_str());
+    std::fprintf(file, "quit_key=%s\n", QuitKeyText(v.quit_key_mods, v.quit_key).c_str());
     std::fprintf(file,
                  "pad_photo_shot=%s\npad_photo_up=%s\npad_photo_down=%s\npad_photo_fast=%s\npad_photo_slow=%s\n"
                  "pad_photo_help=%s\npad_photo_world=%s\npad_photo_sticks=%s\nphoto_invert_y=%d\n",

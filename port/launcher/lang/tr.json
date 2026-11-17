@@ -449,7 +449,7 @@
     "pad.combo_qa": "QA menüsü",
     "pad.combo_photo": "Fotoğraf modu aç / kapat",
     "pad.combo_press": "tuşları basılı tutun, sonra bırakın…",
-    "pad.combo_help": "İki veya daha fazla tuş birlikte. Klavye: Alt+Q çıkar, Insert oyun içi menüyü açar.",
+    "pad.combo_help": "İki veya daha fazla tuş birlikte. Klavyedeki çıkış tuşu Ctrl veya Alt ile bir harf ya da rakam, veya bir F tuşu olmalıdır. Insert oyun içi menüyü açar.",
     "pad.photo": "Fotoğraf modu",
     "pad.photo_invert": "Yukarı / aşağı bakışı ters çevir",
     "pad.photo_shot": "Ekran görüntüsü",
@@ -465,7 +465,12 @@
     "pad.photo_press": "bir tuşa bas…",
     "pad.photo_note": "Her biri için bir tuş, yalnızca fotoğraf modunda. Sol çubuk uçurur, sağ çubuk etrafa baktırır. Klavye: aynı tuşların klavye karşılıkları; Print Screen de ekran görüntüsü alır.",
     "launcher.shadow_lite": "Hafif gölgeler",
-    "launcher.shadow_lite_hint": "Oyunun dört gölge katmanından kameraya en yakın olanı çıkarır; oyun bazı bölgelerde bunu zaten kendisi yapar. Eski CPU'larda ve Steam Deck'te birkaç % daha fazla FPS; kameraya yakın gölgeler biraz yumuşar. Kapalı, oyunun çıktığı hâlidir."
+    "launcher.shadow_lite_hint": "Oyunun dört gölge katmanından kameraya en yakın olanı çıkarır; oyun bazı bölgelerde bunu zaten kendisi yapar. Eski CPU'larda ve Steam Deck'te birkaç % daha fazla FPS; kameraya yakın gölgeler biraz yumuşar. Kapalı, oyunun çıktığı hâlidir.",
+    "pad.quit_key": "Oyundan çık (klavye)",
+    "pad.quit_key_press": "Tuşa basın, örneğin Ctrl+X…",
+    "pad.quit_key_bad": "Bu tuş olmaz: Ctrl veya Alt ile bir harf ya da rakam, veya bir F tuşu kullanın",
+    "pad.quit_key_off": "kapalı",
+    "pad.off_button": "Kapalı"
   },
   "items": {
     "menu:sharpen": {
@@ -1112,7 +1117,6 @@
     "QA menu": "QA menüsü",
     "Hold the buttons, then release...": "Tuşları basılı tutun, sonra bırakın...",
     "Set": "Ayarla",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "Ayarla: iki veya daha fazla tuşu birlikte basılı tutun, sonra bırakın. Klavye: Alt+Q çıkar, Insert bu menüyü açar.",
     "Quitting...": "Çıkılıyor...",
     "Quitting... (release to cancel)": "Çıkılıyor... (iptal için bırakın)",
     "Photo mode": "Fotoğraf modu",
@@ -1181,6 +1185,10 @@
     "Lite shadows": "Hafif gölgeler",
     "On (lighter)": "Açık (daha hafif)",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "Oyunun dört gölge katmanından kameraya en yakın olanı çıkarır; oyun bazı bölgelerde bunu zaten kendisi yapar. Eski CPU'larda ve Steam Deck'te birkaç % daha fazla FPS; kameraya yakın gölgeler biraz yumuşar. Kapalı, oyunun çıktığı hâlidir.",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Bu sekmedeki tüm ayarları ve doku paketini tek seferde, canlı olarak değiştirir. Stock oyunun çıktığı hâli; Önerilen varsayılan; Düşük donanımlı PC, eski veya zayıf PC'ler için gölgeleri %50 mesafede ve hafif gölgeli Stock'tur. Kendi ön ayarların presets klasöründeki dosyalardır, başlatıcıda da listelenir."
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "Bu sekmedeki tüm ayarları ve doku paketini tek seferde, canlı olarak değiştirir. Stock oyunun çıktığı hâli; Önerilen varsayılan; Düşük donanımlı PC, eski veya zayıf PC'ler için gölgeleri %50 mesafede ve hafif gölgeli Stock'tur. Kendi ön ayarların presets klasöründeki dosyalardır, başlatıcıda da listelenir.",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Ayarla: iki veya daha fazla tuşu birlikte basılı tutun, sonra bırakın. Klavyedeki çıkış tuşu Ctrl veya Alt ile bir harf ya da rakam, veya bir F tuşu olmalıdır. Insert bu menüyü açar.",
+    "Quit game (keyboard)": "Oyundan çık (klavye)",
+    "Press the key, for example Ctrl+X...": "Tuşa basın, örneğin Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Bu tuş olmaz: Ctrl veya Alt ile bir harf ya da rakam, veya bir F tuşu kullanın."
   }
 }

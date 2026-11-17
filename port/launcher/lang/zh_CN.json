@@ -442,7 +442,7 @@
     "pad.combo_qa": "QA 菜单",
     "pad.combo_photo": "拍照模式 开 / 关",
     "pad.combo_press": "按住按键，然后松开…",
-    "pad.combo_help": "两个或更多按键同时按下。键盘：Alt+Q 退出，Insert 打开游戏内菜单。",
+    "pad.combo_help": "两个或更多按键同时按下。键盘退出键需要 Ctrl 或 Alt 加字母或数字，或 F 键。Insert 打开游戏内菜单。",
     "pad.photo": "拍照模式",
     "pad.photo_invert": "反转上下视角",
     "pad.photo_shot": "截图",
@@ -458,7 +458,12 @@
     "pad.photo_press": "请按一个按键…",
     "pad.photo_note": "每项一个按键，仅在拍照模式中。左摇杆飞行，右摇杆环顾。键盘：相同按键对应的键；Print Screen 也会截图。",
     "launcher.shadow_lite": "轻量阴影",
-    "launcher.shadow_lite_hint": "去掉游戏四层阴影中离镜头最近的一层,游戏自己在某些区域也这样做。在较旧的 CPU 和 Steam Deck 上 FPS 高几个百分点;镜头附近的阴影会稍微柔和一些。关闭为发售时的原样。"
+    "launcher.shadow_lite_hint": "去掉游戏四层阴影中离镜头最近的一层,游戏自己在某些区域也这样做。在较旧的 CPU 和 Steam Deck 上 FPS 高几个百分点;镜头附近的阴影会稍微柔和一些。关闭为发售时的原样。",
+    "pad.quit_key": "退出游戏（键盘）",
+    "pad.quit_key_press": "请按键，例如 Ctrl+X…",
+    "pad.quit_key_bad": "不能用这个键：请用 Ctrl 或 Alt 加字母或数字，或 F 键",
+    "pad.quit_key_off": "关",
+    "pad.off_button": "关闭"
   },
   "items": {
     "menu:sharpen": {
@@ -1099,7 +1104,6 @@
     "QA menu": "QA 菜单",
     "Hold the buttons, then release...": "按住按键，然后松开...",
     "Set": "设置",
-    "Set: press and hold two or more buttons together, then let go. Keyboard: Alt+Q quits, Insert opens this menu.": "设置：同时按住两个或更多按键，然后松开。键盘：Alt+Q 退出，Insert 打开此菜单。",
     "Quitting...": "正在退出...",
     "Quitting... (release to cancel)": "正在退出...（松开以取消）",
     "Photo mode": "拍照模式",
@@ -1168,6 +1172,10 @@
     "Lite shadows": "轻量阴影",
     "On (lighter)": "开启（更轻）",
     "Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. Off is as shipped.": "去掉游戏四层阴影中离镜头最近的一层,游戏自己在某些区域也这样做。在较旧的 CPU 和 Steam Deck 上 FPS 高几个百分点;镜头附近的阴影会稍微柔和一些。关闭为发售时的原样。",
-    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "一次实时切换此页的所有设置和纹理包。Stock 为游戏发售时的原样;推荐 为默认值;低配电脑 是阴影距离 50% 并开启轻量阴影的 Stock,适合较旧或较弱的电脑。你自己的预设是 presets 文件夹里的文件,启动器中也会列出。"
+    "Switches all settings on this tab and the texture pack at once, live. Stock is the game as shipped; Recommended is the default; Low-end PC is Stock with shadows at 50% distance and Lite shadows, for older or weaker PCs. Your own presets are files in the presets folder, also listed in the launcher.": "一次实时切换此页的所有设置和纹理包。Stock 为游戏发售时的原样;推荐 为默认值;低配电脑 是阴影距离 50% 并开启轻量阴影的 Stock,适合较旧或较弱的电脑。你自己的预设是 presets 文件夹里的文件,启动器中也会列出。",
+    "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "设置：同时按住两个或更多按键，然后松开。键盘退出键需要 Ctrl 或 Alt 加字母或数字，或 F 键。Insert 打开此菜单。",
+    "Quit game (keyboard)": "退出游戏（键盘）",
+    "Press the key, for example Ctrl+X...": "请按键，例如 Ctrl+X...",
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "不能用这个键：请用 Ctrl 或 Alt 加字母或数字，或 F 键。"
   }
 }
