@@ -106,6 +106,11 @@ void TextureCpuWritten(u64 texture_id);
 /// API contract census (debug, TLG_VKB_CONTRACT_CENSUS=1): counts by key, in the objects report under "contract_census"
 bool ContractCensusOn();
 void ContractNote(const std::string& key);
+/// C10: a texture bound as target 7 (the target-7 mode), and a shader reading a texture (counted when it was a target-7 texture)
+void ContractTarget7(u64 texture_id, const std::string& key);
+void ContractSampled(u64 texture_id);
+/// Y6: where our bytes of an engine range live ("in place" or a device copy the CPU cannot see)
+std::string ContractWhereLives(u64 address, u64 size);
 /// The engine read a file into [address, address + bytes) (its file layer, note 81): every texture there gets its contents again; returns how many
 u32 MemoryLoaded(u64 address, u64 bytes);
 /// debug (tint hunt): every 3D texture uploaded again from the engine's memory; returns how many

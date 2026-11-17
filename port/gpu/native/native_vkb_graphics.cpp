@@ -1333,6 +1333,17 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         }
         width = height = layers = 0; // set by the resolver
     }
+    if (Core::Vkb::ContractCensusOn() && Rd<u64>(ctx, CtxTarget7) != 0) { // api-contract.md C10 (debug): the target-7 mode (the Pro's ID buffer, note 10)
+        const auto describe = [](u64 view) -> std::string {
+            const u64 resource = view != 0 ? Rd<u64>(view, 0x30) : 0;
+            return resource == 0 ? std::string("none") : fmt::format("{}x{} dxgi {}", Rd<u32>(resource, 0x180), Rd<u32>(resource, 0x184), Rd<u32>(resource, 0x190));
+        };
+        const u64 t7 = Rd<u64>(ctx, CtxTarget7);
+        const u64 t7_resource = Rd<u64>(t7, 0x30);
+        Core::Vkb::ContractTarget7(t7_resource != 0 ? Rd<u64>(t7_resource, 0x10) : 0,
+                                   fmt::format("C10 draw in target-7 mode: target 7 {}, target 0 {}, pixel shader writes target 7 {}, uconfig gradient mode {}", describe(t7),
+                                               describe(Rd<u64>(ctx, 0x4488)), (v.key.mrt_mask >> 7) & 1, Rd<u8>(ctx, 0x44c8)));
+    }
     for (u32 cb = 0; !late_images && cb < pass.color_count; ++cb) {
         if ((v.key.mrt_mask & (1u << cb)) == 0 || v.color_formats[cb] == vk::Format::eUndefined || views[cb] == 0) {
             continue;

@@ -66,6 +66,26 @@ void ContractNote(const std::string& key) {
     std::scoped_lock lock{contract_mutex};
     ++contract_counts[key];
 }
+namespace {
+std::set<u64> contract_target7; ///< C10: texture ids bound as target 7
+} // namespace
+void ContractTarget7(u64 texture_id, const std::string& key) {
+    if (!ContractCensusOn()) {
+        return;
+    }
+    std::scoped_lock lock{contract_mutex};
+    contract_target7.insert(texture_id);
+    ++contract_counts[key];
+}
+void ContractSampled(u64 texture_id) {
+    if (!ContractCensusOn() || texture_id == 0) {
+        return;
+    }
+    std::scoped_lock lock{contract_mutex};
+    if (contract_target7.contains(texture_id)) {
+        ++contract_counts[fmt::format("C10 a shader reads target-7 texture {}", texture_id)];
+    }
+}
 nlohmann::json ContractReport() {
     nlohmann::json j = nlohmann::json::object();
     std::scoped_lock lock{contract_mutex};
@@ -1844,6 +1864,16 @@ nlohmann::json LookupReport() {
 bool ViewForComputeLookup(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, vk::ImageView& out, vk::Image* image);
 bool ViewForCompute(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, vk::ImageView& out, vk::Image* image) {
     const LookupTimer lookup_timer{0};
+    if (ContractCensusOn()) { // api-contract.md C10 (debug): a shader reads a texture the target-7 mode drew into
+        u64 texture = 0;
+        {
+            std::scoped_lock lock{mutex};
+            if (const auto v = views.find(view_id); v != views.end()) {
+                texture = v->second.texture_id;
+            }
+        }
+        ContractSampled(texture);
+    }
     if (!MemoOn()) {
         return ViewForComputeLookup(view_id, want, cmd, out, image);
     }
@@ -2964,6 +2994,27 @@ u32 ReuploadVolumes() {
         TextureCpuWritten(id);
     }
     return static_cast<u32>(ids.size());
+}
+
+/// api-contract.md Y6 (debug census): where the bytes of a range the CPU reads in place (AsyncMap) live on our side: "device" = our separate device copy (the guest
+/// memory the CPU reads is stale), "in place" = imported guest memory or the frame ring
+std::string ContractWhereLives(u64 address, u64 size) {
+    std::scoped_lock lock{mutex};
+    u64 start = 0;
+    bool straddle = false;
+    if (DeviceBufferOf(address, size, start, straddle) != nullptr) {
+        return "a GPU-written device buffer";
+    }
+    if (straddle) {
+        return "straddles a device buffer";
+    }
+    if (auto it = watched.upper_bound(address); it != watched.begin()) {
+        --it;
+        if (address >= it->first && address < it->second.end && it->second.state == Watched::State::Device) {
+            return "a static device copy";
+        }
+    }
+    return "in place";
 }
 
 bool CopyBuffer(u64 destination, u64 source, u64 bytes) {

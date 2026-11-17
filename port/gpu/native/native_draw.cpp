@@ -8166,6 +8166,9 @@ u64 PS4_SYSV_ABI AscFencedEnd(Core::GuestHooks::MidContext* c) {
 /// JsComputeContext::AsyncMap (FUN_02473600): the engine hands out the CPU address of a resource the async queue computed. The game's
 /// function runs; the range it returns is noted (explicit readbacks, step 1: measurement only).
 u64 PS4_SYSV_ABI NoteAsyncMap(u64 resource, u64 out, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    if (Core::Vkb::On() && Core::Vkb::ContractCensusOn()) {
+        Core::Vkb::ContractNote("Y6 AsyncMap hook entered");
+    }
     static std::atomic<u64> original_entry{0};
     u64 original = original_entry.load(std::memory_order_relaxed);
     if (original == 0) {
@@ -8178,6 +8181,12 @@ u64 PS4_SYSV_ABI NoteAsyncMap(u64 resource, u64 out, u64 a2, u64 a3, u64 a4, u64
     reinterpret_cast<GuestFunction6>(original)(resource, out, a2, a3, a4, a5);
     const u64 mapped = Rd<u64>(out, 0);
     const u32 mapped_size = Rd<u32>(out, 8);
+    if (Core::Vkb::On() && Core::Vkb::ContractCensusOn() && mapped != 0) { // api-contract.md Y6 (debug): the CPU reads this memory in place
+        const u32 kind = Rd<u32>(resource, 0x124);
+        Core::Vkb::ContractNote(kind == 1 ? fmt::format("Y6 AsyncMap of a buffer ({} B, caller {:#x}): ours lives in {}", mapped_size, ret - ImageBase() + 0x1000000,
+                                                        Core::Vkb::ContractWhereLives(mapped, std::max<u32>(mapped_size, 4)))
+                                          : fmt::format("Y6 AsyncMap of a texture (kind {}, caller {:#x}): our image never writes the memory back", kind, ret - ImageBase() + 0x1000000));
+    }
     return 1;
 }
 
@@ -8736,6 +8745,9 @@ void InstallUnmapSlot();
 
 u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret, u64 caller_rsp) {
     (void)a1, (void)a2, (void)a3, (void)a4, (void)a5, (void)ret, (void)caller_rsp;
+    if (Core::Vkb::On() && Core::Vkb::ContractCensusOn()) { // api-contract.md Y6 (debug): BeginRecording returns at once when its third argument is 0
+        Core::Vkb::ContractNote(fmt::format("Y6 BeginRecording called, record flag {}, frameData+0x31e50 {}", a2 & 0xff, IsHeapPointer(a1) ? Rd<u32>(a1, 0x31e50) : 0xffffffffu));
+    }
     if (!Core::NativeUpdates::enabled.load(std::memory_order_relaxed) || !IsHeapPointer(device)) {
         return 0;
     }
