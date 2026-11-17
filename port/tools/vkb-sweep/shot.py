@@ -13,6 +13,9 @@ OUT/STAGE__SCENE/camera.txt; every later take, of either renderer, uses the same
 Run with the build environment loaded (source /home/runner/loop/build-env on the test box)."""
 import os, re, shutil, signal, subprocess, sys, time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import compare  # noqa: E402  (blank picture check)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORT = os.path.dirname(os.path.dirname(HERE))
 START = os.path.join(PORT, "tools", "scene-check", "start.save")
@@ -223,9 +226,17 @@ def take(out, tag, stage, scene, env, cam_file, cam_arg):
         if "photo on" not in game.find("Lua: shot photo", mark):
             return "photo setup failed"
         game.wait(SETTLE_S)
-        size = picture(os.path.join(out, tag + ".png"))
+        png = os.path.join(out, tag + ".png")
+        size = picture(png)
+        if size.startswith(("no", "import")):
+            return "picture failed: " + size
+        # a blank picture (black screen) can never be compared: the take fails and the picture is set aside
+        why = compare.blank(compare.rgb(png)[2])
+        if why:
+            os.replace(png, os.path.join(out, tag + ".blank.png"))
+            return f"picture failed: {why} (kept as {tag}.blank.png)"
         faults = sum(1 for l in game.lines() if "Fault: exception" in l)
-        return f"ok {size}, faults {faults}" if not size.startswith(("no", "import")) else "picture failed: " + size
+        return f"ok {size}, faults {faults}"
     finally:
         game.close()
 
@@ -260,7 +271,7 @@ def main():
         n = 0
         for _ in range(takes):
             n += 1
-            while any(os.path.exists(os.path.join(out, f"vkb{vkb}_take{n}.{e}")) for e in ("png", "log")):  # never overwrite
+            while any(os.path.exists(os.path.join(out, f"vkb{vkb}_take{n}.{e}")) for e in ("png", "blank.png", "log")):  # never overwrite
                 n += 1
             tag = f"vkb{vkb}_take{n}"
             shutil.rmtree(save, ignore_errors=True)

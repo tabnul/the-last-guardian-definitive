@@ -27,7 +27,9 @@ python3 compare.py ~/vkb-shots/s13_FirstFlight__FF_b01_EnterGarden/vkb0_take1.pn
 5. Waits 4 s and takes the picture of the game window on the virtual screen.
 
 A take fails (and the script exits with 1) when a step does not happen in time, when the game ends, or
-when the renderer that runs is not the one asked for (the new engine names itself in the log).
+when the renderer that runs is not the one asked for (the new engine names itself in the log), or when
+the picture is blank (one flat colour, such as a black screen: at least 99.5% of its pixels within 8 of
+the most common colour). A blank picture is kept as `vkbV_takeN.blank.png`, never as a normal take.
 
 The game runs on its own Xvfb (`SHOT_DISPLAY`, default `:93`) with `MESA_VK_WSI_DEBUG=sw`, so the picture
 is what the game presented, taken the same way for both renderers. Fixed settings for every take:
@@ -49,4 +51,5 @@ Keep `OUT` outside the repository: pictures of the game go only to the `shots` b
 
 Prints the mean absolute difference per channel (0..255), the share of pixels whose largest channel
 difference is above 8, 16 and 32, and the largest difference. With a third path it writes a difference
-picture (4x brighter). No thresholds are applied here: what counts as clean is the owner's call.
+picture (4x brighter). It refuses a blank picture (exit code 2), so a black screen is never compared.
+No thresholds are applied here: what counts as clean is the owner's call.
