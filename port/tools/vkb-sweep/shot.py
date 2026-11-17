@@ -121,7 +121,7 @@ def picture(path):
 class MemoryGuard:
     """GPU memory guard. A run that filled the GPU memory once hung the game inside the kernel driver
     (unkillable, the host had to be power-cycled: issue 11). While the game runs, a thread reads the GTT use
-    of every AMD card from sysfs every 0.5 s; above the limit it kills the whole process group of the game at
+    of every AMD card from sysfs every 0.25 s; above the limit it kills the whole process group of the game at
     once, before the driver can block. SHOT_GTT_LIMIT_GB (default 8, 0 = off) is the switch."""
     FILES = "/sys/class/drm/card[0-9]*/device/mem_info_gtt_used"
 
@@ -131,7 +131,7 @@ class MemoryGuard:
             self.limit = float(text) * GB
         except ValueError:
             sys.exit(f"SHOT_GTT_LIMIT_GB={text!r} is not a number")
-        self.files = sorted(glob.glob(self.FILES))
+        self.files, self.unreadable = sorted(glob.glob(self.FILES)), set()
         if self.limit <= 0:
             print("GPU memory guard: OFF (SHOT_GTT_LIMIT_GB=0)", flush=True)
             self.files = []
@@ -153,7 +153,12 @@ class MemoryGuard:
         """(highest GTT use, its VRAM use, card) over the cards, in bytes."""
         best = (0, 0, "")
         for f in self.files:
-            gtt = self.read(f) or 0
+            gtt = self.read(f)
+            if gtt is None:  # an unreadable file is said once, never counted as 0 silently
+                if f not in self.unreadable:
+                    self.unreadable.add(f)
+                    print(f"  GPU memory guard: cannot read {f}; that card is not guarded", flush=True)
+                continue
             if gtt >= best[0]:
                 best = (gtt, self.read(f.replace("gtt_used", "vram_used")) or 0, f.split("/")[4])
         return best
@@ -187,7 +192,7 @@ class MemoryGuard:
                     pass
                 self.trip(gtt, card, "game killed")
                 return
-            self.stop.wait(0.5)
+            self.stop.wait(0.25)
 
     def trip(self, gtt, card, what):
         self.fired = f"GPU memory guard: {gtt / GB:.2f} GB used, limit {self.limit / GB:.2f} GB ({card}, {what})"

@@ -44,7 +44,7 @@ then hung inside the AMD kernel driver, the process could not be killed, and the
 power-cycled (issue 11). Killing the game before the memory is full avoids that.
 
 - Before each take the script reads the GPU memory use (`/sys/class/drm/card*/device/mem_info_gtt_used`
-  and `mem_info_vram_used`) and prints it. While the game runs, a thread reads it every 0.5 s.
+  and `mem_info_vram_used`) and prints it. While the game runs, a thread reads it every 0.25 s (a GTT fill faster than that between two reads is not caught).
 - When GTT use of any card passes the limit, the whole process group of the game gets SIGKILL at once.
   The take fails with `GPU memory guard: X GB used, limit Y GB (card, game killed)`, the remaining takes
   of the run are not started, and a line starting with `MAJOR:` is written to the journal
@@ -53,7 +53,7 @@ power-cycled (issue 11). Killing the game before the memory is full avoids that.
   limit before the game starts, the take is not started.
 - After each take the peak GTT and VRAM use of that take is printed.
 - Switch: `SHOT_GTT_LIMIT_GB` (default `8`; 1 GB = 2^30 bytes). `0` switches the guard off. The normal
-  renderer's garden take peaks at about 4.4 GB; runs that need more (for example a new engine change
+  renderer's garden take peaks at about 4.6 GB; runs that need more (for example a new engine change
   with a large GPU pool) raise the limit, they do not switch the guard off.
 - Without those sysfs files (another GPU maker, Windows) the script says once
   `GPU memory guard: NOT ACTIVE` and runs without the guard.
