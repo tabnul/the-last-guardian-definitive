@@ -22,7 +22,7 @@ TITLE_S, LOAD_S, WAIT_S, SETTLE_S = 400, 240, 8, 4
 
 HEAD = ("local ls = loadstring or load\n"
         "local function L(s) local g = ls('--TLGLOG ' .. tostring(s)) if g then g() end end\n")
-WARP = HEAD + """L('shot warp STAGE SCENE')
+WARP = HEAD + """L('shot warp @STAGE@ @SCENE@')
 if ControllerMenu and ControllerMenu.Tick then
   pcall(function()
     UnRegisterTick(ControllerMenu.Tick)
@@ -33,7 +33,7 @@ local orig = LoadCheckPoint
 LoadCheckPoint = function(...)
   LoadCheckPoint = orig
   local r = orig(...)
-  GameFlag.Stage, GameFlag.Scene = 'STAGE', 'SCENE'
+  GameFlag.Stage, GameFlag.Scene = '@STAGE@', '@SCENE@'
   L('shot retarget ' .. GameFlag.Stage .. ' ' .. GameFlag.Scene)
   return r
 end
@@ -181,8 +181,12 @@ def take(out, tag, stage, scene, env, cam_file, cam_arg):
     try:
         if not game.wait(TITLE_S, lambda ls: any("opA_010 titleScreen" in l for l in ls)):
             return "no title" if game.proc.poll() is None else "ended before title"
+        # the renderer that really runs: the new engine says so in its log, the normal renderer does not
+        new_engine = any(l.startswith("Renderer: engine-to-Vulkan backend") for l in game.seen)
+        if new_engine != (env["TLG_VKB"] == "1"):
+            return f"wrong renderer: TLG_VKB={env['TLG_VKB']} but the new engine {'ran' if new_engine else 'did not run'}"
         game.wait(1)
-        send(WARP.replace("STAGE", stage).replace("SCENE", scene))
+        send(WARP.replace("@STAGE@", stage).replace("@SCENE@", scene))
         if not game.wait(20, lambda ls: any("Lua: shot retarget" in l or "Lua: shot warp error" in l for l in ls)):
             return "no continue"
         seen = next(i for i, l in enumerate(game.seen) if "Lua: shot retarget" in l or "shot warp error" in l)
@@ -221,7 +225,7 @@ def take(out, tag, stage, scene, env, cam_file, cam_arg):
         game.wait(SETTLE_S)
         size = picture(os.path.join(out, tag + ".png"))
         faults = sum(1 for l in game.lines() if "Fault: exception" in l)
-        return f"ok {size}, faults {faults}" if not size.startswith(("no", "import")) else size
+        return f"ok {size}, faults {faults}" if not size.startswith(("no", "import")) else "picture failed: " + size
     finally:
         game.close()
 
@@ -238,6 +242,8 @@ def main():
     root, stage, scene, vkb, takes = args[0], args[1], args[2], args[3], int(args[4])
     env = dict(e.split("=", 1) for e in args[5:])
     env["TLG_VKB"] = vkb
+    if "TLG_USER_DIR" in env:
+        sys.exit("set TLG_USER_DIR in the shell, not as NAME=VALUE (the script backs up the save in it)")
     if not gone():
         sys.exit("the game is running")
     out = os.path.join(root, f"{stage}__{scene}")
@@ -246,9 +252,10 @@ def main():
     backup = os.path.join(root, "save_backup")
     if os.path.exists(backup):
         sys.exit(f"{backup} is left from a run that did not finish: put it back by hand, then delete it")
+    screen = Screen()
     if os.path.exists(save):
         shutil.copytree(save, backup)
-    screen = Screen()
+    failed = 0
     try:
         n = 0
         for _ in range(takes):
@@ -261,6 +268,7 @@ def main():
             t = time.monotonic()
             status = take(out, tag, stage, scene, env, os.path.join(out, "camera.txt"), cam_arg)
             print(f"{tag}: {status}  ({time.monotonic() - t:.0f} s)", flush=True)
+            failed += not status.startswith("ok ")
     finally:
         screen.close()
         shutil.rmtree(save, ignore_errors=True)
@@ -270,6 +278,7 @@ def main():
             print("save restored", flush=True)
         else:
             print("no save before the run: start save removed", flush=True)
+    sys.exit(1 if failed else 0)
 
 
 main()

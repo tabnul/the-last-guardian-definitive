@@ -26,6 +26,9 @@ python3 compare.py ~/vkb-shots/s13_FirstFlight__FF_b01_EnterGarden/vkb0_take1.pn
 4. Hides Trico, switches to its own camera at a fixed position (set again every tick), game speed 0.001.
 5. Waits 4 s and takes the picture of the game window on the virtual screen.
 
+A take fails (and the script exits with 1) when a step does not happen in time, when the game ends, or
+when the renderer that runs is not the one asked for (the new engine names itself in the log).
+
 The game runs on its own Xvfb (`SHOT_DISPLAY`, default `:93`) with `MESA_VK_WSI_DEBUG=sw`, so the picture
 is what the game presented, taken the same way for both renderers. Fixed settings for every take:
 `TLG_SKIP_LOGOS=1 TLG_FPS=unlocked TLG_HDR=0 TLG_FG=0 TLG_DLAA=1`; `TLG_VKB` is always set from the
