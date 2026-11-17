@@ -730,6 +730,17 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
             }
         }
     }
+    // api-contract.md W7 census (debug): the device context's dispatch (FUN_0247dad0) also writes each counter UAV's initial count (ctx + 0x20d8, not -1) into GDS
+    // (ctx + 0x130b8) before the dispatch; ours does it for the async context only
+    if (!v.async && Core::Vkb::ContractCensusOn()) {
+        for (u32 index = 0; index < 8; ++index) {
+            const u64 view = Rd<u64>(ctx, 0x2098 + index * 8);
+            if (view != 0 && IsHeapPointer(view) && Rd<u32>(view, 0x44) == 1 && (Rd<u8>(view, 0x50) & 2) != 0) {
+                Core::Vkb::ContractNote(Rd<u32>(ctx, 0x20d8 + index * 4) != 0xffffffffu ? "W7 device dispatch with a counter UAV and an initial count"
+                                                                                          : "W7 device dispatch with a counter UAV, count kept");
+            }
+        }
+    }
     static std::unordered_map<u64, bool> logged_shaders;
     if (const u64 sid = Rd<u64>(shader, 0x10); !logged_shaders[sid]) {
         logged_shaders[sid] = true;
