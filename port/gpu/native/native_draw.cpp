@@ -7905,6 +7905,26 @@ void NoteRenderFrameFence(u64 ctx, u64 label) {
     typed.interrupt = false;
     Core::NativeSync::Typed::Expect(cursor - 6 * sizeof(u32), typed, Core::NativeSync::Typed::KindEop);
 }
+/// 01c804a0 (probe cubemaps into the cube array): mid hook at 01c80691, just before its CsCopyBufferDwords of one mip / face. [rbp - 0x60] = the cube array's T#
+/// (its texture + 0x70), r15 = the probe view's T# (view + 0x58; the view's texture at + 0x30), r14 = the mip, r12 = the face, r13 + r12 = the cube array's layer.
+u64 PS4_SYSV_ABI ProbeFaceCopy(Core::GuestHooks::MidContext* c) {
+    if (!Core::Vkb::On() || c->r15 < 0x58 || c->rbp < 0x60) {
+        return 0;
+    }
+    const u64 dst_tsharp = Rd<u64>(c->rbp - 0x60, 0);
+    const u64 view = c->r15 - 0x58;
+    if (!IsHeapPointer(dst_tsharp) || !IsHeapPointer(view)) {
+        return 0;
+    }
+    const u64 dst_texture = dst_tsharp - 0x70;
+    const u64 src_texture = Rd<u64>(view, 0x30);
+    if (src_texture == 0) {
+        return 0;
+    }
+    const u32 face = static_cast<u32>(c->r12), mip = static_cast<u32>(c->r14), layer = static_cast<u32>(c->r13 + c->r12);
+    Core::Vkb::TextureLayerCopied(Rd<u64>(dst_texture, 0x10), layer, Rd<u64>(src_texture, 0x10), face, mip);
+    return 0; // the engine's copy runs (its guest memory stays the same as our image)
+}
 u64 PS4_SYSV_ABI RenderFrameFenceA(Core::GuestHooks::MidContext* c) {
     NoteRenderFrameFence(c->rbx, c->r12);
     return 0;
@@ -11652,6 +11672,9 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "asyncmap_note") {
         return reinterpret_cast<u64>(&NoteAsyncMap);
+    }
+    if (name == "probe_face_copy") {
+        return reinterpret_cast<u64>(&ProbeFaceCopy);
     }
     if (name == "texture_move") {
         return reinterpret_cast<u64>(&TextureMove);

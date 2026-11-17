@@ -109,6 +109,8 @@ void BufferCpuAddressable(u64 buffer_id);
 void TextureMoved(u64 new_id, u64 old_id, u32 first_mip);
 /// api-contract.md W5b: the engine's buffer move (GpuHeap_MoveOneResource): the new memory gets the old contents now when the old memory holds them (false: copy in the stream)
 bool MoveBufferNow(u64 destination, u64 source, u64 bytes);
+/// api-contract.md W16: the engine copied mip `mip`, layer `src_layer` of texture `src_id` as raw memory into layer `dst_layer` of texture `dst_id` (probe cubemaps)
+void TextureLayerCopied(u64 dst_id, u32 dst_layer, u64 src_id, u32 src_layer, u32 mip);
 /// API contract census (debug, TLG_VKB_CONTRACT_CENSUS=1): counts by key, in the objects report under "contract_census"
 bool ContractCensusOn();
 void ContractNote(const std::string& key);

@@ -809,6 +809,13 @@
       "handler": "native_material_pressure"
     },
     {
+      "name": "ProbeFaceCopy",
+      "ghidra": "0x1c80691",
+      "mode": "mid",
+      "handler": "probe_face_copy",
+      "expect": "488b7da84889de48"
+    },
+    {
       "name": "TextureMove",
       "ghidra": "0x1c97a00",
       "mode": "call",

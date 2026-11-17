@@ -3276,6 +3276,37 @@ bool MoveBufferNow(u64 destination, u64 source, u64 bytes) {
     return true;
 }
 
+/// api-contract.md W16: the probe cubemap copy (01c804a0): the engine copies each mip / face of a probe texture as raw memory into its slot of a cube-array texture
+/// (layer = slot x 6 + face, CsCopyBufferDwords at 01c806a0). Our images get the same copy, image to image by the two engine objects, in the frame stream.
+std::atomic<u64> c_layer_copies{0}, c_layer_copy_refused{0};
+void TextureLayerCopied(u64 dst_id, u32 dst_layer, u64 src_id, u32 src_layer, u32 mip) {
+    if (!On() || !device_ready || dst_id == 0 || src_id == 0 || dst_id == src_id) {
+        return;
+    }
+    std::unique_lock lock{mutex};
+    const auto d = images.find(dst_id);
+    const auto s = images.find(src_id);
+    if (d == images.end() || s == images.end() || d->second.is_depth || s->second.is_depth || d->second.type == vk::ImageType::e3D ||
+        s->second.type == vk::ImageType::e3D || mip >= d->second.mips || mip >= s->second.mips || dst_layer >= d->second.layers || src_layer >= s->second.layers ||
+        d->second.format != s->second.format) {
+        c_layer_copy_refused.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    const auto extent = [mip](const Image& img) { return vk::Extent3D{std::max(img.width >> mip, 1u), std::max(img.height >> mip, 1u), 1u}; };
+    const vk::Extent3D a = extent(d->second), b = extent(s->second);
+    const vk::ImageCopy region{.srcSubresource = {vk::ImageAspectFlagBits::eColor, mip, src_layer, 1},
+                               .dstSubresource = {vk::ImageAspectFlagBits::eColor, mip, dst_layer, 1},
+                               .extent = {std::min(a.width, b.width), std::min(a.height, b.height), 1}};
+    const vk::Image src = s->second.image, dst = d->second.image;
+    lock.unlock(); // (no job is made under this module's lock: the recording thread's tick takes it)
+    Stream::NoteBytes(Stream::Work::Copy, u64{region.extent.width} * region.extent.height * TexelBytes(d->second.format));
+    Stream::Defer(Stream::Work::Copy, [src, dst, region](vk::CommandBuffer cmd) {
+        Stream::Hazard(cmd, {Stream::ImageUse(src, false), Stream::ImageUse(dst, true)});
+        cmd.copyImage(src, vk::ImageLayout::eGeneral, dst, vk::ImageLayout::eGeneral, region);
+    });
+    c_layer_copies.fetch_add(1, std::memory_order_relaxed);
+}
+
 bool CopyBuffer(u64 destination, u64 source, u64 bytes) {
     if (!device_ready || bytes == 0) {
         return false;
@@ -3645,6 +3676,7 @@ nlohmann::json ObjectsReport() {
                                                {"in_stream", c_reupload_in_stream.load()}, {"moved_textures", c_moved_textures.load()}, {"moved_no_image", c_moved_no_image.load()},
                                                {"moved_mismatch", c_moved_mismatch.load()}}},
                           {"buffer_moves", {{"copied_at_the_move", c_moves_now.load()}, {"in_the_stream", c_moves_in_stream.load()}}},
+                          {"probe_layer_copies", {{"copied", c_layer_copies.load()}, {"refused", c_layer_copy_refused.load()}}},
                           {"buffer_views", {{"whole", c_view_whole.load()}, {"range", c_view_part.load()}, {"outside", c_view_outside.load()}}},
                           {"asyncmap_buffers", {{"placed_in_place", c_placed_by_asyncmap.load()}, {"gpu_written_kept_device_copy", c_asyncmap_gpu_written.load()}}},
                           {"file_reads_into_textures", {{"reads", c_loaded_reads.load()}, {"textures", c_loaded_textures.load()}, {"buffers", c_loaded_buffers.load()}}},
