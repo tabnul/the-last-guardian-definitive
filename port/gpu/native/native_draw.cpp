@@ -7638,6 +7638,12 @@ u64 PS4_SYSV_ABI TagAscCsCopy(u64 jcc, u64 destination, u64 source, u64 bytes_ar
 using GuestFunction6 = u64(PS4_SYSV_ABI*)(u64, u64, u64, u64, u64, u64);
 bool StripPackets(u64 begin, u64 end);
 
+std::atomic<u64> g_aabb_count_buffer{0};         ///< K1 check: the render device's + 0x27a8 (set at BeginRecording)
+std::atomic<u32> g_aabb_readbacks_since_read{0}; ///< K1 check: CounterReadbacks into it since the last AABB read (a BeginRecording that dispatched)
+std::atomic<u32> g_rec_groups_at_dispatch{0};    ///< K1 check: the recording BeginRecording's group count (set at its start)
+std::atomic<u64> c_aabb_guarded{0};              ///< K2: AABB reads skipped because their records name groups not in the table
+std::atomic<u32> g_reads_since_dispatch{0}, g_dispatch_groups{0}; ///< K1 check: reads of the records since the last AABB dispatch; that dispatch's frame group count
+
 /// FUN_02471530(async compute context, counter buffer, unordered access view): hands an append / consume counter back to its
 /// buffer. A counter without a GDS slot or with a pending initial value is a CPU write of that value; otherwise the GPU
 /// counter in GDS is copied to the buffer's memory (a DMA packet and a scratch label in the game's function): a GDS read-back
@@ -7646,6 +7652,11 @@ u64 PS4_SYSV_ABI TagAscCounterReadback(u64 jcc, u64 buffer, u64 view, u64 a3, u6
     const auto valid = [](u64 pointer) { return IsHeapPointer(pointer) && (pointer & 7) == 0; };
     if (jcc == 0 || !valid(buffer) || !valid(view)) {
         return 0;
+    }
+    if (buffer == g_aabb_count_buffer.load(std::memory_order_relaxed)) {
+        g_aabb_readbacks_since_read.fetch_add(1, std::memory_order_relaxed); // K1 check: the AABB count's readback (BeginRecording dispatched)
+        g_reads_since_dispatch.store(0, std::memory_order_relaxed);
+        g_dispatch_groups.store(g_rec_groups_at_dispatch.load(std::memory_order_relaxed), std::memory_order_relaxed);
     }
     const u64 memory = ((static_cast<u64>(Rd<u32>(buffer, 0x64)) & 0xfff) << 32) + Rd<u32>(buffer, 0x60);
     if (memory == 0 || (memory & 3) != 0) {
@@ -7930,26 +7941,57 @@ u64 PS4_SYSV_ABI ProbeFaceCopy(Core::GuestHooks::MidContext* c) {
 /// BeginRecording's AABB dispatches made; each record's group (dword 0x20 >> 16) indexes the frame data's group table (+ 0x31e60, count + 0x31e68) with no check, and
 /// a group past the table was the crash after the shield cutscene. Counts reads, records and records whose group is not in the table (logged, the first ones in full),
 /// and BeginRecordings with no read between them (the case where an older unit's end could land after a newer submit).
-std::atomic<u64> c_aabb_reads{0}, c_aabb_records{0}, c_aabb_bad{0}, c_aabb_bad_reads{0}, c_aabb_unpaired{0};
+std::atomic<u64> c_aabb_reads{0}, c_aabb_records{0}, c_aabb_bad{0}, c_aabb_bad_reads{0}, c_aabb_unpaired{0}, c_aabb_reads_no_readback{0};
 std::atomic<u32> g_recordings_since_read{0};
+std::atomic<u64> g_rec_frame{0};               ///< the last recording BeginRecording's frame data
+std::atomic<u32> g_rec_groups{0}, g_rec_active{0}; ///< its group count / active groups (+0x18 != 0 and +0x30 != 0) at its entry
+u32 ActiveGroups(u64 frame) {
+    const u32 groups = Rd<u32>(frame, 0x31e68);
+    const u64 table = Rd<u64>(frame, 0x31e60);
+    u32 active = 0;
+    for (u32 i = 0; i < groups && i < 4096 && table != 0; ++i) {
+        const u64 g = Rd<u64>(table, i * 8ull);
+        active += IsHeapPointer(g) && Rd<u32>(g, 0x18) != 0 && Rd<u32>(g, 0x30) != 0 ? 1 : 0;
+    }
+    return active;
+}
 u64 BufferMemory(u64 buffer) {
     return IsHeapPointer(buffer) ? (static_cast<u64>(Rd<u32>(buffer, 0x60)) | (static_cast<u64>(Rd<u32>(buffer, 0x64)) & 0xfff) << 32) : 0;
 }
-u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
-    const u64 device = c->r14, frame = c->rdx;
+std::atomic<u32> g_last_recordings{0}, g_last_readbacks{0}; ///< at the reader's start: BeginRecordings / AABB CounterReadbacks since its previous start
+/// The reader's start (01c4c5de, after its label wait): what happened since its previous start
+u64 PS4_SYSV_ABI AabbReadStart(Core::GuestHooks::MidContext* c) {
+    (void)c;
     const u32 recordings = g_recordings_since_read.exchange(0, std::memory_order_relaxed);
-    if (!IsHeapPointer(device) || !IsHeapPointer(frame) || Rd<u32>(frame, 0x31e68) == 0) {
-        return 0;
-    }
+    g_last_recordings.store(recordings, std::memory_order_relaxed);
+    g_last_readbacks.store(g_aabb_readbacks_since_read.exchange(0, std::memory_order_relaxed), std::memory_order_relaxed);
     if (recordings > 1) {
         c_aabb_unpaired.fetch_add(1, std::memory_order_relaxed);
     }
-    const u64 count_memory = BufferMemory(Rd<u64>(device, 0x27a8)), records = BufferMemory(Rd<u64>(device, 0x27a0));
-    const u64 table = Rd<u64>(frame, 0x31e60);
-    if (count_memory == 0 || records == 0 || table == 0) {
+    return 0;
+}
+/// api-contract.md K2 guard (the class of tabnul's cloth_null_guard: an engine race the high frame rate exposes). The reader's record block at 01c4cd08, right after its
+/// AsyncMaps of the count (+ 0x27a8, pointer at [rbp - 0x4a0]) and the records (+ 0x27a0, pointer at [rbp - 0x4b0]) and before its own "no records" test
+/// (r12 = the frame data, r14 = the render device). The records are the last AABB pass's; a BeginRecording that found no active group ran none, and the game's jobs
+/// may fill the group table before this read, so the records can belong to another table (after the flashback: a 7-group pass read against a 4-group table, a group
+/// past its end, the crash). A read whose records name a group not in the table is not this table's: its count is set to 0 and the engine's own test skips it.
+/// LEGACY(aabb_guard): TLG_LEGACY_AABB_GUARD=1 lets the read run (only counted and logged).
+u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
+    static const bool guard = [] { const char* e = std::getenv("TLG_LEGACY_AABB_GUARD"); return e == nullptr || e[0] != '1'; }();
+    const u64 device = c->r14, frame = c->r12;
+    const u32 recordings = g_last_recordings.load(std::memory_order_relaxed), readbacks = g_last_readbacks.load(std::memory_order_relaxed);
+    if (!IsHeapPointer(device) || !IsHeapPointer(frame) || c->rbp < 0x4b0) {
         return 0;
     }
+    const u64 count_memory = Rd<u64>(c->rbp - 0x4a0, 0), records = Rd<u64>(c->rbp - 0x4b0, 0);
+    const u64 table = Rd<u64>(frame, 0x31e60);
+    if (count_memory == 0 || records == 0 || table == 0 || Rd<u32>(count_memory, 0) == 0) {
+        return 0;
+    }
+    const u32 reads_since_dispatch = g_reads_since_dispatch.fetch_add(1, std::memory_order_relaxed);
     const u32 count = std::min(Rd<u32>(count_memory, 0), 0x2000u), groups = Rd<u32>(frame, 0x31e68);
+    static std::once_flag announced;
+    std::call_once(announced, [&] { TLG_LOG(CP, Warn, "K2 AABB guard active (first read: {} records, {} groups, guard {})", count, groups, guard ? "on" : "off"); });
     u32 bad = 0, first_bad = 0, bad_group = 0;
     for (u32 i = 0; i < count; ++i) {
         const u32 group = Rd<u32>(records + i * 0x90ull, 0x80) >> 16;
@@ -7959,9 +8001,13 @@ u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
             }
         }
     }
+    if (readbacks == 0 && count != 0) {
+        c_aabb_reads_no_readback.fetch_add(1, std::memory_order_relaxed); // the records of an earlier dispatch (no CounterReadback since the last read)
+    }
     if (const u64 reads = c_aabb_reads.fetch_add(1, std::memory_order_relaxed) + 1; reads % 1800 == 0) {
-        TLG_LOG(CP, Warn, "K1 AABB readback: {} reads, {} records, {} with a group not in the table, {} reads after more than one BeginRecording", reads,
-                c_aabb_records.load() + count, c_aabb_bad.load(), c_aabb_unpaired.load());
+        TLG_LOG(CP, Warn, "K1 AABB readback: {} reads, {} records, {} with a group not in the table, {} reads after more than one BeginRecording, {} reads with records but no "
+                "readback since the last, K2 reads skipped: {}",
+                reads, c_aabb_records.load() + count, c_aabb_bad.load(), c_aabb_unpaired.load(), c_aabb_reads_no_readback.load(), c_aabb_guarded.load());
     }
     c_aabb_records.fetch_add(count, std::memory_order_relaxed);
     if (bad != 0) {
@@ -7970,12 +8016,19 @@ u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
         if (reads_bad < 16) {
             const u64 label = Rd<u64>(device, 0x2c0);
             TLG_LOG(CP, Error,
-                    "K1 AABB readback: {} of {} records name a group not in the table ({} groups; first: record {} group {}), label {:#x} = {:#x}, BeginRecordings since the "
-                    "last read {}, unpaired so far {}",
-                    bad, count, groups, first_bad, bad_group, label, IsHeapPointer(label) ? Rd<u64>(label, 0) : 0, recordings, c_aabb_unpaired.load());
+                    "K1 AABB readback: {} of {} records name a group not in the table ({} groups, {} active now; first: record {} group {}), label {:#x} = {:#x}, BeginRecordings "
+                    "since the last read {}, CounterReadbacks since {}, records read {} times before since their dispatch (its frame had {} groups), reader frame {:#x}, last "
+                    "BeginRecording frame {:#x} with {} groups / {} active at its start, unpaired so far {}",
+                    bad, count, groups, ActiveGroups(frame), first_bad, bad_group, label, IsHeapPointer(label) ? Rd<u64>(label, 0) : 0, recordings, readbacks,
+                    reads_since_dispatch, g_dispatch_groups.load(), frame, g_rec_frame.load(), g_rec_groups.load(), g_rec_active.load(), c_aabb_unpaired.load());
+        }
+        if (guard) {
+            Wr<u32>(count_memory, 0, 0); // K2: not this table's records: the engine's test (count 0) skips the read
+            c_aabb_guarded.fetch_add(1, std::memory_order_relaxed);
+            TLG_LOG(CP, Warn, "K2 AABB guard: read of {} records skipped ({} so far)", count, c_aabb_guarded.load());
         }
     }
-    return 0; // the engine's read runs
+    return 0; // the engine's read runs (with count 0 after the guard)
 }
 u64 PS4_SYSV_ABI RenderFrameFenceA(Core::GuestHooks::MidContext* c) {
     NoteRenderFrameFence(c->rbx, c->r12);
@@ -8853,6 +8906,13 @@ u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64
     (void)a1, (void)a2, (void)a3, (void)a4, (void)a5, (void)ret, (void)caller_rsp;
     if ((a2 & 0xff) != 0) {
         g_recordings_since_read.fetch_add(1, std::memory_order_relaxed); // K1 check: a BeginRecording that records (AabbReadCheck)
+        if (IsHeapPointer(device) && IsHeapPointer(a1)) {
+            g_aabb_count_buffer.store(Rd<u64>(device, 0x27a8), std::memory_order_relaxed);
+            g_rec_frame.store(a1, std::memory_order_relaxed);
+            g_rec_groups.store(Rd<u32>(a1, 0x31e68), std::memory_order_relaxed);
+            g_rec_groups_at_dispatch.store(Rd<u32>(a1, 0x31e68), std::memory_order_relaxed);
+            g_rec_active.store(ActiveGroups(a1), std::memory_order_relaxed);
+        }
     }
     if (Core::Vkb::On() && Core::Vkb::ContractCensusOn()) { // api-contract.md Y6 (debug): BeginRecording returns at once when its third argument is 0
         Core::Vkb::ContractNote(fmt::format("Y6 BeginRecording called, record flag {}, frameData+0x31e50 {}", a2 & 0xff, IsHeapPointer(a1) ? Rd<u32>(a1, 0x31e50) : 0xffffffffu));
@@ -11736,6 +11796,9 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "aabb_read_check") {
         return reinterpret_cast<u64>(&AabbReadCheck);
+    }
+    if (name == "aabb_read_start") {
+        return reinterpret_cast<u64>(&AabbReadStart);
     }
     if (name == "texture_move") {
         return reinterpret_cast<u64>(&TextureMove);
