@@ -967,6 +967,80 @@ mismatch:
     printf("Bind guard: unavailable (code signature mismatch)\n");
 }
 
+/* Async result guard (#86; upstream HayatoG/tlg_pc #95 #103 #121 #131; TLG_ASYNC_GUARD: 1 fix,
+ * the default; 0 off). The game's async-compute result reader (0xc4c570) walks result records
+ * and takes each record's object from a pool table by an index stored in the record (bits 16+).
+ * It checks the entry inside the pool (bounds, null, 0xdeadc0de) but not the pool itself: when
+ * the results name a pool that is gone by the time they arrive (seen 10-15 s after a cutscene
+ * ended), the table holds null and the spinlock take at 0x271980 / 0x2819c0 writes to
+ * null + 0x24 / 0x44 (faults at 0x2719aa and 0x2819ea). The two lookups seen crashing get the
+ * missing null test: such a record is skipped, as the game does for a stale entry.
+ * TLG_ASYNC_GUARD=2 (test only) skips every record, to exercise the skip path. */
+static int64_t async_guard_skips[2];
+static ABI void async_guard_note(uint64_t site) {
+    const int64_t n = __atomic_add_fetch(&async_guard_skips[site & 1], 1, __ATOMIC_RELAXED);
+    if (n <= 5 || !(n & (n - 1)))
+        printf("Async guard: skipped a result for a missing pool (site %s, %" PRId64 " so far)\n",
+               (site & 1) ? "0xc4d62f" : "0xc4cdc4", n);
+}
+static unsigned char *async_guard_abs(unsigned char *p, unsigned char reg_op, uint64_t value, unsigned char modrm) {
+    *p++ = 0x48; *p++ = reg_op; memcpy(p, &value, 8); p += 8;   /* movabs rax|rdi, value */
+    if (modrm) { *p++ = 0xff; *p++ = modrm; }                    /* call rax (d0) | jmp rax (e0) */
+    return p;
+}
+static void install_async_guard(Segment *segments, uint64_t count) {
+    const char *mode = getenv("TLG_ASYNC_GUARD");
+    const unsigned long guard_mode = mode ? strtoul(mode, NULL, 0) : 1;
+    if (!guard_mode) return;
+    /* site 0: mov r13,[rcx+8*rax]; lea rdi,[r13+0x10]; call 0x271980 -> back at 0xc4cdd1, skip to 0xc4d30a
+     * site 1: mov r12,[rax+8*rcx]; lea r14,[r12+0x30]; mov rdi,r14; call 0x2819c0 -> back at 0xc4d640,
+     *         skip: xor ecx,ecx; inc r13d; to 0xc4d6ff */
+    static const unsigned char expect0[13] = {0x4c,0x8b,0x2c,0xc1, 0x49,0x8d,0x7d,0x10, 0xe8,0xaf,0x4b,0x62,0xff};
+    static const unsigned char expect1[17] = {0x4c,0x8b,0x24,0xc8, 0x4d,0x8d,0x74,0x24,0x30, 0x4c,0x89,0xf7, 0xe8,0x80,0x43,0x63,0xff};
+    static const unsigned char head0[] = {0x4c,0x8b,0x2c,0xc1, 0x4d,0x85,0xed, 0x74,0x1c, 0x49,0x8d,0x7d,0x10};
+    static const unsigned char head1[] = {0x4c,0x8b,0x24,0xc8, 0x4d,0x85,0xe4, 0x74,0x20, 0x4d,0x8d,0x74,0x24,0x30, 0x4c,0x89,0xf7};
+    static const unsigned char skip1[] = {0x31,0xc9, 0x41,0xff,0xc5};
+    const uint64_t at[2] = {0xc4cdc4, 0xc4d62f}, back[2] = {0xc4cdd1, 0xc4d640}, skip[2] = {0xc4d30a, 0xc4d6ff};
+    const uint64_t lock[2] = {0x271980, 0x2819c0};
+    if (!mapped(segments, count, at[0], sizeof(expect0)) || memcmp(image + at[0], expect0, sizeof(expect0)) ||
+        !mapped(segments, count, at[1], sizeof(expect1)) || memcmp(image + at[1], expect1, sizeof(expect1))) {
+        printf("Async guard: unavailable (code signature mismatch)\n");
+        return;
+    }
+    unsigned char *stub = allocate(page_size), *p = stub, *entry[2];
+    for (unsigned i = 0; i < 2; ++i) {
+        entry[i] = p;
+        if (i == 0) { memcpy(p, head0, sizeof(head0)); p += sizeof(head0); }
+        else { memcpy(p, head1, sizeof(head1)); p += sizeof(head1); }
+        if (guard_mode == 2) entry[i][7] = 0xeb;   /* jz -> jmp: skip all */
+        unsigned char *taken = p;
+        p = async_guard_abs(p, 0xb8, (uintptr_t)image + lock[i], 0xd0);
+        p = async_guard_abs(p, 0xb8, (uintptr_t)image + back[i], 0xe0);
+        if ((size_t)(p - taken) != (i == 0 ? 0x1c - 4u : 0x20 - 8u)) fail("async guard: stub layout");
+        p = async_guard_abs(p, 0xbf, i, 0);                                /* rdi = site */
+        p = async_guard_abs(p, 0xb8, (uintptr_t)async_guard_note, 0xd0);
+        if (i == 1) { memcpy(p, skip1, sizeof(skip1)); p += sizeof(skip1); }
+        p = async_guard_abs(p, 0xb8, (uintptr_t)image + skip[i], 0xe0);
+    }
+    int32_t relative[2];
+    for (unsigned i = 0; i < 2; ++i) {
+        const int64_t delta = (int64_t)(uintptr_t)entry[i] - (int64_t)(uintptr_t)(image + at[i] + 5);
+        if (delta < INT32_MIN || delta > INT32_MAX) {
+            printf("Async guard: unavailable (outside relative-jump range)\n");
+            return;
+        }
+        relative[i] = (int32_t)delta;
+    }
+    protect(stub, page_size, 5);
+    for (unsigned i = 0; i < 2; ++i) {
+        const size_t length = i == 0 ? sizeof(expect0) : sizeof(expect1);
+        image[at[i]] = 0xe9;
+        memcpy(image + at[i] + 1, &relative[i], 4);
+        memset(image + at[i] + 5, 0x90, length - 5);
+    }
+    printf("Async guard: ready (2 pool lookups%s)\n", guard_mode == 2 ? ", TEST: skipping every record" : "");
+}
+
 /* Re-init lock (load crash #19, divide by zero at 0x149a1a0; TLG_REINIT_LOCK: 1 fix, the default;
  * 0 off). The main thread's job update re-inits a buffer wrapper (0xe44a80 from 0xe60c0f or
  * 0xe60dd2): its reset (0xe43620) drops the wrapper's node (+0x38) and clears its SRV/UAV bits
@@ -1575,6 +1649,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_lua_hook(segments, ns);
     if (gpu_enabled) install_input_timing(segments, ns);
     if (gpu_enabled) install_bind_guard(segments, ns);
+    install_async_guard(segments, ns);
     if (gpu_enabled) install_reinit_lock(segments, ns);
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
