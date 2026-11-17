@@ -32,10 +32,6 @@ The overall bar is the average of the four below it.
 - **Frame generation:** `TLG_VKB_FG=dlss` with an AA mode on (DLSS frame generation), off by default.
 - **API census** (for testers): `TLG_VKB_CONTRACT_CENSUS=1` counts which paths of the render API a scene takes; the counts are in the debug server's stats.
 
-## Known issues
-
-- The launcher's **Start at** warp to `s02_TricosCave / _050_Tritrigger_Get` shows a broken picture on **both** renderers, so it is not this renderer. It is being compared with the same scene reached in normal play.
-
 ## Running it
 
 Use the upstream instructions for the game files and the settings ([Get started](README-UPSTREAM.md#get-started)): start the launcher, pick the game folder, set **Renderer** to `vulkan` and press **Play**. To force it from outside the launcher, set `TLG_VKB=1` before starting it (`TLG_VKB=0` forces the default renderer).
