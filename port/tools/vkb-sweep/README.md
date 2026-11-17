@@ -43,7 +43,7 @@ take of either renderer uses the same `camera.txt`, so all pictures of a scene a
 An existing picture or log is never overwritten: new takes get the next free number. The save is backed up
 to `OUT/save_backup` for the run and put back at the end; a backup left from a broken run stops the next run.
 
-Keep `OUT` outside the repository: pictures of the game do not go into the repo.
+Keep `OUT` outside the repository: pictures of the game go only to the `shots` branch of the work repo, never into a code branch.
 
 ## compare.py
 
