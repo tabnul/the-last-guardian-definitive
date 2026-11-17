@@ -271,6 +271,8 @@ bool StartCapture(u32 seconds, const std::string& tag, bool ring) {
     capture_start_ns = Now();
 #ifdef _WIN32
     const unsigned long long tsc_start = __rdtsc();
+#else
+    const unsigned long long tsc_start = 0; // Linux: no cycle rate in the capture (cycles_per_ns stays 0, as ThreadCycles() is 0 there)
 #endif
     capture_active.store(true, std::memory_order_release);
     capture_thread = std::jthread([seconds, tag, tsc_start](std::stop_token stop) {

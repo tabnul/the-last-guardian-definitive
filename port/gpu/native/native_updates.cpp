@@ -1336,7 +1336,11 @@ void NoteB9(B9Count what, u64 n) noexcept {
 }
 
 u64 ImageBase() noexcept {
+#ifdef _WIN32
     return reinterpret_cast<u64>(GetModuleHandleW(nullptr));
+#else
+    return Core::GuestHooks::EbootBase(); // Linux: the game image is not the process image; the loader hands its base to the hooks
+#endif
 }
 
 u32 LeanDirtyMode() noexcept {

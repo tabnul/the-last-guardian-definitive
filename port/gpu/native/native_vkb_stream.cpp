@@ -860,13 +860,21 @@ u64 SubmitLocked() {
             stage_stamped.push_back({value, t_rec->stage_stamp_open});
         }
         t_rec->stage_stamp_open = ~0u;
+#if defined(__clang__)
         cmd_infos[cmd_count++] = {.commandBuffer = t_rec->stage_cmd};
+#else // GCC: {..} also matches operator=(VkCommandBufferSubmitInfo const&) and is ambiguous
+        cmd_infos[cmd_count++] = vk::CommandBufferSubmitInfo{.commandBuffer = t_rec->stage_cmd};
+#endif
         t_rec->in_flight.emplace_back(value, t_rec->stage_cmd);
         t_rec->stage_map.clear(); // a copy serves its submission only: the CPU may add to a bound range before a later draw of the same frame
         t_rec->stage_cmd = vk::CommandBuffer{};
     }
     if (t_rec->current) {
+#if defined(__clang__)
         cmd_infos[cmd_count++] = {.commandBuffer = t_rec->current};
+#else // GCC: {..} also matches operator=(VkCommandBufferSubmitInfo const&) and is ambiguous
+        cmd_infos[cmd_count++] = vk::CommandBufferSubmitInfo{.commandBuffer = t_rec->current};
+#endif
     }
     const vk::SemaphoreSubmitInfo signal{.semaphore = timeline, .value = value, .stageMask = vk::PipelineStageFlagBits2::eAllCommands};
     const vk::SubmitInfo2 submit{.commandBufferInfoCount = cmd_count, .pCommandBufferInfos = cmd_infos.data(), .signalSemaphoreInfoCount = 1, .pSignalSemaphoreInfos = &signal};

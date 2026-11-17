@@ -27,6 +27,9 @@
 #include <sys/stat.h>
 #ifdef _WIN32
 #include <windows.h> /* VKB: VirtualQuery (auto start) */
+#else
+#include <sys/uio.h> /* VKB: process_vm_readv (auto start, Linux) */
+#include <unistd.h>
 #endif
 
 #define ERR_INVALID_ARG ((int32_t)0x80920001)
@@ -601,6 +604,16 @@ static int auto_readable(uint64_t address, size_t size) {
     for (uint64_t at=address; at<address+size;) {
         if (!VirtualQuery((const void *)(uintptr_t)at,&info,sizeof(info)) || info.State!=MEM_COMMIT || (info.Protect&(PAGE_NOACCESS|PAGE_GUARD))) return 0;
         at=(uint64_t)(uintptr_t)info.BaseAddress+info.RegionSize;
+    }
+#else
+    /* Linux: the kernel copies the range from this process; EFAULT when a page of it is not mapped or not readable
+     * (the counterpart of the VirtualQuery test above, without touching the memory from this thread). */
+    unsigned char copy[64];
+    for (uint64_t at=address; at<address+size;) {
+        size_t n=(size_t)(address+size-at); if (n>sizeof(copy)) n=sizeof(copy);
+        struct iovec local={copy,n}, remote={(void *)(uintptr_t)at,n};
+        if (process_vm_readv(getpid(),&local,1,&remote,1,0)!=(ssize_t)n) return 0;
+        at+=n;
     }
 #endif
     return 1;

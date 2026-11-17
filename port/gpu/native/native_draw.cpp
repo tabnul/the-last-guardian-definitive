@@ -29,6 +29,7 @@
 #ifdef TLG_PORT
 #include "tlg_toggles.h" // sigjmp_buf, tlg_setjmp, runtime_fault_recover
 #endif
+#include "native/native_linux.h" // Linux side of the Windows calls (empty on Windows)
 #include "native/shadps4/core/guest_heap.h"
 #include "native/native_primitive.h"
 #include "native/native_log.h"
