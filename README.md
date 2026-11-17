@@ -1,82 +1,45 @@
-# The Last Guardian for PC: the engine-to-Vulkan renderer
+<p align="center"><img src="port/packaging/icon/tlg-icon-1024.png" width="160" alt=""></p>
 
-This fork of [tabnul/the-last-guardian-definitive](https://github.com/tabnul/the-last-guardian-definitive)
-builds a second renderer for the port: **the game's own render API drawn straight with Vulkan**.
-The port itself (features, setup, building, credits) is described in [README-UPSTREAM.md](README-UPSTREAM.md).
+<h1 align="center">The Last Guardian — engine-to-Vulkan renderer</h1>
 
-> **Status: experimental.** Pick it in the launcher (**Renderer: vulkan**) or start with `TLG_VKB=1`.
-> The default renderer stays the port's own until the new one has passed long play.
+An experimental fork of [tabnul/the-last-guardian-definitive](https://github.com/tabnul/the-last-guardian-definitive) that adds a **second renderer**: the game's own render API drawn straight with Vulkan. **Windows only**, tested on Windows 11 with an RTX 4090. No game files are included: you need your own copy of The Last Guardian (CUSA03627 / CUSA03745, update 01.03) dumped from your own PS4. For the game files, the launcher, the features and everything the port does, see the upstream project ([README-UPSTREAM.md](README-UPSTREAM.md)).
 
-## What it does
+**This is a work in progress.** `vulkan` holds the latest build that was played and works. **The goal is 120 fps.**
 
-The game talks to its engine's render layer, a Direct3D-11-shaped API (shader, view, constant buffer
-and sampler slots, state objects, `Map` / `UpdateSubresource`, draws and dispatches). On PS4 that layer
-turns every call into PS4 command packets, descriptor words and GPU memory, and an emulator then has to
-translate all of that back.
+## Progress (2026-11-17)
 
-This renderer removes that middle: the engine's API calls go straight to our own Vulkan code, as a PC
-version of the engine would.
+The game's renderer calls a Direct3D 11 style device layer. With this renderer on (`TLG_VKB=1`, or **Renderer: vulkan** in the launcher), those calls go straight to the port's Vulkan code, the way a PC version of the engine would work. The engine's PS4 graphics code underneath (command packets, PS4 descriptors, guest GPU memory) no longer runs, and neither does any emulation of it. What stays PS4 by necessity: the game's own shaders (recompiled, fed from the engine's resource slots) and a one-time conversion of the PS4 texture layout.
 
 ```
-before:  game -> engine render API -> PS4 backend (packets, descriptors, memory) -> emulation -> Vulkan
-now:     game -> engine render API -> our Vulkan backend
+Overall                  [█████████████░░░░░░░]  67%
+Backend built            [███████████████████░]  97%   every draw, dispatch, copy, clear, fence and flip in Vulkan
+Speed                    [█████████████████░░░]  87%   120 fps target at 4K
+Picture                  [███████████████░░░░░]  75%   matches the engine's API, checked call by call
+Default and clean-up     [██░░░░░░░░░░░░░░░░░░]  10%   renderer on by default, old paths deleted
 ```
 
-What stays PS4 by necessity: the game's GCN shaders (recompiled to SPIR-V, fed from the engine's slots)
-and the one-time conversion of PS4-tiled texture data.
+The overall bar is the average of the four below it.
 
-## Progress
+* **Backend built:** nearly done. Engine objects (textures, views, buffers, samplers, shaders, states) get their Vulkan objects when the engine creates them. Draws and dispatches are bound from the engine's slots by object, recorded on the port's own threads, and the game's fences are signalled by the Vulkan work.
+* **Speed:** 113 to 120 fps in the default scene, about 92 to 102 in the heaviest scene tested. The game's render thread is the limit in heavy scenes; that work continues.
+* **Picture:** every part of the engine's render API has been mapped from the game's code and checked against this renderer, call by call (what each call means, what the renderer does, and whether they match). That pass fixed CPU-written GPU records that never arrived, textures losing their contents when the engine moves them in memory, texture rewrites out of frame order or over the wrong mip, depth copies without stencil, buffer views bound past their range, and streaming reads that refreshed too little. Paths no tested scene reaches yet stay listed as open to test.
+* **Default and clean-up:** after more play-testing the renderer becomes the default, and the old emulator paths (still in the code behind switches) are deleted.
 
-| Area | State |
-|---|---|
-| Draws, dispatches, copies, clears from the engine's own calls | done |
-| Buffers and textures by engine object (no address lookups), frame ring, delayed deletes | done |
-| Samplers, blend, depth-stencil, rasterizer, input layout, viewports from the engine's state objects | done |
-| Readbacks the CPU uses (auto exposure, staging textures) | done |
-| Async compute folded into the frame, the engine's fences and waits honoured | done |
-| Parallel recording (two recording threads), dynamic buffers in VRAM | done |
-| The engine's PS4 backend calls (`PrepareDraw`, packet writers, HTILE / CMASK fills) | deleted under this renderer |
-| **API contract map**: every part of the render API mapped and checked against this renderer | done (steps C0-C20, see below) |
-| FSR 3.1 / DLAA anti-aliasing and DLSS frame generation on this renderer | built, off by default |
-| Long play by the owner, then make it the default | pending |
+## Features
 
-### API contract map (2026-11-17)
-
-Every entry point of the engine's render API (both context vtables, device creators, the work, data and
-sync calls, the swap chain, the game-side texture loader, writers that bypass `Map`) was read in the
-game's code and written down as a contract: what the call **means**, what this renderer does, and a
-verdict. A census mode (`TLG_VKB_CONTRACT_CENSUS=1`) counts which paths each scene really takes.
-
-Fixed in this pass:
-
-- CPU records written through `AsyncMap` reach the GPU (the buffer is read where the CPU writes it).
-- Textures the engine moves to new memory (defragmentation, mip drop) keep their contents.
-- Texture rewrites happen at the engine's call, in frame order, and only touch the subresource it names.
-- Depth copies carry the stencil plane; buffer views bind their own range, not the whole buffer.
-- Streaming reads that span several buffers refresh all of them; failed reads upload nothing.
-- Occlusion answers can no longer be overwritten by older ones; depth clears are clamped like the engine's.
-
-Checked in four test scenes (and two more), with 0 skipped draws and no device loss.
-Paths no scene has reached yet (graphics storage views, 3D render-target slices, PS4 Pro modes, some
-sampler modes) stay listed as open to test rather than declared done.
-
-## Performance
-
-Measured on the developer's machine (fps capped at 120):
-
-| Scene | This renderer |
-|---|---|
-| Game start (Trico's cave) | up to the 120 cap |
-| Heaviest saved scene | about 92-102 |
+- **Renderer switch:** launcher → Renderer → `vulkan` (sets 4K, 120 FPS and skips the boot logos), or `TLG_VKB=1`. Restart to switch.
+- **Anti-aliasing on this renderer:** `TLG_VKB_AA=fsr3` (FSR 3.1) or `TLG_VKB_AA=dlaa` (DLAA), off by default.
+- **Frame generation:** `TLG_VKB_FG=dlss` with an AA mode on (DLSS frame generation), off by default.
+- **API census** (for testers): `TLG_VKB_CONTRACT_CENSUS=1` counts which paths of the render API a scene takes; the counts are in the debug server's stats.
 
 ## Known issues
 
-- The launcher's **Start at** warp to `s02_TricosCave / _050_Tritrigger_Get` shows a broken picture on
-  **both** renderers, so it is not caused by this one. It is being checked against the same scene reached
-  in normal play.
-- Experimental: if something looks wrong, switch the launcher back to the default renderer and report it.
+- The launcher's **Start at** warp to `s02_TricosCave / _050_Tritrigger_Get` shows a broken picture on **both** renderers, so it is not this renderer. It is being compared with the same scene reached in normal play.
 
-## Branches
+## Running it
 
-- `vulkan`: this renderer (default branch of this fork).
-- `master`: follows the upstream port.
+Use the upstream instructions for the game files and the settings ([Get started](README-UPSTREAM.md#get-started)): start the launcher, pick the game folder, set **Renderer** to `vulkan` and press **Play**. To force it from outside the launcher, set `TLG_VKB=1` before starting it (`TLG_VKB=0` forces the default renderer).
+
+## Credits and license
+
+Built on the work of [tabnul](https://github.com/tabnul/the-last-guardian-definitive) (the definitive port), [HayatoG](https://github.com/HayatoG/tlg_pc) (the original port), [gow3_pc](https://github.com/FelipePrado0/gow3_pc), [bloodborne_pc](https://github.com/deadinside28/bloodborne_pc) and [shadPS4](https://github.com/shadps4-emu/shadPS4), all GPL-2.0, as is this project ([LICENSE](port/LICENSE)). Not affiliated with Sony Interactive Entertainment. The Last Guardian is a trademark of Sony Interactive Entertainment. No game code, files or art are distributed here. The icon is original artwork of the original project.
