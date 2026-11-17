@@ -3121,6 +3121,8 @@ nlohmann::json ObjectsReport() {
                           {"buffer_mb_in_place_seen", c_buffer_bytes.load() >> 20},
                           {"in_place_imported_mb", host_import ? host_import->ImportedBytes() >> 20 : 0},
                           {"in_place_failed_chunks", host_import ? host_import->FailedChunks() : 0},
+                          {"gpu_pool", {{"on", host_import ? host_import->OnGpuPool() : false}, {"mb", VkbVulkan::GpuPool::Bytes() >> 20}, {"reason", VkbVulkan::GpuPool::Reason()},
+                                        {"exec_dropped", VkbVulkan::GpuPool::ExecDropped()}}},
                           {"objects_before_the_device", c_too_early.load()},
                           {"deletes_of_objects_with_no_vulkan_object", c_deleted_unknown.load()},
                           {"contents_wanted", c_upload_wanted.load()},

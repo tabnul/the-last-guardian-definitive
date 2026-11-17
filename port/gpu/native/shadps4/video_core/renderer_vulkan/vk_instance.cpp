@@ -353,6 +353,10 @@ bool Instance::CreateDevice() {
                  shader_clock_features.shaderSubgroupClock);
     }
     external_memory_host = add_extension(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
+#ifndef _WIN32
+    // GPU pool (TLG_VKB_GPU_POOL): the guest pool as our memory, exported as a dma-buf file the runtime maps; only asked for on Linux
+    external_memory_dma_buf = add_extension(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME) && add_extension(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME);
+#endif
     const bool calibrated_timestamps = add_extension(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
     calibrated_timestamps_supported = calibrated_timestamps;
 

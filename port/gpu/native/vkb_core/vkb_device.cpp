@@ -6,6 +6,7 @@
 #include <array>
 #include <memory>
 #include "common/assert.h"
+#include "native/shadps4/video_core/renderer_vulkan/vk_host_import.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_instance.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_resource_pool.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_scheduler.h"
@@ -35,6 +36,7 @@ void Init(const VkbVulkan::Instance& instance, VkbVulkan::Scheduler& scheduler) 
     g_scheduler = &scheduler;
     g_desc_heap = std::make_unique<VkbVulkan::DescriptorHeap>(instance, scheduler.GetMasterSemaphore(), DescriptorHeapSizes);
     g_profile = VideoCore::Vkb::ProfileFor(instance);
+    VkbVulkan::GpuPool::Setup(instance); // before the game has memory: the guest pool may become our memory (TLG_VKB_GPU_POOL)
 }
 
 bool Ready() noexcept {

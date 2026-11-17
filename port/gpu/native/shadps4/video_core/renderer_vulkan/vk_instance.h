@@ -148,6 +148,11 @@ public:
         return external_memory_host;
     }
 
+    /// Returns true if VK_KHR_external_memory_fd and VK_EXT_external_memory_dma_buf are enabled (Linux only: the GPU pool, TLG_VKB_GPU_POOL)
+    bool IsExternalMemoryDmaBufSupported() const {
+        return external_memory_dma_buf;
+    }
+
     /// Returns true if VK_KHR_maintenance8 is supported
     bool IsMaintenance8Supported() const {
         return maintenance_8;
@@ -575,6 +580,7 @@ private:
     bool maintenance_5{};
     bool maintenance_6{};
     bool external_memory_host{};
+    bool external_memory_dma_buf{};
     bool maintenance_8{};
     bool attachment_feedback_loop{};
     bool image_2d_view_of_3d{};
