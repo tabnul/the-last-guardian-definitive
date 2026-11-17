@@ -48,6 +48,33 @@ namespace Core::Vkb {
 void BumpBufferEpoch(); ///< note 46: an A1 memo answer may have changed (definitions below)
 void BumpViewEpoch();
 
+/// API contract census (documents/tlg/native plan/engine/api-contract.md, step C8; debug, TLG_VKB_CONTRACT_CENSUS=1): counts of the engine values the contract rows
+/// depend on (sampler descriptions, texture and view formats, clear formats, alpha to coverage, depth bias, a texture copied into and then rewritten by the CPU)
+namespace {
+std::mutex contract_mutex;
+std::map<std::string, u64> contract_counts;
+std::set<u64> contract_copy_destinations; ///< texture ids a GPU copy wrote (row L7)
+} // namespace
+bool ContractCensusOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_CONTRACT_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+void ContractNote(const std::string& key) {
+    if (!ContractCensusOn()) {
+        return;
+    }
+    std::scoped_lock lock{contract_mutex};
+    ++contract_counts[key];
+}
+nlohmann::json ContractReport() {
+    nlohmann::json j = nlohmann::json::object();
+    std::scoped_lock lock{contract_mutex};
+    for (const auto& [key, n] : contract_counts) {
+        j[key] = n;
+    }
+    return j;
+}
+
 namespace {
 
 using NativeDevice::Kind;
@@ -314,6 +341,9 @@ Image* MakeImage(const Object& texture) {
     Image img;
     img.is_depth = (texture.bind & BindDepthStencil) != 0;
     img.format = img.is_depth ? DepthFormat(texture.format) : ColorFormat(texture.format);
+    if (ContractCensusOn()) {
+        ContractNote(fmt::format("R texture dxgi {} {} bind {:#x} -> {}", texture.format, img.is_depth ? "depth" : "color", texture.bind, vk::to_string(img.format)));
+    }
     if (img.format == vk::Format::eUndefined) {
         c_images_unmapped_format.fetch_add(1, std::memory_order_relaxed);
         static std::atomic<u32> logged{0};
@@ -995,6 +1025,10 @@ void ViewCreated(const Object& view, const Object& resource) {
     if (!img->mutable_format && format != img->format) {
         format = img->format;
         c_fixed_view_format_forced.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (ContractCensusOn()) {
+        ContractNote(fmt::format("V view kind {} dxgi {} of texture dxgi {} -> {}", static_cast<u32>(view.kind), view.has_desc ? static_cast<s64>(view.desc[0]) : -1,
+                                 resource.format, vk::to_string(format)));
     }
     const vk::ImageViewCreateInfo ci{
         .image = img->image,
@@ -1936,6 +1970,11 @@ bool CopyTexture(u64 destination_id, u32 destination_sub, u64 source_id, u32 sou
                                .dstSubresource = {aspect, to_mip, volume ? 0u : to_layer, 1},
                                .extent = a};
     lock.unlock(); // (no job is made under this module's lock: the recording thread's tick takes it)
+    if (ContractCensusOn()) {
+        std::scoped_lock census_lock{contract_mutex};
+        contract_copy_destinations.insert(destination_id);
+        ++contract_counts[fmt::format("W texture copy {} -> {}", vk::to_string(from.format), vk::to_string(to.format))];
+    }
     Stream::NoteBytes(Stream::Work::Copy, static_cast<u64>(region.extent.width) * region.extent.height * region.extent.depth * TexelBytes(to.format));
     Stream::Defer(Stream::Work::Copy, [src = from.image, dst = to.image, region](vk::CommandBuffer cmd) {
         Stream::Hazard(cmd, {Stream::ImageUse(src, false), Stream::ImageUse(dst, true)});
@@ -2552,6 +2591,10 @@ vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
     const u32 aniso = RdObj<u32>(d, 20);
     const u32 compare_func = RdObj<u32>(d, 24);
     float min_lod = RdObj<float>(d, 44), max_lod = RdObj<float>(d, 48);
+    if (ContractCensusOn()) {
+        ContractNote(fmt::format("S sampler filter {} address {} {} {} bias {} aniso {} compare {} cmp_used {} lod {} {}", filter, address[0], address[1], address[2], bias, aniso,
+                                 compare_func, compare ? 1 : 0, min_lod, max_lod));
+    }
     bool linear = true, mip_linear = true, anisotropic = false;
     switch (filter) {
     case 0x0:
@@ -2727,6 +2770,10 @@ bool ClearColor(u64 view_id, const float* color) {
     vk::ImageSubresourceRange range = v->second.range;
     range.aspectMask = vk::ImageAspectFlagBits::eColor;
     const vk::Image clear_image = i->second.image;
+    if (ContractCensusOn()) {
+        ContractNote(fmt::format("W1 clear view {} image {} colour {:.3g} {:.3g} {:.3g} {:.3g}", vk::to_string(v->second.format), vk::to_string(i->second.format), color[0], color[1],
+                                 color[2], color[3]));
+    }
     lock.unlock();
     Stream::Defer(Stream::Work::Clear, [image = clear_image, value, range](vk::CommandBuffer cmd) {
         Stream::Hazard(cmd, {Stream::ImageUse(image, true)});
@@ -2791,6 +2838,10 @@ void TextureCpuWritten(u64 texture_id) {
         image = img.image, format = img.format, mips = img.mips, layers = img.layers, layout = img.layout;
     }
     c_reupload_wanted.fetch_add(1, std::memory_order_relaxed);
+    if (ContractCensusOn()) {
+        std::scoped_lock census_lock{contract_mutex};
+        ++contract_counts[contract_copy_destinations.contains(texture_id) ? "L7 cpu rewrite of a texture a GPU copy wrote" : "L5 cpu rewrite of a texture"];
+    }
     if (Upload::TextureContents(texture_id, image, format, mips, layers, layout)) {
         c_reupload_done.fetch_add(1, std::memory_order_relaxed);
     }
@@ -2898,6 +2949,27 @@ u32 ReuploadVolumes() {
 bool CopyBuffer(u64 destination, u64 source, u64 bytes) {
     if (!device_ready || bytes == 0) {
         return false;
+    }
+    if (ContractCensusOn()) { // api-contract.md W5 (debug): a buffer copy whose destination is a texture's memory (the engine's memory move, FUN_01c97a00)
+        std::string key = "W5 buffer copy into no texture";
+        {
+            std::scoped_lock lock{mutex};
+            for (const auto& [id, img] : images) {
+                if (img.address != 0 && img.address < destination + bytes && destination < img.address + std::max<u64>(img.guest_bytes, 1)) {
+                    key = fmt::format("W5 buffer copy into a texture ({}, {} written by the GPU, source {} texture)", vk::to_string(img.format), img.gpu_written ? "" : "not",
+                                      [&] {
+                                          for (const auto& [sid, simg] : images) {
+                                              if (simg.address != 0 && simg.address < source + bytes && source < simg.address + std::max<u64>(simg.guest_bytes, 1)) {
+                                                  return "a";
+                                              }
+                                          }
+                                          return "no";
+                                      }());
+                    break;
+                }
+            }
+        }
+        ContractNote(key);
     }
     BufferWindow to, from;
     if (!FindLocked(destination, bytes, to) || !FindLocked(source, bytes, from)) {
@@ -3165,6 +3237,7 @@ nlohmann::json ObjectsReport() {
     const u64 made = c_images_created.load();
     return nlohmann::json(
                          {{"view_channel_census", channel_census},
+                          {"contract_census", ContractReport()},
                           {"display_texture", g_display_texture.load(std::memory_order_relaxed)},
                           {"images_live", live_images},
                           {"images_created", made},

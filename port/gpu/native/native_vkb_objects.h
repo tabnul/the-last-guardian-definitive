@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <string>
 #include <nlohmann/json_fwd.hpp>
 #include "common/types.h"
 #include "native/native_device.h"
@@ -102,6 +103,9 @@ void BufferCpuWritten(u64 address, u64 size);
 /// V2e: the CPU wrote a texture's memory after its creation (UpdateSubresource, the dynamic texture fill): our image gets the contents again (the upload batch, which the
 /// queue runs before the frame stream: a dispatch earlier in the same frame sees the new contents too)
 void TextureCpuWritten(u64 texture_id);
+/// API contract census (debug, TLG_VKB_CONTRACT_CENSUS=1): counts by key, in the objects report under "contract_census"
+bool ContractCensusOn();
+void ContractNote(const std::string& key);
 /// The engine read a file into [address, address + bytes) (its file layer, note 81): every texture there gets its contents again; returns how many
 u32 MemoryLoaded(u64 address, u64 bytes);
 /// debug (tint hunt): every 3D texture uploaded again from the engine's memory; returns how many

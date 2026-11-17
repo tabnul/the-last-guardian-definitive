@@ -3028,6 +3028,10 @@ const VkbVulkan::FixedState* Build(u64 ctx, const DeviceAddresses& dev) {
     for (u32 i = 0; i < 4; ++i) {
         s.blend_constants[i] = Rd<float>(ctx, Ctx::BlendFactor + i * 4);
     }
+    if (Core::Vkb::ContractCensusOn()) { // api-contract.md S7 / S10 (debug): per fixed state built
+        Core::Vkb::ContractNote(fmt::format("S7 alpha to coverage {}", Rd<u8>(blend, 0x30)));
+        Core::Vkb::ContractNote(fmt::format("S10 depth bias {} clamp {} slope {}", Rd<s32>(raster, 0x3c), Rd<float>(raster, 0x40), Rd<float>(raster, 0x44)));
+    }
     // rasterizer: D3D11_RASTERIZER_DESC (fill, cull, front counter clockwise, bias values, depth clip)
     {
         const u32 fill = Rd<u32>(raster, 0x30);
