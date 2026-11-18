@@ -461,7 +461,8 @@
     "pad.quit_key_press": "Pressione a tecla, por exemplo Ctrl+X…",
     "pad.quit_key_bad": "Esta tecla não: use Ctrl ou Alt com uma letra ou número, ou uma tecla F",
     "pad.quit_key_off": "desligado",
-    "pad.off_button": "Desligado"
+    "pad.off_button": "Desligado",
+    "pad.hide_hints": "Ocultar dicas de botões (o tutorial continua, nada é pulado)"
   },
   "items": {
     "menu:sharpen": {
@@ -1176,6 +1177,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Definir: segure dois ou mais botões juntos e depois solte. A tecla de sair do teclado precisa de Ctrl ou Alt com uma letra ou número, ou uma tecla F. Insert abre este menu.",
     "Quit game (keyboard)": "Sair do jogo (teclado)",
     "Press the key, for example Ctrl+X...": "Pressione a tecla, por exemplo Ctrl+X...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Esta tecla não: use Ctrl ou Alt com uma letra ou número, ou uma tecla F."
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Esta tecla não: use Ctrl ou Alt com uma letra ou número, ou uma tecla F.",
+    "Hide button hints": "Ocultar dicas de botões",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "As caixas de dicas de botões do jogo nunca são mostradas. O tutorial continua rodando em segundo plano, então nada é pulado."
   }
 }
