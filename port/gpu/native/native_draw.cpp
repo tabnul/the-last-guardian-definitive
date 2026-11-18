@@ -7758,6 +7758,41 @@ u64 PS4_SYSV_ABI TagAscCounterReadback(u64 jcc, u64 buffer, u64 view, u64 a3, u6
 /// The view's counter slot is `view + 0x84`; a count set on the context this frame (`ctx + 0x20d8 + 4 * slot`, not -1) is the engine's own CPU write of that value
 /// into the buffer (it runs, and our copy of the buffer gets the bytes); otherwise the GPU counter (GDS `ctx + 0x130b8 + 4 * slot`) is copied to the buffer in the
 /// frame stream and the engine's DMA packet is not written.
+/// tier-2 gap pass (debug, contract census): FUN_018b4090 copies a mesh's slot-0 buffer B into a new '_c_gbuf' buffer; its source is B's CPU copy (+ 0x50) or, when
+/// B has none, B's GPU memory (holder + 0x38 -> + 0x20 -> + 0x30) read by the CPU. Under our backend that memory is stale when B lives in our device memory.
+/// Counts the source kind; the game's function then runs as it is.
+u64 PS4_SYSV_ABI NoteCGbufVariant(u64 a0, u64 mesh, u64 instance, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a0, (void)instance, (void)a3, (void)a4, (void)a5, (void)ret;
+    const auto valid = [](u64 pointer) { return IsHeapPointer(pointer) && (pointer & 7) == 0; };
+    if (!Vkb::On() || !Core::Vkb::ContractCensusOn() || !valid(mesh)) {
+        return 0;
+    }
+    Guarded([&]() -> u64 {
+        const u64 set = Rd<u64>(mesh, 0x88) != 0 ? Rd<u64>(mesh, 0x88) : Rd<u64>(mesh, 0x80);
+        if (!valid(set) || Rd<u32>(set, 0x68) == 0 || !valid(Rd<u64>(set, 0x60))) {
+            return 0;
+        }
+        const u64 b = Rd<u64>(Rd<u64>(set, 0x60), 0);
+        if (!valid(b)) {
+            return 0;
+        }
+        if (Rd<u64>(b, 0x50) != 0) {
+            Core::Vkb::ContractNote("T2 c_gbuf source: CPU copy");
+            return 0;
+        }
+        const u64 holder = Rd<u64>(b, 0x38);
+        const u64 js = valid(holder) ? Rd<u64>(holder, 0x20) : 0;
+        if (!valid(js)) {
+            Core::Vkb::ContractNote("T2 c_gbuf source: none");
+            return 0;
+        }
+        Core::Vkb::ContractNote(Core::Vkb::BufferOnDevice(Rd<u64>(js, 0x30), Rd<u32>(js, 0x180)) ? "T2 c_gbuf source: GPU memory, lives in our device memory (stale)"
+                                                                                                : "T2 c_gbuf source: GPU memory, in engine memory");
+        return 0;
+    });
+    return 0;
+}
+
 u64 PS4_SYSV_ABI TagCopyStructureCount(u64 ctx, u64 buffer, u64 offset, u64 view, u64 a4, u64 a5, u64 ret) {
     (void)ret;
     const auto valid = [](u64 pointer) { return IsHeapPointer(pointer) && (pointer & 7) == 0; };
@@ -9240,6 +9275,19 @@ void InstallUnmapSlot() {
 
 u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4, u64 size, u64 ret, u64 caller_rsp) {
     static const bool map_census = [] { const char* e = std::getenv("TLG_VKB_MAP_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    if (Core::Vkb::On() && Core::Vkb::ContractCensusOn() && type == 1 && ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0) {
+        // tier-2 gap pass (debug): a Map(READ) whose data the GPU wrote only into our Vulkan object (not into the engine memory the CPU reads): a texture that is not
+        // a staging one (Map READ of a texture hands out its memory, line pass 0247f990), or a buffer that lives in our device memory (UAV / dynamic)
+        const u32 kind = Rd<u32>(resource, 0x124);
+        const u64 caller = ret - ImageBase() + 0x1000000;
+        if (kind >= 2 && kind <= 4 && TextureUsage(resource) != 3) {
+            Core::Vkb::ContractNote(fmt::format("T2 Map READ of a non-staging texture (kind {}, usage {}, caller {:#x})", kind, TextureUsage(resource), caller));
+        } else if (kind == 1 && Core::Vkb::BufferOnDevice(Rd<u64>(resource, 0x30), Rd<u32>(resource, 0x180))) {
+            Core::Vkb::ContractNote(fmt::format("T2 Map READ of a buffer in our device memory (caller {:#x})", caller));
+        } else if (kind == 1) {
+            Core::Vkb::ContractNote(fmt::format("T2 Map READ of a buffer in engine memory (caller {:#x})", caller));
+        }
+    }
     if ((map_census || Core::Vkb::DynamicDeviceOn()) && Core::Vkb::On() && ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0 && Rd<u32>(resource, 0x124) == 1) {
         InstallUnmapSlot(); // R3b: the Unmap is where an in-place Map's writes are finished
         if (t_dyn_map.resource != 0) {
@@ -11795,6 +11843,9 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "tag_asc_counter_readback") {
         return reinterpret_cast<u64>(&TagAscCounterReadback);
+    }
+    if (name == "note_c_gbuf_variant") {
+        return reinterpret_cast<u64>(&NoteCGbufVariant);
     }
     if (name == "tag_copy_structure_count") {
         return reinterpret_cast<u64>(&TagCopyStructureCount);

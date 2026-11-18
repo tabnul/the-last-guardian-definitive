@@ -256,6 +256,25 @@
       "expect": "554889e541574156"
     },
     {
+      "name": "T2_CGbufVariant",
+      "ghidra": "0x18b4090",
+      "mode": "call",
+      "handler": "note_c_gbuf_variant",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "T2_VertexCacheCopy",
+      "ghidra": "0x1d84830",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "T2_WaterSimulate",
+      "ghidra": "0x199bf00",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
       "name": "AscCopyResource",
       "ghidra": "0x24717c0",
       "mode": "call",

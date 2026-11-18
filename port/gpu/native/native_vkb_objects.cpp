@@ -2166,6 +2166,15 @@ void NoteBind(u32 kind, const BufferWindow& w, u64 size, bool written) {
     s = std::max(s, size);
 }
 
+/// tier-2 gap pass (debug, contract census): does the engine buffer at [address, address + size) live in our device memory (a UAV or dynamic buffer from its
+/// creation)? Then the engine's memory under it is not updated by the GPU and a CPU read of that memory sees old data. No side effects (no lookup memo, no copy).
+bool BufferOnDevice(u64 address, u64 size) {
+    std::scoped_lock lock{mutex};
+    u64 start = 0;
+    bool straddle = false;
+    return DeviceBufferOf(address, std::max<u64>(size, 1), start, straddle) != nullptr;
+}
+
 bool FindBuffer(u64 address, u64 size, BufferWindow& out) {
     const LookupTimer lookup_timer{1};
     FillReadersCheck(address, size, 0);
