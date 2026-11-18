@@ -9,6 +9,19 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-18 - Default of the GPU memory guard is 16 GB (not yet merged)
+
+- **Problem:** the guard (pull request 15) had a default limit of 8 GB. The new engine's GPU pool
+  peaks at about 10.6 GB, so every run of it would need the limit raised by hand.
+- **Considered:** keep 8 and raise per run; raise the default.
+- **Choice:** default 16 GB (`SHOT_GTT_LIMIT_GB`, `0` = off stays). The hang was at 31.5 GB, so 16 GB
+  still stops a runaway well before it.
+- **Who:** owner, pull request 15, 2026-11-18: "fine to merge, with the default limit at 16 GB instead
+  of 8 (the GPU pool of pull request 13 peaks at about 10.6 GB; the hang was at 31.5 GB)."
+- **Links:** pull request 15 (merged before this change reached it); the pull request of this change.
+
+---
+
 ## 2026-11-17 - The import refusal is an AMD Linux driver rule, not the container (not yet merged)
 
 - **In short:** the import that failed in #8 is refused by a rule in the AMD Linux driver itself, not
