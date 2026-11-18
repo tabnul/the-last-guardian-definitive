@@ -26,7 +26,7 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   every machine (6), costs two compares per bind and a few extra lookups per frame (11), and adds no special path.
   B is the fallback if A still leaves bad takes (the second structural way, rule 14e). Switch
   `TLG_VKB_MEMO_BY_MEMORY` (default on, `=0` the old key); counter `memo_memory_moved` in the bind-by-object report.
-  Proof: not yet run (on/off arms queued).
+  Proof (script job 20261118-1600a, s10 Escape_Pitfall, 8 takes per arm): switch on 0 bad of 8, switch off (old key) 6 bad of 8; garden with the switch on 0 bad of 4; no device lost and the same error-line count in every arm. `memo_memory_moved` and skipped draws were not recorded (no end.stats.json), so they are not part of the proof.
 - **Who:** box (rule 14).
 - **Links:** issue 12 (https://github.com/tabnul/tlg-vkb-work/issues/12), design note
   https://github.com/tabnul/tlg-vkb-work/issues/12#issuecomment-6978580374 ; pull request for branch
