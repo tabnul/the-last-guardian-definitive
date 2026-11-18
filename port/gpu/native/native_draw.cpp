@@ -66,6 +66,7 @@
 #include "native/native_vkb_work_census.h"
 #include "native/native_vkb_side_census.h"
 #include "native/native_vkb_objects.h"
+#include "native/native_vkb_aa.h"
 #include "native/native_zpass_gen.h"
 #include "native/native_draw.h"
 #include "native/native_draw_tag.h"
@@ -9055,6 +9056,14 @@ void InstallUnmapSlot();
 
 u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret, u64 caller_rsp) {
     (void)a1, (void)a2, (void)a3, (void)a4, (void)a5, (void)ret, (void)caller_rsp;
+    if (Core::Vkb::On() && Core::Vkb::Aa::On() && IsHeapPointer(a1)) {
+        // api-contract.md K4: the engine's camera cut for the frame this BeginRecording starts. FrameData + 0x31ea8 is 1 when Scene_CullViews saw a cut request
+        // (render manager + 0xf80) **or a zero game step** (+ 0x31eac, the step, is 0.0 then), 2 when RenderFrame re-made the targets. RenderScene clears its history
+        // on any of them; above 30 fps zero-step frames come in normal play (about 1 in 10, run k4_spears2), where the image does not move: our AA resets only on a cut
+        // request (flag with a non-zero step) or new targets (2)
+        const u32 cut_flag = Rd<u32>(a1, 0x31ea8);
+        Core::Vkb::Aa::NoteFrameCut(cut_flag == 2 || (cut_flag == 1 && Rd<float>(a1, 0x31eac) != 0.0f));
+    }
     if ((a2 & 0xff) != 0) {
         g_recordings_since_read.fetch_add(1, std::memory_order_relaxed); // K1 check: a BeginRecording that records (AabbReadCheck)
         if (IsHeapPointer(device) && IsHeapPointer(a1)) {
