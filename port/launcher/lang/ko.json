@@ -153,6 +153,7 @@
     "launcher.update_check": "시작 시 새 릴리스 확인",
     "launcher.update_available": "새 릴리스 {tag}이(가) 나왔습니다: 클릭하면 다운로드 페이지가 열립니다",
     "launcher.old_version": "게임 버전 {version}: 업데이트 01.03을 설치하세요(포트는 이 버전용입니다)",
+    "launcher.fps_unsupported": "eboot.bin이 1.03 게임 코드가 아닙니다: 60 FPS와 무제한이 작동하지 않으며 게임은 30 FPS로 실행됩니다(README 참조)",
     "launcher.debug": "디버그(시작 시)",
     "launcher.bench_title": "벤치마크",
     "launcher.bench_text": "이 PC에서 게임이 얼마나 빠르게 실행되는지 장면별로 자동 측정합니다: 각 장면을 깨끗한 세이브에서 불러오고, 카메라를 고정한 채 매초 프레임 레이트를 기록합니다. 사용자의 세이브는 먼저 따로 보관했다가 끝나면 복원합니다.\n\n실행 중에는 손대지 마세요: 장면마다 게임이 전체 화면으로 열리며 각각 약 1분 걸립니다. 결과는 .zip 보고서 파일 하나입니다 — GitHub 이슈에 첨부하면 개발자가 각 장면이 사용자 PC에서 어떻게 실행되는지 정확히 볼 수 있습니다.",

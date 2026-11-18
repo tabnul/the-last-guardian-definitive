@@ -104,6 +104,13 @@ No game files are included. You need your own copy, dumped from your own PS4.
 3. For audio, copy `libSceNgs2.sprx` from your PS4 firmware into `system_lib/` next to the executable.
 4. Start the launcher, pick the game folder and press **Play**.
 
+**Stuck at 30 FPS?** 60 FPS and Unlocked need the 1.03 game code in `eboot.bin`. The port checks
+the exact bytes it changes, so any 1.03 dump works (US or EU, PS4 or PS5 dump tool). When the
+check fails, the game safely runs at 30 FPS and the launcher shows a warning next to Play. The
+usual cause is a folder where the update was not merged on top of the base game, or an
+`eboot.bin` that was already changed by another patch or cheat. Dump the game again with update
+01.03 and copy its `eboot.bin` over the old one.
+
 **Save half the disk space:** the port can play the game straight from one packed file. In the
 launcher, under Game folder, press **Pack…** to turn the folder into a `.zar` file (about 26 GB
 becomes about 12.5 GB, a few minutes), or **.zar…** to pick one you made before. Only the parts the

@@ -340,6 +340,7 @@
     "launcher.mods_empty": "Aucun fichier XML de triche trouvé dans le dossier des mods pour l'instant.",
     "launcher.quit": "Quitter",
     "launcher.ready": "Prêt à jouer.",
+    "launcher.fps_unsupported": "eboot.bin n'est pas le code du jeu 1.03 : 60 FPS et Illimité ne fonctionnent pas, le jeu tourne à 30 FPS (voir le README)",
     "launcher.audio_native": "Audio : natif (module de la console trouvé).",
     "launcher.audio_builtin": "Audio : mixeur intégré. Des problèmes de son sont possibles (écho, sons manquants). Solution : placez libSceNgs2.sprx dans le dossier des modules système de la console (Paramètres).",
     "launcher.missing": "Manquant",

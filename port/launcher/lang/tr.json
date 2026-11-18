@@ -153,6 +153,7 @@
     "launcher.update_check": "Açılışta yeni sürümleri denetle",
     "launcher.update_available": "Yeni sürüm çıktı: {tag}. İndirme sayfasını açmak için tıklayın",
     "launcher.old_version": "Oyun sürümü: {version}. 01.03 güncellemesini kurun (port onun için yapıldı)",
+    "launcher.fps_unsupported": "eboot.bin 1.03 oyun kodu değil: 60 FPS ve Sınırsız çalışmaz, oyun 30 FPS ile çalışır (README dosyasına bakın)",
     "launcher.debug": "Hata ayıklama (açılışta)",
     "launcher.bench_title": "Performans testi",
     "launcher.bench_text": "Oyunun bu bilgisayarda ne kadar hızlı çalıştığını sahne sahne, kendi kendine ölçer: her sahne temiz bir kayıttan yüklenir, kamera sabit durur ve her saniyenin kare hızı kaydedilir. Kendi kayıtlarınız önce kenara alınır ve sonra geri konur.\n\nÇalışırken dokunmayın: oyun her sahne için tam ekran açılır, her biri yaklaşık bir dakika. Sonuç tek bir .zip rapor dosyasıdır; geliştiricilerin her sahnenin bilgisayarınızda tam olarak nasıl çalıştığını görebilmesi için bunu bir GitHub sorun kaydına ekleyin.",

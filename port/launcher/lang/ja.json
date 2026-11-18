@@ -340,6 +340,7 @@
     "launcher.mods_empty": "modsフォルダーにチートXMLファイルがまだありません。",
     "launcher.quit": "終了",
     "launcher.ready": "プレイの準備ができました。",
+    "launcher.fps_unsupported": "eboot.bin が 1.03 のゲームコードではありません: 60 FPS と無制限は使えず、ゲームは 30 FPS で動作します (README を参照)",
     "launcher.audio_native": "オーディオ：ネイティブ（本体モジュールを検出）。",
     "launcher.audio_builtin": "オーディオ：内蔵ミキサー。音の問題（エコー、音が出ない）が起こる場合があります。解決するには、libSceNgs2.sprx を本体のシステムモジュールのフォルダーに入れてください（設定）。",
     "launcher.missing": "見つかりません",
