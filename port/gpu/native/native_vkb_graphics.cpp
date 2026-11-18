@@ -132,7 +132,8 @@ std::atomic<u64> c_src[2][3][2]{}; ///< [stage vs/ps][buffers/images/samplers][m
 std::atomic<u64> c_attr_mapped{0}, c_attr_unmapped{0};
 std::atomic<u64> c_recorded{0}, c_record_ns{0}, c_skip_not_compiled{0}, c_skip_buffer{0}, c_skip_image{0}, c_skip_sampler{0}, c_skip_uav{0}, c_skip_special{0}, c_skip_target{0},
     c_skip_depth{0}, c_late_views{0}, c_skip_vertex{0}, c_skip_index{0}, c_skip_indirect{0}, c_skip_no_attachment{0}, c_indirect_recorded{0}, c_new_passes{0}, c_flat_rebuilt{0};
-std::atomic<u64> c_base_vertex_vulkan{0}, c_base_vertex_shader{0}; ///< issue 36: direct draws with a first vertex: added by Vulkan / left to the shader's own code
+std::atomic<u64> c_base_vertex_vulkan{0}, c_base_vertex_shader{0}, c_base_vertex_other_register{0}; ///< issue 36: direct draws with a first vertex: added by Vulkan /
+                                                                                                    ///< left to the shader's own code / fetch shader reads another register (Vulkan, as before)
 
 u64 NowNs() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -366,8 +367,9 @@ u32 IndirectSgprs(u64 vs) {
 /// base vertex of an indexed draw) to the vertex shader in the user data register the shader names (low nibble of byte 0x27 of its block, 0 = none), and the
 /// shader adds it itself: in its fetch shader, or in its own code when it reads its vertices from buffers. A fetch shader becomes Vulkan's vertex input, so its add
 /// has to come from Vulkan; a shader that adds it in its own code gets 0 here, or every vertex index is moved twice (the cave walls of s02_05 drew as huge
-/// spikes, 650 ms of GPU time a frame). A shader that names no register cannot add it: Vulkan does. This is the normal renderer's rule (GetDrawOffsets), read
-/// from the engine's side. TLG_VKB_BASE_VERTEX=0: the old way, Vulkan always adds it.
+/// spikes, 650 ms of GPU time a frame). A shader that names no register cannot add it: Vulkan does. A fetch shader that reads another register than the one named
+/// keeps the old way (Vulkan adds it) and is counted. Where the hardware index offset is 0 this is the normal renderer's rule (GetDrawOffsets), read from the
+/// engine's side. TLG_VKB_BASE_VERTEX=0: the old way, Vulkan always adds it.
 u32 VulkanFirstVertex(u64 ctx, const Variant& v, u32 first) {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_BASE_VERTEX"); return e == nullptr || e[0] != '0'; }();
     if (!on || first == 0) {
@@ -375,8 +377,10 @@ u32 VulkanFirstVertex(u64 ctx, const Variant& v, u32 first) {
     }
     const u64 vs = Rd<u64>(ctx, CtxVertexShader);
     const u32 location = vs != 0 ? (Rd<u8>(Rd<u64>(vs, 0x120), 0x27) & 0xfu) : 0u;
-    if (location == 0 || (v.has_fetch && v.fetch.vertex_offset_sgpr == static_cast<s8>(location))) {
-        c_base_vertex_vulkan.fetch_add(1, std::memory_order_relaxed);
+    const bool fetch_reads = v.has_fetch && v.fetch.vertex_offset_sgpr != -1;
+    if (location == 0 || fetch_reads) {
+        (fetch_reads && location != 0 && v.fetch.vertex_offset_sgpr != static_cast<s8>(location) ? c_base_vertex_other_register : c_base_vertex_vulkan)
+            .fetch_add(1, std::memory_order_relaxed);
         return first;
     }
     c_base_vertex_shader.fetch_add(1, std::memory_order_relaxed);
@@ -2280,6 +2284,7 @@ nlohmann::json Report() {
     return {{"draws", draws},
             {"by_kind_indexed_auto_indirect", {c_by_kind[0].load(), c_by_kind[1].load(), c_by_kind[2].load()}},
             {"first_vertex_by_vulkan_by_shader", {c_base_vertex_vulkan.load(), c_base_vertex_shader.load()}},
+            {"first_vertex_fetch_reads_another_register", c_base_vertex_other_register.load()},
             {"no_vertex_shader", c_no_vs.load()},
             {"special_pipeline", c_special.load()},
             {"no_fixed_state", c_no_fixed.load()},
