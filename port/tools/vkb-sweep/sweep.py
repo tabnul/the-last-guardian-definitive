@@ -133,7 +133,7 @@ def result(folder, stage, scene, vkb, takes):
 def picture_check(row, ref_row, noise_list):
     """New engine take 1 against the normal renderer's take 1 (reference sweep). `all` = the whole picture;
     `masked` = the same without the noise mask, only where the owner has confirmed that scene's entry in
-    noise-ignore.txt (a `proposed` entry is not applied; `proposed_mask` then says so). None = nothing to compare."""
+    noise-ignore.txt (a `proposed` entry is not applied; `entry_status` then says so). None = nothing to compare."""
     mine = next((t["picture"] for t in row["takes"] if t["ok"]), None)
     ref = next((t["picture"] for t in (ref_row or {"takes": []})["takes"] if t["ok"]), None)
     if not mine or not ref:
@@ -152,7 +152,10 @@ def picture_check(row, ref_row, noise_list):
         with tempfile.TemporaryDirectory() as tmp:
             m = os.path.join(tmp, "mask.png")
             noisemask.make(ref, second[0], m)
-            out["masked"] = compare.measure(a[2], b[2], compare.mask_bits(m))
+            try:
+                out["masked"] = compare.measure(a[2], b[2], compare.mask_bits(m))
+            except ValueError as e:
+                out["masked_error"] = str(e)
     return out
 
 
