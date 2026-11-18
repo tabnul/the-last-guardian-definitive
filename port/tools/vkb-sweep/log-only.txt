@@ -3,34 +3,41 @@
 # entries to confirm"); the tools honour only `confirmed`, a `proposed` scene is judged by picture as before.
 # Scenes without a usable normal-renderer picture (fewer than 2 good takes) fall back to log only by themselves.
 # --- cutscene: the game moves camera and characters; take 1 and take 2 show different moments of the sequence
-proposed s08_LargeTower s08_02d_DemoMirrorFall_001 cutscene: ladder, cart and mirror in different places in take 1 and take 2
-proposed s16_SoldiersDen SD_a01_Start cutscene: soldier and boy in different poses and places, camera differs between the takes
-proposed s17_SentinelTower ST_030_TricoBattle cutscene: Trico and the sentinels in different positions between the takes
-proposed s17_SentinelTower ST_050_GrabOnEnemyCondor cutscene: bird and boy in different positions between the takes
-proposed s17_SentinelTower ST_060_LandingRoof cutscene: bird and boy in different positions between the takes
-proposed s17_SentinelTower ST_070_PickUpTrigger cutscene: bird and boy in different positions between the takes
-proposed s17_SentinelTower ST_080_BreakingTail cutscene: sentinels in different positions between the takes
-proposed s17_SentinelTower ST_081_Tale cutscene: Trico, sentinels and boy in different places between the takes
+confirmed s08_LargeTower s08_02d_DemoMirrorFall_001 cutscene: ladder, cart and mirror in different places in take 1 and take 2
+confirmed s16_SoldiersDen SD_a01_Start cutscene: soldier and boy in different poses and places, camera differs between the takes
+confirmed s17_SentinelTower ST_030_TricoBattle cutscene: Trico and the sentinels in different positions between the takes
+confirmed s17_SentinelTower ST_050_GrabOnEnemyCondor cutscene: bird and boy in different positions between the takes
+confirmed s17_SentinelTower ST_060_LandingRoof cutscene: bird and boy in different positions between the takes
+confirmed s17_SentinelTower ST_070_PickUpTrigger cutscene: bird and boy in different positions between the takes
+confirmed s17_SentinelTower ST_080_BreakingTail cutscene: sentinels in different positions between the takes
+confirmed s17_SentinelTower ST_081_Tale cutscene: Trico, sentinels and boy in different places between the takes
 # --- ending: all scenes of stage s18_Ending (owner's list: they are cutscenes)
-proposed s18_Ending _010_Ending_C ending cutscene: lit sphere animates between the takes
-proposed s18_Ending _020_Ending_D ending cutscene (owner's list): scripted sequence
-proposed s18_Ending _030_Ending_StaffRoll ending cutscene: staff roll, the picture runs on between the takes
-proposed s18_Ending _050_Ending_TimeLapse ending cutscene (owner's list): normal renderer gives only a flat dark picture
-proposed s18_Ending _060_Ending_E ending cutscene: birds fly through the picture, different places between the takes
-proposed s18_Ending _070_Ending_Owari ending cutscene (owner's list): normal renderer gives only a flat dark picture
+confirmed s18_Ending _010_Ending_C ending cutscene: lit sphere animates between the takes
+confirmed s18_Ending _020_Ending_D ending cutscene (owner's list): scripted sequence
+confirmed s18_Ending _030_Ending_StaffRoll ending cutscene: staff roll, the picture runs on between the takes
+confirmed s18_Ending _050_Ending_TimeLapse ending cutscene (owner's list): normal renderer gives only a flat dark picture
+confirmed s18_Ending _060_Ending_E ending cutscene: birds fly through the picture, different places between the takes
+confirmed s18_Ending _070_Ending_Owari ending cutscene (owner's list): normal renderer gives only a flat dark picture
 # --- noise: too much of the picture moves between two normal takes, or the scene is alive with action (proposed, issue "Ignore list: entries to confirm")
-proposed s03_Canyon CA_c01_SteppingStone_001 too much of the picture moves between takes (59% would have to be left out, limit 25%)
-proposed s03_Canyon CA_g01_ApproachAntenna_001 too much of the picture moves between takes (74% would have to be left out, limit 25%)
-proposed s06_FallingBridge FB_f01_GoalTerrace_001 too much of the picture moves between takes (35% would have to be left out, limit 25%)
-proposed s07_Alone AL_b01_YajirobeMirror_01 too much of the picture moves between takes (39% would have to be left out, limit 25%)
-proposed s08_LargeTower s08_02_arrive_at_LT_001 too much of the picture moves between takes (35% would have to be left out, limit 25%)
-proposed s08_LargeTower s08_02_wireHang_001 too much of the picture moves between takes (28% would have to be left out, limit 25%)
-proposed s08_LargeTower s08_03_LeaningYajirobe_001 too much of the picture moves between takes (38% would have to be left out, limit 25%)
-proposed s08_LargeTower s08_05_SmallMirror_001 too much of the picture moves between takes (31% would have to be left out, limit 25%)
-proposed s10_Pit s10_05_Bar_Gate_001 too much of the picture moves between takes (39% would have to be left out, limit 25%)
-proposed s12_TheNest s12_10_Elevator_Station_Again_001 too much of the picture moves between takes (56% would have to be left out, limit 25%)
-proposed s13_FirstFlight FF_a01_EnterCliff too much of the picture moves between takes (44% would have to be left out, limit 25%)
-proposed s13_FirstFlight FF_e01_Bridge_Arrival too much of the picture moves between takes (31% would have to be left out, limit 25%)
-proposed s13_FirstFlight FF_i01_Celling1 alive with action (characters/enemies/debris in motion)
-proposed s17_SentinelTower ST_021_TricoOnTheRoof alive with action (characters/enemies/debris in motion)
-proposed s17_SentinelTower ST_090_ShootingBrain alive with action (characters/enemies/debris in motion)
+confirmed s03_Canyon CA_c01_SteppingStone_001 too much of the picture moves between takes (59% would have to be left out, limit 25%)
+confirmed s03_Canyon CA_g01_ApproachAntenna_001 too much of the picture moves between takes (74% would have to be left out, limit 25%)
+confirmed s06_FallingBridge FB_f01_GoalTerrace_001 too much of the picture moves between takes (35% would have to be left out, limit 25%)
+confirmed s07_Alone AL_b01_YajirobeMirror_01 too much of the picture moves between takes (39% would have to be left out, limit 25%)
+confirmed s08_LargeTower s08_02_arrive_at_LT_001 too much of the picture moves between takes (35% would have to be left out, limit 25%)
+confirmed s08_LargeTower s08_02_wireHang_001 too much of the picture moves between takes (28% would have to be left out, limit 25%)
+confirmed s08_LargeTower s08_03_LeaningYajirobe_001 too much of the picture moves between takes (38% would have to be left out, limit 25%)
+confirmed s08_LargeTower s08_05_SmallMirror_001 too much of the picture moves between takes (31% would have to be left out, limit 25%)
+confirmed s10_Pit s10_05_Bar_Gate_001 too much of the picture moves between takes (39% would have to be left out, limit 25%)
+confirmed s12_TheNest s12_10_Elevator_Station_Again_001 too much of the picture moves between takes (56% would have to be left out, limit 25%)
+confirmed s13_FirstFlight FF_a01_EnterCliff too much of the picture moves between takes (44% would have to be left out, limit 25%)
+confirmed s13_FirstFlight FF_e01_Bridge_Arrival too much of the picture moves between takes (31% would have to be left out, limit 25%)
+confirmed s13_FirstFlight FF_i01_Celling1 alive with action (characters/enemies/debris in motion)
+confirmed s17_SentinelTower ST_021_TricoOnTheRoof alive with action (characters/enemies/debris in motion)
+confirmed s17_SentinelTower ST_090_ShootingBrain alive with action (characters/enemies/debris in motion)
+# --- need a look: nothing moves, the normal renderer itself is lighter or darker between photos (owner 2026-11-18, issue 27; see issues 12 and 28)
+confirmed s07_Alone AL_b01_BreakBridge_01 owner: normal renderer differs from itself between photos without anything moving (issue 12/28)
+confirmed s07_Alone AL_c01_BeamArea_01 owner: normal renderer differs from itself between photos without anything moving (issue 12/28)
+confirmed s11_ColumnCorridor CC_Passage_Area_001 owner: normal renderer differs from itself between photos without anything moving (issue 12/28)
+confirmed s12_TheNest s12_00_Start_001 owner: normal renderer differs from itself between photos without anything moving (issue 12/28)
+confirmed s14_CondorClash CH_a01_Start_001 owner: normal renderer differs from itself between photos without anything moving (issue 12/28)
+confirmed s17_SentinelTower ST_020_TricoOnTheRoof owner: normal renderer differs from itself between photos without anything moving (issue 12/28)

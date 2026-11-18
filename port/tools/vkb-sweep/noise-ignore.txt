@@ -12,90 +12,90 @@ proposed s02_TricosCave s02_06_Accidental_Shooting_001 4.2% boy,prompt | normal 
 proposed s02_TricosCave s02_07_Destroy_Door_001 6.4% boy,prompt | normal renderer differs from itself in: boy, prompt
 proposed s03_Canyon CA_a01_CanyonStart_001 10.6% boy | normal renderer differs from itself in: boy
 proposed s03_Canyon CA_b01_BarrelBroken_001 9.8% boy,flame | normal renderer differs from itself in: boy, flame
-proposed s03_Canyon CA_b01_InsideLake_001 7.3% boy | normal renderer differs from itself in: boy
+confirmed s03_Canyon CA_b01_InsideLake_001 7.3% boy | normal renderer differs from itself in: boy
 proposed s03_Canyon CA_c01_StatueBreakEnd_001 4.9% boy | normal renderer differs from itself in: boy
-proposed s03_Canyon CA_d01_ChainRoom_001 9.3% boy,mist | normal renderer differs from itself in: boy, mist
-proposed s03_Canyon CA_e01_PulseDoorCave_001 5.9% boy,foliage | normal renderer differs from itself in: boy, foliage
-proposed s03_Canyon CA_f01_CrouchMove_001 9.2% boy,light | normal renderer differs from itself in: boy, light
+confirmed s03_Canyon CA_d01_ChainRoom_001 9.3% boy,mist | normal renderer differs from itself in: boy, mist
+confirmed s03_Canyon CA_e01_PulseDoorCave_001 5.9% boy,foliage | normal renderer differs from itself in: boy, foliage
+confirmed s03_Canyon CA_f01_CrouchMove_001 9.2% boy,light | normal renderer differs from itself in: boy, light
 proposed s04_FirstAntenna FA_a01_OpenGate_001 5.0% flame | normal renderer differs from itself in: flame
 proposed s04_FirstAntenna FA_a04_AntennaRoom_001 8.2% boy,flame | normal renderer differs from itself in: boy, flame
-proposed s04_FirstAntenna FA_b01_SoldiersTerrace_001 4.1% boy,flame | normal renderer differs from itself in: boy, flame
-proposed s04_FirstAntenna FA_c01_GardenTerrace_001 7.2% foliage,boy | normal renderer differs from itself in: foliage, boy
-proposed s04_FirstAntenna FA_c01_SmellPotHouse_001 4.4% boy | normal renderer differs from itself in: boy
-proposed s04_FirstAntenna FA_d01_TreesRoad_001 5.6% boy,foliage | normal renderer differs from itself in: boy, foliage
-proposed s05_Attacked AT_SwitchRoom_001 4.3% boy | normal renderer differs from itself in: boy
+confirmed s04_FirstAntenna FA_b01_SoldiersTerrace_001 4.1% boy,flame | normal renderer differs from itself in: boy, flame
+confirmed s04_FirstAntenna FA_c01_GardenTerrace_001 7.2% foliage,boy | normal renderer differs from itself in: foliage, boy
+confirmed s04_FirstAntenna FA_c01_SmellPotHouse_001 4.4% boy | normal renderer differs from itself in: boy
+confirmed s04_FirstAntenna FA_d01_TreesRoad_001 5.6% boy,foliage | normal renderer differs from itself in: boy, foliage
+confirmed s05_Attacked AT_SwitchRoom_001 4.3% boy | normal renderer differs from itself in: boy
 proposed s05_Attacked AT_Outdoor_001 6.2% boy,mist | normal renderer differs from itself in: boy, mist
 proposed s05_Attacked AT_BarrelBox_001 17.9% foliage,particles,boy | normal renderer differs from itself in: foliage, particles, boy
-proposed s05_Attacked AT_CondorRise_001 20.0% foliage,boy | normal renderer differs from itself in: foliage, boy
-proposed s05_Attacked AT_PullSwitch_001 3.2% flame,boy | normal renderer differs from itself in: flame, boy
+confirmed s05_Attacked AT_CondorRise_001 20.0% foliage,boy | normal renderer differs from itself in: foliage, boy
+confirmed s05_Attacked AT_PullSwitch_001 3.2% flame,boy | normal renderer differs from itself in: flame, boy
 proposed s05_Attacked AT_SoldiersDestruction_001 4.4% flame,boy | normal renderer differs from itself in: flame, boy
-proposed s05_Attacked AT_SoldiersRoom_002 2.9% boy | normal renderer differs from itself in: boy
-proposed s06_FallingBridge FB_b01_Start_intarest_001 7.0% foliage,particles,boy | normal renderer differs from itself in: foliage, particles, boy
-proposed s06_FallingBridge FB_c02_boy_athletic_001 7.5% boy,particles | normal renderer differs from itself in: boy, particles
-proposed s06_FallingBridge FB_b01_SuspendPot_003 5.1% boy,props | normal renderer differs from itself in: boy, props
+confirmed s05_Attacked AT_SoldiersRoom_002 2.9% boy | normal renderer differs from itself in: boy
+confirmed s06_FallingBridge FB_b01_Start_intarest_001 7.0% foliage,particles,boy | normal renderer differs from itself in: foliage, particles, boy
+confirmed s06_FallingBridge FB_c02_boy_athletic_001 7.5% boy,particles | normal renderer differs from itself in: boy, particles
+confirmed s06_FallingBridge FB_b01_SuspendPot_003 5.1% boy,props | normal renderer differs from itself in: boy, props
 proposed s06_FallingBridge FB_e01_Outdoor_001 6.4% boy,foliage | normal renderer differs from itself in: boy, foliage
 proposed s06_FallingBridge FB_e01_MirrorCart_001 10.8% boy,mist,props | normal renderer differs from itself in: boy, mist, props
 proposed s06_FallingBridge FB_e02_IntervalBridge_001 23.8% boy,props,mist | normal renderer differs from itself in: boy, props, mist
-proposed s06_FallingBridge FB_DropMirror2_001 7.1% boy,prompt | normal renderer differs from itself in: boy, prompt
-proposed s07_Alone AL_a01_AloneStart_01 4.0% boy,mist | normal renderer differs from itself in: boy, mist
+confirmed s06_FallingBridge FB_DropMirror2_001 7.1% boy,prompt | normal renderer differs from itself in: boy, prompt
+confirmed s07_Alone AL_a01_AloneStart_01 4.0% boy,mist | normal renderer differs from itself in: boy, mist
 proposed s07_Alone AL_a01_firstRoom_01 4.9% boy,mist | normal renderer differs from itself in: boy, mist
-proposed s07_Alone AL_a01_SkyAthletics_01 11.3% props,boy | normal renderer differs from itself in: props, boy
-proposed s07_Alone AL_b01_Seesaw_01 14.4% props,boy | normal renderer differs from itself in: props, boy
+confirmed s07_Alone AL_a01_SkyAthletics_01 11.3% props,boy | normal renderer differs from itself in: props, boy
+confirmed s07_Alone AL_b01_Seesaw_01 14.4% props,boy | normal renderer differs from itself in: props, boy
 proposed s07_Alone AL_b01_YajirobeSwitch_01 19.9% props,mist | normal renderer differs from itself in: props, mist
-proposed s07_Alone AL_b01_StepColumn_01 22.6% props | normal renderer differs from itself in: props
+confirmed s07_Alone AL_b01_StepColumn_01 22.6% props | normal renderer differs from itself in: props
 proposed s07_Alone AL_b01_StepColumn_02 17.5% props,mist | normal renderer differs from itself in: props, mist
-proposed s07_Alone AL_d01_DarkPlace_01 4.0% boy | normal renderer differs from itself in: boy
+confirmed s07_Alone AL_d01_DarkPlace_01 4.0% boy | normal renderer differs from itself in: boy
 proposed s08_LargeTower s08_01_Start_001 24.1% boy,mist,props | normal renderer differs from itself in: boy, mist, props
 proposed s08_LargeTower s08_02_MirrorYajirobe_001 20.7% mist,boy | normal renderer differs from itself in: mist, boy
 proposed s08_LargeTower s08_04_Climb_Tower_001 13.3% mist,boy | normal renderer differs from itself in: mist, boy
 proposed s08_LargeTower s08_06_Climb_Tower_Again_001 14.8% mist | normal renderer differs from itself in: mist
 proposed s08_LargeTower s08_07_Top_001 14.5% mist | normal renderer differs from itself in: mist
-proposed s09_FallingBridge2 FB2_Start_001 3.1% boy,flame | normal renderer differs from itself in: boy, flame
-proposed s09_FallingBridge2 FB2_After_Try_Touch_Under 14.9% foliage,boy | normal renderer differs from itself in: foliage, boy
-proposed s09_FallingBridge2 FB2_End_HungryEvent 10.0% boy,foliage | normal renderer differs from itself in: boy, foliage
+confirmed s09_FallingBridge2 FB2_Start_001 3.1% boy,flame | normal renderer differs from itself in: boy, flame
+confirmed s09_FallingBridge2 FB2_After_Try_Touch_Under 14.9% foliage,boy | normal renderer differs from itself in: foliage, boy
+confirmed s09_FallingBridge2 FB2_End_HungryEvent 10.0% boy,foliage | normal renderer differs from itself in: boy, foliage
 proposed s09_FallingBridge2 FB2_MiddleLayer_001 7.0% boy,foliage,mist | normal renderer differs from itself in: boy, foliage, mist
 proposed s09_FallingBridge2 FB2_TopLayer_001 12.0% boy,mist | normal renderer differs from itself in: boy, mist
-proposed s09_FallingBridge2 FB2_End_001 2.2% boy,particles | normal renderer differs from itself in: boy, particles
+confirmed s09_FallingBridge2 FB2_End_001 2.2% boy,particles | normal renderer differs from itself in: boy, particles
 proposed s10_Pit s10_00_Start_001 5.4% boy,flame | normal renderer differs from itself in: boy, flame
-proposed s10_Pit s10_01_Lever_Down_001 3.5% boy | normal renderer differs from itself in: boy
-proposed s10_Pit s10_02_Pitfall_002 16.3% water,boy | normal renderer differs from itself in: water, boy
+confirmed s10_Pit s10_01_Lever_Down_001 3.5% boy | normal renderer differs from itself in: boy
+confirmed s10_Pit s10_02_Pitfall_002 16.3% water,boy | normal renderer differs from itself in: water, boy
 proposed s10_Pit s10_03_Escape_Pitfall_001 6.5% boy,water | normal renderer differs from itself in: boy, water
-proposed s10_Pit s10_04_In_the_Bridge_001 5.1% boy | normal renderer differs from itself in: boy
+confirmed s10_Pit s10_04_In_the_Bridge_001 5.1% boy | normal renderer differs from itself in: boy
 proposed s11_ColumnCorridor CC_switch_gateWater_02_001 18.6% water,boy | normal renderer differs from itself in: water, boy
-proposed s11_ColumnCorridor CC_ColumnCorridor_End 3.6% boy | normal renderer differs from itself in: boy
-proposed s12_TheNest s12_01_Elevator_Station_001 5.7% boy,particles | normal renderer differs from itself in: boy, particles
-proposed s12_TheNest s12_04_Escape_from_Arico_001 6.5% boy,foliage | normal renderer differs from itself in: boy, foliage
+confirmed s11_ColumnCorridor CC_ColumnCorridor_End 3.6% boy | normal renderer differs from itself in: boy
+confirmed s12_TheNest s12_01_Elevator_Station_001 5.7% boy,particles | normal renderer differs from itself in: boy, particles
+confirmed s12_TheNest s12_04_Escape_from_Arico_001 6.5% boy,foliage | normal renderer differs from itself in: boy, foliage
 proposed s12_TheNest s12_05_Run_into_Ruins_001 6.9% boy | normal renderer differs from itself in: boy
-proposed s12_TheNest s12_06_Escape_by_Elevator_001 5.3% boy | normal renderer differs from itself in: boy
-proposed s12_TheNest s12_07_Enter_Trico_001 12.5% props | normal renderer differs from itself in: props
+confirmed s12_TheNest s12_06_Escape_by_Elevator_001 5.3% boy | normal renderer differs from itself in: boy
+confirmed s12_TheNest s12_07_Enter_Trico_001 12.5% props | normal renderer differs from itself in: props
 proposed s12_TheNest s12_08_Roll_Cage_001 5.8% props | normal renderer differs from itself in: props
 proposed s12_TheNest s12_12_Escape_from_The_Nest_001 5.1% boy,particles | normal renderer differs from itself in: boy, particles
 proposed s13_FirstFlight FF_c01_HoleSwitch 12.3% foliage,water | normal renderer differs from itself in: foliage, water
-proposed s13_FirstFlight FF_c01_TunnelOpenBolt 7.3% light,flame | normal renderer differs from itself in: light, flame
-proposed s13_FirstFlight FF_e01_Second_Battle_End 4.1% boy | normal renderer differs from itself in: boy
-proposed s13_FirstFlight FF_f01_Athletic_Start 6.9% boy | normal renderer differs from itself in: boy
+confirmed s13_FirstFlight FF_c01_TunnelOpenBolt 7.3% light,flame | normal renderer differs from itself in: light, flame
+confirmed s13_FirstFlight FF_e01_Second_Battle_End 4.1% boy | normal renderer differs from itself in: boy
+confirmed s13_FirstFlight FF_f01_Athletic_Start 6.9% boy | normal renderer differs from itself in: boy
 proposed s13_FirstFlight FF_i01_Celling2 5.5% mist | normal renderer differs from itself in: mist
-proposed s13_FirstFlight FF_i01_Celling2b 3.6% boy | normal renderer differs from itself in: boy
-proposed s13_FirstFlight FF_i01_Celling3 17.0% props | normal renderer differs from itself in: props
-proposed s13_FirstFlight FF_i01_Celling3b 4.3% boy,foliage | normal renderer differs from itself in: boy, foliage
-proposed s14_CondorClash CH_a01_BeforeDropMirror_001 12.1% props,foliage | normal renderer differs from itself in: props, foliage
-proposed s14_CondorClash CH_a01_AfterDropMirror_001 7.8% boy | normal renderer differs from itself in: boy
-proposed s14_CondorClash CH_a01_StartBattle_001 6.6% boy | normal renderer differs from itself in: boy
-proposed s14_CondorClash CH_d01_BeforeDropTruck_001 5.5% boy,prompt | normal renderer differs from itself in: boy, prompt
-proposed s14_CondorClash CH_e01_GetTritrigger_001 13.3% particles,foliage,boy | normal renderer differs from itself in: particles, foliage, boy
-proposed s14_CondorClash CH_a01_TopOfCondorClash_001 4.4% boy | normal renderer differs from itself in: boy
-proposed s15_SecondFlight SF_a01_Start 13.4% boy,light | normal renderer differs from itself in: boy, light
-proposed s15_SecondFlight SF_a01_CH_Roof 12.6% boy,foliage | normal renderer differs from itself in: boy, foliage
-proposed s15_SecondFlight SF_b01_After_CH_Roof 2.5% boy | normal renderer differs from itself in: boy
-proposed s15_SecondFlight SF_c01_Before_1st_Jump 16.1% foliage,props | normal renderer differs from itself in: foliage, props
-proposed s15_SecondFlight SF_b01_After_1st_Jump 9.2% foliage | normal renderer differs from itself in: foliage
-proposed s15_SecondFlight SF_b02_Before_Longjump 17.9% foliage | normal renderer differs from itself in: foliage
-proposed s15_SecondFlight SF_c02_After_Longjump 11.2% foliage,props | normal renderer differs from itself in: foliage, props
+confirmed s13_FirstFlight FF_i01_Celling2b 3.6% boy | normal renderer differs from itself in: boy
+confirmed s13_FirstFlight FF_i01_Celling3 17.0% props | normal renderer differs from itself in: props
+confirmed s13_FirstFlight FF_i01_Celling3b 4.3% boy,foliage | normal renderer differs from itself in: boy, foliage
+confirmed s14_CondorClash CH_a01_BeforeDropMirror_001 12.1% props,foliage | normal renderer differs from itself in: props, foliage
+confirmed s14_CondorClash CH_a01_AfterDropMirror_001 7.8% boy | normal renderer differs from itself in: boy
+confirmed s14_CondorClash CH_a01_StartBattle_001 6.6% boy | normal renderer differs from itself in: boy
+confirmed s14_CondorClash CH_d01_BeforeDropTruck_001 5.5% boy,prompt | normal renderer differs from itself in: boy, prompt
+confirmed s14_CondorClash CH_e01_GetTritrigger_001 13.3% particles,foliage,boy | normal renderer differs from itself in: particles, foliage, boy
+confirmed s14_CondorClash CH_a01_TopOfCondorClash_001 4.4% boy | normal renderer differs from itself in: boy
+confirmed s15_SecondFlight SF_a01_Start 13.4% boy,light | normal renderer differs from itself in: boy, light
+confirmed s15_SecondFlight SF_a01_CH_Roof 12.6% boy,foliage | normal renderer differs from itself in: boy, foliage
+confirmed s15_SecondFlight SF_b01_After_CH_Roof 2.5% boy | normal renderer differs from itself in: boy
+confirmed s15_SecondFlight SF_c01_Before_1st_Jump 16.1% foliage,props | normal renderer differs from itself in: foliage, props
+confirmed s15_SecondFlight SF_b01_After_1st_Jump 9.2% foliage | normal renderer differs from itself in: foliage
+confirmed s15_SecondFlight SF_b02_Before_Longjump 17.9% foliage | normal renderer differs from itself in: foliage
+confirmed s15_SecondFlight SF_c02_After_Longjump 11.2% foliage,props | normal renderer differs from itself in: foliage, props
 proposed s15_SecondFlight SF_c02_Before_bridge 5.0% boy | normal renderer differs from itself in: boy
-proposed s15_SecondFlight SF_c02_Before_SecondFlight 4.4% boy | normal renderer differs from itself in: boy
-proposed s16_SoldiersDen SD_a01_Open_Shutter01_01 4.1% boy | normal renderer differs from itself in: boy
-proposed s16_SoldiersDen SD_a01_2F_BattleStart_01 15.4% boy,mist | normal renderer differs from itself in: boy, mist
+confirmed s15_SecondFlight SF_c02_Before_SecondFlight 4.4% boy | normal renderer differs from itself in: boy
+confirmed s16_SoldiersDen SD_a01_Open_Shutter01_01 4.1% boy | normal renderer differs from itself in: boy
+confirmed s16_SoldiersDen SD_a01_2F_BattleStart_01 15.4% boy,mist | normal renderer differs from itself in: boy, mist
 proposed s16_SoldiersDen SD_a01_2F_BattleEnd_01 3.1% boy | normal renderer differs from itself in: boy
 proposed s17_SentinelTower ST_000_Start 7.6% particles,boy | normal renderer differs from itself in: particles, boy
-proposed s17_SentinelTower ST_010_BrainRoom 4.9% boy | normal renderer differs from itself in: boy
+confirmed s17_SentinelTower ST_010_BrainRoom 4.9% boy | normal renderer differs from itself in: boy
 proposed s17_SentinelTower ST_040_FallingFromSentinelTower 5.0% birds | normal renderer differs from itself in: birds
