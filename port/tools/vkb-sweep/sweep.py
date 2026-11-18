@@ -28,6 +28,7 @@ import compare  # noqa: E402
 CHECK = os.path.join(HERE, "..", "scene-check")
 TAKE_LINE = re.compile(r"^vkb(\d)_take(\d+): (.*?)  \((\d+) s\)$")
 PEAK_LINE = re.compile(r"GPU memory peak during the take: GTT ([\d.]+) GB")
+ENDED_LINE = "game ended by itself before the take was done"
 # skip and fail counters of the new engine (/stats); a name that is not in the file is left out, never set to 0
 COUNTERS = {
     "gfx_skipped": ("vkb", "graphics", "skipped"), "gfx_failed": ("vkb", "graphics", "failed"),
@@ -85,8 +86,9 @@ def log_counts(path):
 
 
 def ended_takes(folder, vkb):
-    """{take number: (status, seconds, peak GTT GB)} of the takes of this renderer that ended, from vkbV_shot.txt."""
-    done, last = {}, None
+    """{take number: (status, seconds, peak GTT GB, crash)} of the takes of this renderer that ended, from
+    vkbV_shot.txt. A take stopped by the GPU memory guard does not count: the scene is not done."""
+    done, last, ended = {}, None, False
     path = os.path.join(folder, f"vkb{vkb}_shot.txt")
     if os.path.exists(path):
         for line in open(path, errors="replace"):
@@ -94,10 +96,12 @@ def ended_takes(folder, vkb):
             m = PEAK_LINE.search(line)
             if m:
                 last = float(m[1])
+            ended = ended or ENDED_LINE in line
             m = TAKE_LINE.match(line)
             if m and m[1] == vkb:
-                done[int(m[2])] = (m[3], int(m[4]), last)
-                last = None
+                if not m[3].startswith("GPU memory guard"):
+                    done[int(m[2])] = (m[3], int(m[4]), last, ended)
+                last, ended = None, False
     return done
 
 
@@ -105,14 +109,14 @@ def result(folder, stage, scene, vkb, takes):
     ended = ended_takes(folder, vkb)
     row = {"stage": stage, "scene": scene, "vkb": int(vkb), "takes": []}
     for n in sorted(ended)[:takes]:
-        status, seconds, peak = ended[n]
+        status, seconds, peak, crash = ended[n]
         stem = os.path.join(folder, f"vkb{vkb}_take{n}")
         pic = next((stem + e for e in (".png", ".blank.png") if os.path.exists(stem + e)), None)
         row["takes"].append({
             "take": n, "ok": status.startswith("ok "), "status": status, "seconds": seconds,
             "picture": pic, "blank": bool(pic and pic.endswith(".blank.png")),
-            # the game ended by itself before the take was done (a crash or an exit); a guard kill is said apart
-            "crash": status.startswith("ended"), "guard": status.startswith("GPU memory guard"),
+            # the game ended by itself before the take was done (a crash or an exit), as shot.py saw it
+            "crash": crash,
             "log": log_counts(stem + ".log"), "counters": counters(stem + ".stats.json"), "peak_gtt_gb": peak})
     good = [t["picture"] for t in row["takes"] if t["ok"]]
     row["noise"] = None
@@ -192,21 +196,27 @@ def main():
                     child.clear()
             if STOP:
                 break
+            text = open(os.path.join(folder, f"vkb{vkb}_shot.txt"), errors="replace").read()
             row = result(folder, stage, scene, vkb, takes)
-            if len(row["takes"]) < takes and not any(t["guard"] for t in row["takes"]):
+            last_run = text.split("\n== ")[-1].splitlines()
+            takes_run = [m[3] for m in map(TAKE_LINE.match, last_run) if m]
+            guard = next((t for t in takes_run if t.startswith("GPU memory guard")), "")
+            if guard:
+                # no result line: the scene is not done, a resume runs it again (with a higher SHOT_GTT_LIMIT_GB)
+                print(f"STOPPED at {stage} {scene}: {guard}; the scene has no result line; resume with the same "
+                      "command", flush=True)
+                code = 3
+                break
+            if len(row["takes"]) < takes:
                 # shot.py could not run its takes (not a failed take): a problem of the box, not of the scene
-                tail = open(os.path.join(folder, f"vkb{vkb}_shot.txt"), errors="replace").read().splitlines()[-3:]
-                print(f"STOPPED at {stage} {scene}: shot.py did not run its takes: {' | '.join(tail)}", flush=True)
+                print(f"STOPPED at {stage} {scene}: shot.py did not run its takes: {' | '.join(last_run[-3:])}",
+                      flush=True)
                 code = 2
                 break
             row["time"] = time.strftime("%F %T")
             with open(results, "a") as f:
                 f.write(json.dumps(row) + "\n")
             print(f"[{k}/{len(todo)}] {summary(row)}  ({time.monotonic() - t0:.0f} s)", flush=True)
-            if any(t["guard"] for t in row["takes"]):
-                print("STOPPED: the GPU memory guard fired (see the journal); resume with the same command", flush=True)
-                code = 3
-                break
     finally:
         os.remove(lock)
     if STOP:

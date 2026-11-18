@@ -83,19 +83,25 @@ take is a fresh game start with the GPU memory guard and the fixed recipe above.
 - Counters: the debug server is on for every take (`TLG_DEBUG_SERVER_PORT=8790` unless given), and `shot.py`
   keeps `/stats` and `/native` at the moment of the picture as `vkbV_takeN.stats.json` and `.native.json`.
   (`shot.py` does this whenever `TLG_DEBUG_SERVER_PORT` is given; without it, nothing changes.)
+  The server is on for both renderers, so the answer key and the new engine's takes are made the same way.
+  It answers only when asked (twice per take, after the picture). Checked on one scene only: the garden's
+  take-to-take noise with it on (0.348% above 16, 0.155% above 32) is inside the range measured without it
+  in issue 9 (0.185-0.372% and 0.070-0.172%).
 - One result line per scene (JSON) in `OUT/results-vkbV.jsonl`, written as soon as the scene is done, and a
-  short line on the screen. Per take: status, picture path, blank yes/no, crash yes/no (the game ended by
-  itself before the take was done), guard yes/no, log counts (`<Error>`/`<Critical>` lines, `<Warning>` lines,
+  short line on the screen. Per take: status, picture path, blank yes/no, crash yes/no (the game process
+  ended by itself before `shot.py` closed it, at any step; `shot.py` then prints `game ended by itself before
+  the take was done (exit code N)`), log counts (`<Error>`/`<Critical>` lines, `<Warning>` lines,
   `Fault: exception` lines), the new engine's skip and fail counters (left out when the game does not report
-  them; the normal renderer reports none), peak GTT. With 2 or more good takes: `noise`, take 1 against
+  them; the normal renderer reports none), peak GTT (empty where the guard is not active). With 2 or more good takes: `noise`, take 1 against
   take 2 of the same renderer (mean, share of pixels above 8, 16, 32, largest; the same numbers as `compare.py`).
 - Resumable: a scene with a result line is not run again. Takes that ended (their line is in
   `OUT/STAGE__SCENE/vkbV_shot.txt`, the output of `shot.py`) count; a take cut off by a stop is left and a new
-  one is made. Run the same command again to go on. A scene where the guard fired also gets its line (with
-  `guard` set), so it is not started again by a resume.
+  one is made. Run the same command again to go on.
 - It stops (resume later with the same command) on Ctrl+C or SIGTERM (the running take is ended cleanly and
   the save is put back), when `shot.py` cannot run at all (the game is still running, a save backup is left,
   the display is in use), and when the GPU memory guard fired. A failed take of a scene does not stop it.
+  A guard stop leaves the scene without a result line, and its guard take does not count, so a resume runs
+  the scene again (raise `SHOT_GTT_LIMIT_GB` first if it really needs more; never `0`).
 - No limits are applied: it records, it does not judge clean or not clean (issue 9).
 
 Example, the answer key (normal renderer, 2 takes per scene):
