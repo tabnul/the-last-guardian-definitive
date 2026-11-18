@@ -7641,7 +7641,14 @@ bool StripPackets(u64 begin, u64 end);
 std::atomic<u64> g_aabb_count_buffer{0};         ///< K1 check: the render device's + 0x27a8 (set at BeginRecording)
 std::atomic<u32> g_aabb_readbacks_since_read{0}; ///< K1 check: CounterReadbacks into it since the last AABB read (a BeginRecording that dispatched)
 std::atomic<u32> g_rec_groups_at_dispatch{0};    ///< K1 check: the recording BeginRecording's group count (set at its start)
-std::atomic<u64> c_aabb_guarded{0};              ///< K2: AABB reads skipped because their records name groups not in the table
+std::atomic<u64> c_aabb_guarded{0};              ///< K2 check: AABB reads whose records name groups not in the table (logged; the pass flags should leave none)
+/// api-contract.md K2: the engine's own design for the first readback of BeginRecording (01c49540): a flag (renderDev + 0x2710) cleared by every recording call and
+/// set when the pass ran, checked by the reader (01c4c570). The AABB pass (count + 0x27a8) and the third pass (counts + 0x2870, + 0x2890, + 0x28b0) have none: the
+/// reader decides again from the frame data, which the game's jobs may fill in between. Our flags, the same way: cleared by a recording BeginRecording, set by the
+/// pass's CounterReadback; at the reader's start (AabbReadStart) the counts of a pass that did not run are set to 0 (no results this frame).
+std::atomic<u64> g_rec_device{0};
+std::atomic<bool> g_aabb_pass_ran{false}, g_third_pass_ran{false};
+std::atomic<u64> c_aabb_pass_skipped{0}, c_third_pass_skipped{0};
 std::atomic<u32> g_reads_since_dispatch{0}, g_dispatch_groups{0}; ///< K1 check: reads of the records since the last AABB dispatch; that dispatch's frame group count
 
 /// FUN_02471530(async compute context, counter buffer, unordered access view): hands an append / consume counter back to its
@@ -7652,6 +7659,13 @@ u64 PS4_SYSV_ABI TagAscCounterReadback(u64 jcc, u64 buffer, u64 view, u64 a3, u6
     const auto valid = [](u64 pointer) { return IsHeapPointer(pointer) && (pointer & 7) == 0; };
     if (jcc == 0 || !valid(buffer) || !valid(view)) {
         return 0;
+    }
+    if (const u64 device = g_rec_device.load(std::memory_order_relaxed); device != 0) { // K2: which of BeginRecording's passes ran
+        if (buffer == Rd<u64>(device, 0x27a8)) {
+            g_aabb_pass_ran.store(true, std::memory_order_relaxed);
+        } else if (buffer == Rd<u64>(device, 0x2870) || buffer == Rd<u64>(device, 0x2890) || buffer == Rd<u64>(device, 0x28b0)) {
+            g_third_pass_ran.store(true, std::memory_order_relaxed);
+        }
     }
     if (buffer == g_aabb_count_buffer.load(std::memory_order_relaxed)) {
         g_aabb_readbacks_since_read.fetch_add(1, std::memory_order_relaxed); // K1 check: the AABB count's readback (BeginRecording dispatched)
@@ -7961,7 +7975,35 @@ u64 BufferMemory(u64 buffer) {
 std::atomic<u32> g_last_recordings{0}, g_last_readbacks{0}; ///< at the reader's start: BeginRecordings / AABB CounterReadbacks since its previous start
 /// The reader's start (01c4c5de, after its label wait): what happened since its previous start
 u64 PS4_SYSV_ABI AabbReadStart(Core::GuestHooks::MidContext* c) {
-    (void)c;
+    // K2: a pass the last recording BeginRecording did not run has no results this frame: its counts go to 0 before the reader decides from the frame data.
+    // LEGACY(readback_pass_flags): TLG_LEGACY_READBACK_PASS_FLAGS=1 lets the reader read the older pass's results.
+    static const bool flags_on = [] { const char* e = std::getenv("TLG_LEGACY_READBACK_PASS_FLAGS"); return e == nullptr || e[0] != '1'; }();
+    const u64 device = c->r14;
+    if (flags_on && IsHeapPointer(device) && device == g_rec_device.load(std::memory_order_relaxed)) {
+        const auto clear = [device](std::initializer_list<u64> fields, std::atomic<u64>& counter) {
+            bool any = false;
+            for (const u64 field : fields) {
+                if (const u64 memory = BufferMemory(Rd<u64>(device, field)); memory != 0 && Rd<u32>(memory, 0) != 0) {
+                    Wr<u32>(memory, 0, 0);
+                    any = true;
+                }
+            }
+            if (any) {
+                counter.fetch_add(1, std::memory_order_relaxed);
+            }
+        };
+        if (!g_aabb_pass_ran.load(std::memory_order_relaxed)) {
+            clear({0x27a8}, c_aabb_pass_skipped);
+        }
+        if (!g_third_pass_ran.load(std::memory_order_relaxed)) {
+            clear({0x2870, 0x2890, 0x28b0}, c_third_pass_skipped);
+        }
+    }
+    static std::atomic<u64> starts{0};
+    if (const u64 n = starts.fetch_add(1, std::memory_order_relaxed) + 1; n % 1800 == 0) {
+        TLG_LOG(CP, Warn, "K2 readback passes: {} reader starts, AABB pass not run (counts set to 0) {}, third pass not run {}", n, c_aabb_pass_skipped.load(),
+                c_third_pass_skipped.load());
+    }
     const u32 recordings = g_recordings_since_read.exchange(0, std::memory_order_relaxed);
     g_last_recordings.store(recordings, std::memory_order_relaxed);
     g_last_readbacks.store(g_aabb_readbacks_since_read.exchange(0, std::memory_order_relaxed), std::memory_order_relaxed);
@@ -7977,7 +8019,7 @@ u64 PS4_SYSV_ABI AabbReadStart(Core::GuestHooks::MidContext* c) {
 /// past its end, the crash). A read whose records name a group not in the table is not this table's: its count is set to 0 and the engine's own test skips it.
 /// LEGACY(aabb_guard): TLG_LEGACY_AABB_GUARD=1 lets the read run (only counted and logged).
 u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
-    static const bool guard = [] { const char* e = std::getenv("TLG_LEGACY_AABB_GUARD"); return e == nullptr || e[0] != '1'; }();
+    static const bool guard = [] { const char* e = std::getenv("TLG_AABB_GUARD"); return e != nullptr && e[0] == '1'; }(); // debug only, off
     const u64 device = c->r14, frame = c->r12;
     const u32 recordings = g_last_recordings.load(std::memory_order_relaxed), readbacks = g_last_readbacks.load(std::memory_order_relaxed);
     if (!IsHeapPointer(device) || !IsHeapPointer(frame) || c->rbp < 0x4b0) {
@@ -8006,8 +8048,9 @@ u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
     }
     if (const u64 reads = c_aabb_reads.fetch_add(1, std::memory_order_relaxed) + 1; reads % 1800 == 0) {
         TLG_LOG(CP, Warn, "K1 AABB readback: {} reads, {} records, {} with a group not in the table, {} reads after more than one BeginRecording, {} reads with records but no "
-                "readback since the last, K2 reads skipped: {}",
-                reads, c_aabb_records.load() + count, c_aabb_bad.load(), c_aabb_unpaired.load(), c_aabb_reads_no_readback.load(), c_aabb_guarded.load());
+                "readback since the last; K2 reads with a group past the table {}, AABB pass not run (counts set to 0) {}, third pass not run {}",
+                reads, c_aabb_records.load() + count, c_aabb_bad.load(), c_aabb_unpaired.load(), c_aabb_reads_no_readback.load(), c_aabb_guarded.load(),
+                c_aabb_pass_skipped.load(), c_third_pass_skipped.load());
     }
     c_aabb_records.fetch_add(count, std::memory_order_relaxed);
     if (bad != 0) {
@@ -8022,9 +8065,9 @@ u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
                     bad, count, groups, ActiveGroups(frame), first_bad, bad_group, label, IsHeapPointer(label) ? Rd<u64>(label, 0) : 0, recordings, readbacks,
                     reads_since_dispatch, g_dispatch_groups.load(), frame, g_rec_frame.load(), g_rec_groups.load(), g_rec_active.load(), c_aabb_unpaired.load());
         }
+        c_aabb_guarded.fetch_add(1, std::memory_order_relaxed);
         if (guard) {
-            Wr<u32>(count_memory, 0, 0); // K2: not this table's records: the engine's test (count 0) skips the read
-            c_aabb_guarded.fetch_add(1, std::memory_order_relaxed);
+            Wr<u32>(count_memory, 0, 0); // TLG_AABB_GUARD=1 only (debug): the read is skipped; by default the pass flags should leave no such read
             TLG_LOG(CP, Warn, "K2 AABB guard: read of {} records skipped ({} so far)", count, c_aabb_guarded.load());
         }
     }
@@ -8907,6 +8950,9 @@ u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64
     if ((a2 & 0xff) != 0) {
         g_recordings_since_read.fetch_add(1, std::memory_order_relaxed); // K1 check: a BeginRecording that records (AabbReadCheck)
         if (IsHeapPointer(device) && IsHeapPointer(a1)) {
+            g_rec_device.store(device, std::memory_order_relaxed); // K2: a recording call clears the pass flags (as the engine clears + 0x2710)
+            g_aabb_pass_ran.store(false, std::memory_order_relaxed);
+            g_third_pass_ran.store(false, std::memory_order_relaxed);
             g_aabb_count_buffer.store(Rd<u64>(device, 0x27a8), std::memory_order_relaxed);
             g_rec_frame.store(a1, std::memory_order_relaxed);
             g_rec_groups.store(Rd<u32>(a1, 0x31e68), std::memory_order_relaxed);

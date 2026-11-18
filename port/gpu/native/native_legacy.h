@@ -19,8 +19,8 @@
 /// Open backend switch (2026-11-17, api-contract.md W5b): TLG_LEGACY_MOVE_IN_STREAM=1 copies a buffer the engine's heap mover moves only in the frame stream (a frame or
 /// more after the engine already reads the new memory; the crash after the shield cutscene, FUN_01d7a890).
 /// Open backend switch (2026-11-18, api-contract.md K1): TLG_LEGACY_LABEL_UNITS=1 lets an older compute submit unit's end records write a shared label after a newer submit.
-/// Open engine guard switch (2026-11-18, api-contract.md K2): TLG_LEGACY_AABB_GUARD=1 lets the AABB reader (01c4c570) read records that name groups not in its table
-/// (records of an older pass: the crash after the flashback); default: that read is skipped (its count set to 0).
+/// Open engine switch (2026-11-18, api-contract.md K2): TLG_LEGACY_READBACK_PASS_FLAGS=1 lets the readback reader (01c4c570) read the results of an older AABB / third
+/// pass when the last BeginRecording ran none (the crash after the flashback); default: those counts are set to 0, as the engine's own flag (+ 0x2710) does for its first pass.
 /// (`TLG_LEGACY_GEOMETRY_ROWS`, note 122) were deleted for good in note 141: they had rotted once the writers left the batch (note 140).
 ///
 /// Steps whose old path is the switch's `=0` (each default on; listed so the whole set is in one place):
