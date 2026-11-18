@@ -1,11 +1,15 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "native/native_vkb_objects.h"
 #include "native/native_flight.h"
 #include "native/native_timeline.h"
+#include "native/native_framewalk.h"
 #include "native/native_vkb_stream.h"
 #include "native/native_vkb.h"
 
+#include <tuple>
+#include <map>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -33,6 +37,21 @@
 #endif
 
 namespace Core::Vkb::Stream {
+namespace {
+std::atomic<bool> frame_capture{false};    ///< note 91: draws made now belong to the frame capture
+std::atomic<u64> capture_jobs_left{0};      ///< note 91: captured draws not yet recorded
+std::atomic<u32> capture_passes{0};         ///< note 91: passes of the capture
+std::mutex capture_mutex;                   ///< note 91: the capture's tables
+nlohmann::json capture_rows = nlohmann::json::array();
+std::map<std::tuple<VkBuffer, u64, u64>, u32> capture_buffer_index;
+std::unordered_map<u64, double> capture_draw_ms; ///< draw id -> GPU ms
+u64 capture_buffer_bytes = 0;
+constexpr u64 CaptureBufferLimit = 2048ull << 20, CaptureBufferMax = 128ull << 20;
+u64 SteadyNs() {
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+} // namespace
+bool StampsForcedFull();
 
 namespace {
 
@@ -274,6 +293,12 @@ struct Segment {
     u32 stamp;
     Work work;
 };
+/// note 91: debugger mode: a timestamp after every draw; the draw's GPU time runs from the stamp before it in the same command buffer
+struct DrawStamp {
+    u32 stamp, prev;
+    u64 id, vs, ps;
+    u32 count, instances;
+};
 /// R5 meter: one render pass of the command buffer, between its two timestamps (begin before beginRendering, end after endRendering)
 struct PassStamp {
     u32 begin{~0u}, end{~0u};
@@ -308,10 +333,16 @@ struct Rec {
     bool stat_open = false;
     u32 stamp_count = 0;
     bool stamping = false; ///< the current command buffer has a free pool
+    bool lean = true;      ///< the current command buffer's stamps are lean (decided at its begin: full with TLG_VKB_STAMPS=1 or in debugger mode, note 87)
     u64 generation = 0;
     std::vector<Segment> segments; ///< the current command buffer's: where each run of one kind of work begins (its timestamp)
     Work current_work = Work::Count;
     std::vector<PassStamp> pass_stamps; ///< the current command buffer's
+    std::vector<DrawStamp> draw_stamps; ///< note 91: the current command buffer's (debugger mode)
+    u32 last_stamp = ~0u;               ///< note 91: the newest stamp written in the current command buffer
+    std::vector<vk::Image> pass_images; ///< note 91: the open pass's attachments (colours, then depth)
+    u32 capture_pass = ~0u;             ///< note 91: the open pass's index in the frame capture (~0: no captured draw in it yet)
+    std::vector<std::tuple<vk::Buffer, u64, u64, u32>> capture_buffers; ///< note 91: buffer ranges of captured draws, copied at the pass end (with their file index)
     u32 jobs_in_cmd = 0;
     u64 value = 0; ///< R4a: the timeline value of the submission this thread records (0: the shared recorder, which takes the next value at its submit)
 };
@@ -348,6 +379,8 @@ struct Submitted {
     u32 pool, count;
     std::vector<Segment> segments; ///< closed by the stamp at index count - 1 (written at the submit)
     std::vector<PassStamp> passes;
+    bool lean = true;
+    std::vector<DrawStamp> draws;
 };
 constexpr u32 WorkKinds = static_cast<u32>(Work::Count);
 constexpr const char* WorkNames[WorkKinds] = {"draws", "dispatches", "copies_texture", "clears", "other", "uploads_first_bind", "copies_buffer", "copies_gds", "fills",
@@ -422,11 +455,14 @@ vk::CommandBuffer Begin() {
                 t_rec->current.resetQueryPool(stat_pools[pool], 0, MaxPassStats);
             }
         }
+        t_rec->lean = !StampsForcedFull() && !Core::FrameWalk::DebuggerMode(); // note 87: debugger mode records full GPU stamps (one relaxed load otherwise)
         t_rec->stamp_count = 0;
         t_rec->stat_count = 0;
         t_rec->stat_open = false;
         t_rec->segments.clear();
         t_rec->pass_stamps.clear();
+        t_rec->draw_stamps.clear();
+        t_rec->last_stamp = ~0u;
         t_rec->current_work = Work::Count;
         t_rec->cmd_written.clear();
         // V4d: what earlier submissions (the upload batch, the frame before) wrote is visible to this one
@@ -552,6 +588,17 @@ void EndPassLocked(u32 why = EndWhy::Break) {
         t_rec->stat_open = false;
         if (!t_rec->pass_stamps.empty() && t_rec->pass_stamps.back().end == ~0u && t_rec->pass_stamps.back().begin != ~0u) {
             t_rec->pass_stamps.back().end = StampLocked(t_rec->current);
+        }
+        if (t_rec->capture_pass != ~0u) { // note 91: the frame capture: this pass's targets as they are after it, and the buffers its draws read
+            for (u32 a = 0; a < t_rec->pass_images.size(); ++a) {
+                Core::Vkb::DumpImageHandle(t_rec->current, t_rec->pass_images[a],
+                                           fmt::format("capture/pass{:04}_{}{}", t_rec->capture_pass, a < t_rec->open_pass.color_count ? "color" : "depth", a));
+            }
+            for (const auto& [buffer, offset, range, index] : t_rec->capture_buffers) {
+                Core::Vkb::DumpBuffer(t_rec->current, buffer, offset, range, fmt::format("capture/buffers/b{:05}", index));
+            }
+            t_rec->capture_buffers.clear();
+            t_rec->capture_pass = ~0u;
         }
     }
     t_rec->pass_open = false;
@@ -783,6 +830,13 @@ bool UsePass(vk::CommandBuffer cmd, const Pass& pass, std::span<const Use> attac
     cmd.beginRendering(info);
     t_rec->pass_open = true;
     t_rec->open_pass = pass;
+    t_rec->pass_images.clear();
+    t_rec->capture_pass = ~0u;
+    if (frame_capture.load(std::memory_order_relaxed) || capture_jobs_left.load(std::memory_order_relaxed) != 0) { // note 91
+        for (const Use& u : attachments) {
+            t_rec->pass_images.push_back(vk::Image{reinterpret_cast<VkImage>(u.handle)});
+        }
+    }
     c_passes.fetch_add(1, std::memory_order_relaxed);
     return true;
 }
@@ -896,12 +950,14 @@ u64 SubmitLocked() {
         const u32 pool = static_cast<u32>(t_rec->generation % StampPools);
         std::scoped_lock stamp_lock{stamp_mutex};
         if (t_rec->stamp_count != 0) {
-            stamped.push_back({value, t_rec->generation, pool, t_rec->stamp_count, std::move(t_rec->segments), std::move(t_rec->pass_stamps)}); // its pool is freed once read
+            stamped.push_back({value, t_rec->generation, pool, t_rec->stamp_count, std::move(t_rec->segments), std::move(t_rec->pass_stamps), t_rec->lean, std::move(t_rec->draw_stamps)}); // its pool is freed once read
         } else {
             pool_busy[pool] = false;
         }
         t_rec->segments.clear();
         t_rec->pass_stamps.clear();
+        t_rec->draw_stamps.clear();
+        t_rec->last_stamp = ~0u;
     }
     t_rec->stamping = false;
     t_rec->current = vk::CommandBuffer{};
@@ -1324,18 +1380,22 @@ void NoteBytes(Work work, u64 bytes) {
 u32 Stamp(vk::CommandBuffer cmd) {
     return StampsLean() ? ~0u : StampLocked(cmd);
 }
-bool StampsLean() {
+bool StampsForcedFull() {
     // R5 (note 31): lean by default; the detailed meters (per kind, per pass, per dispatch) cost about 0.9 ms of GPU a frame (+9 fps without them).
-    // TLG_VKB_STAMPS=1 (or TLG_VKB_PASS_STATS=1 / TLG_VKB_PASS_DUMP=1, which need them) turns them back on.
+    // TLG_VKB_STAMPS=1 (or TLG_VKB_PASS_STATS=1 / TLG_VKB_PASS_DUMP=1, which need them) turns them on for the whole run.
     static const bool on = [] {
         for (const char* name : {"TLG_VKB_STAMPS", "TLG_VKB_PASS_STATS", "TLG_VKB_PASS_DUMP"}) {
             if (const char* e = std::getenv(name); e != nullptr && e[0] == '1') {
-                return false;
+                return true;
             }
         }
-        return true;
+        return false;
     }();
     return on;
+}
+bool StampsLean() {
+    // note 87: decided per command buffer at its begin (full with TLG_VKB_STAMPS=1, and while debugger mode records)
+    return t_rec->lean;
 }
 
 void NoteInPlaceWrite(vk::Buffer buffer, u64 offset, u64 size) {
@@ -1411,7 +1471,11 @@ void PollQueries() {
     std::scoped_lock lock{mutex};
     const u64 done = CompletedValue();
     std::scoped_lock blocks_lock{blocks_mutex};
-    for (u32 index = 0; index < QuerySlots; ++index) {
+    // in issue order: from the oldest slot (the next one to be handed out) around the ring, so a newer answer for the same block is written last
+    // (api-contract review B4: index order wrote an older answer over a newer one across the wrap)
+    const u32 oldest = query_next;
+    for (u32 k = 0; k < QuerySlots; ++k) {
+        const u32 index = (oldest + k) % QuerySlots;
         QuerySlot& slot = query_slots[index];
         if (!slot.pending || slot.value > done) {
             continue;
@@ -1520,6 +1584,7 @@ u32 StampLocked(vk::CommandBuffer cmd) {
         return ~0u;
     }
     cmd.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, stamp_pools[t_rec->generation % StampPools], t_rec->stamp_count);
+    t_rec->last_stamp = t_rec->stamp_count;
     return t_rec->stamp_count++;
 }
 } // namespace
@@ -1577,6 +1642,115 @@ void TimelineGpuPass(u64 kind, u64 begin, u64 end, u64 detail) {
         FrameTimeline::Record(FrameTimeline::GpuPass, (end - begin) | (kind << 56), GpuToCpuNs(end), detail);
     }
 }
+/// note 87: GPU passes in debugger mode (Shift+F5 until the freeze). Every command buffer begun then has full stamps (per pass, per dispatch run; about 0.9 ms of
+/// GPU a frame, accepted while recording), so the freeze's timeline holds every pass, and this keeps per submission its GPU time, its slowest passes and its
+/// dispatch time: the newest RecentSubmissions and the WorstSubmissions slowest since debugger mode started. The freeze writes them (gpu_passes.json).
+/// Off debugger mode nothing here runs: the stamps stay lean.
+constexpr size_t RecentSubmissions = 600, WorstSubmissions = 16, PassesKept = 8;
+struct GpuPass {
+    double ms;
+    u8 kind;
+    u32 width, height, draws, colors, format, flags;
+    u64 ps;
+};
+struct GpuDraw {
+    double ms;
+    u64 id, vs, ps;
+    u32 count, instances;
+};
+struct GpuSubmission {
+    u64 at_ns, value;
+    double ms, dispatch_ms;
+    u32 passes, dispatch_runs;
+    std::vector<GpuPass> top;
+    std::vector<GpuDraw> top_draws; ///< note 91: the slowest draws (debugger mode)
+};
+std::deque<GpuSubmission> gpu_recent;  ///< newest last (under the stamp lock)
+std::vector<GpuSubmission> gpu_worst;  ///< slowest first
+u64 gpu_noted = 0;
+bool gpu_was_debugging = false;
+/// note 90: pixel shaders of slow passes waiting for their dump, and the ones already dumped in this recording (under arm_mutex)
+std::mutex arm_mutex;
+std::vector<u64> armed_ps, dumped_ps;
+std::atomic<u32> armed_count{0};
+constexpr double SlowPassArmMs = 20.0;
+
+void NoteGpuPassesLocked(const Submitted& s, const std::vector<u64>& ns) {
+    const bool on = Core::FrameWalk::DebuggerMode();
+    if (on != gpu_was_debugging) {
+        gpu_was_debugging = on;
+        if (on) {
+            gpu_recent.clear(), gpu_worst.clear(), gpu_noted = 0; // a new recording starts empty
+            std::scoped_lock arm_lock{arm_mutex};
+            armed_ps.clear(), dumped_ps.clear();
+            armed_count.store(0, std::memory_order_relaxed);
+        }
+    }
+    if (!on || s.lean || s.count == 0 || s.segments.empty() || s.count > ns.size()) {
+        return;
+    }
+    const u64 first = ns[s.segments.front().stamp], end = ns[s.count - 1];
+    if (end < first) {
+        return;
+    }
+    GpuSubmission rec{.at_ns = SteadyNs(), .value = s.value, .ms = static_cast<double>(end - first) / 1e6, .dispatch_ms = 0, .passes = static_cast<u32>(s.passes.size()),
+                      .dispatch_runs = 0, .top = {}};
+    for (size_t i = 0; i < s.segments.size(); ++i) {
+        if (s.segments[i].work == Work::Dispatch) {
+            const u64 a = ns[s.segments[i].stamp], b = i + 1 < s.segments.size() ? ns[s.segments[i + 1].stamp] : end;
+            if (b >= a) {
+                rec.dispatch_ms += static_cast<double>(b - a) / 1e6;
+                ++rec.dispatch_runs;
+            }
+        }
+    }
+    for (const PassStamp& p : s.passes) {
+        if (p.begin < s.count && p.end < s.count && ns[p.end] >= ns[p.begin]) {
+            rec.top.push_back({static_cast<double>(ns[p.end] - ns[p.begin]) / 1e6, p.kind, p.width, p.height, p.draws, p.colors, p.format, p.flags, p.ps});
+        }
+    }
+    std::sort(rec.top.begin(), rec.top.end(), [](const GpuPass& a, const GpuPass& b) { return a.ms > b.ms; });
+    for (const GpuPass& p : rec.top) { // note 90: arm the slow passes' pixel shaders for a full draw dump
+        if (p.ms >= SlowPassArmMs && p.ps != 0) {
+            std::scoped_lock arm_lock{arm_mutex};
+            if (std::ranges::find(armed_ps, p.ps) == armed_ps.end() && std::ranges::find(dumped_ps, p.ps) == dumped_ps.end()) {
+                armed_ps.push_back(p.ps);
+                armed_count.fetch_add(1, std::memory_order_relaxed);
+                LOG_WARNING(Render_Vulkan, "vkb: debugger mode: pass of {:.1f} ms, pixel shader {:#x} armed: its next draw dumps its images and buffers", p.ms, p.ps);
+            }
+        }
+    }
+    for (const DrawStamp& d : s.draws) { // note 91
+        if (d.stamp < s.count && d.prev < s.count && ns[d.stamp] >= ns[d.prev]) {
+            const double dms = static_cast<double>(ns[d.stamp] - ns[d.prev]) / 1e6;
+            rec.top_draws.push_back({dms, d.id, d.vs, d.ps, d.count, d.instances});
+            std::scoped_lock cap_lock{capture_mutex};
+            if (!capture_rows.empty() || frame_capture.load(std::memory_order_relaxed)) {
+                capture_draw_ms[d.id] = dms;
+            }
+        }
+    }
+    std::sort(rec.top_draws.begin(), rec.top_draws.end(), [](const GpuDraw& a, const GpuDraw& b) { return a.ms > b.ms; });
+    if (rec.top_draws.size() > 16) {
+        rec.top_draws.resize(16);
+    }
+    if (rec.top.size() > PassesKept) {
+        rec.top.resize(PassesKept);
+    }
+    ++gpu_noted;
+    if (gpu_worst.size() < WorstSubmissions || rec.ms > gpu_worst.back().ms) {
+        gpu_worst.push_back(rec);
+        std::sort(gpu_worst.begin(), gpu_worst.end(), [](const GpuSubmission& a, const GpuSubmission& b) { return a.ms > b.ms; });
+        if (gpu_worst.size() > WorstSubmissions) {
+            gpu_worst.pop_back();
+        }
+    }
+    gpu_recent.push_back(std::move(rec));
+    if (gpu_recent.size() > RecentSubmissions) {
+        gpu_recent.pop_front();
+    }
+}
+
 void TimelineSubmissionLocked(const Submitted& s, const std::vector<u64>& ns) {
     if (!gpu_clock.valid || s.count == 0 || s.segments.empty() || s.count > ns.size()) {
         return;
@@ -1587,7 +1761,7 @@ void TimelineSubmissionLocked(const Submitted& s, const std::vector<u64>& ns) {
         return;
     }
     FrameTimeline::Record(FrameTimeline::GpuCommandBuffer, end - first, GpuToCpuNs(end), s.value);
-    if (StampsLean()) {
+    if (s.lean) {
         TimelineGpuPass(GpuKindSubmission, first, end, s.value);
         return;
     }
@@ -1603,6 +1777,132 @@ void TimelineSubmissionLocked(const Submitted& s, const std::vector<u64>& ns) {
     }
 }
 } // namespace
+
+void SetFrameCapture(bool on) {
+    if (on) {
+        std::scoped_lock lock{capture_mutex};
+        capture_rows = nlohmann::json::array();
+        capture_buffer_index.clear();
+        capture_draw_ms.clear();
+        capture_buffer_bytes = 0;
+        capture_passes.store(0);
+    }
+    frame_capture.store(on, std::memory_order_relaxed);
+}
+bool FrameCaptureOn() {
+    return frame_capture.load(std::memory_order_relaxed);
+}
+void CaptureDrawQueued() {
+    capture_jobs_left.fetch_add(1, std::memory_order_relaxed);
+}
+u64 CaptureJobsLeft() {
+    return capture_jobs_left.load(std::memory_order_relaxed);
+}
+
+u32 NoteCapturedDraw(nlohmann::json row, std::span<const vk::DescriptorBufferInfo> buffers) {
+    if (t_rec->capture_pass == ~0u) {
+        t_rec->capture_pass = capture_passes.fetch_add(1, std::memory_order_relaxed);
+    }
+    nlohmann::json files = nlohmann::json::array();
+    {
+        std::scoped_lock lock{capture_mutex};
+        for (const vk::DescriptorBufferInfo& b : buffers) {
+            if (!b.buffer || b.range == VK_WHOLE_SIZE || b.range == 0) {
+                files.push_back(nullptr);
+                continue;
+            }
+            const auto key = std::make_tuple(static_cast<VkBuffer>(b.buffer), static_cast<u64>(b.offset), static_cast<u64>(b.range));
+            auto it = capture_buffer_index.find(key);
+            if (it == capture_buffer_index.end()) {
+                if (b.range > CaptureBufferMax || capture_buffer_bytes + b.range > CaptureBufferLimit) {
+                    files.push_back("skipped (size limit)");
+                    continue;
+                }
+                const u32 index = static_cast<u32>(capture_buffer_index.size());
+                it = capture_buffer_index.emplace(key, index).first;
+                capture_buffer_bytes += b.range;
+                t_rec->capture_buffers.emplace_back(b.buffer, b.offset, b.range, index);
+            }
+            files.push_back(fmt::format("buffers/b{:05}_{}B.gpu", it->second, b.range));
+        }
+        row["pass"] = t_rec->capture_pass;
+        row["buffer_files"] = std::move(files);
+        capture_rows.push_back(std::move(row));
+    }
+    capture_jobs_left.fetch_sub(1, std::memory_order_relaxed);
+    return t_rec->capture_pass;
+}
+
+void StampDraw(u64 id, u64 vs, u64 ps, u32 count, u32 instances) {
+    if (!t_rec->stamping || t_rec->lean || t_rec->stamp_count + 8 >= MaxStamps) {
+        return;
+    }
+    const u32 prev = t_rec->last_stamp;
+    const u32 stamp = StampLocked(t_rec->current);
+    if (stamp != ~0u && prev != ~0u) {
+        t_rec->draw_stamps.push_back({stamp, prev, id, vs, ps, count, instances});
+    }
+}
+
+nlohmann::json CaptureReport() {
+    std::scoped_lock lock{capture_mutex};
+    nlohmann::json rows = capture_rows;
+    for (auto& r : rows) {
+        if (const auto it = capture_draw_ms.find(r.value("id", 0ull)); it != capture_draw_ms.end()) {
+            r["gpu_ms"] = it->second;
+        }
+    }
+    return {{"note", "frame capture (note 91): every draw of one frame, in the order the game made them; pass = the passNNNN_* files (each attachment after that pass, "
+                     "full size, raw texels: vkb_dump_png.py); buffer_files = the ranges the draw read as the GPU had them after its pass (buffers/); gpu_ms = the draw's GPU "
+                     "time (from the stamp before it in its command buffer); images = the draw's image views (handles)"},
+            {"passes", capture_passes.load()}, {"buffers_written", capture_buffer_index.size()}, {"buffer_mb", static_cast<double>(capture_buffer_bytes) / (1 << 20)},
+            {"draws", rows}};
+}
+
+bool TakeSlowPsArm(u64 ps_hash) {
+    if (armed_count.load(std::memory_order_relaxed) == 0) {
+        return false;
+    }
+    std::scoped_lock lock{arm_mutex};
+    const auto it = std::ranges::find(armed_ps, ps_hash);
+    if (it == armed_ps.end()) {
+        return false;
+    }
+    armed_ps.erase(it);
+    armed_count.fetch_sub(1, std::memory_order_relaxed);
+    dumped_ps.push_back(ps_hash);
+    return true;
+}
+
+nlohmann::json GpuPassReport() {
+    std::scoped_lock lock{stamp_mutex};
+    const u64 now = SteadyNs();
+    const auto one = [&](const GpuSubmission& r) {
+        nlohmann::json passes = nlohmann::json::array();
+        for (const GpuPass& p : r.top) {
+            passes.push_back({{"ms", p.ms}, {"kind", p.kind == 0 ? "depth" : p.kind == 1 ? "color" : "gbuffer"}, {"size", fmt::format("{}x{}", p.width, p.height)},
+                              {"draws", p.draws}, {"colors", p.colors}, {"format", p.format}, {"flags", p.flags}, {"ps", fmt::format("{:016x}", p.ps)}});
+        }
+        nlohmann::json draws = nlohmann::json::array();
+        for (const GpuDraw& d : r.top_draws) {
+            draws.push_back({{"ms", d.ms}, {"draw_id", d.id}, {"vs", fmt::format("{:016x}", d.vs)}, {"ps", fmt::format("{:016x}", d.ps)}, {"count", d.count},
+                             {"instances", d.instances}});
+        }
+        return nlohmann::json{{"seconds_before_the_report", static_cast<double>(now - r.at_ns) / 1e9}, {"timeline_value", r.value}, {"gpu_ms", r.ms}, {"passes", r.passes},
+                              {"dispatch_ms", r.dispatch_ms}, {"dispatch_runs", r.dispatch_runs}, {"slowest_passes", passes}, {"slowest_draws", draws}};
+    };
+    nlohmann::json worst = nlohmann::json::array(), recent = nlohmann::json::array();
+    for (const GpuSubmission& r : gpu_worst) {
+        worst.push_back(one(r));
+    }
+    for (const GpuSubmission& r : gpu_recent) {
+        recent.push_back(one(r));
+    }
+    return {{"note", "debugger mode (Shift+F5 .. freeze): every submission of the frame stream with full GPU stamps; worst = the slowest since debugger mode started, "
+                     "recent = the newest (oldest first). Per submission its GPU ms, dispatch time and its slowest passes (kind, size, draws, ps = pixel shader hash; "
+                     "flags: 1 depth, 2 stencil, 4 depth test, 8 stencil test, 16 depth bounds, 32 depth write). The timeline of the freeze has every pass as well."},
+            {"submissions_noted", gpu_noted}, {"worst", worst}, {"recent", recent}};
+}
 
 std::vector<Stamps> FinishedStamps() {
     std::scoped_lock lock{mutex};
@@ -1644,6 +1944,7 @@ std::vector<Stamps> FinishedStamps() {
         if (capture) {
             TimelineSubmissionLocked(s, r.ns);
         }
+        NoteGpuPassesLocked(s, r.ns);
         static const bool dump = [] { const char* e = std::getenv("TLG_VKB_PASS_DUMP"); return e != nullptr && e[0] == '1'; }();
         static u64 dump_seen = 0;
         static u32 dump_left = 6; // the submissions of about one frame, after 9,000 timed ones (gameplay)
@@ -1756,7 +2057,7 @@ nlohmann::json Report() {
         last["gpu_busy_pct_of_the_window"] = work_last_window_span_ns ? 100.0 * static_cast<double>(work_last_window_total_ns) / static_cast<double>(work_last_window_span_ns) : 0.0;
         last["window_ms"] = static_cast<double>(work_last_window_span_ns) / 1e6;
         work["note"] = "GPU ms per timed submission of the frame stream, by kind of work (timestamps where the kind changes); last_window: the newest 500 finished submissions";
-        work["stamps"] = StampsLean() ? "lean: the total and busy share are right; the whole submission counts as its first kind (TLG_VKB_STAMPS=1 for the split by kind)" : "full";
+        work["stamps"] = StampsForcedFull() ? "full (TLG_VKB_STAMPS=1)" : Core::FrameWalk::DebuggerMode() ? "full (debugger mode)" : "lean: the total and busy share are right; the whole submission counts as its first kind (TLG_VKB_STAMPS=1 or debugger mode for the split by kind)";
         work["timed_submissions"] = work_submits, work["whole_run"] = all, work["last_window"] = last;
     }
     return {{"occlusion", {{"begun", c_q_begun.load()}, {"ended", c_q_ended.load()}, {"seen", c_q_seen.load()}, {"hidden", c_q_hidden.load()},

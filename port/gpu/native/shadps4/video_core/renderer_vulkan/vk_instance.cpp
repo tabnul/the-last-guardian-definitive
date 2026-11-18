@@ -9,6 +9,7 @@
 #include "common/debug.h"
 #include "common/types.h"
 #include "sdl_window.h"
+#include "native/native_vkb_dlss_glue.h"
 #include "native/vkb_core/liverpool_to_vk.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_instance.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_platform.h"
@@ -397,6 +398,16 @@ bool Instance::CreateDevice() {
     const auto vk11_features = feature_chain.get<vk::PhysicalDeviceVulkan11Features>();
     vk12_features = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
     vk13_features = feature_chain.get<vk::PhysicalDeviceVulkan13Features>();
+    { // F1d: DLAA (TLG_VKB_AA=dlaa): the device extensions NGX needs
+        std::vector<const char*> dlss_extensions;
+        Core::Vkb::DlssGlue::AppendDeviceExtensions(*instance, physical_device, dlss_extensions);
+        for (const char* name : dlss_extensions) {
+            if (std::none_of(enabled_extensions.begin(), enabled_extensions.end(), [&](const char* e) { return std::string_view{e} == name; }) &&
+                enabled_extensions.size() < enabled_extensions.capacity()) {
+                enabled_extensions.push_back(name);
+            }
+        }
+    }
     vk::StructureChain device_chain = {
         vk::DeviceCreateInfo{
             .queueCreateInfoCount = 1u,
@@ -620,6 +631,7 @@ bool Instance::CreateDevice() {
     device = std::move(dev);
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
+    Core::Vkb::DlssGlue::Initialize(*instance, physical_device, *device); // F1d
 
     graphics_queue = device->getQueue(queue_family_index, 0);
     present_queue = device->getQueue(queue_family_index, 0);

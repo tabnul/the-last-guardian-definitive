@@ -255,5 +255,20 @@ struct Stamps {
 [[nodiscard]] std::vector<Stamps> FinishedStamps();
 
 [[nodiscard]] nlohmann::json Report();
+/// note 87: debugger mode's GPU submissions with their slowest passes (the slowest since debugger mode started, the newest); the frame walk freeze writes it (gpu_passes.json).
+[[nodiscard]] nlohmann::json GpuPassReport();
+/// note 90: debugger mode: a pass of 20 ms or more arms its pixel shader; the next draw with it dumps everything it uses (once per shader per recording). True once.
+[[nodiscard]] bool TakeSlowPsArm(u64 ps_hash);
+/// note 91: the one-frame capture of the frame walk freeze (debugger mode). The render thread turns it on for one frame (SetFrameCapture); each draw made then is
+/// counted (CaptureDrawQueued) and, when recorded, noted with its row and buffers (NoteCapturedDraw, recording lock held); its pass's attachments and those buffers are
+/// copied at the pass end. CaptureReport: the draw table (with per-draw GPU times).
+void SetFrameCapture(bool on);
+[[nodiscard]] bool FrameCaptureOn();
+void CaptureDrawQueued();
+[[nodiscard]] u64 CaptureJobsLeft();
+u32 NoteCapturedDraw(nlohmann::json row, std::span<const vk::DescriptorBufferInfo> buffers);
+[[nodiscard]] nlohmann::json CaptureReport();
+/// note 91: debugger mode: a timestamp right after a draw (recording lock held), for the per-draw GPU times of gpu_passes.json and the capture
+void StampDraw(u64 id, u64 vs, u64 ps, u32 count, u32 instances);
 
 } // namespace Core::Vkb::Stream

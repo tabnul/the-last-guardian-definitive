@@ -2,12 +2,33 @@
 
 Newest on top. One entry per design decision (rule 15 of the loop). Each entry: date, the problem,
 the ways considered, the choice and the reason, who chose, links. Plain words, no game data.
-Where a source is unclear, the entry says so. All entries are from 2026-11-17 (box times are UTC,
+Where a source is unclear, the entry says so. Entries are from 2026-11-17 and 2026-11-18 (box times are UTC,
 as shown by GitHub). Repo: `tabnul/tlg-vkb-work`.
 
 An entry marked "not yet merged" counts only once the owner merges the pull request that carries it.
 
 ---
+
+## 2026-11-18 - The author's code is taken as it comes (not yet merged)
+
+- **Problem:** The second read of the author's sync (pull request 18) said FAIL on principles 1-3, 5-7, 9, 10 and 13
+  for author commits. Rule 13 does not let the box change author commits, so the box asked the owner what to do
+  with the findings.
+- **Considered:** (A) merge the sync as it is; keep the findings as a list; fix only what a sweep shows as a wrong
+  picture or a crash. (B) hold the sync until the author's side changes. (C) the box adds switches, counters and
+  gates to author changes in separate `fix/` pull requests.
+- **Choice:** A. The author's commits are not judged as box changes (rule 19). The findings go on one list,
+  `docs/vkb-author-findings.md`, kept up to date at every sync. No switches are added to author changes unless a
+  sweep points at one. The three new side paths (probe cube copy, texture move, AsyncMap placement) go on the
+  principles page list, by a pull request from the box that the owner merges. Before the official release the owner
+  goes through the list and applies the principles to the author's code where he finds it necessary; that work is
+  the owner's own issue 21 and not part of the loop.
+- **Who:** the owner, in issue 17 (2026-11-18): "A and add a note that when we are done for official release, we
+  will apply our rules to the code if we deem neccesary."
+- **Links:** issue #17, pull request #18, issue #21 (before release).
+
+---
+
 
 ## 2026-11-18 - Default of the GPU memory guard is 16 GB (not yet merged)
 
@@ -50,6 +71,7 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 - **Who:** the box (loop rule 14), **not yet merged**. The owner can overrule in the issue or at the merge.
 - **Links:** https://github.com/tabnul/tlg-vkb-work/issues/8#issuecomment-6964582869 , pull request
   #13, issue #12.
+
 
 ## 2026-11-17 - The guest pool becomes GPU memory (not yet merged)
 

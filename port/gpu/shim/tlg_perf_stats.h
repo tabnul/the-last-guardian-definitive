@@ -44,6 +44,7 @@ inline constexpr unsigned ItemOrder[] = {Fps, Low1, FrameTime, Upscaler, Gpu, Cp
 struct Sample {
     float fps = 0.0f, frame_ms = 0.0f;
     float low1_fps = -1.0f; ///< -1: not enough frames yet
+    float fg_fps = -1.0f;   ///< frames on screen with frame generation (real + generated); -1: frame generation not running
     std::string upscaler;
     std::string gpu_name;
     float gpu_percent = -1.0f, cpu_percent = -1.0f;
@@ -80,6 +81,10 @@ inline std::string Format(const Sample& s, unsigned mask, bool row) {
     if (mask & Fps) {
         std::snprintf(part, sizeof(part), "%.0f FPS", s.fps);
         add();
+        if (s.fg_fps >= 0.0f) {
+            std::snprintf(part, sizeof(part), "Frame gen %.0f FPS", s.fg_fps);
+            add();
+        }
     }
     if (mask & Low1) {
         if (s.low1_fps < 0.0f) {

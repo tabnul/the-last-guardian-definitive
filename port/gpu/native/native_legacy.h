@@ -12,6 +12,15 @@
 /// TLG_LEGACY_GENERATORS (57), TLG_LEGACY_BIND_BY_ADDRESS (56), TLG_LEGACY_RESOLVE_AT_CAPTURE (64), TLG_LEGACY_ONE_RECORDER (65; TLG_VKB_RECORDERS=1 is the single
 /// recorder), TLG_LEGACY_ENGINE_PS4_CALLS (76), TLG_LEGACY_TARGET_WORDS (77), TLG_LEGACY_LAYOUT_AT_BIND (66). Each passed its picture check; the old code is in git
 /// (bisect by commit). The whole PS4 backend path (TLG_VKB unset) stays until the owner's long play.
+/// Open backend switch (2026-11-17, api-contract.md W5 / L5 / L6 / L8, until its picture check): TLG_LEGACY_UPLOAD_BATCH=1 uploads a texture's new contents in the batch that
+/// runs before the frame (no order with the frame's work) instead of a job of the frame stream at the engine's call, and moved textures are not followed.
+/// Open backend switch (2026-11-17, api-contract.md Y6, until its picture check): TLG_LEGACY_ASYNCMAP_DEVICE=1 keeps our device copy of a buffer the engine hands the CPU
+/// through AsyncMap (the records BeginRecording writes into renderDev + 0x2790 then never reach the GPU).
+/// Open backend switch (2026-11-17, api-contract.md W5b): TLG_LEGACY_MOVE_IN_STREAM=1 copies a buffer the engine's heap mover moves only in the frame stream (a frame or
+/// more after the engine already reads the new memory; the crash after the shield cutscene, FUN_01d7a890).
+/// Open backend switch (2026-11-18, api-contract.md K1): TLG_LEGACY_LABEL_UNITS=1 lets an older compute submit unit's end records write a shared label after a newer submit.
+/// Open engine switch (2026-11-18, api-contract.md K2): TLG_LEGACY_AABB_GUARD=1 turns off the AABB reader guard (01c4c570 skips a read whose records name a group not in
+/// its table: the crash after the shield flashback). Its proper fix (the pass flags, TLG_READBACK_PASS_FLAGS=1) is OFF until api-contract-plan C21 (Trico's feathers).
 /// (`TLG_LEGACY_GEOMETRY_ROWS`, note 122) were deleted for good in note 141: they had rotted once the writers left the batch (note 140).
 ///
 /// Steps whose old path is the switch's `=0` (each default on; listed so the whole set is in one place):

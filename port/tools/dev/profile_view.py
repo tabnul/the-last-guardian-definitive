@@ -7,6 +7,7 @@ Graphs over the whole capture: the frame time of every frame, the CPU use of the
 100 ms steps; below them the text report (timeline_report.py). The page is self-contained (inline SVG, no scripts from the network).
 """
 import html
+import json
 import io
 import subprocess
 import sys
@@ -137,12 +138,33 @@ def main():
         text.write('\n(report failed: %s)\n' % e)
     sys.argv = old_argv
 
+    # note 87: the freeze folder of this timeline (its note names it) may hold gpu_passes.json: debugger mode's GPU submissions with their slowest passes
+    gpu_html = ''
+    try:
+        stem = Path(base).name
+        for folder in sorted(Path(base).parent.glob('framewalk_*'), reverse=True)[:20]:
+            note = folder / 'note.txt'
+            if note.exists() and stem in note.read_text(encoding='utf-8', errors='replace') and (folder / 'gpu_passes.json').exists():
+                gp_json = json.loads((folder / 'gpu_passes.json').read_text(encoding='utf-8'))
+                rows = []
+                for sub in gp_json.get('worst', [])[:8]:
+                    passes = '; '.join('%.2f ms %s %s %d draws ps %s' % (q['ms'], q['kind'], q['size'], q['draws'], q['ps']) for q in sub.get('slowest_passes', [])[:4])
+                    rows.append('%8.2f ms  %5.1f s before  passes %4d  dispatches %6.2f ms (%d runs)  slowest: %s' % (
+                        sub['gpu_ms'], sub['seconds_before_the_report'], sub['passes'], sub['dispatch_ms'], sub['dispatch_runs'], passes or '-'))
+                if rows:
+                    gpu_html = ('<h2 style="font-size:15px">Slowest GPU submissions while recording (%s, %d noted)</h2><pre>%s</pre>'
+                                % (html.escape(folder.name + '/gpu_passes.json'), gp_json.get('submissions_noted', 0), html.escape(chr(10).join(rows))))
+                break
+    except Exception as e:  # the page still counts
+        gpu_html = '<pre>(gpu_passes.json unreadable: %s)</pre>' % html.escape(str(e))
+
     p95 = float(np.percentile(frame_ms, 95)) if len(frame_ms) else 0
     page = ['<!doctype html><html><head><meta charset="utf-8"><title>Frame profile</title>',
             '<style>body{background:#000;color:#ddd;font-family:Consolas,monospace;margin:16px} h1{font-size:18px} .k{color:#f0ad4e} pre{font-size:12px;color:#bbb}</style></head><body>',
             '<h1>Frame profile: %s</h1>' % html.escape(Path(base).name),
             '<p>%.1f s captured, <span class="k">%.1f fps</span>, frame %.1f ms mean, %.1f ms p95, worst %.1f ms. Busiest pipeline thread: <span class="k">%s %.0f%%</span>, GPU busy %.0f%%.</p>'
             % (dur_s, fps, float(np.mean(frame_ms)) if len(frame_ms) else 0, p95, float(np.max(frame_ms)) if len(frame_ms) else 0, limit, means.get(limit, 0), float(np.mean(gpu))),
+            gpu_html,
             series_svg('frame time per frame (ms)', frame_x, [('frame time', frame_ms)], max(50.0, p95 * 1.2), ' ms',
                        guides=((8.33, '120 fps'), (16.67, '60 fps'), (33.33, '30 fps'))),
             series_svg('CPU use of the pipeline threads (percent of one core, 100 ms steps)', xs, cpu_lines, 100, '%'),

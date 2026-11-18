@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "native/native_vkb_aa.h"
+#include "native/native_vkb_shader_dump.h"
+#include "native/native_framewalk.h"
 #include "native/native_debug_server.h"
 #include "native/native_marker.h"
 #include "native/native_vkb_graphics.h"
@@ -549,6 +552,7 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
         spv = VkbShader::Backend::SPIRV::EmitSPIRV(profile, out.runtime, program, binding);
     }
     out.module = VkbVulkan::CompileSPV(spv, instance->GetDevice());
+    Core::Vkb::ShaderDump::Keep(stage == 0 ? Core::Vkb::ShaderDump::Stage::Vertex : Core::Vkb::ShaderDump::Stage::Pixel, out.info->pgm_hash, spv, params.code); // note 89
     // the slot map: the same layout with a tag per slot, flattened by the shader's own table walker
     Core::NativeDraw::UserLayout tagged;
     Core::NativeDraw::BuildUserLayout(ctx, stage, shader, inputs_offset, true, tagged);
@@ -904,6 +908,12 @@ struct DrawJob final : Stream::Job {
     }
     std::vector<std::pair<u64, std::string>> dump_views;
     bool dump_buffers{};
+    std::string dump_prefix; ///< note 90: debugger mode's slow-pass dump goes to vkb_image_dump/<prefix>
+    u64 debug_id{};          ///< note 91: debugger mode: the draw's id (per-draw GPU time, capture row); 0 otherwise
+    u64 vs_hash{};
+    bool capture{};          ///< note 91: the draw belongs to the frame capture
+    bool jittered{};         ///< F1c: the scene geometry's sub-pixel offset applies (viewport)
+    std::array<float, 2> jitter{};
     boost::container::small_vector<Stream::Use, 64> uses;
     boost::container::small_vector<Stream::Use, 9> attachment_uses;
     Stream::Pass pass{};
@@ -1110,6 +1120,9 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
             if (object != 0 && src.kind == 3) {
                 const u64 address = static_cast<u64>(Rd<u32>(object, 0x60)) | static_cast<u64>(Rd<u32>(object, 0x64) & 0xffu) << 32;
                 const u64 size = Rd<u32>(object, 0x180);
+                if (size > 65536 && Core::Vkb::ContractCensusOn()) { // api-contract.md C17 (debug): a constant buffer above the usual 64 KB uniform range
+                    Core::Vkb::ContractNote("C17 constant buffer above 64 KB");
+                }
                 Core::Vkb::BufferWindow w;
                 if (address != 0 && size != 0) {
                     if (Core::Vkb::ConstantInRing(address, size, w)) {
@@ -1123,13 +1136,16 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
                 }
             } else if (object != 0 && src.kind == 1 && (Rd<u32>(object, 0x44) == 1 || Rd<u32>(object, 0x44) == 0xb)) {
                 const u64 buffer = Rd<u64>(object, 0x30);
-                const u64 size = buffer != 0 ? Rd<u32>(buffer, 0x180) : 0;
+                const u64 bytes = buffer != 0 ? Rd<u32>(buffer, 0x180) : 0;
+                u64 offset = 0, size = bytes; // api-contract.md V4 / review A6: the view's own range of its buffer
+                Core::Vkb::ViewRange(object, true, buffer, bytes, offset, size);
                 Core::Vkb::BufferWindow w;
-                if (late != nullptr && size != 0) { // R2b: the frame ring now (arithmetic), any other buffer by the recording thread
+                if (late != nullptr && bytes != 0) { // R2b: the frame ring now (arithmetic), any other buffer by the recording thread
                     const u64 memory = Rd<u64>(buffer, 0x30);
-                    ok = Core::Vkb::BufferInRing(memory, size, w) ? bind_window(memory, size, w) : defer(buffer, Rd<u64>(buffer, 0x10), memory, size, 0, size);
+                    ok = Core::Vkb::BufferInRing(memory + offset, size, w) ? bind_window(memory + offset, size, w)
+                                                                          : defer(buffer, Rd<u64>(buffer, 0x10), memory, bytes, offset, size);
                 } else {
-                    ok = size != 0 && Core::Vkb::BufferOfObject(buffer, 0, size, w) && bind_window(Rd<u64>(buffer, 0x30), size, w);
+                    ok = bytes != 0 && Core::Vkb::BufferOfObject(buffer, offset, size, w) && bind_window(Rd<u64>(buffer, 0x30) + offset, size, w);
                 }
             }
         } else if (src.cls == Source::Class::Slot) {
@@ -1323,6 +1339,24 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         }
         width = height = layers = 0; // set by the resolver
     }
+    if (Core::Vkb::ContractCensusOn()) { // api-contract.md C17 (debug): domain / hull / geometry shader slots (ctx + 0x4678 / 0x4680 / 0x4688), topology >= 10 (patches)
+        const u64 ds = Rd<u64>(ctx, 0x4678), hs = Rd<u64>(ctx, 0x4680), gs = Rd<u64>(ctx, 0x4688);
+        const u32 topology = Rd<u32>(ctx, 0x4480);
+        if (ds != 0 || hs != 0 || gs != 0 || topology >= 10) {
+            Core::Vkb::ContractNote(fmt::format("C17 draw with stages ds {} hs {} gs {}, topology {}", ds != 0, hs != 0, gs != 0, topology));
+        }
+    }
+    if (Core::Vkb::ContractCensusOn() && Rd<u64>(ctx, CtxTarget7) != 0) { // api-contract.md C10 (debug): the target-7 mode (the Pro's ID buffer, note 10)
+        const auto describe = [](u64 view) -> std::string {
+            const u64 resource = view != 0 ? Rd<u64>(view, 0x30) : 0;
+            return resource == 0 ? std::string("none") : fmt::format("{}x{} dxgi {}", Rd<u32>(resource, 0x180), Rd<u32>(resource, 0x184), Rd<u32>(resource, 0x190));
+        };
+        const u64 t7 = Rd<u64>(ctx, CtxTarget7);
+        const u64 t7_resource = Rd<u64>(t7, 0x30);
+        Core::Vkb::ContractTarget7(t7_resource != 0 ? Rd<u64>(t7_resource, 0x10) : 0,
+                                   fmt::format("C10 draw in target-7 mode: target 7 {}, target 0 {}, pixel shader writes target 7 {}, uconfig gradient mode {}", describe(t7),
+                                               describe(Rd<u64>(ctx, 0x4488)), (v.key.mrt_mask >> 7) & 1, Rd<u8>(ctx, 0x44c8)));
+    }
     for (u32 cb = 0; !late_images && cb < pass.color_count; ++cb) {
         if ((v.key.mrt_mask & (1u << cb)) == 0 || v.color_formats[cb] == vk::Format::eUndefined || views[cb] == 0) {
             continue;
@@ -1341,6 +1375,12 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
             }
             c_skip_target.fetch_add(1, std::memory_order_relaxed);
             return;
+        }
+        if (Core::Vkb::ContractCensusOn()) { // api-contract.md V7 (debug): the RTV's DXGI sRGB-ness (29, 91, 93; 90 / 92 typeless map to sRGB in the engine table) against our attachment format
+            const u32 dxgi = Rd<u32>(views[cb], 0x40);
+            const bool engine_srgb = dxgi == 29 || dxgi == 91 || dxgi == 93 || dxgi == 90 || dxgi == 92;
+            const bool ours_srgb = vk::to_string(v.color_formats[cb]).find("Srgb") != std::string::npos;
+            Core::Vkb::ContractNote(fmt::format("V7 render target dxgi {} -> {} ({})", dxgi, vk::to_string(v.color_formats[cb]), engine_srgb == ours_srgb ? "same sRGB-ness" : "sRGB DIFFERS"));
         }
         pass.colors[cb] = a.view;
         attachment_uses.push_back(Stream::ImageUse(a.image, true));
@@ -1584,32 +1624,38 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     // images (inputs in0.., the color targets out0.., the depth target depth) right after the draw, once
     auto& dump_views = job->dump_views;
     bool& dump_buffers = job->dump_buffers;
+    job->dump_prefix.clear();
     {
         static const u64 dump_ps = [] { const char* e = std::getenv("TLG_VKB_IMAGE_DUMP_PS"); return e != nullptr ? std::strtoull(e, nullptr, 16) : 0ull; }();
         static const u64 dump_at = [] { const char* e = std::getenv("TLG_VKB_IMAGE_DUMP_AT"); return e != nullptr ? std::strtoull(e, nullptr, 10) : 2600ull; }();
         static const u64 dump_nth = [] { const char* e = std::getenv("TLG_VKB_IMAGE_DUMP_NTH"); return e != nullptr ? std::strtoull(e, nullptr, 10) : 0ull; }();
         static std::atomic<u64> seen{0};
-        if (dump_ps != 0 && v.has_ps && v.ps.info && v.ps.info->pgm_hash == dump_ps && Core::Vkb::GraphicsSubmits() >= dump_at && seen.fetch_add(1) == dump_nth) {
+        // note 90: in debugger mode a slow pass's pixel shader is armed (Stream::TakeSlowPsArm); its next draw is dumped the same way into vkb_image_dump/debugger/,
+        // which the freeze moves into its folder (slow_draws/)
+        const bool debugger_dump = Core::FrameWalk::DebuggerMode() && v.has_ps && v.ps.info && Stream::TakeSlowPsArm(v.ps.info->pgm_hash);
+        const std::string prefix = debugger_dump ? fmt::format("debugger/ps_{:016x}/", v.ps.info->pgm_hash) : std::string{};
+        job->dump_prefix = prefix;
+        if (debugger_dump || (dump_ps != 0 && v.has_ps && v.ps.info && v.ps.info->pgm_hash == dump_ps && Core::Vkb::GraphicsSubmits() >= dump_at && seen.fetch_add(1) == dump_nth)) {
             for (const Stage* st : {&v.vs, &v.ps}) {
                 for (u32 i = 0; i < st->images.size(); ++i) {
                     const Source& src = st->images[i];
                     const u64 object = src.cls == Source::Class::Slot && src.kind == 1 ? SlotObject(ctx, st->index, 1, src.slot) : 0;
                     if (object != 0) {
-                        dump_views.push_back({Rd<u64>(object, 0x10), fmt::format("{}_in{}_slot{}", st == &v.ps ? "ps" : "vs", i, src.slot)});
+                        dump_views.push_back({Rd<u64>(object, 0x10), fmt::format("{}{}_in{}_slot{}", prefix, st == &v.ps ? "ps" : "vs", i, src.slot)});
                     }
                 }
             }
             const auto targets = TargetViews(ctx);
             for (u32 cb = 0; cb < v.key.num_color_attachments; ++cb) {
                 if (targets[cb] != 0) {
-                    dump_views.push_back({Rd<u64>(targets[cb], 0x10), fmt::format("out{}", cb)});
+                    dump_views.push_back({Rd<u64>(targets[cb], 0x10), fmt::format("{}out{}", prefix, cb)});
                 }
             }
             if (const u64 dsv = Rd<u64>(ctx, CtxDepthStencilView); dsv != 0) {
-                dump_views.push_back({Rd<u64>(dsv, 0x10), "depth"});
+                dump_views.push_back({Rd<u64>(dsv, 0x10), prefix + "depth"});
             }
             // and the buffers: the guest bytes now (at the draw call), the GPU's copy after the draw
-            const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump";
+            const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump" / prefix;
             std::error_code ec;
             std::filesystem::create_directories(dir, ec);
             b.guest.resize(b.buffers.size());
@@ -1650,8 +1696,46 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     job->fixed_state = &fixed; // interned by FixedStateOf, never freed
     job->masks = v.key.write_masks;
     job->kind = kind, job->a1 = a1, job->a2 = a2, job->a3 = a3;
+    job->jittered = false;
+    if (Core::Vkb::Aa::On()) [[unlikely]] { // F1c: decided here, in game order (two recording threads must not see different offsets within a frame)
+        const u64 dsv = Rd<u64>(ctx, CtxDepthStencilView);
+        // the depth texture's id (+0x30 resource, +0x10 id): the motion pass and the G-buffer bind the same depth through different view objects
+        const u64 dsv_resource = dsv != 0 && IsHeapPointer(dsv) ? Rd<u64>(dsv, 0x30) : 0;
+        const u64 dsv_id = dsv_resource != 0 && IsHeapPointer(dsv_resource) ? Rd<u64>(dsv_resource, 0x10) : 0;
+        const u64 ps = v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0ull;
+        if (ps == Core::Vkb::Aa::MotionPassPs) {
+            Core::Vkb::Aa::NoteSceneDepth(dsv_id);
+        }
+        const bool geometry = (kind == 2) || a1 > 6 || instances > 1;
+        const u64 mesh = Mix(Mix(Mix(a1, a2), a3), v.vs.info ? v.vs.info->pgm_hash : 0ull);
+        // does the pixel shader read a scene depth (decals, lights): its used texture slots' resources against the scene depth ids
+        bool samples_depth = false;
+        const u64 ps_object = Rd<u64>(ctx, CtxPixelShader);
+        if (Core::Vkb::Aa::IsSceneDepth(dsv_id) && ps_object != 0 && IsHeapPointer(ps_object)) {
+            const u64 masks[2] = {Rd<u64>(ps_object, 0x30 + 0xc0), Rd<u64>(ps_object, 0x30 + 0xc8)};
+            for (u32 half = 0; half < 2 && !samples_depth; ++half) {
+                for (u64 bits = masks[half]; bits != 0 && !samples_depth; bits &= bits - 1) {
+                    const u32 s = half * 64 + static_cast<u32>(std::countr_zero(bits));
+                    const u64 view = Rd<u64>(ctx, SrvTable(1) + s * 8);
+                    const u64 resource = view != 0 && IsHeapPointer(view) ? Rd<u64>(view, 0x30) : 0;
+                    samples_depth = resource != 0 && IsHeapPointer(resource) && Core::Vkb::Aa::IsSceneDepth(Rd<u64>(resource, 0x10));
+                }
+            }
+        }
+        job->jittered = Core::Vkb::Aa::DrawJitter(dsv_id, fixed.depth_write, geometry, samples_depth, mesh, job->jitter);
+    }
     job->ps_hash = v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0ull;
     job->color_format0 = static_cast<u32>(v.color_formats[0]);
+    job->debug_id = 0, job->capture = false;
+    job->vs_hash = v.vs.info ? v.vs.info->pgm_hash : 0ull;
+    if (Core::FrameWalk::DebuggerMode()) [[unlikely]] { // note 91
+        static std::atomic<u64> ids{0};
+        job->debug_id = ids.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (Stream::FrameCaptureOn()) {
+            job->capture = true;
+            Stream::CaptureDrawQueued();
+        }
+    }
     job->work = Stream::Work::Draw;
     Stream::Enqueue(std::move(job));
     phase(3);
@@ -1823,6 +1907,13 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
         Stream::SetHazardTag(ps_hash);
         (void)Stream::Hazard(cmd, std::span<const Stream::Use>{uses.data(), uses.size()});
     }
+    if (Core::Vkb::Aa::On() && ps_hash == Core::Vkb::Aa::MotionPassPs) [[unlikely]] { // F1: the scene colour, the game's motion and the depth of this frame
+        boost::container::small_vector<vk::Image, 9> images;
+        for (const Stream::Use& u : attachment_uses) {
+            images.push_back(vk::Image{reinterpret_cast<VkImage>(u.handle)});
+        }
+        Core::Vkb::Aa::NoteMotionPass(std::span<const vk::Image>{images.data(), images.size()}, pass.color_count, pass.depth ? true : false);
+    }
     if (Stream::UsePass(cmd, pass, std::span<const Stream::Use>{attachment_uses.data(), attachment_uses.size()})) {
         c_new_passes.fetch_add(1, std::memory_order_relaxed);
     }
@@ -1832,6 +1923,8 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
         u64 generation{~0ull};
         VkCommandBuffer cmd{};
         VkPipeline pipeline{};
+        bool jittered{};
+        std::array<float, 2> jitter{};
         const VkbVulkan::FixedState* fixed{};
         u64 pass_key{~0ull};
         std::array<vk::ColorComponentFlags, VkbAmdGpu::NUM_COLOR_BUFFERS> masks{};
@@ -1895,9 +1988,9 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
     // note 60: the dynamic state comes from the interned fixed state, the pass's depth / stencil / colour count and the write masks (the two note 41 test switches
     // aside): when all of them equal the previous draw's in this recording, nothing is sent
     const u64 pass_key = (pass.depth ? 1ull : 0ull) | (pass.depth_has_stencil ? 2ull : 0ull) | static_cast<u64>(pass.color_count) << 2; // (the note 41 test switches need TLG_VKB_ALL_STATE=1)
-    const bool same_state = state.fixed == fixed_state && state.pass_key == pass_key && state.masks == masks;
+    const bool same_state = state.fixed == fixed_state && state.pass_key == pass_key && state.masks == masks && state.jittered == jittered && state.jitter == jitter;
     const bool send_state = state_once ? first_in_cmd : (!same_state || !Stream::StampsLean());
-    state.fixed = fixed_state, state.pass_key = pass_key, state.masks = masks;
+    state.fixed = fixed_state, state.pass_key = pass_key, state.masks = masks, state.jittered = jittered, state.jitter = jitter;
     (same_state ? c_state_skipped : c_state_sent).fetch_add(1, std::memory_order_relaxed);
     if (send_state) {
     // the dynamic state the pipeline declares, all of it, every draw
@@ -1914,6 +2007,9 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
             viewport.y = 0.f;
             viewport.width = float(std::min<u32>(instance->GetMaxViewportWidth(), 16384));
             viewport.height = float(std::min<u32>(instance->GetMaxViewportHeight(), 16384));
+        } else if (jittered) { // F1c: the frame's sub-pixel offset, in pixels (their viewport jitter)
+            viewport.x += jitter[0];
+            viewport.y += jitter[1];
         }
         viewports.push_back(viewport);
         scissors.push_back(fixed.scissors[i]);
@@ -1994,6 +2090,10 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
     }
     static const bool no_draw = [] { const char* e = std::getenv("TLG_VKB_NO_DRAW"); return e != nullptr && *e == '1'; }(); // kill experiment: everything but the draw
     if (no_draw) {
+    } else if (vs_hash == Core::Vkb::Aa::SmaaVs && Core::Vkb::Aa::Running()) [[unlikely]] {
+        // F1: the native AA replaces the game's SMAA: its edge weights are cleared instead of drawn (their SkipGameSmaa)
+        const vk::ClearAttachment clear{vk::ImageAspectFlagBits::eColor, 0, vk::ClearColorValue{std::array{0.0f, 0.0f, 0.0f, 0.0f}}};
+        cmd.clearAttachments(clear, vk::ClearRect{vk::Rect2D{{0, 0}, pass.extent}, 0, 1});
     } else if (kind == 0) {
         if (state.index_buffer != static_cast<VkBuffer>(index_buffer) || state.index_offset != index_offset || state.index_type != index_type) {
             cmd.bindIndexBuffer(index_buffer, index_offset, index_type);
@@ -2009,14 +2109,58 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
     } else {
         cmd.draw(static_cast<u32>(a1), instances, static_cast<u32>(a2), 0);
     }
-    if (!dump_views.empty()) {
+    if (debug_id != 0) [[unlikely]] { // note 91: the draw's GPU time, and its row in the frame capture
+        Stream::StampDraw(debug_id, vs_hash, ps_hash, kind == 2 ? 0u : static_cast<u32>(a1), instances);
+        if (capture) {
+            nlohmann::json images = nlohmann::json::array();
+            for (const auto& im : b.images) {
+                images.push_back(fmt::format("{:#x}", reinterpret_cast<u64>(static_cast<VkImageView>(im.imageView))));
+            }
+            std::string push_hex;
+            const auto* pb = reinterpret_cast<const u8*>(&push);
+            for (size_t i = 0; i < sizeof(push); ++i) {
+                push_hex += fmt::format("{:02x}", pb[i]);
+            }
+            nlohmann::json row{{"id", debug_id}, {"vs", fmt::format("{:016x}", vs_hash)}, {"ps", fmt::format("{:016x}", ps_hash)},
+                               {"kind", kind == 0 ? "indexed" : kind == 1 ? "auto" : "indirect"}, {"count", a1}, {"first", a2}, {"instances", instances},
+                               {"targets", pass.color_count}, {"size", fmt::format("{}x{}", pass.extent.width, pass.extent.height)}, {"depth", pass.depth ? true : false},
+                               {"images", images}, {"push_data_hex", push_hex}};
+            (void)Stream::NoteCapturedDraw(std::move(row), std::span<const vk::DescriptorBufferInfo>{b.buffers.data(), b.buffers.size()});
+        }
+    }
+    if (!dump_views.empty() || dump_buffers) {
         Stream::BreakPass(cmd);
         for (const auto& [id, name] : dump_views) {
             Core::Vkb::DumpView(cmd, id, name);
         }
         for (u32 i = 0; dump_buffers && i < b.buffers.size(); ++i) {
             if (b.buffers[i].range != VK_WHOLE_SIZE) {
-                Core::Vkb::DumpBuffer(cmd, b.buffers[i].buffer, b.buffers[i].offset, b.buffers[i].range, fmt::format("g{}", i));
+                Core::Vkb::DumpBuffer(cmd, b.buffers[i].buffer, b.buffers[i].offset, b.buffers[i].range, fmt::format("{}g{}", dump_prefix, i));
+            }
+        }
+        if (!dump_prefix.empty()) { // note 90: what the draw was and how it bound its buffers (binding order = the shader's buffer bindings, vertex stage first)
+            nlohmann::json bufs = nlohmann::json::array();
+            for (u32 i = 0; i < b.buffers.size(); ++i) {
+                const auto guest = i < b.guest.size() ? b.guest[i] : std::pair<u64, u64>{};
+                bufs.push_back({{"index", i}, {"offset", b.buffers[i].offset}, {"range", b.buffers[i].range == VK_WHOLE_SIZE ? -1.0 : static_cast<double>(b.buffers[i].range)},
+                                {"guest_address", fmt::format("{:#x}", guest.first)}, {"guest_size", guest.second}});
+            }
+            std::string push_hex;
+            const auto* pb = reinterpret_cast<const u8*>(&push);
+            for (size_t i = 0; i < sizeof(push); ++i) {
+                push_hex += fmt::format("{:02x}", pb[i]);
+            }
+            const nlohmann::json meta{{"ps", fmt::format("{:016x}", ps_hash)}, {"kind", kind}, {"a1", a1}, {"a2", a2}, {"instances", instances}, {"buffers", bufs},
+                                      {"push_data_hex", push_hex},
+                                      {"note", "debugger mode slow-pass draw (note 90): ps_/vs_inN = input images, outN = colour targets, depth; gN_*.gpu = buffer N as the GPU "
+                                               "had it right after the draw, gN_<address>_*.raw = the guest bytes at the draw call; images as raw texels (vkb_dump_png.py)"}};
+            const auto path = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump" / dump_prefix / "draw.json";
+            std::error_code ec;
+            std::filesystem::create_directories(path.parent_path(), ec);
+            if (FILE* f = std::fopen(path.string().c_str(), "wb")) {
+                const std::string text = meta.dump(1);
+                std::fwrite(text.data(), 1, text.size(), f);
+                std::fclose(f);
             }
         }
     }
@@ -2078,6 +2222,9 @@ void Draw(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
     if (!it->second->ok) {
         c_skip_not_compiled.fetch_add(1, std::memory_order_relaxed);
         return;
+    }
+    if (Core::FrameWalk::DebuggerMode()) [[unlikely]] { // note 89: the shaders of the scene for the freeze
+        Core::Vkb::ShaderDump::NoteDraw(it->second->vs.info ? it->second->vs.info->pgm_hash : 0, it->second->has_ps && it->second->ps.info ? it->second->ps.info->pgm_hash : 0);
     }
     static const bool no_draw_record = [] { const char* e = std::getenv("TLG_VKB_NO_DRAW_RECORD"); return e != nullptr && *e == '1'; }(); // kill experiment: variant found, nothing recorded
     // note 62 bound: TLG_VKB_NO_DRAW_RECORD_AFTER=N: the same kill experiment from graphics submit N on (after the load, which the plain switch does not survive)
@@ -2145,6 +2292,7 @@ nlohmann::json Report() {
                                                                                {c_stage_same[1].load(), c_stage_changed[1].load(), c_stage_buffers_same[1].load(), c_stage_images_same[1].load(), c_stage_samplers_same[1].load()}}},
             {"variant_find_us_mean", draws ? static_cast<double>(c_variant_find_ns.load()) / 1e3 / static_cast<double>(draws) : 0.0},
             {"lookups", Core::Vkb::LookupReport()},
+            {"aa", Core::Vkb::Aa::Report()},
             {"recorder_job_us_mean", c_job_n.load() ? static_cast<double>(c_job_ns.load()) / 1e3 / static_cast<double>(c_job_n.load()) : 0.0},
             {"new_passes", c_new_passes.load()},
             {"indirect_recorded", c_indirect_recorded.load()},

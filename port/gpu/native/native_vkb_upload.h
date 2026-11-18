@@ -24,7 +24,14 @@ void Init(const VkbVulkan::Instance& instance, VkbVulkan::HostImport& host_impor
 /// one imported chunk, or the texel size of the image does not match the layout.
 /// The size of the engine texture's memory from its description (its tiled layout); 0 when it cannot be derived
 u64 GuestSize(u64 texture_id);
-bool TextureContents(u64 texture_id, vk::Image image, vk::Format format, u32 mips, u32 layers, vk::ImageLayout final_layout);
+/// api-contract.md R9 census: the size and mip count the engine's live T# gives the texture now
+bool LiveExtent(u64 texture_id, u32& width, u32& height, u32& mips);
+bool TextureContents(u64 texture_id, vk::Image image, vk::Format format, u32 mips, u32 layers, vk::ImageLayout final_layout, u32 subresource = ~0u);
+/// api-contract.md W5 / L5 / L6 / L8: the same upload as a job of the frame stream, made where the engine changed the texture's memory (a file read, a fill, UpdateSubresource,
+/// a GPU copy into it): the stream's hazard barriers order it after earlier work on the image (and on the memory) and before later reads. The image must already be GENERAL.
+/// Its temporary buffers are freed three graphics submits later. False (counted): as TextureContents.
+/// `subresource` (mip + layer x mips): only that one; ~0u: all (api-contract.md L5 / review A3)
+bool TextureContentsInStream(u64 texture_id, vk::Image image, vk::Format format, u32 mips, u32 layers, u32 subresource = ~0u);
 
 /// A buffer copy in the batch (kill-experiment TLG_VKB_HOST_CACHE)
 void CopyBuffer(vk::Buffer source, u64 source_offset, vk::Buffer destination, u64 destination_offset, u64 bytes);
