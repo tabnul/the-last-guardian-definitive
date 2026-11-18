@@ -21,9 +21,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LIST = os.path.join(HERE, "noise-ignore.txt")
 THRESHOLD = "6.3%"  # 16 of 255
 GROW = "Disk:4"
+OPEN = "Disk:2"  # solid-blob rule (issue 27): before the growing, what is thinner than 5 pixels is dropped
 
 
-def make(pics, mask):
+def make(pics, mask, solid=False):
     """Write MASK (white = left out) from two or more pictures of the normal renderer; return the share left out (%).
     Per channel, largest minus smallest value over the pictures is the largest difference of any two of them."""
     if len(pics) < 2:
@@ -33,12 +34,20 @@ def make(pics, mask):
         subprocess.run(["convert", *pics, "-evaluate-sequence", "min", lo], check=True)
         subprocess.run(["convert", *pics, "-evaluate-sequence", "max", hi], check=True)
         subprocess.run(["convert", hi, lo, "-compose", "difference", "-composite", "-separate", "-evaluate-sequence", "max",
-                        "-threshold", THRESHOLD, "-morphology", "Dilate", GROW, mask], check=True)
+                        "-threshold", THRESHOLD, *solid_steps(solid), "-morphology", "Dilate", GROW, mask], check=True)
     finally:
         for f in (lo, hi):
             if os.path.exists(f):
                 os.remove(f)
     return share(mask)
+
+
+def solid_steps(solid):
+    """Solid-blob rule (owner 2026-11-18, issue 27): open the raw difference (erode, then dilate) BEFORE the growing, so
+    that sparse speckle and thin rims on still walls, floors and ceilings drop out; only solid blobs (boy, mist, foliage,
+    flames, hanging or loose objects) stay and are then grown as always. (Opening after the growing was tried first: the
+    growing joins the speckle into blobs, 58 of 69 masks stayed as they were.)"""
+    return ["-morphology", "Open", OPEN] if solid else []
 
 
 def share(mask):
@@ -58,6 +67,11 @@ def load_list(path=LIST):
                     sys.exit(f"{path}: bad line (STATUS STAGE SCENE SHARE% CAUSES | reason): {line.strip()}")
                 out[(f[1], f[2])] = (f[0], float(f[3][:-1]), f[4:], reason.strip())
     return out
+
+
+def is_solid(causes):
+    """True when the CAUSES field holds `solid` (the solid-blob rule applies to this entry's mask)."""
+    return "solid" in causes
 
 
 def takes_needed(causes):

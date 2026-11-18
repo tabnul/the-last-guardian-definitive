@@ -179,3 +179,9 @@ measured on retake 2 against each of the three, outside the mask (no game run: t
 would need more than 25% left out: `log-only.txt`, `proposed`. `AT_BarrelBox_001` and
 `ST_040_FallingFromSentinelTower` are `confirmed` log only (owner, comment 6979040549).
 A confirmed entry with fewer good reference takes than it needs now gives `masked_error` (before: for one take the mask was skipped silently).
+
+## Solid-blob mask (issue 27, owner decision 2026-11-18)
+`noisemask.make(pics, mask, solid=True)` opens the raw difference (erode then dilate, 5 pixels) before the usual growing, so sparse
+speckle and thin rims on still surfaces drop out and only solid blobs stay. An entry would opt in with `solid` in its CAUSES field
+(`noisemask.is_solid`); no entry has it yet, nothing is confirmed or un-confirmed. `solid-measure.py LIST OUT.tsv` measures old and
+solid mask on the existing normal-renderer photos (no game run). Result on 69 scenes: 31 within the limit, 23 above, 15 cannot.
