@@ -9,6 +9,25 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-18 - Noisy scenes: one noise mask from the normal renderer's own two takes (not yet merged)
+
+- **Problem:** 126 scenes are not judgeable by picture because two takes of the NORMAL renderer differ by more than
+  the limits (issue 9). The owner looked at examples: the pictures are not broken, the photo is not the same moment
+  (boy elsewhere, drifting mist, swaying grass, flames, particles). Forcing all of that still was ruled out.
+- **Considered:** (A) a mask per scene made from the normal renderer's two takes: a pixel counts only where the
+  normal renderer agrees with itself; one rule for every cause. (B) one detector per cause (find the boy, find
+  mist, ...): needs knowledge of the picture, many special paths. (C) a wider tolerance per cause: hides a small
+  broken area in every scene. (D) force the moment still (freeze the boy, particles): the owner said no.
+- **Choice:** A. The ignored share is small where only the boy or a flame moves and is printed per scene; when more
+  than 25% would have to be left out the scene goes to the log-only list instead. Scenes alive with action go there
+  too. Causes that are not explainable (whole picture or tone, parts missing) are not masked: listed for a look.
+  Every entry is `proposed`; the tools honour only `confirmed` (owner, 2026-11-18).
+- **Who:** the form: box (rule 14); the confirmation: owner.
+- **Links:** issues "Answer key noise: cause per scene" and "Ignore list: entries to confirm"; pull request for
+  branch `fix/vkb-noise-mask` (stacked on `fix/vkb-log-only`).
+
+---
+
 ## 2026-11-18 - Log only group: left out of the picture comparison only after the owner confirms (not yet merged)
 
 - **Problem:** Cutscenes (and scenes without a usable normal-renderer picture) cannot be judged with one photo, but

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Difference between two pictures of the same size. No AI inside; needs ImageMagick (convert).
 
-Usage: compare.py A.png B.png [DIFF.png]
+Usage: compare.py A.png B.png [DIFF.png] [--mask MASK.png]
 Prints: mean absolute difference per channel (0..255), the share of pixels whose largest channel difference
 is above 8, 16 and 32, and the largest difference. DIFF.png (optional) is the difference picture, made 4x
 brighter so small differences can be seen.
@@ -37,20 +37,43 @@ def blank(data):
     return f"blank: {share:.2f}% of pixels within {BLANK_SPREAD} of colour {tuple(top)}"
 
 
-def measure(a, b):
+def mask_bits(path):
+    """Noise mask picture (white = left out) as one byte per pixel, 1 = left out."""
+    return [1 if v > 127 else 0 for v in subprocess.run(["convert", path, "-depth", "8", "-colorspace", "gray", "gray:-"],
+                                                        capture_output=True, check=True).stdout]
+
+
+def measure(a, b, mask=None):
     """Difference of two equal sized RGB byte strings: mean per channel, share (%) of pixels whose largest
-    channel difference is above 8, 16 and 32, and the largest difference."""
+    channel difference is above 8, 16 and 32, and the largest difference. With a mask (list from mask_bits) the
+    pixels it marks are left out: all shares are of the pixels that remain, and `ignored` is the share left out."""
     d = bytes(abs(x - y) for x, y in zip(a, b))
     px = [max(d[i], d[i + 1], d[i + 2]) for i in range(0, len(d), 3)]
+    if mask is not None:
+        total = len(px)
+        px = [v for v, m in zip(px, mask) if not m]
+        d = bytes(x for i, x in enumerate(d) if not mask[i // 3])
+        n = len(px)
+        if n == 0:
+            raise ValueError("the mask leaves out every pixel")
+        r = {"ignored": round(100.0 * (total - n) / total, 2)}
+    else:
+        r = {}
     n = len(px)
     hist = [0] * 256
     for v in px:
         hist[v] += 1
     above = lambda t: round(100.0 * sum(hist[t + 1:]) / n, 3)
-    return {"mean": round(sum(d) / len(d), 3), "gt8": above(8), "gt16": above(16), "gt32": above(32), "max": max(px)}
+    r.update({"mean": round(sum(d) / len(d), 3), "gt8": above(8), "gt16": above(16), "gt32": above(32), "max": max(px)})
+    return r
 
 
 def main():
+    mask = None
+    if "--mask" in sys.argv:
+        i = sys.argv.index("--mask")
+        mask = mask_bits(sys.argv[i + 1])  # white pixels of the mask are left out (see noisemask.py)
+        del sys.argv[i:i + 2]
     if len(sys.argv) < 3:
         sys.exit(__doc__)
     wa, ha, a = rgb(sys.argv[1])
@@ -61,8 +84,10 @@ def main():
     if bad:
         print("not compared, blank picture:\n  " + "\n  ".join(bad), file=sys.stderr)
         sys.exit(2)
-    m = measure(a, b)
-    print(f"pixels {wa}x{ha}  mean {m['mean']:.3f}  >8 {m['gt8']:.3f}%  >16 {m['gt16']:.3f}%  "
+    if mask is not None and len(mask) != wa * ha:
+        sys.exit("mask size differs from the pictures")
+    m = measure(a, b, mask)
+    print((f"ignored {m['ignored']}%  " if mask is not None else "") + f"pixels {wa}x{ha}  mean {m['mean']:.3f}  >8 {m['gt8']:.3f}%  >16 {m['gt16']:.3f}%  "
           f">32 {m['gt32']:.3f}%  max {m['max']}")
     if len(sys.argv) > 3:
         subprocess.run(["convert", sys.argv[1], sys.argv[2], "-compose", "difference", "-composite",
