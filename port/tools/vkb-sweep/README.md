@@ -160,3 +160,10 @@ Same status rule as the log-only list: `proposed` or `confirmed`, only the owner
 `sweep.py` (new engine, with `--reference`) writes `picture`: take 1 against the normal renderer's take 1, the
 whole picture (`all`) and, for a confirmed entry, without the mask (`masked`). Nothing in the game or the engine
 changes.
+
+### Confirmed entries (2026-11-18, owner, issue 27)
+
+`log-only.txt`: 35 scenes `confirmed` (8 cutscenes, 6 endings, 15 too much moves or alive with action, 6 "need a look").
+`noise-ignore.txt`: 56 scenes `confirmed`: the owner's list, and only where the retake (noise-126, two new normal takes
+against the answer-key take, outside the mask) stays within the limit. 39 entries stay `proposed` (full picture check),
+among them `s02_01_Care_Step1_001`. Scenes still judged by the whole picture: everything not on a confirmed line.
