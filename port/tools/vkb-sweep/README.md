@@ -136,3 +136,18 @@ all skip/fail counters 0). No reference log: `lines` is not compared and says so
 `sweep.py ... --reference DIR` writes `group`, `group_reason` and `log_verdict` into every result line (DIR = the
 normal renderer's sweep). `python3 verdict.py RESULTS.jsonl [--reference DIR]` prints them for a finished sweep
 with the count per group. Nothing in the game or the engine changes.
+
+## The noise mask (noisemask.py, noise-ignore.txt)
+
+Some scenes differ between two takes of the NORMAL renderer (boy in another place or frame, drifting mist, grass in
+the wind, flames, particles): the photo is not the same moment. `noise-ignore.txt` lists, per scene, the part of
+the picture that the picture check leaves out. One rule for every cause: a pixel counts only where take 1 and
+take 2 of the normal renderer agree (difference not above 16), the left-out area grown by 4 pixels
+(`noisemask.py make A.png B.png MASK.png`; the mask is made again from the answer-key takes, it is not stored).
+`python3 compare.py A.png B.png --mask MASK.png` measures without the masked pixels and prints the share left out.
+
+Same status rule as the log-only list: `proposed` or `confirmed`, only the owner confirms, the tools honour only
+`confirmed`. A scene where more than 25% would have to be left out is on the log-only list instead.
+`sweep.py` (new engine, with `--reference`) writes `picture`: take 1 against the normal renderer's take 1, the
+whole picture (`all`) and, for a confirmed entry, without the mask (`masked`). Nothing in the game or the engine
+changes.

@@ -18,3 +18,19 @@ proposed s18_Ending _030_Ending_StaffRoll ending cutscene: staff roll, the pictu
 proposed s18_Ending _050_Ending_TimeLapse ending cutscene (owner's list): normal renderer gives only a flat dark picture
 proposed s18_Ending _060_Ending_E ending cutscene: birds fly through the picture, different places between the takes
 proposed s18_Ending _070_Ending_Owari ending cutscene (owner's list): normal renderer gives only a flat dark picture
+# --- noise: too much of the picture moves between two normal takes, or the scene is alive with action (proposed, issue "Ignore list: entries to confirm")
+proposed s03_Canyon CA_c01_SteppingStone_001 too much of the picture moves between takes (59% would have to be left out, limit 25%)
+proposed s03_Canyon CA_g01_ApproachAntenna_001 too much of the picture moves between takes (74% would have to be left out, limit 25%)
+proposed s06_FallingBridge FB_f01_GoalTerrace_001 too much of the picture moves between takes (35% would have to be left out, limit 25%)
+proposed s07_Alone AL_b01_YajirobeMirror_01 too much of the picture moves between takes (39% would have to be left out, limit 25%)
+proposed s08_LargeTower s08_02_arrive_at_LT_001 too much of the picture moves between takes (35% would have to be left out, limit 25%)
+proposed s08_LargeTower s08_02_wireHang_001 too much of the picture moves between takes (28% would have to be left out, limit 25%)
+proposed s08_LargeTower s08_03_LeaningYajirobe_001 too much of the picture moves between takes (38% would have to be left out, limit 25%)
+proposed s08_LargeTower s08_05_SmallMirror_001 too much of the picture moves between takes (31% would have to be left out, limit 25%)
+proposed s10_Pit s10_05_Bar_Gate_001 too much of the picture moves between takes (39% would have to be left out, limit 25%)
+proposed s12_TheNest s12_10_Elevator_Station_Again_001 too much of the picture moves between takes (56% would have to be left out, limit 25%)
+proposed s13_FirstFlight FF_a01_EnterCliff too much of the picture moves between takes (44% would have to be left out, limit 25%)
+proposed s13_FirstFlight FF_e01_Bridge_Arrival too much of the picture moves between takes (31% would have to be left out, limit 25%)
+proposed s13_FirstFlight FF_i01_Celling1 alive with action (characters/enemies/debris in motion)
+proposed s17_SentinelTower ST_021_TricoOnTheRoof alive with action (characters/enemies/debris in motion)
+proposed s17_SentinelTower ST_090_ShootingBrain alive with action (characters/enemies/debris in motion)

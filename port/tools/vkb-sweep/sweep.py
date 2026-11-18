@@ -26,6 +26,7 @@ import ast, glob, json, os, re, signal, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import compare  # noqa: E402
+import noisemask  # noqa: E402
 import verdict  # noqa: E402
 
 CHECK = os.path.join(HERE, "..", "scene-check")
@@ -129,6 +130,32 @@ def result(folder, stage, scene, vkb, takes):
     return row
 
 
+def picture_check(row, ref_row, noise_list):
+    """New engine take 1 against the normal renderer's take 1 (reference sweep). `all` = the whole picture;
+    `masked` = the same without the noise mask, only where the owner has confirmed that scene's entry in
+    noise-ignore.txt (a `proposed` entry is not applied; `proposed_mask` then says so). None = nothing to compare."""
+    mine = next((t["picture"] for t in row["takes"] if t["ok"]), None)
+    ref = next((t["picture"] for t in (ref_row or {"takes": []})["takes"] if t["ok"]), None)
+    if not mine or not ref:
+        return None
+    a, b = compare.rgb(mine), compare.rgb(ref)
+    if a[:2] != b[:2]:
+        return {"error": "sizes differ"}
+    out = {"all": compare.measure(a[2], b[2]), "masked": None}
+    key = (row["stage"], row["scene"])
+    entry = noise_list.get(key)
+    if entry:
+        out["entry_status"] = entry[0]
+    second = [t["picture"] for t in ref_row["takes"] if t["ok"]][1:2]
+    if entry and entry[0] == "confirmed" and second:
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            m = os.path.join(tmp, "mask.png")
+            noisemask.make(ref, second[0], m)
+            out["masked"] = compare.measure(a[2], b[2], compare.mask_bits(m))
+    return out
+
+
 def summary(row):
     t = row["takes"]
     n = row["noise"]
@@ -185,6 +212,7 @@ def main():
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
     listing = verdict.load_list()
+    noise_list = noisemask.load_list()
     if vkb == "1" and not reference:
         print("WARNING: no --reference: every scene of this sweep has no normal-renderer data, so every scene is "
               "'log only' and the lines are not compared", flush=True)
@@ -234,6 +262,7 @@ def main():
             ref_row = reference.get((stage, scene))
             row["group"], row["group_reason"] = verdict.group(stage, scene, ref_row if vkb == "1" else row, listing)
             row["log_verdict"] = verdict.log_verdict(row, ref_row if vkb == "1" else None)
+            row["picture"] = picture_check(row, ref_row, noise_list) if vkb == "1" else None
             row["time"] = time.strftime("%F %T")
             with open(results, "a") as f:
                 f.write(json.dumps(row) + "\n")
