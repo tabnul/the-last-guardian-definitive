@@ -359,8 +359,8 @@ def steps(game, send, out, tag, stage, scene, env, cam_file, cam_arg):
 def counters(env, out, tag):
     """With TLG_DEBUG_SERVER_PORT set (NAME=VALUE), the game's counters at the moment of the picture are kept as
     TAG.stats.json and TAG.native.json (the debug server's /stats and /native). A failed read is said, not hidden."""
-    port = env.get("TLG_DEBUG_SERVER_PORT")
-    if not port:
+    port = env.get("TLG_DEBUG_SERVER_PORT", "0")
+    if not port.isdigit() or int(port) <= 0:  # the game starts its server only for a port above 0
         return
     for name in ("stats", "native"):
         try:

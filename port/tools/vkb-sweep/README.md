@@ -82,7 +82,8 @@ take is a fresh game start with the GPU memory guard and the fixed recipe above.
   `--scenes FILE` takes `STAGE SCENE` lines instead.
 - Counters: the debug server is on for every take (`TLG_DEBUG_SERVER_PORT=8790` unless given), and `shot.py`
   keeps `/stats` and `/native` at the moment of the picture as `vkbV_takeN.stats.json` and `.native.json`.
-  (`shot.py` does this whenever `TLG_DEBUG_SERVER_PORT` is given; without it, nothing changes.)
+  (`shot.py` does this whenever `TLG_DEBUG_SERVER_PORT` is above 0; without it, nothing changes.
+  `TLG_DEBUG_SERVER_PORT=0` given to the sweep switches the server and the counters off.)
   The server is on for both renderers, so the answer key and the new engine's takes are made the same way.
   It answers only when asked (twice per take, after the picture). Checked on one scene only: the garden's
   take-to-take noise with it on (0.348% above 16, 0.155% above 32) is inside the range measured without it
@@ -99,7 +100,8 @@ take is a fresh game start with the GPU memory guard and the fixed recipe above.
   one is made. Run the same command again to go on.
 - It stops (resume later with the same command) on Ctrl+C or SIGTERM (the running take is ended cleanly and
   the save is put back), when `shot.py` cannot run at all (the game is still running, a save backup is left,
-  the display is in use), and when the GPU memory guard fired. A failed take of a scene does not stop it.
+  the display is in use), and when the GPU memory guard fired. A failed take of a scene does not stop it and is
+  not taken again on a resume: it is a result (its status is in the line).
   A guard stop leaves the scene without a result line, and its guard take does not count, so a resume runs
   the scene again (raise `SHOT_GTT_LIMIT_GB` first if it really needs more; never `0`).
 - No limits are applied: it records, it does not judge clean or not clean (issue 9).
