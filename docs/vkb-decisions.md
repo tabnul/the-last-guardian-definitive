@@ -32,6 +32,23 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   https://github.com/tabnul/tlg-vkb-work/issues/12#issuecomment-6978580374 ; pull request for branch
   `fix/vkb-object-memo-key`.
 
+## 2026-11-18 - Ignore list: what the owner confirmed (not yet merged)
+
+- **Problem:** the log-only list and the noise mask held only `proposed` entries (rule 20). The owner decided on
+  issue 27 (comment 6974437546, 2026-11-18). The owner's words: "All part-of-picture confirmations below hold on one
+  condition: the fresh two-photo run (noise-126 retake) must show the same moving parts. Where it does not, come back
+  with that scene."
+- **Considered:** (A) confirm every scene on the owner's list. (B) confirm the 35 log-only scenes and only those mask
+  scenes where the retake agrees; list the rest for the owner. (C) move the scenes that disagree to log-only by
+  ourselves.
+- **Choice:** B, because it is the owner's condition and rule 20 (the loop proposes, never confirms beyond what the
+  owner said). 35 log-only scenes confirmed (29 from the old list plus the 6 "need a look"). 56 of the owner's 94
+  mask scenes confirmed: those whose retake picture, outside the mask, stays within the limit. The other 38 stay
+  `proposed` (full picture check) and are listed for the owner. `s02_01_Care_Step1_001` stays `proposed`
+  (full picture check), as the owner said.
+- **Who:** owner (the confirmation), box (applying the retake condition).
+- **Links:** issue 27; pull request of branch `fix/vkb-ignore-confirmed`.
+
 ---
 
 ## 2026-11-18 - Noisy scenes: one noise mask from the normal renderer's own two takes (not yet merged)
