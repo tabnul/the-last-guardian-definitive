@@ -39,6 +39,7 @@ import start_points  # noqa: E402
 # Colors: warm dark with one gold accent (the home screen fades the art into BG).
 BG, PANEL, FIELD, LINE = '#16140f', '#201d17', '#0f0e0b', '#3a352b'
 TEXT_COLOR, MUTED, DIM, ACCENT = '#efe9dd', '#a9a394', '#8a8476', '#e2b878'
+WARN = '#e8604c'  # red: a status line the player should act on
 SERIF = 'Georgia' if sys.platform == 'win32' else 'serif'
 HOME_SIZE = (1100, 620)
 BACKGROUND_NAMES = ('launcher_background.png', 'launcher_background.jpg')
@@ -492,7 +493,7 @@ TEXT = {
     'quit': 'Quit',
     'ready': 'Ready to play.',
     'audio_native': 'Audio: native (console module found).',
-    'audio_builtin': 'Audio: built-in mixer, experimental (libSceNgs2.sprx not found or not selected).',
+    'audio_builtin': 'Audio: built-in mixer. Sound problems may occur (echo, missing sounds). To fix: put libSceNgs2.sprx in the console system modules folder (Settings).',
     'missing': 'Missing',
     'not_built': 'Port not built (run build.sh)',
     'preparing': 'Preparing the game…',
@@ -2144,7 +2145,8 @@ class Launcher:
         text = self.status.cget('text')
         if self.process:
             text = f"{self.t('home_running')}  ·  {text}"
-        self.home.itemconfig(self.home_items['status'], text=text)
+        self.home.itemconfig(self.home_items['status'], text=text,
+                             fill=WARN if getattr(self, 'audio_warning', False) else MUTED)
         ready = self.play_ready()
         if self.page != 'home':
             self.home.itemconfig(self.home_items['play_box'], outline=ACCENT if ready else LINE,
@@ -2868,7 +2870,9 @@ class Launcher:
                              else f"{self.t('missing')}: {d}" for k, d in problems)
         else:
             text = self.t('ready')
-        audio = self.t('audio_native') if tlg_run.ngs2_module(self.settings) else self.t('audio_builtin')
+        # Built-in mixer: known sound problems (issue #90), so the status line turns red.
+        self.audio_warning = not tlg_run.ngs2_module(self.settings)
+        audio = self.t('audio_builtin') if self.audio_warning else self.t('audio_native')
         self.status.configure(text=f'{text}  {audio}')
         self.play_button.configure(state='disabled' if tlg_run.blocking(problems) or self.process else 'normal')
         self.cache_button.configure(state='disabled' if self.process else 'normal')

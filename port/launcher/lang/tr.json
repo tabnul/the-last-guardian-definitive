@@ -363,7 +363,7 @@
     "launcher.quit": "Çıkış",
     "launcher.ready": "Oynamaya hazır.",
     "launcher.audio_native": "Ses: yerel (konsol modülü bulundu).",
-    "launcher.audio_builtin": "Ses: yerleşik karıştırıcı, deneysel (libSceNgs2.sprx bulunamadı veya seçilmedi).",
+    "launcher.audio_builtin": "Ses: yerleşik karıştırıcı. Ses sorunları olabilir (yankı, eksik sesler). Çözüm: libSceNgs2.sprx dosyasını konsol sistem modülleri klasörüne koyun (Ayarlar).",
     "launcher.missing": "Eksik",
     "launcher.not_built": "Port derlenmemiş (build.sh çalıştırın)",
     "launcher.preparing": "Oyun hazırlanıyor…",
