@@ -9,6 +9,21 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-18 - Log only group: left out of the picture comparison only after the owner confirms (not yet merged)
+
+- **Problem:** Cutscenes (and scenes without a usable normal-renderer picture) cannot be judged with one photo, but
+  must not drop out of checking.
+- **Considered:** (A) a list file with a status per entry, the sweep honours only `confirmed`; every scene gets a
+  log verdict, log only scenes get nothing else. (B) a limit on the picture difference that drops noisy scenes
+  by itself. (C) mark scenes in the scene list.
+- **Choice:** A. B would hide a renderer fault behind noise (rule 20); C mixes two lists. The log verdict compares
+  the kinds of error and warning lines with the normal renderer's log of the same scene.
+- **Who:** the owner (2026-11-18: "Nothing is ignored in the picture comparison until the owner has confirmed it");
+  the form of the list and the verdict: box.
+- **Links:** pull request for branch `fix/vkb-log-only`, issue "Ignore list: entries to confirm".
+
+---
+
 ## 2026-11-18 - The author's code is taken as it comes (not yet merged)
 
 - **Problem:** The second read of the author's sync (pull request 18) said FAIL on principles 1-3, 5-7, 9, 10 and 13

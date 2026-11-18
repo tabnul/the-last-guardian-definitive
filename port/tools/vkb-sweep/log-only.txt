@@ -1,0 +1,20 @@
+# Scenes left out of the PICTURE comparison. They still run in every sweep and are judged through the log (verdict.py).
+# Line: STATUS STAGE SCENE REASON      STATUS = proposed | confirmed. Only the owner confirms (issue "Ignore list:
+# entries to confirm"); the tools honour only `confirmed`, a `proposed` scene is judged by picture as before.
+# Scenes without a usable normal-renderer picture (fewer than 2 good takes) fall back to log only by themselves.
+# --- cutscene: the game moves camera and characters; take 1 and take 2 show different moments of the sequence
+proposed s08_LargeTower s08_02d_DemoMirrorFall_001 cutscene: ladder, cart and mirror in different places in take 1 and take 2
+proposed s16_SoldiersDen SD_a01_Start cutscene: soldier and boy in different poses and places, camera differs between the takes
+proposed s17_SentinelTower ST_030_TricoBattle cutscene: Trico and the sentinels in different positions between the takes
+proposed s17_SentinelTower ST_050_GrabOnEnemyCondor cutscene: bird and boy in different positions between the takes
+proposed s17_SentinelTower ST_060_LandingRoof cutscene: bird and boy in different positions between the takes
+proposed s17_SentinelTower ST_070_PickUpTrigger cutscene: bird and boy in different positions between the takes
+proposed s17_SentinelTower ST_080_BreakingTail cutscene: sentinels in different positions between the takes
+proposed s17_SentinelTower ST_081_Tale cutscene: Trico, sentinels and boy in different places between the takes
+# --- ending: all scenes of stage s18_Ending (owner's list: they are cutscenes)
+proposed s18_Ending _010_Ending_C ending cutscene: lit sphere animates between the takes
+proposed s18_Ending _020_Ending_D ending cutscene (owner's list): scripted sequence
+proposed s18_Ending _030_Ending_StaffRoll ending cutscene: staff roll, the picture runs on between the takes
+proposed s18_Ending _050_Ending_TimeLapse ending cutscene (owner's list): normal renderer gives only a flat dark picture
+proposed s18_Ending _060_Ending_E ending cutscene: birds fly through the picture, different places between the takes
+proposed s18_Ending _070_Ending_Owari ending cutscene (owner's list): normal renderer gives only a flat dark picture

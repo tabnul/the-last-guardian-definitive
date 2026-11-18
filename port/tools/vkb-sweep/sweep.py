@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """A list of scenes, one renderer, unattended. No AI inside. Linux test box.
 
-Usage: sweep.py OUT VKB TAKES [--scenes FILE] [NAME=VALUE ...]
+Usage: sweep.py OUT VKB TAKES [--scenes FILE] [--reference DIR] [NAME=VALUE ...]
   OUT     folder for everything (outside the repo); the same layout as shot.py: OUT/STAGE__SCENE/
   VKB     0 = normal renderer, 1 = new engine
   TAKES   takes per scene (2 or more also gives the noise between take 1 and take 2)
   --scenes FILE   "STAGE SCENE" lines instead of the default set: every point of ../scene-check/scenes.json
                   minus the ones the scene check skips (SKIP in scene_check.py), so 219 scenes.
+  --reference DIR the folder of the normal renderer's sweep (its results-vkb0.jsonl and logs): the log verdict of
+                  a scene compares the error/warning lines with that scene's normal-renderer logs.
   NAME=VALUE      go into the game's environment of every take (passed on to shot.py).
 
 Every take is one run of shot.py: a fresh game start, the GPU memory guard (SHOT_GTT_LIMIT_GB), the fixed
@@ -24,6 +26,7 @@ import ast, glob, json, os, re, signal, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import compare  # noqa: E402
+import verdict  # noqa: E402
 
 CHECK = os.path.join(HERE, "..", "scene-check")
 TAKE_LINE = re.compile(r"^vkb(\d)_take(\d+): (.*?)  \((\d+) s\)$")
@@ -132,7 +135,7 @@ def summary(row):
     noise = "-" if not n else (n.get("error") or f">16 {n['gt16']:.3f}% >32 {n['gt32']:.3f}%")
     errs = "/".join(str(x["log"]["errors"]) if x["log"] else "-" for x in t)
     return (f"{row['stage']} {row['scene']}: ok {sum(x['ok'] for x in t)}/{len(t)}, crash {sum(x['crash'] for x in t)}, "
-            f"log errors {errs}, noise {noise}" + "".join(f"\n    take{x['take']}: {x['status']}" for x in t if not x["ok"]))
+            f"log errors {errs}, noise {noise}, group {row['group']}, log {row['log_verdict']['verdict']}" + "".join(f"\n    take{x['take']}: {x['status']}" for x in t if not x["ok"]))
 
 
 STOP = []
@@ -144,6 +147,11 @@ def main():
     if "--scenes" in args:
         i = args.index("--scenes")
         scenes_file = args[i + 1]
+        del args[i:i + 2]
+    reference = {}
+    if "--reference" in args:
+        i = args.index("--reference")
+        reference = verdict.rows(os.path.abspath(args[i + 1]))
         del args[i:i + 2]
     if len(args) < 3 or args[1] not in ("0", "1") or not args[2].isdigit() or int(args[2]) < 1:
         sys.exit(__doc__)
@@ -172,6 +180,7 @@ def main():
             child[0].send_signal(signal.SIGINT)  # shot.py ends its take, puts the save back, closes its screen
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
+    listing = verdict.load_list()
     todo = [s for s in scenes if s not in done]
     print(f"sweep vkb{vkb}: {len(scenes)} scenes, {len(scenes) - len(todo)} done before, {len(todo)} to run, "
           f"{takes} takes each, out {root}", flush=True)
@@ -213,6 +222,11 @@ def main():
                       flush=True)
                 code = 2
                 break
+            # the log verdict is given for every scene; scenes of the log-only group (confirmed entries of log-only.txt,
+            # or no usable normal-renderer picture) get no picture verdict, the log verdict is all they get
+            ref_row = reference.get((stage, scene))
+            row["group"], row["group_reason"] = verdict.group(stage, scene, ref_row if vkb == "1" else row, listing)
+            row["log_verdict"] = verdict.log_verdict(row, ref_row if vkb == "1" else None)
             row["time"] = time.strftime("%F %T")
             with open(results, "a") as f:
                 f.write(json.dumps(row) + "\n")
