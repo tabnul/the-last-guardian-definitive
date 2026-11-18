@@ -77,6 +77,7 @@ TEXT = {
     'icons_auto': 'Automatic (follows the controller used last)',
     'icons_ps': 'PlayStation',
     'icons_xbox': 'Xbox',
+    'hide_hints': 'Hide button hints (the tutorial still runs, nothing is skipped)',
     'credit': 'Drawing: RPCS3 DualShock 3 by HerrHulaHoop (GPL-2.0), made a DualShock 4 for this port.',
 }
 KINDS = {'ps3': 'DualShock 3 (PS3)', 'ps4': 'DualShock 4 (PS4)', 'ps5': 'DualSense (PS5)',
@@ -276,6 +277,13 @@ class ControllerPage:
         self.icons.pack(side='left', padx=6)
         self.icons.bind('<<ComboboxSelected>>', lambda _: tlg_run.update_ini(
             tlg_run.user_dir() / 'tlg.ini', {'button_icons': self.icons.current()}))
+        # Hide the hint boxes (tlg.ini hide_hints, issue #84; live, also from the in-game menu).
+        self.hide_hints = tk.BooleanVar(value=tlg_run.read_ini(tlg_run.user_dir() / 'tlg.ini')
+                                        .get('hide_hints', '0') == '1')
+        ttk.Checkbutton(left, text=self.t('hide_hints'), variable=self.hide_hints,
+                        command=lambda: tlg_run.update_ini(tlg_run.user_dir() / 'tlg.ini',
+                                                           {'hide_hints': int(self.hide_hints.get())})
+                        ).pack(anchor='w', pady=(4, 0))
         self.status = ttk.Label(left, text='', foreground=self.ACCENT, wraplength=700)
         self.status.pack(anchor='w', pady=(4, 0))
 

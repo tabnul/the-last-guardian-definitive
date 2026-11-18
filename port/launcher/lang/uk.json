@@ -470,7 +470,8 @@
     "pad.quit_key_press": "Натисніть клавішу, наприклад Ctrl+X…",
     "pad.quit_key_bad": "Не ця клавіша: використайте Ctrl або Alt з літерою чи цифрою, або клавішу F",
     "pad.quit_key_off": "вимк.",
-    "pad.off_button": "Вимк."
+    "pad.off_button": "Вимк.",
+    "pad.hide_hints": "Сховати підказки кнопок (навчання працює далі, нічого не пропускається)"
   },
   "items": {
     "menu:sharpen": {
@@ -1195,6 +1196,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Призначити: утримуйте разом дві або більше кнопок, потім відпустіть. Клавіша виходу на клавіатурі потребує Ctrl або Alt з літерою чи цифрою, або клавішу F. Insert відкриває це меню.",
     "Quit game (keyboard)": "Вийти з гри (клавіатура)",
     "Press the key, for example Ctrl+X...": "Натисніть клавішу, наприклад Ctrl+X...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Не ця клавіша: використайте Ctrl або Alt з літерою чи цифрою, або клавішу F."
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Не ця клавіша: використайте Ctrl або Alt з літерою чи цифрою, або клавішу F.",
+    "Hide button hints": "Сховати підказки кнопок",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Рамки з підказками кнопок у грі ніколи не показуються. Навчання й далі працює у фоні, тож нічого не пропускається."
   }
 }

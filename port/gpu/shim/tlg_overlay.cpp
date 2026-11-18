@@ -1070,6 +1070,9 @@ void ControlsTab() {
         ChoiceRow(TR("Button icons"), s.button_icons, icon_labels, icon_values, 3,
                   TR("The controller drawn in the game's button hints. Automatic follows the controller used last."),
                   0);
+        CheckRow(TR("Hide button hints"), s.hide_hints,
+                 TR("The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped."),
+                 false);
         ImGui::EndTable();
     }
     if (BeginRows("##combos")) {

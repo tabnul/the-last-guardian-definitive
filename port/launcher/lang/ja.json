@@ -463,7 +463,8 @@
     "pad.quit_key_press": "キーを押してください（例: Ctrl+X）…",
     "pad.quit_key_bad": "このキーは使えません: CtrlかAltと文字または数字、またはFキーを使ってください",
     "pad.quit_key_off": "オフ",
-    "pad.off_button": "オフ"
+    "pad.off_button": "オフ",
+    "pad.hide_hints": "ボタンガイドを非表示（チュートリアルは裏で進み、何も飛ばされません）"
   },
   "items": {
     "menu:sharpen": {
@@ -1182,6 +1183,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "設定: 2つ以上のボタンを同時に長押しして離します。キーボードの終了キーには、CtrlかAltと文字または数字、またはFキーが必要です。Insertでこのメニューを開きます。",
     "Quit game (keyboard)": "ゲーム終了（キーボード）",
     "Press the key, for example Ctrl+X...": "キーを押してください（例: Ctrl+X）...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "このキーは使えません: CtrlかAltと文字または数字、またはFキーを使ってください。"
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "このキーは使えません: CtrlかAltと文字または数字、またはFキーを使ってください。",
+    "Hide button hints": "ボタンガイドを非表示",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "ゲームのボタンガイドの枠を一切表示しません。チュートリアルは裏で進むので、何も飛ばされません。"
   }
 }

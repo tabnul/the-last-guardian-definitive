@@ -463,7 +463,8 @@
     "pad.quit_key_press": "请按键，例如 Ctrl+X…",
     "pad.quit_key_bad": "不能用这个键：请用 Ctrl 或 Alt 加字母或数字，或 F 键",
     "pad.quit_key_off": "关",
-    "pad.off_button": "关闭"
+    "pad.off_button": "关闭",
+    "pad.hide_hints": "隐藏按键提示（教程仍在运行，不会跳过任何内容）"
   },
   "items": {
     "menu:sharpen": {
@@ -1182,6 +1183,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "设置：同时按住两个或更多按键，然后松开。键盘退出键需要 Ctrl 或 Alt 加字母或数字，或 F 键。Insert 打开此菜单。",
     "Quit game (keyboard)": "退出游戏（键盘）",
     "Press the key, for example Ctrl+X...": "请按键，例如 Ctrl+X...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "不能用这个键：请用 Ctrl 或 Alt 加字母或数字，或 F 键。"
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "不能用这个键：请用 Ctrl 或 Alt 加字母或数字，或 F 键。",
+    "Hide button hints": "隐藏按键提示",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "游戏的按键提示框将始终不显示。教程仍在后台运行，因此不会跳过任何内容。"
   }
 }

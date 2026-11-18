@@ -39,6 +39,8 @@ No game files are included. You need your own copy, dumped from your own PS4.
   Ico's horns. Optional, off by default.
 - **[Quit directly](#controllers-and-languages):** quit the game from anywhere with a controller
   combo or the keyboard, no menus. The game's pause menu shows the buttons.
+- **[Hide button hints](#controllers-and-languages):** switch the game's button hint boxes off,
+  for a clean screen. The tutorial still runs in the background, so nothing is skipped.
 - **[Trico Tricks](docs/fun.md#trico-tricks-make-trico-move):** 49 of Trico's own moves on a bar (**F12**) in coloured
   groups, with your own favourites, the poses of the game's press shots and E3 demos, and the
   throw-up animation the developers sealed.
@@ -349,6 +351,9 @@ trigger points, check for stick drift, and remap keyboard and mouse. See
   Controller page draws one too. **Button icons**
   (Controller page, or Controls in the port's menu) picks Automatic, PlayStation or Xbox;
   Automatic follows the controller you used last.
+- **Hide button hints:** turns the game's button hint boxes off (issue #84). The tutorial still
+  runs in the background, so nothing is skipped, and you can switch it while you play. Off by
+  default; on the launcher's Controller page, or under Controls in the port's menu.
 - **Quit from anywhere:** with the quit key on the keyboard (Ctrl+X; set your own or turn it off
   under Controls in the port's menu or on the launcher's Controller page: Ctrl or Alt with a letter
   or number, or an F key), or hold the quit combo for 2 seconds

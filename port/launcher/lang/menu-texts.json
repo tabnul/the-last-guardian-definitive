@@ -203,6 +203,8 @@
  "Automatic",
  "Button icons",
  "The controller drawn in the game's button hints. Automatic follows the controller used last.",
+ "Hide button hints",
+ "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.",
  "Quit game (hold 2 seconds)",
  "In-game menu",
  "QA menu",

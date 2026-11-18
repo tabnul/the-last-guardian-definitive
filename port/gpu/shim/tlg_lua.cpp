@@ -751,7 +751,8 @@ std::string SetChunk() {
     code += "Drool(" + std::to_string(std::clamp(s.trico_drool.load(), 0, 2)) + ")\n";
     code += std::string("Plays(") + (s.mod_plays.load() ? "true" : "false") + ") ThrowUp(" +
             std::to_string(s.mod_throw_up.load() ? 1 : 0) + ") _TLGHINTS=" +
-            (s.mod_hints.load() ? "true" : "false") + "\n";
+            (s.mod_hints.load() ? "true" : "false") + " _TLGHIDEHINTS=" +
+            (s.hide_hints.load() ? "true" : "false") + "\n";
     code += std::string("Treasures(") + (s.mod_treasures.load() ? "true" : "false") + ") Horns(" +
             (s.mod_horns.load() ? "true" : "false") + ") ButtonIcons(" +
             (s.XboxIcons() ? "true" : "false") + "," + std::to_string(WideFactor()) + ")\n";
@@ -949,9 +950,26 @@ bool GameEdits(std::string& patched, std::string_view name) {
         static constexpr std::string_view Late =
             " if self.isCreateObj and not self.tlgRegen then self.tlgRegen = true"
             " DelayExec(function() self.tlgRegen = nil GuideSystem:RegenerationGuide() end) end";
+        // Hide button hints (tlg.ini hide_hints, issue #84): the engine asks checkDisp each frame
+        // whether a hint box may show, but only for hints with a ViewCond of their own (58 of 74).
+        // Every hint asks now; one without a ViewCond gets "yes" as before, and while _TLGHIDEHINTS
+        // is set (settings tick) all get "no". Their tutorial logic (AchieveCond, norma) runs on.
+        static constexpr std::string_view AskSet =
+            "if data.Condition.ViewCond ~= nil then sysData.isCallViewCond = true end";
+        static constexpr std::string_view Ask = "return sys.Condition.ViewCond(sys.Condition";
+        bool hide_done = false;
+        if (const size_t k = patched.find(AskSet); k != std::string::npos) {
+            if (const size_t a = patched.find(Ask); a != std::string::npos && a > k) {
+                patched.insert(a, "if _TLGHIDEHINTS then return false end"
+                                  " if sys.Condition.ViewCond == nil then return true end ");
+                patched.replace(k, AskSet.size(), "sysData.isCallViewCond = true");
+                hide_done = true;
+            }
+        }
+        if (!hide_done) std::printf("Lua: hide hints: GuideSystem.lua not as expected, left out\n");
         size_t at = patched.find(Anchor);
         if (at == std::string::npos) {
-            return false;
+            return hide_done;
         }
         int done = 0;
         for (std::string_view set : {std::string_view("data.sysParam.titleTex = tex or FindObject('_error_texture')"),
@@ -962,7 +980,7 @@ bool GameEdits(std::string& patched, std::string_view name) {
                 ++done;
             }
         }
-        return done == 2;
+        return done == 2 || hide_done;
     }
     if (s.level_select && name == "data_trico/game/scripts/stages/s01_Opening/missionScript.lua") {
         // Only the test guarding the L1 level select, not the press build's other changes.
