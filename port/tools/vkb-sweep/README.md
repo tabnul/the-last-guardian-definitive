@@ -166,10 +166,10 @@ changes.
 
 ### Confirmed entries (2026-11-18, owner, issue 27)
 
-`log-only.txt`: 35 scenes `confirmed` (8 cutscenes, 6 endings, 15 too much moves or alive with action, 6 "need a look").
+`log-only.txt`: 35 scenes `confirmed` on 2026-11-18 (later additions are listed in the file itself; 8 cutscenes, 6 endings, 15 too much moves or alive with action, 6 "need a look").
 `noise-ignore.txt`: 56 scenes `confirmed`: the owner's list, and only where the retake (noise-126, two new normal takes
 against the answer-key take, outside the mask) stays within the limit. 39 entries stay `proposed` (full picture check),
-among them `s02_01_Care_Step1_001`. Scenes still judged by the whole picture: everything not on a confirmed line.
+(not `s02_01_Care_Step1_001`: the owner put it on the log-only list, event-driven scene, picture not comparable between takes; issue 27). Scenes still judged by the whole picture: everything not on a confirmed line.
 
 ### 3-photo masks (issue 27, owner decision 12:46)
 
