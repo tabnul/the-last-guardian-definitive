@@ -8079,10 +8079,34 @@ u64 PS4_SYSV_ABI AabbReadStart(Core::GuestHooks::MidContext* c) {
                 }
             }
             if (any) {
-                counter.fetch_add(1, std::memory_order_relaxed);
+                const u64 n = counter.fetch_add(1, std::memory_order_relaxed) + 1;
+                // C21 play check: each skip is rare (transitions only), so each one is logged with the frame data's group counts, to line it up with the cutscene markers
+                const u64 frame = g_rec_frame.load(std::memory_order_relaxed);
+                const bool ok = IsHeapPointer(frame);
+                TLG_LOG(CP, Warn, "K2 readback pass not run, counts set to 0 (pass {}, skip {}, groups A/B/C {} / {} / {})", fields.size() == 1 ? "AABB" : "third", n,
+                        ok ? Rd<u32>(frame, 0x31e38) : 0u, ok ? Rd<u32>(frame, 0x31e68) : 0u, ok ? Rd<u32>(frame, 0x31e50) : 0u);
             }
         };
-        if (!g_aabb_pass_ran.load(std::memory_order_relaxed)) {
+        // C21 kill-experiment (test only): TLG_TEST_K2_SKIP=<first reader start>:<count> treats the AABB pass as not run for those reader starts
+        static const std::pair<u64, u64> test_skip = [] {
+            const char* e = std::getenv("TLG_TEST_K2_SKIP");
+            u64 first = 0, count = 0;
+            if (e != nullptr) {
+                char* end = nullptr;
+                first = std::strtoull(e, &end, 10);
+                count = end != nullptr && (*end == ',' || *end == ':') ? std::strtoull(end + 1, nullptr, 10) : 1; // ':' as well (vkb_run splits its list on commas)
+            }
+            return std::make_pair(first, count);
+        }();
+        static std::atomic<u64> test_starts{0};
+        const u64 start_no = test_starts.fetch_add(1, std::memory_order_relaxed);
+        const bool forced = test_skip.second != 0 && start_no >= test_skip.first && start_no < test_skip.first + test_skip.second;
+        if (test_skip.second != 0 && start_no % 300 == 0) {
+            const u64 memory = BufferMemory(Rd<u64>(device, 0x27a8));
+            TLG_LOG(CP, Warn, "C21 test: reader start {}, AABB count {}, pass ran {}", start_no, memory != 0 ? Rd<u32>(memory, 0) : 0xffffffffu,
+                    g_aabb_pass_ran.load(std::memory_order_relaxed) ? 1 : 0);
+        }
+        if (!g_aabb_pass_ran.load(std::memory_order_relaxed) || forced) {
             clear({0x27a8}, c_aabb_pass_skipped);
         }
         if (!g_third_pass_ran.load(std::memory_order_relaxed)) {
