@@ -146,8 +146,11 @@ def picture_check(row, ref_row, noise_list):
     entry = noise_list.get(key)
     if entry:
         out["entry_status"] = entry[0]
-    second = [t["picture"] for t in ref_row["takes"] if t["ok"]][1:]  # every further good take of the reference
-    if entry and entry[0] == "confirmed" and second:
+    need = noisemask.takes_needed(entry[2]) if entry else 2
+    second = [t["picture"] for t in ref_row["takes"] if t["ok"]][1:need]
+    if entry and entry[0] == "confirmed" and len(second) < need - 1:
+        out["masked_error"] = f"mask needs {need} good reference takes, found {len(second) + 1}"
+    elif entry and entry[0] == "confirmed" and second:
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             m = os.path.join(tmp, "mask.png")

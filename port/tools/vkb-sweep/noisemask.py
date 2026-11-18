@@ -60,6 +60,12 @@ def load_list(path=LIST):
     return out
 
 
+def takes_needed(causes):
+    """How many good reference takes build this entry's mask: 3 when the CAUSES field holds `takes=3`
+    (issue 27), else 2 (the first two takes, as the confirmed entries were measured)."""
+    return 3 if "takes=3" in causes else 2
+
+
 def confirmed_mask(stage, scene, listing=None):
     """The entry of this scene, only when the owner has confirmed it; else None (the scene is judged whole)."""
     e = (listing if listing is not None else load_list()).get((stage, scene))

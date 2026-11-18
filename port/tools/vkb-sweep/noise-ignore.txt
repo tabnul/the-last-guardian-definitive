@@ -6,12 +6,12 @@
 # Limit: more than 25% left out = the scene goes to log-only.txt instead.
 proposed s02_TricosCave s02_01_Care_Step1_001 21.1% boy,mist | normal renderer differs from itself in: boy, mist
 confirmed s03_Canyon CA_b01_InsideLake_001 7.3% boy | normal renderer differs from itself in: boy
-proposed s03_Canyon CA_c01_StatueBreakEnd_001 9.6% boy | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.086%, >32 0.018%; normal renderer differs from itself in: boy
+proposed s03_Canyon CA_c01_StatueBreakEnd_001 9.6% boy,takes=3 | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.086%, >32 0.018%; normal renderer differs from itself in: boy
 confirmed s03_Canyon CA_d01_ChainRoom_001 9.3% boy,mist | normal renderer differs from itself in: boy, mist
 confirmed s03_Canyon CA_e01_PulseDoorCave_001 5.9% boy,foliage | normal renderer differs from itself in: boy, foliage
 confirmed s03_Canyon CA_f01_CrouchMove_001 9.2% boy,light | normal renderer differs from itself in: boy, light
-proposed s04_FirstAntenna FA_a01_OpenGate_001 10.74% flame | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.375%, >32 0.007%; normal renderer differs from itself in: flame
-proposed s04_FirstAntenna FA_a04_AntennaRoom_001 15.29% boy,flame | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.049%, >32 0.0%; normal renderer differs from itself in: boy, flame
+proposed s04_FirstAntenna FA_a01_OpenGate_001 10.74% flame,takes=3 | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.375%, >32 0.007%; normal renderer differs from itself in: flame
+proposed s04_FirstAntenna FA_a04_AntennaRoom_001 15.29% boy,flame,takes=3 | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.049%, >32 0.0%; normal renderer differs from itself in: boy, flame
 confirmed s04_FirstAntenna FA_b01_SoldiersTerrace_001 4.1% boy,flame | normal renderer differs from itself in: boy, flame
 confirmed s04_FirstAntenna FA_c01_GardenTerrace_001 7.2% foliage,boy | normal renderer differs from itself in: foliage, boy
 confirmed s04_FirstAntenna FA_c01_SmellPotHouse_001 4.4% boy | normal renderer differs from itself in: boy
@@ -19,41 +19,41 @@ confirmed s04_FirstAntenna FA_d01_TreesRoad_001 5.6% boy,foliage | normal render
 confirmed s05_Attacked AT_SwitchRoom_001 4.3% boy | normal renderer differs from itself in: boy
 confirmed s05_Attacked AT_CondorRise_001 20.0% foliage,boy | normal renderer differs from itself in: foliage, boy
 confirmed s05_Attacked AT_PullSwitch_001 3.2% flame,boy | normal renderer differs from itself in: flame, boy
-proposed s05_Attacked AT_SoldiersDestruction_001 14.84% flame,boy | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.214%, >32 0.02%; normal renderer differs from itself in: flame, boy
+proposed s05_Attacked AT_SoldiersDestruction_001 14.84% flame,boy,takes=3 | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.214%, >32 0.02%; normal renderer differs from itself in: flame, boy
 confirmed s05_Attacked AT_SoldiersRoom_002 2.9% boy | normal renderer differs from itself in: boy
 confirmed s06_FallingBridge FB_b01_Start_intarest_001 7.0% foliage,particles,boy | normal renderer differs from itself in: foliage, particles, boy
 confirmed s06_FallingBridge FB_c02_boy_athletic_001 7.5% boy,particles | normal renderer differs from itself in: boy, particles
 confirmed s06_FallingBridge FB_b01_SuspendPot_003 5.1% boy,props | normal renderer differs from itself in: boy, props
-proposed s06_FallingBridge FB_e01_Outdoor_001 15.61% boy,foliage | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.352%, >32 0.001%; normal renderer differs from itself in: boy, foliage
+proposed s06_FallingBridge FB_e01_Outdoor_001 15.61% boy,foliage,takes=3 | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.352%, >32 0.001%; normal renderer differs from itself in: boy, foliage
 confirmed s06_FallingBridge FB_DropMirror2_001 7.1% boy,prompt | normal renderer differs from itself in: boy, prompt
 confirmed s07_Alone AL_a01_AloneStart_01 4.0% boy,mist | normal renderer differs from itself in: boy, mist
 confirmed s07_Alone AL_a01_SkyAthletics_01 11.3% props,boy | normal renderer differs from itself in: props, boy
 confirmed s07_Alone AL_b01_Seesaw_01 14.4% props,boy | normal renderer differs from itself in: props, boy
 confirmed s07_Alone AL_b01_StepColumn_01 22.6% props | normal renderer differs from itself in: props
 confirmed s07_Alone AL_d01_DarkPlace_01 4.0% boy | normal renderer differs from itself in: boy
-proposed s08_LargeTower s08_07_Top_001 18.46% mist | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.915%, >32 0.029%; normal renderer differs from itself in: mist
+proposed s08_LargeTower s08_07_Top_001 18.46% mist,takes=3 | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.915%, >32 0.029%; normal renderer differs from itself in: mist
 confirmed s09_FallingBridge2 FB2_Start_001 3.1% boy,flame | normal renderer differs from itself in: boy, flame
 confirmed s09_FallingBridge2 FB2_After_Try_Touch_Under 14.9% foliage,boy | normal renderer differs from itself in: foliage, boy
 confirmed s09_FallingBridge2 FB2_End_HungryEvent 10.0% boy,foliage | normal renderer differs from itself in: boy, foliage
-proposed s09_FallingBridge2 FB2_MiddleLayer_001 15.86% boy,foliage,mist | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.533%, >32 0.0%; normal renderer differs from itself in: boy, foliage, mist
-proposed s09_FallingBridge2 FB2_TopLayer_001 15.64% boy,mist | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.631%, >32 0.0%; normal renderer differs from itself in: boy, mist
+proposed s09_FallingBridge2 FB2_MiddleLayer_001 15.86% boy,foliage,mist,takes=3 | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.533%, >32 0.0%; normal renderer differs from itself in: boy, foliage, mist
+proposed s09_FallingBridge2 FB2_TopLayer_001 15.64% boy,mist,takes=3 | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.631%, >32 0.0%; normal renderer differs from itself in: boy, mist
 confirmed s09_FallingBridge2 FB2_End_001 2.2% boy,particles | normal renderer differs from itself in: boy, particles
-proposed s10_Pit s10_00_Start_001 13.59% boy,flame | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.335%, >32 0.103%; normal renderer differs from itself in: boy, flame
+proposed s10_Pit s10_00_Start_001 13.59% boy,flame,takes=3 | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.335%, >32 0.103%; normal renderer differs from itself in: boy, flame
 confirmed s10_Pit s10_01_Lever_Down_001 3.5% boy | normal renderer differs from itself in: boy
 confirmed s10_Pit s10_02_Pitfall_002 16.3% water,boy | normal renderer differs from itself in: water, boy
-proposed s10_Pit s10_03_Escape_Pitfall_001 20.99% boy,water | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.255%, >32 0.002%; normal renderer differs from itself in: boy, water
+proposed s10_Pit s10_03_Escape_Pitfall_001 20.99% boy,water,takes=3 | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.255%, >32 0.002%; normal renderer differs from itself in: boy, water
 confirmed s10_Pit s10_04_In_the_Bridge_001 5.1% boy | normal renderer differs from itself in: boy
 confirmed s11_ColumnCorridor CC_ColumnCorridor_End 3.6% boy | normal renderer differs from itself in: boy
 confirmed s12_TheNest s12_01_Elevator_Station_001 5.7% boy,particles | normal renderer differs from itself in: boy, particles
 confirmed s12_TheNest s12_04_Escape_from_Arico_001 6.5% boy,foliage | normal renderer differs from itself in: boy, foliage
-proposed s12_TheNest s12_05_Run_into_Ruins_001 8.91% boy | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.001%, >32 0.0%; normal renderer differs from itself in: boy
+proposed s12_TheNest s12_05_Run_into_Ruins_001 8.91% boy,takes=3 | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.001%, >32 0.0%; normal renderer differs from itself in: boy
 confirmed s12_TheNest s12_06_Escape_by_Elevator_001 5.3% boy | normal renderer differs from itself in: boy
 confirmed s12_TheNest s12_07_Enter_Trico_001 12.5% props | normal renderer differs from itself in: props
-proposed s12_TheNest s12_08_Roll_Cage_001 10.89% props | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.009%, >32 0.002%; normal renderer differs from itself in: props
+proposed s12_TheNest s12_08_Roll_Cage_001 10.89% props,takes=3 | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.009%, >32 0.002%; normal renderer differs from itself in: props
 confirmed s13_FirstFlight FF_c01_TunnelOpenBolt 7.3% light,flame | normal renderer differs from itself in: light, flame
 confirmed s13_FirstFlight FF_e01_Second_Battle_End 4.1% boy | normal renderer differs from itself in: boy
 confirmed s13_FirstFlight FF_f01_Athletic_Start 6.9% boy | normal renderer differs from itself in: boy
-proposed s13_FirstFlight FF_i01_Celling2 19.12% mist | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.014%, >32 0.0%; normal renderer differs from itself in: mist
+proposed s13_FirstFlight FF_i01_Celling2 19.12% mist,takes=3 | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.014%, >32 0.0%; normal renderer differs from itself in: mist
 confirmed s13_FirstFlight FF_i01_Celling2b 3.6% boy | normal renderer differs from itself in: boy
 confirmed s13_FirstFlight FF_i01_Celling3 17.0% props | normal renderer differs from itself in: props
 confirmed s13_FirstFlight FF_i01_Celling3b 4.3% boy,foliage | normal renderer differs from itself in: boy, foliage

@@ -153,9 +153,9 @@ the wind, flames, particles): the photo is not the same moment. `noise-ignore.tx
 the picture that the picture check leaves out. One rule for every cause: a pixel counts only where the takes of
 the normal renderer agree with each other (no two differ by more than 16), the left-out area grown by 4 pixels
 (`noisemask.py make A.png B.png [C.png ...] MASK.png`; the mask is made again from the good takes of the reference
-run, it is not stored). Two takes catch only what moves between those two; since issue 27 the mask uses every good
-take of the reference run, and the scenes that need it (see below) are taken three times in the reference run
-(`TAKES=3`).
+run, it is not stored). Two takes catch only what moves between those two. An entry whose CAUSES field holds `takes=3` (issue 27) is
+made from the first three good reference takes (the reference run needs `TAKES=3` for that scene; fewer takes give
+`masked_error` in the result, not a silent skip). All other entries keep the first two takes, as measured.
 `python3 compare.py A.png B.png --mask MASK.png` measures without the masked pixels and prints the share left out.
 
 Same status rule as the log-only list: `proposed` or `confirmed`, only the owner confirms, the tools honour only
