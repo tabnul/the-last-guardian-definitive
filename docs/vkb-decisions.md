@@ -9,6 +9,25 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-18 - Noise mask from three photos (not yet merged)
+
+- **Problem:** for 38 scenes the 2-photo mask did not hold on a fresh retake (issue 27). The owner's words
+  (12:46): "The 14 'above' scenes ... yes, do it" (mask from 3 photos) and "The 19 'cannot judge' scenes proposed as
+  log only: not log only yet. Try the wider mask (3 photos) there too first. Only what still fails after that is
+  proposed for log only again." At 12:49: `AT_BarrelBox_001` and `ST_040_FallingFromSentinelTower` log only;
+  `AT_Outdoor_001` wider mask. The camera-shift check (comment 13:38) found no shift, so no recipe change.
+- **Considered:** (A) mask = every pixel where any two of the three photos differ by more than 16, same grow rule.
+  (B) per cause detectors (rejected before, see the entry below). (C) a looser limit for these scenes (changes the
+  yardstick: the owner's call, not done).
+- **Choice:** A, one rule, no special case. Measured on a fourth photo (retake 2) that was not used for the mask. 13 of
+  36 scenes come within the limit; 23 still fail or need more than 25% left out and go to the log-only list as
+  `proposed`. `sweep.py` now builds the mask from every good reference take, so the reference run of these scenes
+  needs 3 takes.
+- **Who:** owner (the 3-photo mask, the two log-only scenes), box (the measurement and the split).
+- **Links:** issue 27; pull request of branch `fix/vkb-mask3`.
+
+---
+
 ## 2026-11-18 - Ignore list: what the owner confirmed (not yet merged)
 
 - **Problem:** the log-only list and the noise mask held only `proposed` entries (rule 20). The owner decided on

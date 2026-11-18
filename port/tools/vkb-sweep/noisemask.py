@@ -2,12 +2,14 @@
 """The noise mask: which pixels of a scene the picture check leaves out. No AI inside; needs ImageMagick (convert).
 
 Rule (one rule for every cause, no special case per scene): a pixel counts in the picture check only where the
-normal renderer agrees with itself. Mask = every pixel where take 1 and take 2 of the NORMAL renderer differ by more
-than 16 (largest channel), grown by 4 pixels so that soft edges and a little movement are covered. The boy standing
+normal renderer agrees with itself. Mask = every pixel where two of the takes of the NORMAL renderer differ by more
+than 16 (largest channel; with 2 takes: take 1 and take 2, with 3 or more: any two of them, issue 27), grown by 4
+pixels so that soft edges and a little movement are covered. More takes catch moving parts that two takes miss. The boy standing
 elsewhere, drifting mist, swaying grass, flickering flames, floating particles all land in the mask the same way.
 
 Usage:
-  noisemask.py make A.png B.png MASK.png   build the mask (white = left out) and print its share of the picture
+  noisemask.py make A.png B.png [C.png ...] MASK.png   build the mask (white = left out) from 2 or more takes and
+                                           print its share of the picture
   noisemask.py list                        print noise-ignore.txt with its status per entry
 
 noise-ignore.txt: one entry per scene, `STATUS STAGE SCENE SHARE% CAUSES | reason`. STATUS is `proposed` or
@@ -21,10 +23,21 @@ THRESHOLD = "6.3%"  # 16 of 255
 GROW = "Disk:4"
 
 
-def make(a, b, mask):
-    """Write MASK (white = left out) from two pictures of the normal renderer; return the share left out (%)."""
-    subprocess.run(["convert", a, b, "-compose", "difference", "-composite", "-separate", "-evaluate-sequence", "max",
-                    "-threshold", THRESHOLD, "-morphology", "Dilate", GROW, mask], check=True)
+def make(pics, mask):
+    """Write MASK (white = left out) from two or more pictures of the normal renderer; return the share left out (%).
+    Per channel, largest minus smallest value over the pictures is the largest difference of any two of them."""
+    if len(pics) < 2:
+        raise ValueError("a noise mask needs at least 2 pictures")
+    lo, hi = mask + ".lo.png", mask + ".hi.png"
+    try:
+        subprocess.run(["convert", *pics, "-evaluate-sequence", "min", lo], check=True)
+        subprocess.run(["convert", *pics, "-evaluate-sequence", "max", hi], check=True)
+        subprocess.run(["convert", hi, lo, "-compose", "difference", "-composite", "-separate", "-evaluate-sequence", "max",
+                        "-threshold", THRESHOLD, "-morphology", "Dilate", GROW, mask], check=True)
+    finally:
+        for f in (lo, hi):
+            if os.path.exists(f):
+                os.remove(f)
     return share(mask)
 
 
@@ -55,8 +68,8 @@ def confirmed_mask(stage, scene, listing=None):
 
 def main():
     a = sys.argv[1:]
-    if a[:1] == ["make"] and len(a) == 4:
-        print(f"ignored {make(a[1], a[2], a[3])}% of the picture")
+    if a[:1] == ["make"] and len(a) >= 4:
+        print(f"ignored {make(a[1:-1], a[-1])}% of the picture")
     elif a == ["list"]:
         for (st, sc), (s, sh, c, r) in load_list().items():
             print(f"{s:9} {st} {sc} {sh}% {','.join(c)}")

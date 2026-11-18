@@ -150,9 +150,12 @@ with the count per group. Nothing in the game or the engine changes.
 
 Some scenes differ between two takes of the NORMAL renderer (boy in another place or frame, drifting mist, grass in
 the wind, flames, particles): the photo is not the same moment. `noise-ignore.txt` lists, per scene, the part of
-the picture that the picture check leaves out. One rule for every cause: a pixel counts only where take 1 and
-take 2 of the normal renderer agree (difference not above 16), the left-out area grown by 4 pixels
-(`noisemask.py make A.png B.png MASK.png`; the mask is made again from the answer-key takes, it is not stored).
+the picture that the picture check leaves out. One rule for every cause: a pixel counts only where the takes of
+the normal renderer agree with each other (no two differ by more than 16), the left-out area grown by 4 pixels
+(`noisemask.py make A.png B.png [C.png ...] MASK.png`; the mask is made again from the good takes of the reference
+run, it is not stored). Two takes catch only what moves between those two; since issue 27 the mask uses every good
+take of the reference run, and the scenes that need it (see below) are taken three times in the reference run
+(`TAKES=3`).
 `python3 compare.py A.png B.png --mask MASK.png` measures without the masked pixels and prints the share left out.
 
 Same status rule as the log-only list: `proposed` or `confirmed`, only the owner confirms, the tools honour only
@@ -167,3 +170,11 @@ changes.
 `noise-ignore.txt`: 56 scenes `confirmed`: the owner's list, and only where the retake (noise-126, two new normal takes
 against the answer-key take, outside the mask) stays within the limit. 39 entries stay `proposed` (full picture check),
 among them `s02_01_Care_Step1_001`. Scenes still judged by the whole picture: everything not on a confirmed line.
+
+### 3-photo masks (issue 27, owner decision 12:46)
+
+For the 38 scenes whose retake did not agree with the 2-photo mask: mask from answer key 1+2 and retake 1,
+measured on retake 2 against each of the three, outside the mask (no game run: the four existing normal photos).
+13 scenes come within the limit (`noise-ignore.txt`, still `proposed`, new share in the line). 23 still fail or
+would need more than 25% left out: `log-only.txt`, `proposed`. `AT_BarrelBox_001` and
+`ST_040_FallingFromSentinelTower` are `confirmed` log only (owner, comment 6979040549).
