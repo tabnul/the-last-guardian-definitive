@@ -9,6 +9,30 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-18 - First vertex of a direct draw: Vulkan adds it only when the shader does not (not yet merged)
+
+- **Problem:** s02_05_Tritrigger_Get_001 gave "photo setup failed" in both takes (scoreboard issue 36). The scene was
+  not stalled: after the load the new engine drew about one frame every 0.65 s, with the GPU fully busy. Two cave
+  wall draws turned into huge spikes (250 million pixels shaded from 33,000 triangles in one pass). Cause: the game
+  hands a draw's first vertex to the vertex shader, and the shader adds it itself. These cave shaders read their
+  vertices from buffers and add it in their own code, and the new engine also gave it to Vulkan, so every vertex
+  number was moved twice. The normal renderer gives it to Vulkan only when the game's fetch shader uses it (that part
+  of the shader becomes Vulkan's vertex input).
+- **Considered:** (A) at the draw: Vulkan gets the first vertex only when the shader names no register for it, or
+  when its fetch shader reads that register; otherwise 0. This is the normal renderer's rule, one place, nothing
+  recompiled. (B) handle direct draws like indirect ones already are: always give it to Vulkan and let the
+  recompiled shader take it back off where its own code adds it. Also one rule, but every such shader is compiled
+  again, with new pipeline keys. Higher risk for the same result. (C) a fix for the cave shaders only: against
+  principle 10.
+- **Choice:** A. Cause and not case (10): every direct draw, indexed or not. Same on every machine (6): only the
+  numbers handed to Vulkan change, so no driver feature is involved. Right picture first (11): no measurable cost
+  (one read and two compares per draw). Fewest special paths: no new compile path. Switch `TLG_VKB_BASE_VERTEX`
+  (default on; `=0` the old way). Counter `first_vertex_by_vulkan_by_shader` in the graphics report.
+- **Who:** box (rule 14).
+- **Links:** issue 36 (https://github.com/tabnul/tlg-vkb-work/issues/36); pull request for branch `fix/vkb-base-vertex`.
+
+---
+
 ## 2026-11-18 - Buffer lookup memo: an entry answers only for the memory it was resolved for (not yet merged)
 
 - **Problem:** Some takes of the same scene draw the boy wrong (issue 12). In every bad take the boy's skinning

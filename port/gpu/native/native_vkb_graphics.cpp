@@ -132,6 +132,7 @@ std::atomic<u64> c_src[2][3][2]{}; ///< [stage vs/ps][buffers/images/samplers][m
 std::atomic<u64> c_attr_mapped{0}, c_attr_unmapped{0};
 std::atomic<u64> c_recorded{0}, c_record_ns{0}, c_skip_not_compiled{0}, c_skip_buffer{0}, c_skip_image{0}, c_skip_sampler{0}, c_skip_uav{0}, c_skip_special{0}, c_skip_target{0},
     c_skip_depth{0}, c_late_views{0}, c_skip_vertex{0}, c_skip_index{0}, c_skip_indirect{0}, c_skip_no_attachment{0}, c_indirect_recorded{0}, c_new_passes{0}, c_flat_rebuilt{0};
+std::atomic<u64> c_base_vertex_vulkan{0}, c_base_vertex_shader{0}; ///< issue 36: direct draws with a first vertex: added by Vulkan / left to the shader's own code
 
 u64 NowNs() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -359,6 +360,27 @@ u32 IndirectSgprs(u64 vs) {
     const u32 vertex = (locations & 0xf) == 0 ? 0 : (locations & 0xf) + VertexStageSgprBase;
     const u32 instance = (locations >> 4) == 0 ? 0 : (locations >> 4) + VertexStageSgprBase;
     return vertex | instance << 16;
+}
+
+/// Issue 36: the first vertex Vulkan adds to a direct draw (vertexOffset of an indexed draw, firstVertex of the others). The engine hands a draw's first vertex (the
+/// base vertex of an indexed draw) to the vertex shader in the user data register the shader names (low nibble of byte 0x27 of its block, 0 = none), and the
+/// shader adds it itself: in its fetch shader, or in its own code when it reads its vertices from buffers. A fetch shader becomes Vulkan's vertex input, so its add
+/// has to come from Vulkan; a shader that adds it in its own code gets 0 here, or every vertex index is moved twice (the cave walls of s02_05 drew as huge
+/// spikes, 650 ms of GPU time a frame). A shader that names no register cannot add it: Vulkan does. This is the normal renderer's rule (GetDrawOffsets), read
+/// from the engine's side. TLG_VKB_BASE_VERTEX=0: the old way, Vulkan always adds it.
+u32 VulkanFirstVertex(u64 ctx, const Variant& v, u32 first) {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_BASE_VERTEX"); return e == nullptr || e[0] != '0'; }();
+    if (!on || first == 0) {
+        return first;
+    }
+    const u64 vs = Rd<u64>(ctx, CtxVertexShader);
+    const u32 location = vs != 0 ? (Rd<u8>(Rd<u64>(vs, 0x120), 0x27) & 0xfu) : 0u;
+    if (location == 0 || (v.has_fetch && v.fetch.vertex_offset_sgpr == static_cast<s8>(location))) {
+        c_base_vertex_vulkan.fetch_add(1, std::memory_order_relaxed);
+        return first;
+    }
+    c_base_vertex_shader.fetch_add(1, std::memory_order_relaxed);
+    return 0;
 }
 
 /// A3 (note 47; TLG_VKB_FAST_KEY, default on, =0 the full key): the same key value as VariantKeyFull, made cheaper. Only the set bits of the
@@ -940,6 +962,7 @@ struct DrawJob final : Stream::Job {
     u64 args_offset{};
     u32 kind{};
     u64 a1{}, a2{}, a3{};
+    u32 first_vertex{}; ///< issue 36: what Vulkan adds to the vertex index (VulkanFirstVertex)
     u32 instances{};
     u64 ps_hash{};
     u32 color_format0{};
@@ -1696,6 +1719,7 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     job->fixed_state = &fixed; // interned by FixedStateOf, never freed
     job->masks = v.key.write_masks;
     job->kind = kind, job->a1 = a1, job->a2 = a2, job->a3 = a3;
+    job->first_vertex = kind == 2 ? 0u : VulkanFirstVertex(ctx, v, static_cast<u32>(kind == 0 ? a3 : a2));
     job->jittered = false;
     if (Core::Vkb::Aa::On()) [[unlikely]] { // F1c: decided here, in game order (two recording threads must not see different offsets within a frame)
         const u64 dsv = Rd<u64>(ctx, CtxDepthStencilView);
@@ -2099,7 +2123,7 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
             cmd.bindIndexBuffer(index_buffer, index_offset, index_type);
             state.index_buffer = static_cast<VkBuffer>(index_buffer), state.index_offset = index_offset, state.index_type = index_type;
         }
-        cmd.drawIndexed(static_cast<u32>(a1), instances, static_cast<u32>(a2), static_cast<s32>(static_cast<u32>(a3)), 0);
+        cmd.drawIndexed(static_cast<u32>(a1), instances, static_cast<u32>(a2), static_cast<s32>(first_vertex), 0);
     } else if (kind == 2) {
         if (state.index_buffer != static_cast<VkBuffer>(index_buffer) || state.index_offset != index_offset || state.index_type != index_type) {
             cmd.bindIndexBuffer(index_buffer, index_offset, index_type);
@@ -2107,7 +2131,7 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
         }
         cmd.drawIndexedIndirect(args_buffer, args_offset, 1, 20);
     } else {
-        cmd.draw(static_cast<u32>(a1), instances, static_cast<u32>(a2), 0);
+        cmd.draw(static_cast<u32>(a1), instances, first_vertex, 0);
     }
     if (debug_id != 0) [[unlikely]] { // note 91: the draw's GPU time, and its row in the frame capture
         Stream::StampDraw(debug_id, vs_hash, ps_hash, kind == 2 ? 0u : static_cast<u32>(a1), instances);
@@ -2255,6 +2279,7 @@ nlohmann::json Report() {
     };
     return {{"draws", draws},
             {"by_kind_indexed_auto_indirect", {c_by_kind[0].load(), c_by_kind[1].load(), c_by_kind[2].load()}},
+            {"first_vertex_by_vulkan_by_shader", {c_base_vertex_vulkan.load(), c_base_vertex_shader.load()}},
             {"no_vertex_shader", c_no_vs.load()},
             {"special_pipeline", c_special.load()},
             {"no_fixed_state", c_no_fixed.load()},
