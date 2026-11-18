@@ -33,8 +33,9 @@
  *   TLG_NGS2_USERFX=0        do not call the game's user FX handlers
  *   TLG_NGS2_KEEP_FILTERS=1  SotC fix: a sampler setup keeps the voice's old filters (as before the #426 fix)
  *   TLG_NGS2_DIAG=1          SotC fix: with LOG, every 5 s each playing voice and bus: levels, filters, ports
- *   TLG_NGS2_REVERB=pass     reverb racks pass their input through unprocessed (debug)
- *   TLG_NGS2_CUSTOM=mute     custom racks (chorus/delay) output silence (debug)
+ *   TLG_NGS2_REVERB=pass     reverb racks pass their input through unprocessed (debug; mute = silence)
+ *   TLG_NGS2_CUSTOM=mute     custom racks (chorus/delay) output silence (debug; nodelay = chorus only)
+ *   TLG_NGS2_SWITCH=<file>   the two switches above, live: reverb=on|pass|mute|old custom=on|mute|nodelay
  *   TLG_NGS2_DELAY_TYPE=0    custom delay on a mono downmix instead of per channel (the default)
  *
  * HEVAG coefficients: vgmstream (ISC license), src/coding/psv_decoder.c. */
@@ -154,7 +155,10 @@ typedef struct {
     float *line; uint32_t length, index;
     float gain, lp_in, lp_state, damp_a, damp_b, shelf_a, shelf_b;
     float fir_a, fir_b, x1;
+    float norm;   /* sqrt(1 - gain^2): the comb's impulse response carries unit energy */
 } Comb;
+/* Debug: 1 = the late reverb without the energy normalization (louder with longer decay). */
+static int reverb_unnormalized;
 typedef struct { float *line; uint32_t length, index; } Allpass;
 typedef struct {
     int dirty;
@@ -701,6 +705,10 @@ static void reverb_design(Reverb *r, uint32_t rate) {
         if (l != cb->length) { cb->length = l; if (cb->index >= l) cb->index = 0; }
         float g = powf(10.0f, (float)l / (float)rate / r->decay_time * -3.0f);
         cb->gain = g;
+        /* A feedback comb's tail energy grows as 1 / (1 - g^2): without this a 3 s decay came
+         * out ~15 dB above the requested reverb level (#90, everything sounded like a cave).
+         * Same density normalization as OpenAL Soft's EFX reverb. */
+        cb->norm = sqrtf(fmaxf(1.0f - g * g, 0.0f));
         if (ratio > 1.0f) {
             float f = powf(10.0f, (ratio - 1.0f) * log10f(g));
             cb->damp_a = 0.0506f; cb->damp_b = 0.9494f; cb->shelf_a = 1.0f; cb->shelf_b = 1.0f - f;
@@ -772,6 +780,11 @@ static void reverb_run(Reverb *r, uint32_t rate, float data[MAX_CH][MAX_GRAIN], 
             cb->line[cb->index] = x + y;
             if (++cb->index >= cb->length) cb->index = 0;
             out[i] = y;
+        }
+        if (!reverb_unnormalized) {
+            /* 8 combs per output channel (comb_mask): 1/sqrt(8) keeps their sum at unit energy. */
+            float s = cb->norm * 0.35355339f;
+            for (uint32_t i = 0; i < n; ++i) out[i] *= s;
         }
         if (fabsf(cb->lp_state) < 1e-20f) cb->lp_state = 0.0f;
     }
@@ -1492,7 +1505,15 @@ static void apply_param(Voice *v, const ParamHeader *p) {
             if (!v->out_channels || v->out_channels > MAX_CH) v->out_channels = MAX_CH;
             if (v->state == ST_FREE) v->state = ST_READY;
             return;
-        case 0x20010001: if (v->reverb && p->size >= 0x40) reverb_set_i3dl2(v->reverb, p, f32_at, u32_at); return;
+        case 0x20010001:
+            if (v->reverb && p->size >= 0x40) {
+                reverb_set_i3dl2(v->reverb, p, f32_at, u32_at);
+                const Reverb *q = v->reverb;
+                note("reverb %p: wet %.2f dry %.2f room %.3f roomHF %.3f decay %.2fs hf %.2f refl %.3f@%.3f rev %.3f@%.3f diff %.0f dens %.0f",
+                     (void *)v, q->wet, q->dry, q->room, q->room_hf, q->decay_time, q->decay_hf_ratio,
+                     q->reflections, q->reflections_delay, q->reverb, q->reverb_delay, q->diffusion, q->density);
+            }
+            return;
         case 0x30000002: {  /* LFE: enable, cut-off 80/120/240 Hz */
             uint32_t fc = u32_at(p, 12);
             if (fc != 80 && fc != 120 && fc != 240) return;
@@ -1526,7 +1547,7 @@ static void apply_param(Voice *v, const ParamHeader *p) {
             return;
         }
         if (r->kind == KIND_CUSTOM && p->id == 0x40001c00 && p->size >= 0x30) { store_chorus(v, p); return; }
-        if (r->kind == KIND_CUSTOM && p->id == 0x40001d00 && p->size >= 0x88) { store_delay(v, p); return; }
+        if (r->kind == KIND_CUSTOM && p->id == 0x40001d00 && p->size >= 0x88) { store_delay(v, p); note("delay %p set (custom rack)", (void *)v); return; }
     }
     note_unknown(r->id, p->id, p->size);
 }
@@ -1973,10 +1994,41 @@ static void process_sampler(Voice *v, uint32_t n) {
     send_ports(v, scratch, n);
 }
 
+/* Debug switches: TLG_NGS2_REVERB / TLG_NGS2_CUSTOM at start, and live from the file in
+ * TLG_NGS2_SWITCH (read twice a second): words reverb=pass|mute|on, custom=mute|nodelay|on. */
+static int sw_reverb = -1;   /* 0 on, 1 pass, 2 mute */
+static int sw_custom = -1;   /* 0 on, 1 mute, 2 no delay */
+static void switches_poll(const struct timespec *now) {
+    static double next = 0.0;
+    if (sw_reverb < 0) {
+        const char *e = env("NGS2_REVERB"), *c = env("NGS2_CUSTOM");
+        sw_reverb = e && !strcmp(e, "pass") ? 1 : e && !strcmp(e, "mute") ? 2 : e && !strcmp(e, "old") ? 3 : 0;
+        reverb_unnormalized = sw_reverb == 3;
+        sw_custom = c && !strcmp(c, "mute") ? 1 : c && !strcmp(c, "nodelay") ? 2 : 0;
+    }
+    const char *path = env("NGS2_SWITCH");
+    double t = (double)now->tv_sec + (double)now->tv_nsec * 1e-9;
+    if (!path || t < next) return;
+    next = t + 0.5;
+    FILE *f = fopen(path, "rb");
+    if (!f) return;
+    char text[256] = {0};
+    size_t got = fread(text, 1, sizeof(text) - 1, f);
+    fclose(f);
+    text[got] = 0;
+    int rv = strstr(text, "reverb=pass") ? 1 : strstr(text, "reverb=mute") ? 2 : strstr(text, "reverb=old") ? 3 : 0;
+    int cu = strstr(text, "custom=mute") ? 1 : strstr(text, "custom=nodelay") ? 2 : 0;
+    if (rv != sw_reverb || cu != sw_custom) {
+        static const char *rn[] = {"on", "pass", "mute", "old"}, *cn[] = {"on", "mute", "nodelay"};
+        fprintf(stderr, "NGS2: switches reverb=%s custom=%s\n", rn[rv], cn[cu]);
+        sw_reverb = rv; sw_custom = cu;
+        reverb_unnormalized = rv == 3;
+    }
+}
+
 static void process_bus(Voice *v, uint32_t n) {
-    static int reverb_pass = -1, custom_mute = -1;
-    if (reverb_pass < 0) { const char *e = env("NGS2_REVERB"); reverb_pass = e && !strcmp(e, "pass"); }
-    if (custom_mute < 0) { const char *e = env("NGS2_CUSTOM"); custom_mute = e && !strcmp(e, "mute"); }
+    int reverb_pass = sw_reverb == 1, reverb_mute = sw_reverb == 2;
+    int custom_mute = sw_custom == 1, custom_nodelay = sw_custom == 2;
     /* The traced games kick every bus; one that was never kicked still passes its input. */
     if ((v->state != ST_PLAYING && v->stopped) || v->paused) { v->peak = 0.0f; return; }
     float (*data)[MAX_GRAIN] = (float (*)[MAX_GRAIN])v->input;
@@ -1988,12 +2040,13 @@ static void process_bus(Voice *v, uint32_t n) {
     v->has_input = 1;   /* effects write into the input buffer: clear it before the next render */
     switch (kind) {
     case KIND_REVERB:
+        if (reverb_mute) { for (uint32_t c = 0; c < MAX_CH; ++c) memset(data[c], 0, n * sizeof(float)); break; }
         if (!reverb_pass && v->reverb) reverb_run(v->reverb, rate, data, v->channels, v->out_channels, n);
         break;
     case KIND_CUSTOM:
         if (custom_mute) { for (uint32_t c = 0; c < MAX_CH; ++c) memset(data[c], 0, n * sizeof(float)); break; }
         if (v->chorus && v->chorus->used) chorus_run(v->chorus, rate, data, out_ch, n);
-        if (v->delay && v->delay->used) delay_run(v->delay, data, out_ch, n);
+        if (!custom_nodelay && v->delay && v->delay->used) delay_run(v->delay, data, out_ch, n);
         break;
     case KIND_MASTERING: {
         if (v->lfe_enabled && v->channels > 4) {
@@ -2178,6 +2231,7 @@ static ABI int32_t ngs2_render(uintptr_t handle, const RenderBuffer *buffers, ui
     uint32_t n = s->grain;
     struct timespec t0, t1;
     clock_gettime(CLOCK_MONOTONIC, &t0);
+    switches_poll(&t0);
     /* Flush denormals (reverb and filter tails) to zero while mixing: 0x8040 = FTZ | DAZ. */
     unsigned int csr = _mm_getcsr();
     _mm_setcsr(csr | 0x8040);
