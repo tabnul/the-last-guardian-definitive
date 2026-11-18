@@ -1377,6 +1377,7 @@ void TextureCache::RefreshImage(Image& image) {
         return;
     }
 
+    NoteRefresh(image, is_gpu_modified, is_gpu_dirty);
     scheduler.EndRendering();
 
     const auto [in_buffer, in_offset] =
@@ -1388,6 +1389,68 @@ void TextureCache::RefreshImage(Image& image) {
 
     runtime.UploadImage(&image, buffer, image_copies);
     image.pack_key = ~0ull; // tlg: the texture pack hashes it again on the next sample
+}
+
+void TextureCache::NoteRefresh(const Image& image, bool gpu_modified, bool gpu_dirty) {
+    const auto& info = image.info;
+    const bool big = info.guest_size >= 1_MB;
+    if (!gpu_modified && !big) {
+        return;
+    }
+    // Same question ObtainBufferForImage asks next: GPU data (buffer cache) or guest RAM.
+    const bool from_gpu = buffer_cache.IsRegionGpuModified(info.guest_address, info.guest_size);
+    const bool cpu_dirty = True(image.flags & ImageFlagBits::CpuDirty);
+    std::scoped_lock lock{refresh_log_mutex};
+    if (gpu_modified) {
+        ++gpu_written_refreshes;
+        if (!from_gpu) {
+            ++gpu_written_from_ram;
+            if (gpu_written_from_ram_logged < 10) {
+                ++gpu_written_from_ram_logged;
+                const bool cpu_pages =
+                    buffer_cache.IsRegionCpuModified(info.guest_address, info.guest_size);
+                std::printf("Image refresh from RAM: GPU-written image %#llx %ux%u x%u L%u %s "
+                            "%.1f MB, flags%s%s%s, CPU-written pages %s\n",
+                            static_cast<unsigned long long>(info.guest_address), info.size.width,
+                            info.size.height, info.resources.layers, info.resources.levels,
+                            vk::to_string(info.pixel_format).c_str(), info.guest_size / 1048576.0,
+                            gpu_dirty ? " GpuDirty" : "", cpu_dirty ? " CpuDirty" : "",
+                            True(image.flags & ImageFlagBits::MaybeCpuDirty) ? " MaybeCpuDirty"
+                                                                             : "",
+                            cpu_pages ? "yes" : "no");
+            }
+        }
+    }
+    if (!big) {
+        return;
+    }
+    RefreshRecord* record = nullptr;
+    for (u32 i = 0; i < num_big_refreshes; ++i) {
+        if (big_refreshes[i].addr == info.guest_address && big_refreshes[i].size == info.guest_size) {
+            record = &big_refreshes[i];
+            break;
+        }
+    }
+    if (!record) {
+        if (num_big_refreshes == big_refreshes.size()) {
+            ++big_refreshes_dropped;
+            return;
+        }
+        record = &big_refreshes[num_big_refreshes++];
+        *record = RefreshRecord{
+            .addr = info.guest_address,
+            .size = info.guest_size,
+            .format = info.pixel_format,
+            .width = info.size.width,
+            .height = info.size.height,
+            .layers = info.resources.layers,
+            .mips = info.resources.levels,
+        };
+    }
+    ++record->count;
+    record->gpu_dirty += gpu_dirty;
+    record->cpu_dirty += cpu_dirty;
+    record->from_ram += !from_gpu;
 }
 
 vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sampler,
@@ -1998,6 +2061,30 @@ void TextureCache::ReportMemory() {
                 num(std::exchange(small_swept, 0)), num(std::exchange(small_sweep_walked, 0)));
     std::printf("Subresource GPU writes (5 s): %llu\n",
                 num(TlgStats::gpu_subresource_writes.exchange(0, std::memory_order_relaxed)));
+    {
+        // tlg (#89): see NoteRefresh.
+        std::scoped_lock lock{refresh_log_mutex};
+        std::printf("GPU-written image refreshes (5 s): %llu, of those %llu uploaded from RAM\n",
+                    num(gpu_written_refreshes), num(gpu_written_from_ram));
+        if (num_big_refreshes != 0) {
+            std::printf("Big image refreshes (5 s):");
+            for (u32 i = 0; i < num_big_refreshes; ++i) {
+                const auto& r = big_refreshes[i];
+                std::printf(" %#llx %ux%u x%u L%u %s %.1f MB x%u (GpuDirty %u, CpuDirty %u, from "
+                            "RAM %u);",
+                            static_cast<unsigned long long>(r.addr), r.width, r.height, r.layers,
+                            r.mips, vk::to_string(r.format).c_str(), r.size / 1048576.0, r.count,
+                            r.gpu_dirty, r.cpu_dirty, r.from_ram);
+            }
+            if (big_refreshes_dropped != 0) {
+                std::printf(" %u more not listed", big_refreshes_dropped);
+            }
+            std::printf("\n");
+        }
+        num_big_refreshes = 0;
+        big_refreshes_dropped = 0;
+        gpu_written_refreshes = gpu_written_from_ram = gpu_written_from_ram_logged = 0;
+    }
 }
 
 void TextureCache::GarbageCollectSamplers() {
