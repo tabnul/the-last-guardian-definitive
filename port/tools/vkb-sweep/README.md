@@ -52,8 +52,8 @@ power-cycled (issue 11). Killing the game before the memory is full avoids that.
 - The limit is on the absolute use, not on the growth during the take. When the use is already above the
   limit before the game starts, the take is not started.
 - After each take the peak GTT and VRAM use of that take is printed.
-- Switch: `SHOT_GTT_LIMIT_GB` (default `8`; 1 GB = 2^30 bytes). `0` switches the guard off. The normal
-  renderer's garden take peaks at about 4.6 GB; runs that need more (for example a new engine change
+- Switch: `SHOT_GTT_LIMIT_GB` (default `16`; 1 GB = 2^30 bytes). `0` switches the guard off. The normal
+  renderer's garden take peaks at about 4.6 GB and the new engine's GPU pool at about 10.6 GB; runs that need more (for example a new engine change
   with a large GPU pool) raise the limit, they do not switch the guard off.
 - Without those sysfs files (another GPU maker, Windows) the script says once
   `GPU memory guard: NOT ACTIVE` and runs without the guard.
