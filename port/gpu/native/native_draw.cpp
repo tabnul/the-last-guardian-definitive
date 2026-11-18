@@ -7975,9 +7975,12 @@ u64 BufferMemory(u64 buffer) {
 std::atomic<u32> g_last_recordings{0}, g_last_readbacks{0}; ///< at the reader's start: BeginRecordings / AABB CounterReadbacks since its previous start
 /// The reader's start (01c4c5de, after its label wait): what happened since its previous start
 u64 PS4_SYSV_ABI AabbReadStart(Core::GuestHooks::MidContext* c) {
-    // K2: a pass the last recording BeginRecording did not run has no results this frame: its counts go to 0 before the reader decides from the frame data.
-    // LEGACY(readback_pass_flags): TLG_LEGACY_READBACK_PASS_FLAGS=1 lets the reader read the older pass's results.
-    static const bool flags_on = [] { const char* e = std::getenv("TLG_LEGACY_READBACK_PASS_FLAGS"); return e == nullptr || e[0] != '1'; }();
+    // K2 proper fix (OFF by default, TLG_READBACK_PASS_FLAGS=1): a pass the last recording BeginRecording did not run has no results this frame: its counts go to 0
+    // before the reader decides from the frame data. It fixed the crash after the shield flashback, but in that play Trico's feathers were gone after the wake-up
+    // (the pass was skipped twice: once in the flashback, once at the wake-up; read every frame after). Not known yet whether the skipped read lost a one-time setup
+    // of the feathers or the feathers are a separate bug of that scene. TODO(api-contract-plan C21): find what consumes the reader's per-group output lists
+    // (group + 0x48 / + 0x50, reset by BeginRecording) and whether a skipped frame loses something; then make this the default and drop the guard (AabbReadCheck).
+    static const bool flags_on = [] { const char* e = std::getenv("TLG_READBACK_PASS_FLAGS"); return e != nullptr && e[0] == '1'; }();
     const u64 device = c->r14;
     if (flags_on && IsHeapPointer(device) && device == g_rec_device.load(std::memory_order_relaxed)) {
         const auto clear = [device](std::initializer_list<u64> fields, std::atomic<u64>& counter) {
@@ -8019,7 +8022,10 @@ u64 PS4_SYSV_ABI AabbReadStart(Core::GuestHooks::MidContext* c) {
 /// past its end, the crash). A read whose records name a group not in the table is not this table's: its count is set to 0 and the engine's own test skips it.
 /// LEGACY(aabb_guard): TLG_LEGACY_AABB_GUARD=1 lets the read run (only counted and logged).
 u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
-    static const bool guard = [] { const char* e = std::getenv("TLG_AABB_GUARD"); return e != nullptr && e[0] == '1'; }(); // debug only, off
+    // The workaround, ON by default (the class of tabnul's cloth_null_guard): a read whose records name a group not in the table is skipped. It catches only that case
+    // (an older pass's records naming groups that still exist still get through); the proper fix is the pass flags in AabbReadStart (TLG_READBACK_PASS_FLAGS=1, off
+    // until C21). LEGACY(aabb_guard): TLG_LEGACY_AABB_GUARD=1 = off (counted and logged only).
+    static const bool guard = [] { const char* e = std::getenv("TLG_LEGACY_AABB_GUARD"); return e == nullptr || e[0] != '1'; }();
     const u64 device = c->r14, frame = c->r12;
     const u32 recordings = g_last_recordings.load(std::memory_order_relaxed), readbacks = g_last_readbacks.load(std::memory_order_relaxed);
     if (!IsHeapPointer(device) || !IsHeapPointer(frame) || c->rbp < 0x4b0) {
@@ -8067,7 +8073,7 @@ u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
         }
         c_aabb_guarded.fetch_add(1, std::memory_order_relaxed);
         if (guard) {
-            Wr<u32>(count_memory, 0, 0); // TLG_AABB_GUARD=1 only (debug): the read is skipped; by default the pass flags should leave no such read
+            Wr<u32>(count_memory, 0, 0); // not this table's records: the engine's own test (count 0) skips the read
             TLG_LOG(CP, Warn, "K2 AABB guard: read of {} records skipped ({} so far)", count, c_aabb_guarded.load());
         }
     }
