@@ -195,6 +195,67 @@
       "expect": "554889e541574156"
     },
     {
+      "name": "CopyStructureCount",
+      "ghidra": "0x247e770",
+      "mode": "call",
+      "handler": "tag_copy_structure_count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "LG1_SetPredication",
+      "ghidra": "0x247e4a0",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "LG1_BeginPredication",
+      "ghidra": "0x2481610",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "LG1_EndPredication",
+      "ghidra": "0x24816b0",
+      "mode": "count",
+      "expect": "554889e553504889"
+    },
+    {
+      "name": "LG3_WriteTimestamp",
+      "ghidra": "0x2481240",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "LG3_AscWriteTimestamp",
+      "ghidra": "0x24725c0",
+      "mode": "count",
+      "expect": "554889e541565348"
+    },
+    {
+      "name": "LG4_LabelWait",
+      "ghidra": "0x2480e20",
+      "mode": "count",
+      "expect": "554889e541565348"
+    },
+    {
+      "name": "LG5_AscGetResourceAddress",
+      "ghidra": "0x2471ce0",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "LG6_AscInlineData",
+      "ghidra": "0x24724e0",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "LG7_BeginDispatchDraw",
+      "ghidra": "0x249ec50",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
       "name": "AscCopyResource",
       "ghidra": "0x24717c0",
       "mode": "call",

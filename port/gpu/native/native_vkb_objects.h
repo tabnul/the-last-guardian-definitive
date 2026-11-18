@@ -81,9 +81,9 @@ bool ClearDepthStencil(u64 view_id, u32 flags, float depth, u32 stencil);
 bool CopyTexture(u64 destination_id, u32 destination_sub, u64 source_id, u32 source_sub);
 /// Engine API map, data paths (note 42): a staging texture (D3D11 usage staging) is read by the CPU through Map(READ). After a copy into one, `StagingCopied` copies that
 /// subresource of our image into a host buffer in the same submission; `StagingRead` (at the engine's Map for reading) waits for it and writes its rows to `out` with
-/// `row_pitch` bytes per row. False: nothing pending for that texture.
+/// `row_pitch` bytes per row (a volume mip: its slices `depth_pitch` bytes apart, the pitches the engine's Map returned). False: nothing pending for that texture.
 void StagingCopied(u64 texture_id, u32 sub);
-bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch);
+bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch, u32 depth_pitch = 0);
 /// Every subresource the two images share (mips and layers), as CopyTexture; the depth copy of the engine (ExCsDepthCopy)
 void CopyTextureAll(u64 destination_id, u64 source_id);
 

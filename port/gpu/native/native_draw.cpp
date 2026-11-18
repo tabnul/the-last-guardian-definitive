@@ -7282,7 +7282,7 @@ u64 PS4_SYSV_ABI DynTextureFill(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, 
         const u64 before = Rd<u64>(a0, 0x20);
         const u64 result = reinterpret_cast<GuestDraw6>(original)(a0, a1, a2, a3, a4, a5);
         if (const u64 texture = Rd<u64>(a0, 0x40); Rd<u64>(a0, 0x20) != before && IsHeapPointer(texture)) {
-            Core::Vkb::TextureCpuWritten(Rd<u64>(texture, 0x10));
+            Core::Vkb::TextureCpuWritten(Rd<u64>(texture, 0x10), 0); // D4-01: both of the engine's write branches map subresource 0 only (01c98930)
         }
         return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
     }
@@ -7750,6 +7750,36 @@ u64 PS4_SYSV_ABI TagAscCounterReadback(u64 jcc, u64 buffer, u64 view, u64 a3, u6
     }
     Wr<u32>(buffer, 0x2c, Rd<u32>(jcc, 0x22fc));
     Live().counter_readback.fetch_add(1, std::memory_order_relaxed);
+    return 1;
+}
+
+/// JsDeviceContext::CopyStructureCount (ctx slot 16, FUN_0247e770; line-pass-gaps.md LG2), the device context's twin of the counter read-back above:
+/// (ctx, destination buffer, destination offset, unordered access view). The engine ignores the offset: the count always lands at the buffer's byte 0.
+/// The view's counter slot is `view + 0x84`; a count set on the context this frame (`ctx + 0x20d8 + 4 * slot`, not -1) is the engine's own CPU write of that value
+/// into the buffer (it runs, and our copy of the buffer gets the bytes); otherwise the GPU counter (GDS `ctx + 0x130b8 + 4 * slot`) is copied to the buffer in the
+/// frame stream and the engine's DMA packet is not written.
+u64 PS4_SYSV_ABI TagCopyStructureCount(u64 ctx, u64 buffer, u64 offset, u64 view, u64 a4, u64 a5, u64 ret) {
+    (void)ret;
+    const auto valid = [](u64 pointer) { return IsHeapPointer(pointer) && (pointer & 7) == 0; };
+    if (!Vkb::On() || !valid(ctx) || !valid(buffer) || !valid(view)) {
+        return 0;
+    }
+    const u64 memory = ((static_cast<u64>(Rd<u32>(buffer, 0x64)) & 0xfff) << 32) + Rd<u32>(buffer, 0x60);
+    const u32 slot = Rd<u32>(view, 0x84);
+    if (memory == 0 || (memory & 3) != 0 || slot >= 8) {
+        return 0; // the game's function as it is
+    }
+    if (Rd<u32>(ctx, 0x20d8 + slot * 4) == 0xffffffffu) {
+        (void)Core::Vkb::CopyFromGds(Rd<u32>(ctx, 0x130b8) + slot * 4ull, memory, sizeof(u32));
+        Wr<u32>(buffer, 0x2c, Rd<u32>(ctx, 0x47ac)); // the engine's use stamp (frame stamp), as its function does
+        return 1;
+    }
+    static const u64 original = Core::GuestHooks::OriginalEntry("CopyStructureCount");
+    if (original == 0) {
+        return 0;
+    }
+    reinterpret_cast<GuestFunction6>(original)(ctx, buffer, offset, view, a4, a5);
+    Core::Vkb::BufferCpuWritten(memory, sizeof(u32));
     return 1;
 }
 
@@ -8532,6 +8562,22 @@ u64 PS4_SYSV_ABI TagAscBegin(u64 jcc, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u6
     return 1;
 }
 
+/// The D3D11 usage of an engine texture (3 = staging). The creators copy the description to +0x180, so the usage word sits where each kind's description has it:
+/// 1D (kind 2) desc +0x10 -> +0x190, 2D (kind 3) +0x1c -> +0x19c, 3D (kind 4) +0x14 -> +0x194 (JsTexture1D / 2D / 3D creators; tier-1-readback-findings.md D4-02).
+/// ~0u for anything else.
+u32 TextureUsage(u64 resource) {
+    switch (Rd<u32>(resource, 0x124)) {
+    case 2:
+        return Rd<u32>(resource, 0x190);
+    case 3:
+        return Rd<u32>(resource, 0x19c);
+    case 4:
+        return Rd<u32>(resource, 0x194);
+    default:
+        return ~0u;
+    }
+}
+
 /// JsDeviceContext::CopyResource(context, destination, destination subresource, source, source subresource) for two
 /// dimensional textures: the tracking of both resources, the switch to compute mode and one dispatch of the copy shader.
 /// While the record of the call site is not yet verified the tag is written in front of the game's own packets (they are
@@ -8546,7 +8592,7 @@ u64 PS4_SYSV_ABI TagCopyResource(u64 ctx, u64 destination, u64 destination_sub, 
         // V3c for textures: our copy of the subresource in the frame stream; the engine's function then runs for its tracking and state (its copy shader's packets go unread).
         // A buffer's copy is the engine's CsCopyBufferDwords, our copy at its own hook.
         const u32 kind = Rd<u32>(destination, 0x124);
-        if (kind >= 2 && kind <= 4 && Rd<u32>(destination, 0x19c) == 3) { // engine API map, data paths: a copy into a staging texture (a CPU read-back of a texture)
+        if (kind >= 2 && kind <= 4 && TextureUsage(destination) == 3) { // engine API map, data paths: a copy into a staging texture (a CPU read-back of a texture)
             static std::atomic<u32> logged{0};
             if (logged.fetch_add(1) < 24) {
                 LOG_WARNING(Core, "api map: CopyResource into a staging texture: caller {:#x} {}x{} format {} mips {} sub {} from texture {}x{} sub {}", ret - ImageBase() + 0x1000000,
@@ -8556,7 +8602,7 @@ u64 PS4_SYSV_ABI TagCopyResource(u64 ctx, u64 destination, u64 destination_sub, 
         }
         if (kind >= 2 && kind <= 4 && kind == Rd<u32>(source, 0x124)) {
             if (Core::Vkb::CopyTexture(Rd<u64>(destination, 0x10), static_cast<u32>(destination_sub), Rd<u64>(source, 0x10), static_cast<u32>(source_sub)) &&
-                Rd<u32>(destination, 0x19c) == 3) {
+                TextureUsage(destination) == 3) {
                 Core::Vkb::StagingCopied(Rd<u64>(destination, 0x10), static_cast<u32>(destination_sub)); // note 42: the CPU reads it back through Map(READ)
             }
             if (Core::Vkb::SkipEnginePs4()) { // note 76: the engine's copy shader packets and its descriptor cache are not written
@@ -9254,7 +9300,7 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
         }
     }
     if (Core::Vkb::On() && ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0 && Rd<u32>(resource, 0x124) >= 2 && Rd<u32>(resource, 0x124) <= 4 && (type == 1 || type == 3) &&
-        Rd<u32>(resource, 0x19c) == 3) {
+        TextureUsage(resource) == 3) {
         // note 42: a staging texture mapped for reading (the CPU's auto-exposure reads a 16x16 R32F luminance texture this way every frame). The engine's Map runs and hands
         // out the texture's memory and row pitch; the result of our copy into it is written there before the caller reads it
         const u64 original_map = Core::GuestHooks::OriginalEntry("Map");
@@ -9262,9 +9308,9 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
         if (original_map != 0 && out_map != 0 && (out_map & 7) == 0) {
             const u64 result = reinterpret_cast<GuestMap7>(original_map)(ctx, resource, subresource, type, a4, size, out_map);
             const u64 pointer = Rd<u64>(out_map, 0);
-            const u32 row_pitch = Rd<u32>(out_map, 8);
+            const u32 row_pitch = Rd<u32>(out_map, 8), depth_pitch = Rd<u32>(out_map, 0xc); // the engine's mapped subresource: pointer, row pitch, depth pitch
             if (pointer != 0) {
-                (void)Core::Vkb::StagingRead(Rd<u64>(resource, 0x10), static_cast<u32>(subresource), reinterpret_cast<u8*>(pointer), row_pitch);
+                (void)Core::Vkb::StagingRead(Rd<u64>(resource, 0x10), static_cast<u32>(subresource), reinterpret_cast<u8*>(pointer), row_pitch, depth_pitch);
             }
             return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
         }
@@ -11749,6 +11795,9 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "tag_asc_counter_readback") {
         return reinterpret_cast<u64>(&TagAscCounterReadback);
+    }
+    if (name == "tag_copy_structure_count") {
+        return reinterpret_cast<u64>(&TagCopyStructureCount);
     }
     if (name == "tag_device_begin") {
         return reinterpret_cast<u64>(&TagDeviceBegin);

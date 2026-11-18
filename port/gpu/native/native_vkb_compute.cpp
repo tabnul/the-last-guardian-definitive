@@ -714,26 +714,28 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
     for (u32 i = 0; i < image_infos.size(); ++i) {
         image_types.push_back(v.info->images[i].is_written ? vk::DescriptorType::eStorageImage : vk::DescriptorType::eSampledImage);
     }
-    // the async context's append / consume counters that start at a value: our GDS gets it in front of the dispatch (the engine's DMA packet on the console)
-    if (v.async) {
+    // append / consume counters that start at a value: our GDS gets it in front of the dispatch (the engine's DMA packet on the console). Both contexts do it:
+    // the async one (PrepareDispatch 0246f8e0: GDS base ctx + 0x22f8, UAVs + 0x2118, initial counts + 0x2158, cleared to -1 once written) and the device context
+    // (api-contract.md W7, FUN_0247dad0: GDS base ctx + 0x130b8, UAVs + 0x2098, initial counts + 0x20d8, written before every dispatch until the UAVs are set again)
+    {
         const u64 shader_obj = shader;
-        const u32 counter_base = Rd<u32>(ctx, 0x22f8);
-        for (u32 mask = Rd<u32>(shader_obj, 0x100), index = 0; mask != 0; mask >>= 1, ++index) {
+        const u32 counter_base = Rd<u32>(ctx, v.async ? 0x22f8 : 0x130b8);
+        const u64 uavs = v.async ? 0x2118 : 0x2098, inits = v.async ? 0x2158 : 0x20d8;
+        for (u32 mask = Rd<u32>(shader_obj, 0x100), index = 0; mask != 0 && index < 8; mask >>= 1, ++index) {
             if ((mask & 1) == 0) {
                 continue;
             }
-            const u64 view = Rd<u64>(ctx, 0x2118 + index * 8);
+            const u64 view = Rd<u64>(ctx, uavs + index * 8);
             if (view == 0 || !IsHeapPointer(view) || Rd<u32>(view, 0x44) != 1 || (Rd<u8>(view, 0x50) & 2) == 0) {
                 continue;
             }
-            if (const u32 init = Rd<u32>(ctx, 0x2158 + index * 4); init != 0xffffffffu && counter_base + index * 4ull + 4 <= (64u << 10)) {
+            if (const u32 init = Rd<u32>(ctx, inits + index * 4); init != 0xffffffffu && counter_base + index * 4ull + 4 <= (64u << 10)) {
                 gds_inits.push_back({counter_base + index * 4ull, init});
                 c_gds_inits.fetch_add(1, std::memory_order_relaxed);
             }
         }
     }
-    // api-contract.md W7 census (debug): the device context's dispatch (FUN_0247dad0) also writes each counter UAV's initial count (ctx + 0x20d8, not -1) into GDS
-    // (ctx + 0x130b8) before the dispatch; ours does it for the async context only
+    // api-contract.md W7 census (debug): device dispatches with a counter UAV
     if (!v.async && Core::Vkb::ContractCensusOn()) {
         for (u32 index = 0; index < 8; ++index) {
             const u64 view = Rd<u64>(ctx, 0x2098 + index * 8);

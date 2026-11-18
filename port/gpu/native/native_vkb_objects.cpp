@@ -2541,7 +2541,7 @@ struct StagingCopy {
 };
 struct StagingRing {
     std::array<StagingCopy, 3> copies{};
-    u32 width{}, height{}, texel{};
+    u32 width{}, height{}, depth{1}, texel{};
     u64 serial{};
 };
 std::mutex staging_mutex;
@@ -2551,7 +2551,7 @@ std::atomic<u64> c_staging_copies{0}, c_staging_reads{0}, c_staging_unhandled{0}
 void StagingCopied(u64 texture_id, u32 sub) {
     vk::Image image{};
     vk::Format format{};
-    u32 width = 0, height = 0, mip = 0, layer = 0;
+    u32 width = 0, height = 0, depth = 1, mip = 0, layer = 0;
     {
         std::scoped_lock lock{mutex};
         const auto i = images.find(texture_id);
@@ -2563,6 +2563,10 @@ void StagingCopied(u64 texture_id, u32 sub) {
         mip = sub % std::max(img.mips, 1u), layer = sub / std::max(img.mips, 1u);
         image = img.image, format = img.format;
         width = std::max(img.width >> mip, 1u), height = std::max(img.height >> mip, 1u);
+        if (img.type == vk::ImageType::e3D) {
+            // tier-1-readback-findings.md D4-03: a volume's subresource is one mip with all its depth slices (the engine's CopySubresource copies them all)
+            depth = std::max(img.depth >> mip, 1u), layer = 0;
+        }
     }
     const u32 texel = TexelBytes(format);
     if (texel == 0) {
@@ -2575,7 +2579,7 @@ void StagingCopied(u64 texture_id, u32 sub) {
     {
         std::scoped_lock lock{staging_mutex};
         auto& ring = staging_copies[{texture_id, sub}];
-        if (ring.width != width || ring.height != height || ring.texel != texel) {
+        if (ring.width != width || ring.height != height || ring.depth != depth || ring.texel != texel) {
             for (auto& c : ring.copies) {
                 if (c.buffer != VK_NULL_HANDLE) {
                     if (c.value != ~0ull) {
@@ -2585,13 +2589,13 @@ void StagingCopied(u64 texture_id, u32 sub) {
                 }
                 c = {};
             }
-            ring.width = width, ring.height = height, ring.texel = texel;
+            ring.width = width, ring.height = height, ring.depth = depth, ring.texel = texel;
         }
         serial = ++ring.serial;
         index = u32(serial % ring.copies.size());
         auto& slot = ring.copies[index];
         if (slot.buffer == VK_NULL_HANDLE) {
-            const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = u64{width} * height * texel, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = u64{width} * height * depth * texel, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                         .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
             VmaAllocationCreateInfo alloc{};
             alloc.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
@@ -2609,9 +2613,9 @@ void StagingCopied(u64 texture_id, u32 sub) {
         slot.value = ~0ull, slot.serial = serial;
         buffer = slot.buffer;
     }
-    Stream::Defer(Stream::Work::Copy, [image, buffer, width, height, mip, layer, index, serial, key = std::pair<u64, u32>{texture_id, sub}](vk::CommandBuffer cmd) {
+    Stream::Defer(Stream::Work::Copy, [image, buffer, width, height, depth, mip, layer, index, serial, key = std::pair<u64, u32>{texture_id, sub}](vk::CommandBuffer cmd) {
         Stream::Hazard(cmd, {Stream::ImageUse(image, false)});
-        const vk::BufferImageCopy region{.imageSubresource = {vk::ImageAspectFlagBits::eColor, mip, layer, 1}, .imageExtent = {width, height, 1}};
+        const vk::BufferImageCopy region{.imageSubresource = {vk::ImageAspectFlagBits::eColor, mip, layer, 1}, .imageExtent = {width, height, depth}};
         cmd.copyImageToBuffer(image, vk::ImageLayout::eGeneral, vk::Buffer{buffer}, region);
         const vk::MemoryBarrier2 to_host{.srcStageMask = vk::PipelineStageFlagBits2::eCopy, .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
                                          .dstStageMask = vk::PipelineStageFlagBits2::eHost, .dstAccessMask = vk::AccessFlagBits2::eHostRead};
@@ -2624,9 +2628,9 @@ void StagingCopied(u64 texture_id, u32 sub) {
     c_staging_copies.fetch_add(1, std::memory_order_relaxed);
 }
 
-bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch) {
+bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch, u32 depth_pitch) {
     StagingCopy copy;
-    u32 width = 0, height = 0, texel = 0;
+    u32 width = 0, height = 0, depth = 1, texel = 0;
     bool newest = true;
     {
         std::scoped_lock lock{staging_mutex};
@@ -2647,15 +2651,22 @@ bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch) {
             return false;
         }
         newest = best->serial == ring.serial;
-        copy = *best, width = ring.width, height = ring.height, texel = ring.texel;
+        copy = *best, width = ring.width, height = ring.height, depth = ring.depth, texel = ring.texel;
     }
     if (!newest) {
         c_staging_older.fetch_add(1, std::memory_order_relaxed);
     }
     Stream::Wait(copy.value);
+    // tier-1-readback-findings.md D4-04: the allocation may be host-visible without being host-coherent; the GPU's writes are visible to this read only after an invalidate
+    // (a no-op on coherent memory)
+    vmaInvalidateAllocation(instance->GetAllocator(), copy.allocation, 0, VK_WHOLE_SIZE);
     const u32 row = width * texel;
-    for (u32 y = 0; y < height; ++y) {
-        std::memcpy(out + u64{y} * std::max(row_pitch, row), static_cast<const u8*>(copy.mapped) + u64{y} * row, row);
+    const u64 out_row = std::max(row_pitch, row);
+    const u64 out_slice = std::max<u64>(depth_pitch, out_row * height); // D4-03: a volume mip's slices, at the depth pitch the engine's Map returned
+    for (u32 z = 0; z < depth; ++z) {
+        for (u32 y = 0; y < height; ++y) {
+            std::memcpy(out + z * out_slice + u64{y} * out_row, static_cast<const u8*>(copy.mapped) + (u64{z} * height + y) * row, row);
+        }
     }
     static std::mutex log_mutex;
     static std::map<u32, u32> logged_by_size;
