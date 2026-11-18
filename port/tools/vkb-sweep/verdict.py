@@ -5,7 +5,8 @@ Usage: verdict.py RESULTS.jsonl [--reference REF_OUT_FOLDER_OR_JSONL]
   Prints one log verdict line per scene of RESULTS (a results-vkbV.jsonl of sweep.py) and the counts per group.
 
 The log verdict of a scene (every scene gets it, next to the picture verdict where there is one):
-  ran      every take reached the photo moment (status ok) and the game did not end by itself
+  ran      every take reached the photo moment (status ok; a take that failed only because its picture was flat is
+           judged under `frames`) and the game did not end by itself
   frames   the game window was captured; a flat (blank) picture fails only where the normal renderer's is not flat
   crash    no crash, and no `Fault: exception` line more than the normal renderer's log of the same scene has
   lines    no `<Error>`/`<Critical>`/`<Warning>` line KIND that the normal renderer's log of the same scene does
@@ -86,6 +87,8 @@ def log_verdict(row, ref_row=None):
     if any(faults(p) > ref_faults for p in mine):
         why.append(f"crash: Fault: exception lines {max(faults(p) for p in mine)} (normal renderer {ref_faults})")
     new = set()
+    if not mine:
+        why.append("lines: no game log of this renderer's takes found, lines not checked")
     if ref_kinds is not None:  # without a reference log the lines are not compared; "reference_log" says so
         new = set().union(*[kinds(p) for p in mine]) - ref_kinds if mine else set()
         if new:
