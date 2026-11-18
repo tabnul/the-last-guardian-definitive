@@ -4,7 +4,6 @@
 # entry is judged by the whole picture as before. SHARE = part of the picture left out (rule in noisemask.py: pixels
 # where two takes of the normal renderer differ by more than 16, grown by 4 pixels; made again from the answer-key takes).
 # Limit: more than 25% left out = the scene goes to log-only.txt instead.
-proposed s02_TricosCave s02_01_Care_Step1_001 21.1% boy,mist | normal renderer differs from itself in: boy, mist
 confirmed s03_Canyon CA_b01_InsideLake_001 7.3% boy | normal renderer differs from itself in: boy
 proposed s03_Canyon CA_c01_StatueBreakEnd_001 9.6% boy,takes=3 | 3-photo mask (answer key 1+2 and retake 1); held-out photo: worst >16 0.086%, >32 0.018%; normal renderer differs from itself in: boy
 confirmed s03_Canyon CA_d01_ChainRoom_001 9.3% boy,mist | normal renderer differs from itself in: boy, mist

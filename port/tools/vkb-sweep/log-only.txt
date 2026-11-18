@@ -68,3 +68,5 @@ proposed s08_LargeTower s08_02_MirrorYajirobe_001 mask from 3 photos would leave
 proposed s08_LargeTower s08_04_Climb_Tower_001 still too noisy outside the 3-photo mask (17.9% left out, held-out photo: 4.078% above 16, 0.101% above 32)
 proposed s08_LargeTower s08_06_Climb_Tower_Again_001 mask from 3 photos would leave out 25.22% (limit 25%)
 proposed s12_TheNest s12_12_Escape_from_The_Nest_001 mask from 3 photos would leave out 29.01% (limit 25%)
+# --- event-driven scene (owner 2026-11-18, PR 35 / issue 27): a lot happens, the picture is not comparable between takes
+confirmed s02_TricosCave s02_01_Care_Step1_001 owner: event-driven scene, picture not comparable between takes (PR 35, issue 27)
