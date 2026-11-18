@@ -163,8 +163,11 @@ vk::Format ColorFormat(u32 dxgi) {
     case 84: return F::eBc5SnormBlock;
     case 85: return F::eR5G6B5UnormPack16;
     case 86: return F::eA1R5G5B5UnormPack16;
-    case 87: case 88: case 90: return F::eB8G8R8A8Unorm;
-    case 91: return F::eB8G8R8A8Srgb;
+    case 87: case 88: return F::eB8G8R8A8Unorm;
+    // api-contract.md R4 / R6 (2026-11-18): the engine's table maps B8G8R8A8_TYPELESS (90) and the B8G8R8X8 typeless / sRGB pair (92, 93) to its sRGB 8x4
+    // format (92 / 93 select BGR1: alpha 1 from the view's T#, R8), and R9G9B9E5 (67) to its 5_9_9_9 float format
+    case 90: case 91: case 92: case 93: return F::eB8G8R8A8Srgb;
+    case 67: return F::eE5B9G9R9UfloatPack32;
     case 94: case 95: return F::eBc6HUfloatBlock;
     case 96: return F::eBc6HSfloatBlock;
     case 97: case 98: return F::eBc7UnormBlock;
