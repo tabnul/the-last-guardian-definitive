@@ -10,6 +10,7 @@
 #include "native/shadps4/video_core/host_shaders/fill_pattern_comp.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_shader_util.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_platform.h"
+#include <vulkan/vulkan_format_traits.hpp>
 #include <condition_variable>
 #include <functional>
 #include <algorithm>
@@ -1014,6 +1015,31 @@ void NoteViewChannels(const Object& view, const Object& resource, vk::Format for
     }
 }
 
+/// api-contract.md R2 / R3 / R5 / R8 (2026-11-18): the channel selects of the engine's own T# of a sampled view (word 3: x y z w, 3 bits each; 0 zero, 1 one,
+/// 4..7 memory channels X Y Z W, from the engine format table `Js_InitFormatTable` 0248f390) as a Vulkan component mapping on the view's format. X is the
+/// channel in the lowest bits / first byte: Vulkan's R, except in the BGR-ordered formats where it is B. Live case: R32_UINT (39) selects R000, so alpha
+/// reads 0 where Vulkan gives 1; latent ones: A8 (65, 000R), the X8 formats (88, 92, 93, BGR1). Identity when the selects give what the format gives anyway.
+vk::ComponentMapping ViewComponents(vk::Format format, u32 tsharp3, bool& changed) {
+    using S = vk::ComponentSwizzle;
+    const bool bgr = format == vk::Format::eB8G8R8A8Unorm || format == vk::Format::eB8G8R8A8Srgb || format == vk::Format::eR5G6B5UnormPack16 ||
+                     format == vk::Format::eA1R5G5B5UnormPack16;
+    const S channel[4] = {bgr ? S::eB : S::eR, S::eG, bgr ? S::eR : S::eB, S::eA};
+    // what Vulkan returns for each component without a swizzle: a channel the format has, else 0 (x, y, z) or 1 (w)
+    const u32 present = vk::componentCount(format);
+    const auto natural = [&](u32 c) { return c < present ? (c == 0 ? S::eR : c == 1 ? S::eG : c == 2 ? S::eB : S::eA) : (c == 3 ? S::eOne : S::eZero); };
+    S out[4];
+    changed = false;
+    for (u32 c = 0; c < 4; ++c) {
+        const u32 sel = (tsharp3 >> (c * 3)) & 7;
+        out[c] = sel == 0 ? S::eZero : sel == 1 ? S::eOne : sel >= 4 ? channel[sel - 4] : natural(c);
+        if (out[c] != natural(c)) {
+            changed = true;
+        }
+    }
+    return changed ? vk::ComponentMapping{out[0], out[1], out[2], out[3]} : vk::ComponentMapping{};
+}
+std::atomic<u64> c_views_swizzled{0};
+
 void ViewCreated(const Object& view, const Object& resource) {
     if (!On() || !Ready()) {
         return;
@@ -1067,10 +1093,22 @@ void ViewCreated(const Object& view, const Object& resource) {
         ContractNote(fmt::format("V view kind {} dxgi {} of texture dxgi {} -> {}", static_cast<u32>(view.kind), view.has_desc ? static_cast<s64>(view.desc[0]) : -1,
                                  resource.format, vk::to_string(format)));
     }
+    // R8: a sampled colour view reads the channels the engine's T# selects (storage views and attachments must keep the identity; they are other view kinds).
+    // LEGACY(TLG_LEGACY_VIEW_IDENTITY): =1 every view with the identity mapping.
+    static const bool legacy_identity = [] { const char* e = std::getenv("TLG_LEGACY_VIEW_IDENTITY"); return e != nullptr && e[0] == '1'; }();
+    vk::ComponentMapping components{};
+    if (!legacy_identity && view.kind == Kind::ShaderResourceView && view.has_tsharp && !img->is_depth) {
+        bool changed = false;
+        components = ViewComponents(format, view.tsharp[3], changed);
+        if (changed) {
+            c_views_swizzled.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
     const vk::ImageViewCreateInfo ci{
         .image = img->image,
         .viewType = r.type,
         .format = format,
+        .components = components,
         .subresourceRange = {aspect, r.base_mip, r.mips, r.base_layer, r.layers},
     };
     const auto [result, handle] = instance->GetDevice().createImageView(ci);
@@ -3610,6 +3648,7 @@ nlohmann::json ObjectsReport() {
                           {"views_live", live_views},
                           {"views_created", c_views_created.load()},
                           {"views_failed", c_views_failed.load()},
+                          {"views_swizzled_by_tsharp", c_views_swizzled.load()},
                           {"views_range_clamped", c_views_clamped.load()},
                           {"views_of_a_texture_with_no_image", c_views_no_image.load()},
                           {"views_of_buffers_no_object", c_views_buffer.load()},

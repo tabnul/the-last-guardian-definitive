@@ -351,9 +351,10 @@ void ObserveContext(u64 ctx, NativeRegistry::DrawResources* draw) {
         // user shader resource tables (PrepareDraw: vertex shader flag +0xd6, size +0xd8, table ctx + 0x13068, capacity ctx + 0x13088 * 2; pixel shader flag +0x106,
         // size +0x108, table ctx + 0x13040, capacity ctx + 0x13060 * 2): a probe of the first draws with such a shader
         static std::atomic<u32> probes{0};
-        if (vs != 0 && ps != 0 && probes.load(std::memory_order_relaxed) < 6 && (Rd<u8>(vs, 0xd6) != 0 || Rd<u8>(ps, 0x106) != 0) && probes.fetch_add(1) < 6) {
-            std::string text = fmt::format("vs {:#x} srt_flag {} srt_dwords {} cap {} | ps {:#x} srt_flag {} srt_dwords {} cap {} | ctx table 0x13040:", vs, Rd<u8>(vs, 0xd6),
-                                           Rd<u32>(vs, 0xd8), Rd<u32>(ctx, 0x13088) * 2, ps, Rd<u8>(ps, 0x106), Rd<u32>(ps, 0x108), Rd<u32>(ctx, 0x13060) * 2);
+        // (both flags sit in the stage block at shader + 0x30: + 0xd6 / + 0xd8, so the pixel shader's + 0x106 / + 0x108; PrepareDraw 02488580 lines 231, 1464)
+        if (vs != 0 && ps != 0 && probes.load(std::memory_order_relaxed) < 6 && (Rd<u8>(vs, 0x106) != 0 || Rd<u8>(ps, 0x106) != 0) && probes.fetch_add(1) < 6) {
+            std::string text = fmt::format("vs {:#x} srt_flag {} srt_dwords {} cap {} | ps {:#x} srt_flag {} srt_dwords {} cap {} | ctx table 0x13040:", vs, Rd<u8>(vs, 0x106),
+                                           Rd<u32>(vs, 0x108), Rd<u32>(ctx, 0x13088) * 2, ps, Rd<u8>(ps, 0x106), Rd<u32>(ps, 0x108), Rd<u32>(ctx, 0x13060) * 2);
             for (u32 i = 0; i < 48; ++i) {
                 text += fmt::format(" {:x}", Rd<u32>(ctx, 0x13040 + i * 4));
             }
@@ -2234,6 +2235,22 @@ void BuildUserLayoutImpl(u64 ctx, u32 stage, u64 shader, u32 inputs_offset, bool
         return;
     }
     const u64 shader_block = shader + 0x30;
+    if (Rd<u8>(shader_block, 0xd6) != 0) {
+        // api-contract.md K3 census: a shader with the user SRT flag (block + 0xd6, size in words + 0xd8). PrepareDraw (02488580) then skips its slot tables and hands
+        // the CUE (setUserSrtBuffer 024a0a10) the context's SRT words (pixel ctx + 0x13040, vertex + 0x13068: the 0x90-byte table pointer 01c7f020 writes); this
+        // builder does not place them. Logged once per shader (bounded) to learn whether the game has any.
+        static std::mutex srt_mutex;
+        static std::unordered_set<u64> srt_seen;
+        std::scoped_lock lock{srt_mutex};
+        if (srt_seen.size() < 32 && srt_seen.insert(shader).second) {
+            std::string text = fmt::format("K3 SRT shader: stage {} shader {:#x} id {} srt words {} usage:", stage, shader, Rd<u64>(shader, 0x10), Rd<u32>(shader_block, 0xd8));
+            for (u32 k = 0; k < Rd<u8>(gnm, 3) && k < 40; ++k) {
+                const u64 e = gnm + inputs_offset + k * 4;
+                text += fmt::format(" <{} s{} r{} f{}>", Rd<u8>(e, 0), Rd<u8>(e, 1), Rd<u8>(e, 2), Rd<u8>(e, 3));
+            }
+            TLG_LOG(CP, Warn, "{} ({} SRT shaders so far)", text, srt_seen.size());
+        }
+    }
     std::array<u32, 128> eud{};
     u32 eud_dwords = 0;
     s32 eud_ptr = -1;
@@ -3042,8 +3059,12 @@ const VkbVulkan::FixedState* Build(u64 ctx, const DeviceAddresses& dev) {
         s.depth_clip = Rd<u8>(raster, 0x48) != 0;
         // note 41: the depth bias (DepthBias INT, DepthBiasClamp, SlopeScaledDepthBias at +0x3c, +0x40, +0x44): Vulkan's factors have D3D's meaning (a float
         // depth target: the constant in units of 2^(exponent - 23)); without it the shadow maps self-shadow in bands (stripes on the boy and the ground)
-        const s32 bias = Rd<s32>(raster, 0x3c);
-        const float bias_clamp = Rd<float>(raster, 0x40), bias_slope = Rd<float>(raster, 0x44);
+        // api-contract.md S10 (2026-11-18): the engine never enables polygon offset (no POLY_OFFSET_*_ENABLE bit in its PA_SU_SC_MODE_CNTL word, no write of
+        // PA_SU_POLY_OFFSET_* in the binary): the PS4 draws every rasterizer state without bias. The stripes note 41 fixed with it had another cause (the comparison
+        // sampler, S1 / S2, rebuilt from the engine's tables). LEGACY(TLG_LEGACY_DEPTH_BIAS): =1 applies the description's bias fields again.
+        static const bool legacy_bias = [] { const char* e = std::getenv("TLG_LEGACY_DEPTH_BIAS"); return e != nullptr && e[0] == '1'; }();
+        const s32 bias = legacy_bias ? Rd<s32>(raster, 0x3c) : 0;
+        const float bias_clamp = legacy_bias ? Rd<float>(raster, 0x40) : 0.0f, bias_slope = legacy_bias ? Rd<float>(raster, 0x44) : 0.0f;
         s.depth_bias = bias != 0 || bias_slope != 0.0f;
         s.depth_bias_constant = static_cast<float>(bias);
         s.depth_bias_clamp = bias_clamp;
