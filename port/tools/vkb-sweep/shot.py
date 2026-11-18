@@ -122,11 +122,11 @@ class MemoryGuard:
     """GPU memory guard. A run that filled the GPU memory once hung the game inside the kernel driver
     (unkillable, the host had to be power-cycled: issue 11). While the game runs, a thread reads the GTT use
     of every AMD card from sysfs every 0.25 s; above the limit it kills the whole process group of the game at
-    once, before the driver can block. SHOT_GTT_LIMIT_GB (default 8, 0 = off) is the switch."""
+    once, before the driver can block. SHOT_GTT_LIMIT_GB (default 16, 0 = off) is the switch."""
     FILES = "/sys/class/drm/card[0-9]*/device/mem_info_gtt_used"
 
     def __init__(self):
-        text = os.environ.get("SHOT_GTT_LIMIT_GB", "8")
+        text = os.environ.get("SHOT_GTT_LIMIT_GB", "16")
         try:
             self.limit = float(text) * GB
         except ValueError:
