@@ -363,7 +363,7 @@
     "launcher.quit": "退出",
     "launcher.ready": "準備就緒。",
     "launcher.audio_native": "音訊：原生（已找到主機模組）。",
-    "launcher.audio_builtin": "音訊：內建混音器，實驗性（未找到或未選擇 libSceNgs2.sprx）。",
+    "launcher.audio_builtin": "音訊：內建混音器。可能出現聲音問題（回音、聲音缺失）。解決方法：將 libSceNgs2.sprx 放入主機系統模組資料夾（設定）。",
     "launcher.missing": "缺失",
     "launcher.not_built": "移植版尚未構建（請執行 build.sh）",
     "launcher.preparing": "正在準備遊戲…",

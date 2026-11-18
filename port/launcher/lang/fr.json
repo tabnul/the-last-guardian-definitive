@@ -341,7 +341,7 @@
     "launcher.quit": "Quitter",
     "launcher.ready": "Prêt à jouer.",
     "launcher.audio_native": "Audio : natif (module de la console trouvé).",
-    "launcher.audio_builtin": "Audio : mixeur intégré, expérimental (libSceNgs2.sprx introuvable ou non sélectionné).",
+    "launcher.audio_builtin": "Audio : mixeur intégré. Des problèmes de son sont possibles (écho, sons manquants). Solution : placez libSceNgs2.sprx dans le dossier des modules système de la console (Paramètres).",
     "launcher.missing": "Manquant",
     "launcher.not_built": "Port non compilé (lancez build.sh)",
     "launcher.preparing": "Préparation du jeu…",

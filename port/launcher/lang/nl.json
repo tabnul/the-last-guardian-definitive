@@ -363,7 +363,7 @@
     "launcher.quit": "Afsluiten",
     "launcher.ready": "Klaar om te spelen.",
     "launcher.audio_native": "Audio: native (consolemodule gevonden).",
-    "launcher.audio_builtin": "Audio: ingebouwde mixer, experimenteel (libSceNgs2.sprx niet gevonden of niet gekozen).",
+    "launcher.audio_builtin": "Audio: ingebouwde mixer. Er kunnen geluidsproblemen optreden (echo, ontbrekende geluiden). Oplossing: zet libSceNgs2.sprx in de map met systeemmodules van de console (Instellingen).",
     "launcher.missing": "Ontbreekt",
     "launcher.not_built": "Port niet gebouwd (voer build.sh uit)",
     "launcher.preparing": "Game voorbereiden…",

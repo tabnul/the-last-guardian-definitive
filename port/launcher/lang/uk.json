@@ -363,7 +363,7 @@
     "launcher.quit": "Вийти",
     "launcher.ready": "Готово до гри.",
     "launcher.audio_native": "Звук: рідний (модуль консолі знайдено).",
-    "launcher.audio_builtin": "Звук: вбудований мікшер, експериментально (libSceNgs2.sprx не знайдено або не вибрано).",
+    "launcher.audio_builtin": "Звук: вбудований мікшер. Можливі проблеми зі звуком (відлуння, зниклі звуки). Рішення: покладіть libSceNgs2.sprx у папку системних модулів консолі (Налаштування).",
     "launcher.missing": "Відсутнє",
     "launcher.not_built": "Порт не зібрано (запустіть build.sh)",
     "launcher.preparing": "Підготовка гри…",

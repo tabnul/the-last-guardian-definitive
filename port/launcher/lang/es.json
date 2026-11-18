@@ -341,7 +341,7 @@
     "launcher.quit": "Salir",
     "launcher.ready": "Listo para jugar.",
     "launcher.audio_native": "Audio: nativo (módulo de consola encontrado).",
-    "launcher.audio_builtin": "Audio: mezclador integrado, experimental (libSceNgs2.sprx no encontrado o no seleccionado).",
+    "launcher.audio_builtin": "Audio: mezclador integrado. Puede haber problemas de sonido (eco, sonidos ausentes). Solución: pon libSceNgs2.sprx en la carpeta de módulos del sistema de la consola (Ajustes).",
     "launcher.missing": "Falta",
     "launcher.not_built": "Port no compilado (ejecuta build.sh)",
     "launcher.preparing": "Preparando el juego…",
