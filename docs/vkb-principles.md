@@ -87,6 +87,9 @@ game code what the hook really covers.
 | Light writes | no |
 | Scene slot writes | no |
 | Constant setters | no |
+| Probe cube copy (W16, hook `ProbeFaceCopy`) | no |
+| Texture move (hook `TextureMove`) | no |
+| AsyncMap placement (buffers read in place) | no |
 
 ## The check loop
 
