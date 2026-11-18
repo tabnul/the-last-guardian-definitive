@@ -39,6 +39,8 @@ No game files are included. You need your own copy, dumped from your own PS4.
   Ico's horns. Optional, off by default.
 - **[Quit directly](#controllers-and-languages):** quit the game from anywhere with a controller
   combo or the keyboard, no menus. The game's pause menu shows the buttons.
+- **[Hide button hints](#controllers-and-languages):** switch the game's button hint boxes off,
+  for a clean screen. The tutorial still runs in the background, so nothing is skipped.
 - **[Trico Tricks](docs/fun.md#trico-tricks-make-trico-move):** 49 of Trico's own moves on a bar (**F12**) in coloured
   groups, with your own favourites, the poses of the game's press shots and E3 demos, and the
   throw-up animation the developers sealed.
@@ -101,6 +103,13 @@ No game files are included. You need your own copy, dumped from your own PS4.
    [Dumping your own copy](port/packaging/README-player.md#dumping-your-own-copy).
 3. For audio, copy `libSceNgs2.sprx` from your PS4 firmware into `system_lib/` next to the executable.
 4. Start the launcher, pick the game folder and press **Play**.
+
+**Stuck at 30 FPS?** 60 FPS and Unlocked need the 1.03 game code in `eboot.bin`. The port checks
+the exact bytes it changes, so any 1.03 dump works (US or EU, PS4 or PS5 dump tool). When the
+check fails, the game safely runs at 30 FPS and the launcher shows a warning next to Play. The
+usual cause is a folder where the update was not merged on top of the base game, or an
+`eboot.bin` that was already changed by another patch or cheat. Dump the game again with update
+01.03 and copy its `eboot.bin` over the old one.
 
 **Save half the disk space:** the port can play the game straight from one packed file. In the
 launcher, under Game folder, press **Pack…** to turn the folder into a `.zar` file (about 26 GB
@@ -349,6 +358,9 @@ trigger points, check for stick drift, and remap keyboard and mouse. See
   Controller page draws one too. **Button icons**
   (Controller page, or Controls in the port's menu) picks Automatic, PlayStation or Xbox;
   Automatic follows the controller you used last.
+- **Hide button hints:** turns the game's button hint boxes off (issue #84). The tutorial still
+  runs in the background, so nothing is skipped, and you can switch it while you play. Off by
+  default; on the launcher's Controller page, or under Controls in the port's menu.
 - **Quit from anywhere:** with the quit key on the keyboard (Ctrl+X; set your own or turn it off
   under Controls in the port's menu or on the launcher's Controller page: Ctrl or Alt with a letter
   or number, or an F key), or hold the quit combo for 2 seconds

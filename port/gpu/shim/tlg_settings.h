@@ -163,6 +163,9 @@ struct Values {
     /// 0 = automatic (follows the controller used last), 1 = PlayStation (the game's own), 2 = Xbox.
     /// See XboxIcons().
     std::atomic<int> button_icons{0};
+    /// Hide the game's button hints (issue #84; tlg.ini hide_hints, env TLG_HIDE_HINTS wins): the
+    /// hint boxes are never shown, the game's tutorial logic runs on (tlg_lua.cpp HideHints). Live.
+    std::atomic<bool> hide_hints{false};
     /// Not a setting: the controller used last is an Xbox-style one (runtime_pad.c, tlggpu_pad_kind).
     std::atomic<bool> pad_is_xbox{false};
     /// The hints show an Xbox pad: picture swapped in vk_texture_pack.cpp, glow moved in tlg_lua.cpp.

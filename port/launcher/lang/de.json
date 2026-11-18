@@ -340,8 +340,9 @@
     "launcher.mods_empty": "Noch keine Cheat-XML-Dateien im Mods-Ordner gefunden.",
     "launcher.quit": "Beenden",
     "launcher.ready": "Bereit zum Spielen.",
+    "launcher.fps_unsupported": "eboot.bin ist nicht der 1.03-Spielcode: 60 FPS und Unbegrenzt funktionieren nicht, das Spiel läuft mit 30 FPS (siehe README)",
     "launcher.audio_native": "Audio: nativ (Konsolenmodul gefunden).",
-    "launcher.audio_builtin": "Audio: eingebauter Mixer, experimentell (libSceNgs2.sprx nicht gefunden oder nicht gewählt).",
+    "launcher.audio_builtin": "Audio: eingebauter Mixer. Tonprobleme möglich (Hall, fehlende Geräusche). Abhilfe: libSceNgs2.sprx in den Ordner der Konsolen-Systemmodule legen (Einstellungen).",
     "launcher.missing": "Fehlt",
     "launcher.not_built": "Port nicht gebaut (build.sh ausführen)",
     "launcher.preparing": "Spiel wird vorbereitet…",
@@ -463,7 +464,8 @@
     "pad.quit_key_press": "Taste drücken, zum Beispiel Ctrl+X…",
     "pad.quit_key_bad": "Diese Taste geht nicht: Ctrl oder Alt mit einem Buchstaben oder einer Zahl, oder eine F-Taste",
     "pad.quit_key_off": "aus",
-    "pad.off_button": "Aus"
+    "pad.off_button": "Aus",
+    "pad.hide_hints": "Tastenhinweise ausblenden (das Tutorial läuft weiter, nichts wird übersprungen)"
   },
   "items": {
     "menu:sharpen": {
@@ -1182,6 +1184,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Festlegen: zwei oder mehr Tasten zusammen drücken und halten, dann loslassen. Die Tastatur-Taste zum Beenden braucht Ctrl oder Alt mit einem Buchstaben oder einer Zahl, oder eine F-Taste. Einfg öffnet dieses Menü.",
     "Quit game (keyboard)": "Spiel beenden (Tastatur)",
     "Press the key, for example Ctrl+X...": "Taste drücken, zum Beispiel Ctrl+X...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Diese Taste geht nicht: Ctrl oder Alt mit einem Buchstaben oder einer Zahl, oder eine F-Taste."
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Diese Taste geht nicht: Ctrl oder Alt mit einem Buchstaben oder einer Zahl, oder eine F-Taste.",
+    "Hide button hints": "Tastenhinweise ausblenden",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Die Tastenhinweis-Kästen des Spiels werden nie angezeigt. Das Tutorial läuft im Hintergrund weiter, es wird also nichts übersprungen."
   }
 }

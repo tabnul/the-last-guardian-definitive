@@ -153,6 +153,7 @@
     "launcher.update_check": "Перевіряти нові випуски під час запуску",
     "launcher.update_available": "Вийшов новий випуск {tag}: натисніть, щоб відкрити сторінку завантаження",
     "launcher.old_version": "Версія гри {version}: встановіть оновлення 01.03 (порт створено для нього)",
+    "launcher.fps_unsupported": "eboot.bin не є кодом гри 1.03: 60 FPS і Без обмежень не працюють, гра йде на 30 FPS (див. README)",
     "launcher.debug": "Налагодження (під час запуску)",
     "launcher.bench_title": "Benchmark",
     "launcher.bench_text": "Вимірює, наскільки швидко гра працює на цьому ПК, сцена за сценою, повністю самостійно: кожна сцена завантажується з чистого збереження, камера стоїть нерухомо, а частота кадрів записується щосекунди. Ваші власні збереження спершу відкладаються, а потім повертаються.\n\nНе торкайтеся під час роботи: гра відкривається на повний екран для кожної сцени, приблизно по хвилині. Результат — один файл звіту .zip; додайте його до issue на GitHub, щоб розробники точно бачили, як кожна сцена працює на вашому ПК.",
@@ -363,7 +364,7 @@
     "launcher.quit": "Вийти",
     "launcher.ready": "Готово до гри.",
     "launcher.audio_native": "Звук: рідний (модуль консолі знайдено).",
-    "launcher.audio_builtin": "Звук: вбудований мікшер, експериментально (libSceNgs2.sprx не знайдено або не вибрано).",
+    "launcher.audio_builtin": "Звук: вбудований мікшер. Можливі проблеми зі звуком (відлуння, зниклі звуки). Рішення: покладіть libSceNgs2.sprx у папку системних модулів консолі (Налаштування).",
     "launcher.missing": "Відсутнє",
     "launcher.not_built": "Порт не зібрано (запустіть build.sh)",
     "launcher.preparing": "Підготовка гри…",
@@ -470,7 +471,8 @@
     "pad.quit_key_press": "Натисніть клавішу, наприклад Ctrl+X…",
     "pad.quit_key_bad": "Не ця клавіша: використайте Ctrl або Alt з літерою чи цифрою, або клавішу F",
     "pad.quit_key_off": "вимк.",
-    "pad.off_button": "Вимк."
+    "pad.off_button": "Вимк.",
+    "pad.hide_hints": "Сховати підказки кнопок (навчання працює далі, нічого не пропускається)"
   },
   "items": {
     "menu:sharpen": {
@@ -1195,6 +1197,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Призначити: утримуйте разом дві або більше кнопок, потім відпустіть. Клавіша виходу на клавіатурі потребує Ctrl або Alt з літерою чи цифрою, або клавішу F. Insert відкриває це меню.",
     "Quit game (keyboard)": "Вийти з гри (клавіатура)",
     "Press the key, for example Ctrl+X...": "Натисніть клавішу, наприклад Ctrl+X...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Не ця клавіша: використайте Ctrl або Alt з літерою чи цифрою, або клавішу F."
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Не ця клавіша: використайте Ctrl або Alt з літерою чи цифрою, або клавішу F.",
+    "Hide button hints": "Сховати підказки кнопок",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Рамки з підказками кнопок у грі ніколи не показуються. Навчання й далі працює у фоні, тож нічого не пропускається."
   }
 }

@@ -333,6 +333,9 @@ private:
     std::atomic<u64> readback_gather_declined{};
     std::atomic<u64> readback_gather_islands{};
     std::atomic<u64> readback_gather_bytes{};
+    /// tlg (#89): GPU-marked regions unmarked because nothing was recorded for them.
+    std::atomic<u64> readback_mark_cleared{};
+    std::atomic<u64> readback_mark_cleared_bytes{};
 
     /// tlg: one bit per 4 KiB guest page that really holds not-yet-downloaded GPU buffer
     /// bytes. The page tracker's GPU bits cover whole pages and whole download windows, so

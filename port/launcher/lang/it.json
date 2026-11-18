@@ -153,6 +153,7 @@
     "launcher.update_check": "Controlla nuove versioni all'avvio",
     "launcher.update_available": "È uscita la nuova versione {tag}: clicca per aprire la pagina di download",
     "launcher.old_version": "Versione del gioco {version}: installa l'aggiornamento 01.03 (il port è fatto per quello)",
+    "launcher.fps_unsupported": "eboot.bin non è il codice di gioco 1.03: 60 FPS e Illimitato non funzionano, il gioco gira a 30 FPS (vedi il README)",
     "launcher.debug": "Debug (all'avvio)",
     "launcher.bench_title": "Benchmark",
     "launcher.bench_text": "Misura da solo quanto va veloce il gioco su questo PC, scena per scena: ogni scena viene caricata da un salvataggio pulito, la telecamera sta ferma e viene registrato il frame rate di ogni secondo. I tuoi salvataggi vengono messi da parte prima e rimessi a posto dopo.\n\nNon toccare nulla mentre gira: il gioco si apre a schermo intero per ogni scena, circa un minuto ciascuna. Il risultato è un unico file .zip di rapporto — allegalo a una issue su GitHub così gli sviluppatori vedono esattamente come gira ogni scena sul tuo PC.",
@@ -363,7 +364,7 @@
     "launcher.quit": "Esci",
     "launcher.ready": "Pronto per giocare.",
     "launcher.audio_native": "Audio: nativo (modulo della console trovato).",
-    "launcher.audio_builtin": "Audio: mixer integrato, sperimentale (libSceNgs2.sprx non trovato o non selezionato).",
+    "launcher.audio_builtin": "Audio: mixer integrato. Possibili problemi audio (eco, suoni mancanti). Soluzione: metti libSceNgs2.sprx nella cartella dei moduli di sistema della console (Impostazioni).",
     "launcher.missing": "Mancante",
     "launcher.not_built": "Port non compilato (esegui build.sh)",
     "launcher.preparing": "Preparazione del gioco…",
@@ -470,7 +471,8 @@
     "pad.quit_key_press": "Premi il tasto, per esempio Ctrl+X…",
     "pad.quit_key_bad": "Non questo tasto: usa Ctrl o Alt con una lettera o un numero, oppure un tasto F",
     "pad.quit_key_off": "no",
-    "pad.off_button": "No"
+    "pad.off_button": "No",
+    "pad.hide_hints": "Nascondi suggerimenti dei tasti (il tutorial continua, non si salta nulla)"
   },
   "items": {
     "menu:sharpen": {
@@ -1195,6 +1197,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Imposta: tieni premuti insieme due o più tasti, poi rilascia. Il tasto per uscire da tastiera richiede Ctrl o Alt con una lettera o un numero, oppure un tasto F. Ins apre questo menu.",
     "Quit game (keyboard)": "Esci dal gioco (tastiera)",
     "Press the key, for example Ctrl+X...": "Premi il tasto, per esempio Ctrl+X...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Non questo tasto: usa Ctrl o Alt con una lettera o un numero, oppure un tasto F."
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Non questo tasto: usa Ctrl o Alt con una lettera o un numero, oppure un tasto F.",
+    "Hide button hints": "Nascondi suggerimenti dei tasti",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "I riquadri dei suggerimenti dei tasti del gioco non vengono mai mostrati. Il tutorial continua in background, quindi non si salta nulla."
   }
 }

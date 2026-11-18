@@ -340,8 +340,9 @@
     "launcher.mods_empty": "Aucun fichier XML de triche trouvé dans le dossier des mods pour l'instant.",
     "launcher.quit": "Quitter",
     "launcher.ready": "Prêt à jouer.",
+    "launcher.fps_unsupported": "eboot.bin n'est pas le code du jeu 1.03 : 60 FPS et Illimité ne fonctionnent pas, le jeu tourne à 30 FPS (voir le README)",
     "launcher.audio_native": "Audio : natif (module de la console trouvé).",
-    "launcher.audio_builtin": "Audio : mixeur intégré, expérimental (libSceNgs2.sprx introuvable ou non sélectionné).",
+    "launcher.audio_builtin": "Audio : mixeur intégré. Des problèmes de son sont possibles (écho, sons manquants). Solution : placez libSceNgs2.sprx dans le dossier des modules système de la console (Paramètres).",
     "launcher.missing": "Manquant",
     "launcher.not_built": "Port non compilé (lancez build.sh)",
     "launcher.preparing": "Préparation du jeu…",
@@ -463,7 +464,8 @@
     "pad.quit_key_press": "Appuyez sur la touche, par exemple Ctrl+X…",
     "pad.quit_key_bad": "Pas cette touche : utilisez Ctrl ou Alt avec une lettre ou un chiffre, ou une touche F",
     "pad.quit_key_off": "désactivé",
-    "pad.off_button": "Désactivé"
+    "pad.off_button": "Désactivé",
+    "pad.hide_hints": "Masquer les aides de boutons (le tutoriel continue, rien n'est sauté)"
   },
   "items": {
     "menu:sharpen": {
@@ -1182,6 +1184,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Définir : maintenez deux boutons ou plus ensemble, puis relâchez. La touche clavier pour quitter demande Ctrl ou Alt avec une lettre ou un chiffre, ou une touche F. Inser ouvre ce menu.",
     "Quit game (keyboard)": "Quitter le jeu (clavier)",
     "Press the key, for example Ctrl+X...": "Appuyez sur la touche, par exemple Ctrl+X...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Pas cette touche : utilisez Ctrl ou Alt avec une lettre ou un chiffre, ou une touche F."
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Pas cette touche : utilisez Ctrl ou Alt avec une lettre ou un chiffre, ou une touche F.",
+    "Hide button hints": "Masquer les aides de boutons",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Les encadrés d'aide aux boutons du jeu ne s'affichent jamais. Le tutoriel continue en arrière-plan, rien n'est donc sauté."
   }
 }

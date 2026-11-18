@@ -153,6 +153,7 @@
     "launcher.update_check": "Açılışta yeni sürümleri denetle",
     "launcher.update_available": "Yeni sürüm çıktı: {tag}. İndirme sayfasını açmak için tıklayın",
     "launcher.old_version": "Oyun sürümü: {version}. 01.03 güncellemesini kurun (port onun için yapıldı)",
+    "launcher.fps_unsupported": "eboot.bin 1.03 oyun kodu değil: 60 FPS ve Sınırsız çalışmaz, oyun 30 FPS ile çalışır (README dosyasına bakın)",
     "launcher.debug": "Hata ayıklama (açılışta)",
     "launcher.bench_title": "Performans testi",
     "launcher.bench_text": "Oyunun bu bilgisayarda ne kadar hızlı çalıştığını sahne sahne, kendi kendine ölçer: her sahne temiz bir kayıttan yüklenir, kamera sabit durur ve her saniyenin kare hızı kaydedilir. Kendi kayıtlarınız önce kenara alınır ve sonra geri konur.\n\nÇalışırken dokunmayın: oyun her sahne için tam ekran açılır, her biri yaklaşık bir dakika. Sonuç tek bir .zip rapor dosyasıdır; geliştiricilerin her sahnenin bilgisayarınızda tam olarak nasıl çalıştığını görebilmesi için bunu bir GitHub sorun kaydına ekleyin.",
@@ -363,7 +364,7 @@
     "launcher.quit": "Çıkış",
     "launcher.ready": "Oynamaya hazır.",
     "launcher.audio_native": "Ses: yerel (konsol modülü bulundu).",
-    "launcher.audio_builtin": "Ses: yerleşik karıştırıcı, deneysel (libSceNgs2.sprx bulunamadı veya seçilmedi).",
+    "launcher.audio_builtin": "Ses: yerleşik karıştırıcı. Ses sorunları olabilir (yankı, eksik sesler). Çözüm: libSceNgs2.sprx dosyasını konsol sistem modülleri klasörüne koyun (Ayarlar).",
     "launcher.missing": "Eksik",
     "launcher.not_built": "Port derlenmemiş (build.sh çalıştırın)",
     "launcher.preparing": "Oyun hazırlanıyor…",
@@ -470,7 +471,8 @@
     "pad.quit_key_press": "Tuşa basın, örneğin Ctrl+X…",
     "pad.quit_key_bad": "Bu tuş olmaz: Ctrl veya Alt ile bir harf ya da rakam, veya bir F tuşu kullanın",
     "pad.quit_key_off": "kapalı",
-    "pad.off_button": "Kapalı"
+    "pad.off_button": "Kapalı",
+    "pad.hide_hints": "Tuş ipuçlarını gizle (eğitim devam eder, hiçbir şey atlanmaz)"
   },
   "items": {
     "menu:sharpen": {
@@ -1195,6 +1197,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Ayarla: iki veya daha fazla tuşu birlikte basılı tutun, sonra bırakın. Klavyedeki çıkış tuşu Ctrl veya Alt ile bir harf ya da rakam, veya bir F tuşu olmalıdır. Insert bu menüyü açar.",
     "Quit game (keyboard)": "Oyundan çık (klavye)",
     "Press the key, for example Ctrl+X...": "Tuşa basın, örneğin Ctrl+X...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Bu tuş olmaz: Ctrl veya Alt ile bir harf ya da rakam, veya bir F tuşu kullanın."
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Bu tuş olmaz: Ctrl veya Alt ile bir harf ya da rakam, veya bir F tuşu kullanın.",
+    "Hide button hints": "Tuş ipuçlarını gizle",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Oyunun tuş ipucu kutuları hiç gösterilmez. Eğitim arka planda çalışmaya devam eder, yani hiçbir şey atlanmaz."
   }
 }

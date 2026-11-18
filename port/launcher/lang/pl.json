@@ -153,6 +153,7 @@
     "launcher.update_check": "Sprawdzaj nowe wydania przy starcie",
     "launcher.update_available": "Wyszło nowe wydanie {tag}: kliknij, aby otworzyć stronę pobierania",
     "launcher.old_version": "Wersja gry {version}: zainstaluj aktualizację 01.03 (port jest dla niej zrobiony)",
+    "launcher.fps_unsupported": "eboot.bin to nie kod gry 1.03: 60 FPS i Bez limitu nie działają, gra działa w 30 FPS (zobacz README)",
     "launcher.debug": "Debug (przy starcie)",
     "launcher.bench_title": "Benchmark",
     "launcher.bench_text": "Mierzy, jak szybko gra działa na tym PC, scena po scenie, całkiem sama: każda scena jest wczytywana z czystego zapisu, kamera stoi w miejscu, a liczba klatek z każdej sekundy jest zapisywana. Twoje zapisy są najpierw odkładane na bok, a potem przywracane.\n\nNie dotykaj niczego w trakcie: gra otwiera się na pełnym ekranie dla każdej sceny, około minuty na każdą. Wynikiem jest jeden plik raportu .zip — dołącz go do zgłoszenia na GitHubie, aby twórcy zobaczyli dokładnie, jak każda scena działa na twoim PC.",
@@ -363,7 +364,7 @@
     "launcher.quit": "Zakończ",
     "launcher.ready": "Gotowe do gry.",
     "launcher.audio_native": "Dźwięk: natywny (znaleziono moduł konsoli).",
-    "launcher.audio_builtin": "Dźwięk: wbudowany mikser, eksperymentalny (nie znaleziono lub nie wybrano libSceNgs2.sprx).",
+    "launcher.audio_builtin": "Dźwięk: wbudowany mikser. Mogą wystąpić problemy z dźwiękiem (echo, brakujące dźwięki). Rozwiązanie: umieść libSceNgs2.sprx w folderze modułów systemowych konsoli (Ustawienia).",
     "launcher.missing": "Brak",
     "launcher.not_built": "Port niezbudowany (uruchom build.sh)",
     "launcher.preparing": "Przygotowywanie gry…",
@@ -470,7 +471,8 @@
     "pad.quit_key_press": "Naciśnij klawisz, na przykład Ctrl+X…",
     "pad.quit_key_bad": "Nie ten klawisz: użyj Ctrl lub Alt z literą lub cyfrą albo klawisza F",
     "pad.quit_key_off": "wył.",
-    "pad.off_button": "Wył."
+    "pad.off_button": "Wył.",
+    "pad.hide_hints": "Ukryj podpowiedzi przycisków (samouczek działa dalej, nic nie zostaje pominięte)"
   },
   "items": {
     "menu:sharpen": {
@@ -1195,6 +1197,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Ustaw: przytrzymaj razem dwa lub więcej przycisków, potem puść. Klawisz wyjścia na klawiaturze wymaga Ctrl lub Alt z literą lub cyfrą albo klawisza F. Insert otwiera to menu.",
     "Quit game (keyboard)": "Wyjście z gry (klawiatura)",
     "Press the key, for example Ctrl+X...": "Naciśnij klawisz, na przykład Ctrl+X...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Nie ten klawisz: użyj Ctrl lub Alt z literą lub cyfrą albo klawisza F."
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Nie ten klawisz: użyj Ctrl lub Alt z literą lub cyfrą albo klawisza F.",
+    "Hide button hints": "Ukryj podpowiedzi przycisków",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Ramki z podpowiedziami przycisków nigdy się nie pojawiają. Samouczek nadal działa w tle, więc nic nie zostaje pominięte."
   }
 }

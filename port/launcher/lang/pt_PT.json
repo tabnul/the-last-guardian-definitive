@@ -153,6 +153,7 @@
     "launcher.update_check": "Procurar novas versões ao iniciar",
     "launcher.update_available": "Saiu a nova versão {tag}: clique para abrir a página de transferência",
     "launcher.old_version": "Versão do jogo {version}: instale a atualização 01.03 (o port foi feito para ela)",
+    "launcher.fps_unsupported": "eboot.bin não é o código do jogo 1.03: 60 FPS e Sem limite não funcionam, o jogo corre a 30 FPS (ver o README)",
     "launcher.debug": "Depuração (ao iniciar)",
     "launcher.bench_title": "Benchmark",
     "launcher.bench_text": "Mede a velocidade do jogo neste PC, cena por cena, sozinho: cada cena é carregada de um save limpo, a câmara fica parada e a taxa de fotogramas de cada segundo é registada. Os seus próprios saves são guardados antes e devolvidos depois.\n\nNão mexa enquanto corre: o jogo abre em ecrã inteiro para cada cena, cerca de um minuto cada. O resultado é um único ficheiro .zip — anexe-o a uma issue no GitHub para os desenvolvedores verem exatamente como cada cena corre no seu PC.",
@@ -363,7 +364,7 @@
     "launcher.quit": "Sair",
     "launcher.ready": "Pronto para jogar.",
     "launcher.audio_native": "Áudio: nativo (módulo do console encontrado).",
-    "launcher.audio_builtin": "Áudio: mixer próprio, experimental (libSceNgs2.sprx não encontrado ou desmarcado).",
+    "launcher.audio_builtin": "Áudio: mixer próprio. Podem ocorrer problemas de som (eco, sons em falta). Solução: coloque o libSceNgs2.sprx na pasta de módulos do sistema da consola (Definições).",
     "launcher.missing": "Em falta",
     "launcher.not_built": "Port não compilado (rode o build.sh)",
     "launcher.preparing": "A preparar o jogo…",
@@ -470,7 +471,8 @@
     "pad.quit_key_press": "Prima a tecla, por exemplo Ctrl+X…",
     "pad.quit_key_bad": "Esta tecla não: use Ctrl ou Alt com uma letra ou número, ou uma tecla F",
     "pad.quit_key_off": "desligado",
-    "pad.off_button": "Desligado"
+    "pad.off_button": "Desligado",
+    "pad.hide_hints": "Ocultar dicas de botões (o tutorial continua, nada é saltado)"
   },
   "items": {
     "menu:sharpen": {
@@ -1195,6 +1197,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Definir: mantenha dois ou mais botões premidos em conjunto e depois largue. A tecla de sair do teclado precisa de Ctrl ou Alt com uma letra ou número, ou uma tecla F. Insert abre este menu.",
     "Quit game (keyboard)": "Sair do jogo (teclado)",
     "Press the key, for example Ctrl+X...": "Prima a tecla, por exemplo Ctrl+X...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Esta tecla não: use Ctrl ou Alt com uma letra ou número, ou uma tecla F."
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Esta tecla não: use Ctrl ou Alt com uma letra ou número, ou uma tecla F.",
+    "Hide button hints": "Ocultar dicas de botões",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "As caixas de dicas de botões do jogo nunca são mostradas. O tutorial continua a correr em segundo plano, por isso nada é saltado."
   }
 }

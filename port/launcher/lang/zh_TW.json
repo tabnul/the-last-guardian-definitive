@@ -153,6 +153,7 @@
     "launcher.update_check": "Check for new releases at start",
     "launcher.update_available": "New release {tag} is out: click to open the download page",
     "launcher.old_version": "Game version {version}: install update 01.03 (the port is made for it)",
+    "launcher.fps_unsupported": "eboot.bin 不是 1.03 版遊戲程式碼：60 FPS 和不限幀率無法使用，遊戲以 30 FPS 執行（請參閱 README）",
     "launcher.debug": "除錯（啟動時）",
     "launcher.bench_title": "效能測試",
     "launcher.bench_text": "自動逐個場景測量遊戲在這臺電腦上的執行速度：每個場景都從乾淨的存檔載入，鏡頭保持靜止，並記錄每一秒的幀率。你自己的存檔會先被移到一邊，測試結束後再放回。\n\n執行期間請勿操作：每個場景遊戲都會以全螢幕開啟，每個約一分鐘。結果是一個 .zip 報告檔案——請將它附加到 GitHub issue 中，讓開發者準確瞭解每個場景在你電腦上的執行情況。",
@@ -363,7 +364,7 @@
     "launcher.quit": "退出",
     "launcher.ready": "準備就緒。",
     "launcher.audio_native": "音訊：原生（已找到主機模組）。",
-    "launcher.audio_builtin": "音訊：內建混音器，實驗性（未找到或未選擇 libSceNgs2.sprx）。",
+    "launcher.audio_builtin": "音訊：內建混音器。可能出現聲音問題（回音、聲音缺失）。解決方法：將 libSceNgs2.sprx 放入主機系統模組資料夾（設定）。",
     "launcher.missing": "缺失",
     "launcher.not_built": "移植版尚未構建（請執行 build.sh）",
     "launcher.preparing": "正在準備遊戲…",
@@ -470,7 +471,8 @@
     "pad.quit_key_press": "請按鍵，例如 Ctrl+X…",
     "pad.quit_key_bad": "不能用這個鍵：請用 Ctrl 或 Alt 加字母或數字，或 F 鍵",
     "pad.quit_key_off": "關",
-    "pad.off_button": "關閉"
+    "pad.off_button": "關閉",
+    "pad.hide_hints": "隱藏按鍵提示（教學仍在執行，不會略過任何內容）"
   },
   "items": {
     "menu:sharpen": {
@@ -1195,6 +1197,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "設定：同時按住兩個或更多按鍵，然後放開。鍵盤退出鍵需要 Ctrl 或 Alt 加字母或數字，或 F 鍵。Insert 開啟此選單。",
     "Quit game (keyboard)": "退出遊戲（鍵盤）",
     "Press the key, for example Ctrl+X...": "請按鍵，例如 Ctrl+X...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "不能用這個鍵：請用 Ctrl 或 Alt 加字母或數字，或 F 鍵。"
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "不能用這個鍵：請用 Ctrl 或 Alt 加字母或數字，或 F 鍵。",
+    "Hide button hints": "隱藏按鍵提示",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "遊戲的按鍵提示框將始終不顯示。教學仍在背景執行，因此不會略過任何內容。"
   }
 }

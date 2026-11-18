@@ -153,6 +153,7 @@
     "launcher.update_check": "Bij de start op nieuwe releases controleren",
     "launcher.update_available": "Nieuwe release {tag} is uit: klik om de downloadpagina te openen",
     "launcher.old_version": "Gameversie {version}: installeer update 01.03 (de port is daarvoor gemaakt)",
+    "launcher.fps_unsupported": "eboot.bin is niet de 1.03-gamecode: 60 FPS en Onbeperkt werken niet, de game draait op 30 FPS (zie de README)",
     "launcher.debug": "Debug (bij de start)",
     "launcher.bench_title": "Benchmark",
     "launcher.bench_text": "Meet hoe snel de game op deze pc draait, scène voor scène, helemaal vanzelf: elke scène wordt geladen vanaf een schone save, de camera staat stil en de framerate van elke seconde wordt vastgelegd. Je eigen saves worden eerst apart gezet en daarna teruggezet.\n\nNiet aanraken terwijl het loopt: de game opent voor elke scène op volledig scherm, ongeveer een minuut per scène. Het resultaat is één .zip-rapportbestand — voeg het toe aan een issue op GitHub zodat de ontwikkelaars precies zien hoe elke scène op jouw pc draait.",
@@ -363,7 +364,7 @@
     "launcher.quit": "Afsluiten",
     "launcher.ready": "Klaar om te spelen.",
     "launcher.audio_native": "Audio: native (consolemodule gevonden).",
-    "launcher.audio_builtin": "Audio: ingebouwde mixer, experimenteel (libSceNgs2.sprx niet gevonden of niet gekozen).",
+    "launcher.audio_builtin": "Audio: ingebouwde mixer. Er kunnen geluidsproblemen optreden (echo, ontbrekende geluiden). Oplossing: zet libSceNgs2.sprx in de map met systeemmodules van de console (Instellingen).",
     "launcher.missing": "Ontbreekt",
     "launcher.not_built": "Port niet gebouwd (voer build.sh uit)",
     "launcher.preparing": "Game voorbereiden…",
@@ -470,7 +471,8 @@
     "pad.quit_key_press": "Druk op de toets, bijvoorbeeld Ctrl+X…",
     "pad.quit_key_bad": "Niet deze toets: gebruik Ctrl of Alt met een letter of cijfer, of een F-toets",
     "pad.quit_key_off": "uit",
-    "pad.off_button": "Uit"
+    "pad.off_button": "Uit",
+    "pad.hide_hints": "Knophints verbergen (de tutorial loopt door, er wordt niets overgeslagen)"
   },
   "items": {
     "menu:sharpen": {
@@ -1195,6 +1197,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "Instellen: houd twee of meer knoppen samen vast en laat dan los. De afsluittoets op het toetsenbord heeft Ctrl of Alt met een letter of cijfer nodig, of een F-toets. Insert opent dit menu.",
     "Quit game (keyboard)": "Spel afsluiten (toetsenbord)",
     "Press the key, for example Ctrl+X...": "Druk op de toets, bijvoorbeeld Ctrl+X...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Niet deze toets: gebruik Ctrl of Alt met een letter of cijfer, of een F-toets."
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Niet deze toets: gebruik Ctrl of Alt met een letter of cijfer, of een F-toets.",
+    "Hide button hints": "Knophints verbergen",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "De knophintvakken van het spel worden nooit getoond. De tutorial loopt op de achtergrond door, er wordt dus niets overgeslagen."
   }
 }

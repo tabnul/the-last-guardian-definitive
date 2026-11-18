@@ -153,6 +153,7 @@
     "launcher.update_check": "시작 시 새 릴리스 확인",
     "launcher.update_available": "새 릴리스 {tag}이(가) 나왔습니다: 클릭하면 다운로드 페이지가 열립니다",
     "launcher.old_version": "게임 버전 {version}: 업데이트 01.03을 설치하세요(포트는 이 버전용입니다)",
+    "launcher.fps_unsupported": "eboot.bin이 1.03 게임 코드가 아닙니다: 60 FPS와 무제한이 작동하지 않으며 게임은 30 FPS로 실행됩니다(README 참조)",
     "launcher.debug": "디버그(시작 시)",
     "launcher.bench_title": "벤치마크",
     "launcher.bench_text": "이 PC에서 게임이 얼마나 빠르게 실행되는지 장면별로 자동 측정합니다: 각 장면을 깨끗한 세이브에서 불러오고, 카메라를 고정한 채 매초 프레임 레이트를 기록합니다. 사용자의 세이브는 먼저 따로 보관했다가 끝나면 복원합니다.\n\n실행 중에는 손대지 마세요: 장면마다 게임이 전체 화면으로 열리며 각각 약 1분 걸립니다. 결과는 .zip 보고서 파일 하나입니다 — GitHub 이슈에 첨부하면 개발자가 각 장면이 사용자 PC에서 어떻게 실행되는지 정확히 볼 수 있습니다.",
@@ -363,7 +364,7 @@
     "launcher.quit": "종료",
     "launcher.ready": "플레이할 준비가 되었습니다.",
     "launcher.audio_native": "오디오: 네이티브(콘솔 모듈 발견).",
-    "launcher.audio_builtin": "오디오: 내장 믹서, 실험적(libSceNgs2.sprx를 찾지 못했거나 선택하지 않음).",
+    "launcher.audio_builtin": "오디오: 내장 믹서. 소리 문제(메아리, 소리 누락)가 생길 수 있습니다. 해결: libSceNgs2.sprx를 콘솔 시스템 모듈 폴더에 넣으세요(설정).",
     "launcher.missing": "없음",
     "launcher.not_built": "포트가 빌드되지 않음(build.sh 실행)",
     "launcher.preparing": "게임 준비 중…",
@@ -470,7 +471,8 @@
     "pad.quit_key_press": "키를 누르세요, 예: Ctrl+X…",
     "pad.quit_key_bad": "이 키는 안 됩니다: Ctrl 또는 Alt와 문자나 숫자, 또는 F 키를 쓰세요",
     "pad.quit_key_off": "끔",
-    "pad.off_button": "끔"
+    "pad.off_button": "끔",
+    "pad.hide_hints": "버튼 안내 숨기기 (튜토리얼은 계속 진행되며 건너뛰는 것은 없습니다)"
   },
   "items": {
     "menu:sharpen": {
@@ -1195,6 +1197,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "설정: 두 개 이상의 버튼을 함께 누르고 있다가 떼세요. 키보드 종료 키는 Ctrl 또는 Alt와 문자나 숫자, 또는 F 키가 필요합니다. Insert는 이 메뉴를 엽니다.",
     "Quit game (keyboard)": "게임 종료 (키보드)",
     "Press the key, for example Ctrl+X...": "키를 누르세요, 예: Ctrl+X...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "이 키는 안 됩니다: Ctrl 또는 Alt와 문자나 숫자, 또는 F 키를 쓰세요."
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "이 키는 안 됩니다: Ctrl 또는 Alt와 문자나 숫자, 또는 F 키를 쓰세요.",
+    "Hide button hints": "버튼 안내 숨기기",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "게임의 버튼 안내 상자가 표시되지 않습니다. 튜토리얼은 백그라운드에서 계속 진행되므로 건너뛰는 것은 없습니다."
   }
 }

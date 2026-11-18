@@ -340,8 +340,9 @@
     "launcher.mods_empty": "mods 文件夹中还没有找到作弊 XML 文件。",
     "launcher.quit": "退出",
     "launcher.ready": "准备就绪。",
+    "launcher.fps_unsupported": "eboot.bin 不是 1.03 版游戏代码：60 FPS 和不限帧率无法使用，游戏以 30 FPS 运行（参见 README）",
     "launcher.audio_native": "音频：原生（已找到主机模块）。",
-    "launcher.audio_builtin": "音频：内置混音器，实验性（未找到或未选择 libSceNgs2.sprx）。",
+    "launcher.audio_builtin": "音频：内置混音器。可能出现声音问题（回声、声音缺失）。解决方法：将 libSceNgs2.sprx 放入主机系统模块文件夹（设置）。",
     "launcher.missing": "缺失",
     "launcher.not_built": "移植版尚未构建（请运行 build.sh）",
     "launcher.preparing": "正在准备游戏…",
@@ -463,7 +464,8 @@
     "pad.quit_key_press": "请按键，例如 Ctrl+X…",
     "pad.quit_key_bad": "不能用这个键：请用 Ctrl 或 Alt 加字母或数字，或 F 键",
     "pad.quit_key_off": "关",
-    "pad.off_button": "关闭"
+    "pad.off_button": "关闭",
+    "pad.hide_hints": "隐藏按键提示（教程仍在运行，不会跳过任何内容）"
   },
   "items": {
     "menu:sharpen": {
@@ -1182,6 +1184,8 @@
     "Set: press and hold two or more buttons together, then let go. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens this menu.": "设置：同时按住两个或更多按键，然后松开。键盘退出键需要 Ctrl 或 Alt 加字母或数字，或 F 键。Insert 打开此菜单。",
     "Quit game (keyboard)": "退出游戏（键盘）",
     "Press the key, for example Ctrl+X...": "请按键，例如 Ctrl+X...",
-    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "不能用这个键：请用 Ctrl 或 Alt 加字母或数字，或 F 键。"
+    "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "不能用这个键：请用 Ctrl 或 Alt 加字母或数字，或 F 键。",
+    "Hide button hints": "隐藏按键提示",
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "游戏的按键提示框将始终不显示。教程仍在后台运行，因此不会跳过任何内容。"
   }
 }
