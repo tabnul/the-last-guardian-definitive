@@ -62,6 +62,15 @@ power-cycled (issue 11). Killing the game before the memory is full avoids that.
 - It is part of this test tool only: nothing in the game or the engine changes, and it costs nothing when
   the tool is not used.
 
+## Leaving Trico visible (experiment, issue 20)
+
+- Switch: `SHOT_TRICO` in the environment of `shot.py` (and so of `sweep.py`, which passes its environment on).
+  `hide` (the default) keeps the recipe as it is. `show` leaves out the "hide Trico" step only: no
+  `MS.CondorStopAll`, no `MS.InvisibleEntity`. The own camera, the game speed 0.001 and every wait stay.
+  The take's log then says `shot trico hide off (SHOT_TRICO=show)`.
+- Pictures with `show` hold a Trico that keeps moving, so they are not the same picture as a `hide` take:
+  keep them in their own OUT folder, never mixed with an answer key made with `hide`.
+
 ## Output
 
 `OUT/STAGE__SCENE/` holds `vkbV_takeN.png`, the game log of each take (`vkbV_takeN.log`) and `camera.txt`.

@@ -4,6 +4,7 @@
 Recipe per take: fresh start (clean save from scene-check/start.save) -> title -> retarget CONTINUE to
 STAGE/SCENE -> wait until the load overlay ended -> 8 s -> hide Trico -> own camera at a fixed position,
 set every tick -> game speed 0.001 -> 4 s -> picture of the game window on the virtual screen.
+SHOT_TRICO=show (environment) leaves out the "hide Trico" step only; the default is SHOT_TRICO=hide.
 
 Usage: shot.py OUT STAGE SCENE VKB TAKES [--cam "X Y Z PITCH YAW"] [NAME=VALUE ...]
   OUT   folder for the pictures and logs (outside the repo). Pictures: OUT/STAGE__SCENE/vkbV_takeN.png
@@ -53,14 +54,7 @@ end)
 if not ok then L('shot cam error: ' .. tostring(e)) end
 """
 PHOTO = HEAD + """local ok, e = pcall(function()
-  local t = FindObject('Condor')
-  if t then
-    pcall(MS.CondorStopAll)
-    local ok, e = pcall(MS.InvisibleEntity, t)
-    L('shot trico hide ' .. tostring(ok) .. ' ' .. tostring(e))
-  else
-    L('shot trico hide none')
-  end
+@TRICO@
   CameraManager:SetActiveCamera('default')
   local cam = FindObject('_default_camera')
   local pos, rot = Vector(@PX@, @PY@, @PZ@), Vector(@PITCH@, @YAW@, 0)
@@ -71,6 +65,17 @@ PHOTO = HEAD + """local ok, e = pcall(function()
 end)
 if not ok then L('shot photo error: ' .. tostring(e)) end
 """
+HIDE = """  local t = FindObject('Condor')
+  if t then
+    pcall(MS.CondorStopAll)
+    local ok, e = pcall(MS.InvisibleEntity, t)
+    L('shot trico hide ' .. tostring(ok) .. ' ' .. tostring(e))
+  else
+    L('shot trico hide none')
+  end"""
+SHOW = "  L('shot trico hide off (SHOT_TRICO=show): Trico stays visible and keeps moving')"
+# SHOT_TRICO=show leaves out the "hide Trico" step (no CondorStopAll, no InvisibleEntity); every other step stays
+TRICO = os.environ.get("SHOT_TRICO", "hide")
 
 
 def run(cmd, **kw):
@@ -331,7 +336,7 @@ def steps(game, send, out, tag, stage, scene, env, cam_file, cam_arg):
         with open(cam_file, "w") as f:
             f.write(" ".join(cam) + "\n")
         print(f"  camera taken from the game in this take: {' '.join(cam)}", flush=True)
-    lua = PHOTO
+    lua = PHOTO.replace("@TRICO@", SHOW if TRICO == "show" else HIDE)
     for k, v in zip(("PX", "PY", "PZ", "PITCH", "YAW"), cam):
         lua = lua.replace(f"@{k}@", v)
     mark = len(game.lines())
@@ -382,6 +387,8 @@ def main():
     if len(args) < 5 or args[3] not in ("0", "1"):
         sys.exit(__doc__)
     root, stage, scene, vkb, takes = args[0], args[1], args[2], args[3], int(args[4])
+    if TRICO not in ("hide", "show"):
+        sys.exit(f"SHOT_TRICO={TRICO}: use hide (the default) or show")
     env = dict(e.split("=", 1) for e in args[5:])
     env["TLG_VKB"] = vkb
     if "TLG_USER_DIR" in env:
