@@ -178,3 +178,4 @@ measured on retake 2 against each of the three, outside the mask (no game run: t
 13 scenes come within the limit (`noise-ignore.txt`, still `proposed`, new share in the line). 23 still fail or
 would need more than 25% left out: `log-only.txt`, `proposed`. `AT_BarrelBox_001` and
 `ST_040_FallingFromSentinelTower` are `confirmed` log only (owner, comment 6979040549).
+A confirmed entry with fewer good reference takes than it needs now gives `masked_error` (before: for one take the mask was skipped silently).
