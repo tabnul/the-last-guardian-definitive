@@ -1147,6 +1147,10 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
             // with the mark left in place the same read fault would come back forever.
             memory_tracker->UnmarkRegionAsGpuModified(download_addr, download_size);
             ClearExactWritePagesInner(download_addr, download_size);
+            // tlg (#89): from here on the region reads from RAM; an image over it would be
+            // re-uploaded from RAM too (texture cache "Image refresh from RAM").
+            readback_mark_cleared.fetch_add(1, std::memory_order_relaxed);
+            readback_mark_cleared_bytes.fetch_add(download_size, std::memory_order_relaxed);
             static std::atomic<u32> reports{0};
             if (reports.fetch_add(1, std::memory_order_relaxed) < 20) {
                 std::printf("Readback: GPU mark without data at %#llx size %#llx\n",
@@ -1543,10 +1547,13 @@ void BufferCache::ReportReadbackStats() {
                 readback_gather_bytes.exchange(0) / 1048576.0,
                 static_cast<unsigned long long>(readback_gather_declined.exchange(0)));
     std::printf("Buffer readback stale skips (5 s): %.2f MiB not re-downloaded, %llu write "
-                "faults resolved without a flush\n",
+                "faults resolved without a flush; %llu GPU marks cleared without data (%.2f MiB)\n",
                 readback_stale_bytes.exchange(0, std::memory_order_relaxed) / 1048576.0,
                 static_cast<unsigned long long>(
-                    readback_false_share_skips.exchange(0, std::memory_order_relaxed)));
+                    readback_false_share_skips.exchange(0, std::memory_order_relaxed)),
+                static_cast<unsigned long long>(
+                    readback_mark_cleared.exchange(0, std::memory_order_relaxed)),
+                readback_mark_cleared_bytes.exchange(0, std::memory_order_relaxed) / 1048576.0);
     std::printf("Buffer readback waits (5 s): %.1f ms in Finish, %.1f ms in %llu side copies; "
                 "last GPU write done %llu, submitted %llu, still "
                 "recording %llu, unknown %llu; fence flushes EOP %llu, EOS %llu, WRITE_DATA %llu, "
