@@ -31,6 +31,8 @@
  *   TLG_NGS2_LOG=1           unknown parameters, decoder errors, a summary every 30 s
  *   TLG_NGS2_WAV=<file>      writes render buffer 0 as float WAV (compare with the native mix)
  *   TLG_NGS2_USERFX=0        do not call the game's user FX handlers
+ *   TLG_NGS2_KEEP_FILTERS=1  SotC fix: a sampler setup keeps the voice's old filters (as before the #426 fix)
+ *   TLG_NGS2_DIAG=1          SotC fix: with LOG, every 5 s each playing voice and bus: levels, filters, ports
  *   TLG_NGS2_REVERB=pass     reverb racks pass their input through unprocessed (debug)
  *   TLG_NGS2_CUSTOM=mute     custom racks (chorus/delay) output silence (debug)
  *   TLG_NGS2_DELAY_TYPE=0    custom delay on a mono downmix instead of per channel (the default)
@@ -67,6 +69,7 @@
 #define MAX_FILTERS 8
 #define FIFO_FRAMES 2048
 #define UNIT_FRAMES 256
+#define AT9_SUPERFRAME_MAX 8192   /* SotC fix: largest ATRAC9 superframe (2048-byte frames, 4 per superframe) */
 #define END_GRACE_RENDERS 2
 
 enum { RACK_SAMPLER = 0x1000, RACK_SUBMIXER = 0x2000, RACK_REVERB = 0x2001, RACK_MASTERING = 0x3000 };
@@ -197,12 +200,18 @@ typedef struct {
     /* Current block */
     int started;
     uint32_t byte, out_left, skip_left, repeated;
+    uint32_t ends_without_output; /* SotC fix: block ends with no frame in between (see block_end) */
     /* Decoders */
     float hist[MAX_CH][4];
     void *at9;
     Atrac9CodecInfo at9_info;
-    uint32_t at9_frame_in_superframe, at9_superframe_start;
+    uint32_t at9_frame_in_superframe;
     int at9_ok;
+    /* SotC fix: the superframe being decoded. Streamed sounds come in blocks that are not whole
+     * superframes (64 KiB blocks of 960-byte superframes): one superframe starts at the end of a
+     * block and ends in the next, so it is put together here; reset with the decoder. */
+    uint32_t at9_sf_fill, at9_sf_pos;
+    uint8_t *at9_sf;
     /* Decoded frames waiting for the resampler (interleaved, MAX_CH stride) */
     float *fifo;
     uint32_t fifo_len;
@@ -229,6 +238,7 @@ struct Voice {
     Port ports[MAX_PORTS];
     Matrix *matrices;
     float peak;
+    float diag_in[MAX_CH], diag_out[MAX_CH];   /* TLG_NGS2_DIAG: channel peaks since the last dump */
     Biquad filters[MAX_FILTERS];
     UserFxHandler user_fx;
     uintptr_t user_fx_data[3];
@@ -237,8 +247,9 @@ struct Voice {
     uint32_t callback_flags;
     Sampler *sampler;
     /* Buses */
-    float *input;           /* MAX_CH planar channels of MAX_GRAIN */
+    float *input;           /* MAX_CH planar channels of MAX_GRAIN, then MAX_CH more: input 1 (side chain) */
     int has_input;
+    int has_side;           /* something was mixed into input 1 since it was last cleared */
     int fed;                /* something was mixed into the input this render */
     Dynamics compressor;
     Reverb *reverb;
@@ -862,7 +873,15 @@ static void delay_run(Delay *d, float data[MAX_CH][MAX_GRAIN], uint32_t channels
         for (uint32_t c = 0; c < channels; ++c) if (c != 3) for (uint32_t i = 0; i < n; ++i) mono[i] += data[c][i] * d->in_gain[c];
     }
     for (uint32_t c = 0; c < (d->type == 0 ? 1u : channels); ++c) {
-        if (d->type != 0 && (c == 3 || (d->mask >> c & 1))) continue;
+        if (d->type != 0 && (c == 3 || (d->mask >> c & 1))) {
+            /* SotC fix: a channel the delay skips (LFE, masked) has no delayed part, but it is still
+             * the module's output: dry level, not the input as it came. SotC's effect sends end in
+             * a delay with dry 0, wet 1; the LFE of every 5.1 stream went through it at full
+             * level and was added to the direct path a second time (+6 dB against the console,
+             * and still there when the game's own bus effect had muted the direct LFE). */
+            if (dry != 1.0f) for (uint32_t i = 0; i < n; ++i) data[c][i] *= dry;
+            continue;
+        }
         float *line = d->line + (size_t)c * len;
         const float *in = d->type == 0 ? mono : data[c];
         float g_in = d->type == 0 ? 1.0f : d->in_gain[c];
@@ -881,7 +900,7 @@ static void delay_run(Delay *d, float data[MAX_CH][MAX_GRAIN], uint32_t channels
         for (uint32_t i = 0; i < n; ++i) { line[w] = g_in * in[i] + fb * delayed[i]; if (++w == len) w = 0; }
         if (d->type == 0) {
             for (uint32_t o = 0; o < channels; ++o) {
-                if (o == 3 || (d->mask >> o & 1)) continue;
+                if (o == 3 || (d->mask >> o & 1)) { if (dry != 1.0f) for (uint32_t i = 0; i < n; ++i) data[o][i] *= dry; continue; }
                 for (uint32_t i = 0; i < n; ++i) data[o][i] = dry * mono[i] + wet * delayed[i];
             }
         } else for (uint32_t i = 0; i < n; ++i) data[c][i] = dry * data[c][i] + wet * delayed[i];
@@ -928,7 +947,9 @@ static void sampler_reset_decoder(Sampler *s) {
         if ((c & 0xff) == 0xfe) { config[0] = (unsigned char)c; config[1] = (unsigned char)(c >> 8); config[2] = (unsigned char)(c >> 16); config[3] = (unsigned char)(c >> 24); }
         else { config[0] = (unsigned char)(c >> 24); config[1] = (unsigned char)(c >> 16); config[2] = (unsigned char)(c >> 8); config[3] = (unsigned char)c; }
         if (s->at9 && !Atrac9InitDecoder(s->at9, config) && !Atrac9GetCodecInfo(s->at9, &s->at9_info) &&
-            s->at9_info.channels > 0 && s->at9_info.channels <= MAX_CH && s->at9_info.frameSamples <= UNIT_FRAMES)
+            s->at9_info.channels > 0 && s->at9_info.channels <= MAX_CH && s->at9_info.frameSamples <= UNIT_FRAMES &&
+            s->at9_info.superframeSize > 0 && s->at9_info.superframeSize <= AT9_SUPERFRAME_MAX &&
+            s->at9_info.framesInSuperframe > 0 && (s->at9_sf || (s->at9_sf = calloc(1, AT9_SUPERFRAME_MAX + 64))))
             s->at9_ok = 1;
         else {
             ++stat_errors;
@@ -936,6 +957,7 @@ static void sampler_reset_decoder(Sampler *s) {
         }
     }
     s->at9_frame_in_superframe = 0;
+    s->at9_sf_fill = s->at9_sf_pos = 0;
 }
 static void sampler_clear_blocks(Sampler *s) {
     s->head = s->count = 0;
@@ -977,7 +999,7 @@ static int voice_alloc_parts(Voice *v) {
         if (!v->sampler) return 0;
         v->sampler->pitch = 1.0f;
         v->sampler->env_level = 1.0f;
-    } else if (!(v->input = calloc((size_t)MAX_CH * MAX_GRAIN, sizeof(float)))) return 0;
+    } else if (!(v->input = calloc((size_t)2 * MAX_CH * MAX_GRAIN, sizeof(float)))) return 0;
     if (r->kind == KIND_REVERB && !(v->reverb = reverb_new(r->system->rate))) return 0;
     return 1;
 }
@@ -986,6 +1008,7 @@ static void voice_free(Voice *v) {
     if (v->sampler) {
         if (v->sampler->at9) Atrac9ReleaseHandle(v->sampler->at9);
         free(v->sampler->fifo);
+        free(v->sampler->at9_sf);
         free(v->sampler);
     }
     free(v->matrices);
@@ -1027,6 +1050,9 @@ static ABI int32_t ngs2_system_create(const uint8_t *option, const Allocator *al
         memcpy(&v, option + 0x20, 4); if (v) s->grain = v;
         memcpy(&v, option + 0x24, 4); if (v) s->rate = v;
     }
+    /* SotC fix: the reverb sizes, 30 s summaries and delay lines divide by the rate. */
+    if (s->rate < 8000) s->rate = 8000;
+    if (s->rate > 192000) s->rate = 192000;
     if (s->grain > MAX_GRAIN) s->grain = MAX_GRAIN;
     if (allocator) { s->allocator = *allocator; guest_alloc(allocator, &s->buffer, CONTEXT_BUFFER_SIZE); s->allocated = 1; }
     pthread_mutex_lock(&lock);
@@ -1064,10 +1090,15 @@ static ABI int32_t ngs2_system_destroy(uintptr_t handle, BufferInfo *out) {
     for (System **p = &systems; *p; p = &(*p)->next) if (*p == s) { *p = s->next; break; }
     while (s->racks) { Rack *r = s->racks; s->racks = r->next; rack_release(r); r->magic = 0; free(r); }
     if (out) *out = s->buffer;
-    if (s->allocated) guest_free(&s->allocator, &s->buffer);
+    /* SotC fix: the guest's free callback runs after the lock (a guest allocator that waits for
+     * a thread inside NGS2 would deadlock). */
+    const Allocator allocator = s->allocator;
+    BufferInfo buffer = s->buffer;
+    const int allocated = s->allocated;
     s->magic = 0;
     free(s);
     pthread_mutex_unlock(&lock);
+    if (allocated) guest_free(&allocator, &buffer);
     return NGS2_OK;
 }
 
@@ -1083,11 +1114,17 @@ static ABI int32_t ngs2_query_buffer(uint32_t rack_id, const void *option, Buffe
 static int32_t rack_create(uintptr_t system, uint32_t rack_id, const uint8_t *option, const BufferInfo *buffer,
                            const Allocator *allocator, uintptr_t *out) {
     if (!out) return NGS2_ERR_ARG;
+    /* SotC fix: the guest's alloc callback runs before the lock, its free callback after it. */
+    BufferInfo guest_buffer;
+    if (allocator) guest_alloc(allocator, &guest_buffer, CONTEXT_BUFFER_SIZE);
     pthread_mutex_lock(&lock);
     System *s = as_system(system);
-    if (!s) { pthread_mutex_unlock(&lock); return NGS2_ERR_HANDLE; }
-    Rack *r = calloc(1, sizeof(*r));
-    if (!r) { pthread_mutex_unlock(&lock); return NGS2_ERR_MEMORY; }
+    Rack *r = s ? calloc(1, sizeof(*r)) : NULL;
+    if (!r) {
+        pthread_mutex_unlock(&lock);
+        if (allocator) guest_free(allocator, &guest_buffer);
+        return s ? NGS2_ERR_MEMORY : NGS2_ERR_HANDLE;
+    }
     r->magic = MAGIC_RACK;
     r->system = s;
     r->id = rack_id;
@@ -1116,10 +1153,11 @@ static int32_t rack_create(uintptr_t system, uint32_t rack_id, const uint8_t *op
         if (r->voices) for (uint32_t i = 0; i < r->max_voices; ++i) if (r->voices[i]) { voice_free(r->voices[i]); free(r->voices[i]); }
         free(r->voices); free(r);
         pthread_mutex_unlock(&lock);
+        if (allocator) guest_free(allocator, &guest_buffer);
         return NGS2_ERR_MEMORY;
     }
     if (buffer) r->buffer = *buffer;
-    if (allocator) { r->allocator = *allocator; guest_alloc(allocator, &r->buffer, CONTEXT_BUFFER_SIZE); r->allocated = 1; }
+    if (allocator) { r->allocator = *allocator; r->buffer = guest_buffer; r->allocated = 1; }
     /* Appended: creation order is a reasonable tie-break for the render order. */
     Rack **tail = &s->racks;
     while (*tail) tail = &(*tail)->next;
@@ -1143,11 +1181,14 @@ static ABI int32_t ngs2_rack_destroy(uintptr_t handle, BufferInfo *out) {
     for (Rack **p = &s->racks; *p; p = &(*p)->next) if (*p == r) { *p = r->next; break; }
     unpatch_all(s, r);
     if (out) *out = r->buffer;
-    if (r->allocated) guest_free(&r->allocator, &r->buffer);
+    const Allocator allocator = r->allocator;
+    BufferInfo buffer = r->buffer;
+    const int allocated = r->allocated;
     rack_release(r);
     r->magic = 0;
     free(r);
     pthread_mutex_unlock(&lock);
+    if (allocated) guest_free(&allocator, &buffer);
     return NGS2_OK;
 }
 static ABI int32_t ngs2_voice_handle(uintptr_t rack, uint32_t index, uintptr_t *out) {
@@ -1254,6 +1295,14 @@ static void sampler_setup(Voice *v, const ParamHeader *p) {
     s->decoded_samples = s->decoded_bytes = s->user = 0;
     s->waveform_pointer = NULL;
     v->paused = 0;
+    /* SotC fix: a setup starts a new sound on the voice: the filters of the sound that used it
+     * before must not shape it. The game sets a sound's filters only after its setup and only
+     * the indexes that sound uses, so leftovers stayed in the chain (a 500 Hz high-pass and a
+     * 200 Hz low-pass of an earlier sound in series: the music of a colossus's death at -30 dB,
+     * AjncSystem #426). TLG_NGS2_KEEP_FILTERS=1 keeps them as before. */
+    static int keep_filters = -1;
+    if (keep_filters < 0) keep_filters = env_flag("NGS2_KEEP_FILTERS", 0);
+    if (!keep_filters) memset(v->filters, 0, sizeof(v->filters));
     if (!s->fifo) s->fifo = calloc((size_t)FIFO_FRAMES * MAX_CH, sizeof(float));
     sampler_clear_blocks(s);
     sampler_reset_decoder(s);
@@ -1596,6 +1645,7 @@ static void fifo_push(Sampler *s, uint32_t channels, const float *frames, uint32
     if (count > s->out_left) count = s->out_left;
     s->out_left -= count;
     if (s->fifo_len + count > FIFO_FRAMES) count = FIFO_FRAMES - s->fifo_len;
+    if (count) s->ends_without_output = 0;
     float *dst = s->fifo + (size_t)s->fifo_len * MAX_CH;
     for (uint32_t i = 0; i < count; ++i) for (uint32_t c = 0; c < MAX_CH; ++c) dst[i * MAX_CH + c] = c < channels ? frames[i * MAX_CH + c] : 0.0f;
     s->fifo_len += count;
@@ -1609,14 +1659,22 @@ static void block_begin(Sampler *s, const Block *b, int restart) {
     s->started = 1;
     if (!restart) s->repeated = 0;
     if (s->wave == WAVE_ATRAC9 && (restart || b->skip)) sampler_reset_decoder(s);
-    s->at9_frame_in_superframe = 0;
-    s->at9_superframe_start = 0;
     s->user = b->user;
     s->waveform_pointer = b->data;
 }
 /* The block finished: repeat it or move on. Calls the voice callback when one is set. */
 static void block_end(Voice *v) {
     Sampler *s = v->sampler;
+    /* SotC fix: a block that yields no frame (smaller than one frame, an ATRAC9 frame that never
+     * decodes, a skip over all of it) and repeats forever spun the audio thread with the lock
+     * held, which froze every VoiceControl caller: after 64 such ends the voice's queue ends. */
+    if (++s->ends_without_output > 64) {
+        ++stat_errors;
+        note("a block queue produced no audio after 64 block ends: voice ended");
+        s->count = 0;
+        s->started = 0;
+        return;
+    }
     Block *b = &s->blocks[s->head];
     int repeat = b->repeats != 0;
     if (v->callback && (v->callback_flags & (repeat ? 2u : 1u))) {
@@ -1630,7 +1688,7 @@ static void block_end(Voice *v) {
         return;
     }
     s->head = (s->head + 1) % MAX_BLOCKS;
-    --s->count;
+    if (s->count) --s->count; /* SotC fix: the callback above may have reset the queue */
     s->started = 0;
 }
 
@@ -1653,24 +1711,39 @@ static int decode_unit(Voice *v) {
         }
     } else if (s->wave == WAVE_ATRAC9) {
         const Atrac9CodecInfo *info = &s->at9_info;
-        if (s->at9_ok && s->byte < b->size) {
+        const uint32_t sf = (uint32_t)info->superframeSize;
+        if (s->at9_ok && s->at9_sf_fill < sf) {
+            /* SotC fix: fill the superframe from this block; one cut by the block's end is
+             * completed from the next block. */
+            uint32_t take = b->size > s->byte ? b->size - s->byte : 0;
+            if (take > sf - s->at9_sf_fill) take = sf - s->at9_sf_fill;
+            memcpy(s->at9_sf + s->at9_sf_fill, b->data + s->byte, take);
+            s->at9_sf_fill += take;
+            s->byte += take;
+            s->decoded_bytes += take;
+            s->at9_sf_pos = 0;
+            s->at9_frame_in_superframe = 0;
+        }
+        if (s->at9_ok && s->at9_sf_fill == sf) {
             int16_t pcm[UNIT_FRAMES * MAX_CH];
             int bytes = 0;
-            if (Atrac9Decode(s->at9, b->data + s->byte, pcm, &bytes) || bytes <= 0) {
+            if (s->at9_sf_pos >= sf || Atrac9Decode(s->at9, s->at9_sf + s->at9_sf_pos, pcm, &bytes) || bytes <= 0) {
                 ++stat_errors;
-                note("ATRAC9 decode error at byte %u of a %u-byte block", s->byte, b->size);
-                s->byte = b->size;
+                note("ATRAC9 decode error in frame %u of a %u-byte superframe", s->at9_frame_in_superframe, sf);
+                s->at9_sf_fill = 0;   /* the rest of the superframe is dropped */
+                produced = 0;
             } else {
                 uint32_t n = (uint32_t)info->frameSamples, c_in = (uint32_t)info->channels;
                 for (uint32_t i = 0; i < n; ++i)
                     for (uint32_t c = 0; c < MAX_CH; ++c) frames[i * MAX_CH + c] = c < c_in ? pcm[i * c_in + c] / 32768.0f : 0.0f;
                 produced = n;
-                used = (uint32_t)bytes;
-                if (++s->at9_frame_in_superframe == (uint32_t)info->framesInSuperframe) {
-                    s->at9_frame_in_superframe = 0;
-                    s->at9_superframe_start += (uint32_t)info->superframeSize;
-                    used = s->at9_superframe_start - s->byte; /* skip the superframe padding */
-                }
+                s->at9_sf_pos += (uint32_t)bytes;
+                if (++s->at9_frame_in_superframe == (uint32_t)info->framesInSuperframe) s->at9_sf_fill = 0;
+            }
+            if (!produced) {   /* a bad superframe: go on with the next one if the block has more */
+                s->waveform_pointer = b->data + s->byte;
+                if (s->byte >= b->size) block_end(v);
+                return 1;
             }
         }
     } else {
@@ -1701,6 +1774,9 @@ static void fifo_fill(Voice *v, uint32_t need) {
             /* Keep one frame of history before the read position. */
             uint32_t drop = (uint32_t)s->pos;
             drop = drop > 1 ? drop - 1 : 0;
+            /* SotC fix: the read position can be past the end (a high pitch step): never drop more
+             * than the FIFO holds, or fifo_len - drop wraps and memmove runs off the heap. */
+            if (s->fifo_len && drop > s->fifo_len - 1) drop = s->fifo_len - 1;
             if (!drop) break;
             memmove(s->fifo, s->fifo + (size_t)drop * MAX_CH, (size_t)(s->fifo_len - drop) * MAX_CH * sizeof(float));
             s->fifo_len -= drop;
@@ -1798,8 +1874,12 @@ static void mix_port(const Voice *src, Port *port, float in[MAX_CH][MAX_GRAIN], 
                           ? &src->matrices[port->matrix] : NULL;
     if (!port->primed) memset(port->last, 0, sizeof(port->last));
     int any = 0;
+    /* SotC fix: a patch names the destination's input. Input 1 is the side chain of the bus: the
+     * game's user FX (its ducking compressor) reads it as channels 8-15; it is not part of
+     * what the bus sends on. It was summed into input 0 before. */
+    const int side = port->input == 1;
     for (uint32_t o = 0; o < dc; ++o) {
-        float *acc = dst->input + (size_t)o * MAX_GRAIN;
+        float *acc = dst->input + (size_t)(side ? MAX_CH + o : o) * MAX_GRAIN;
         for (uint32_t i = 0; i < sc; ++i) {
             float level;
             if (m) {
@@ -1821,7 +1901,8 @@ static void mix_port(const Voice *src, Port *port, float in[MAX_CH][MAX_GRAIN], 
         }
     }
     port->primed = 1;
-    if (any) dst->has_input = dst->fed = 1;
+    if (any && side) dst->has_side = 1;
+    else if (any) dst->has_input = dst->fed = 1;
 }
 /* Sends through every patched port; filters at location 2 + p shape only what port p sends. */
 static float port_scratch[MAX_CH][MAX_GRAIN];
@@ -1839,8 +1920,16 @@ static void call_user_fx(Voice *v, float data[MAX_CH][MAX_GRAIN], uint32_t n) {
     static int enabled = -1;
     if (enabled < 0) enabled = env_flag("NGS2_USERFX", 1);
     if (!v->user_fx || !enabled) return;
-    float *channels[MAX_CH];
-    for (int c = 0; c < MAX_CH; ++c) channels[c] = data[c];
+    /* A bus handler gets 16 channel pointers: the 8 of the bus, then the 8 of its side chain
+     * (input 1). SotC's ducking compressor reads channels 8-15 (from AjncSystem/
+     * ShadowOfTheColossus-PC 608fa200 by @Oussama268). */
+    static float silence[MAX_GRAIN];
+    float *channels[2 * MAX_CH];
+    const int bus = v->input && data == (float (*)[MAX_GRAIN])v->input;
+    for (int c = 0; c < MAX_CH; ++c) {
+        channels[c] = data[c];
+        channels[MAX_CH + c] = bus ? v->input + (size_t)(MAX_CH + c) * MAX_GRAIN : silence;
+    }
     UserFxContext context = {channels, v->user_fx_data[0], v->user_fx_data[1], v->user_fx_data[2], 0, v->channels, n, v->rack->system->rate};
     UserFxHandler handler = v->user_fx;
     ++stat_user_fx;
@@ -1856,6 +1945,16 @@ static float peak_of(float data[MAX_CH][MAX_GRAIN], uint32_t channels, uint32_t 
     return peak;
 }
 
+static int diag_enabled(void) {
+    static int enabled = -1;
+    if (enabled < 0) enabled = log_enabled() && env_flag("NGS2_DIAG", 0);
+    return enabled;
+}
+static void diag_peaks(float *highest, float data[MAX_CH][MAX_GRAIN], uint32_t channels, uint32_t n) {
+    if (!diag_enabled()) return;
+    for (uint32_t c = 0; c < channels; ++c) { float a = peak_of(data + c, 1, n); if (a > highest[c]) highest[c] = a; }
+}
+
 static float scratch[MAX_CH][MAX_GRAIN];
 static float outputs[8][MAX_CH][MAX_GRAIN];
 static uint32_t output_channels[8];
@@ -1864,11 +1963,13 @@ static void process_sampler(Voice *v, uint32_t n) {
     if (v->state != ST_PLAYING || v->paused) { if (v->state != ST_PLAYING) v->peak = 0.0f; return; }
     uint32_t written = sampler_render(v, n, scratch);
     if (!written) { v->peak = 0.0f; return; }
+    diag_peaks(v->diag_in, scratch, v->channels, n);
     /* Console order: filters (location 0), envelope, user FX, filters (1), ports (2 + p). */
     filters_run(v, 0, scratch, scratch, v->channels, n);
     call_user_fx(v, scratch, n);
     filters_run(v, 1, scratch, scratch, v->channels, n);
     v->peak = peak_of(scratch, v->channels, n);
+    diag_peaks(v->diag_out, scratch, v->channels, n);
     send_ports(v, scratch, n);
 }
 
@@ -1907,6 +2008,7 @@ static void process_bus(Voice *v, uint32_t n) {
                 v->gain_last[c] = to;
             }
         v->peak = peak_of(data, v->channels, n);
+        diag_peaks(v->diag_out, data, MAX_CH, n);
         uint32_t o = v->output_id < 8 ? v->output_id : 0;
         for (uint32_t c = 0; c < v->channels; ++c) for (uint32_t k = 0; k < n; ++k) outputs[o][c][k] += data[c][k];
         if (v->channels > output_channels[o]) output_channels[o] = v->channels;
@@ -1920,6 +2022,7 @@ static void process_bus(Voice *v, uint32_t n) {
         break;
     }
     v->peak = peak_of(data, out_ch, n);
+    diag_peaks(v->diag_out, data, MAX_CH, n);
     uint32_t saved = v->channels;
     v->channels = out_ch;   /* ports see the bus output width */
     send_ports(v, data, n);
@@ -1999,6 +2102,59 @@ static void wav_update(void) {
     fflush(wav);
 }
 
+/* TLG_NGS2_DIAG=1 (with TLG_NGS2_LOG=1): every 5 s, one line per playing sampler voice (peak as
+ * decoded, peak after its filters, the filters, the ports, each channel's two peaks) and one per bus that
+ * carried sound (its delay or chorus settings, each channel). Peaks are the highest of the 5 s. */
+static int diag_append(char *out, int len, int size, const char *format, ...) __attribute__((format(printf, 4, 5)));
+static int diag_append(char *out, int len, int size, const char *format, ...) {
+    if (len >= size - 1) return len;
+    va_list args;
+    va_start(args, format);
+    int n = vsnprintf(out + len, (size_t)(size - len), format, args);
+    va_end(args);
+    return n < 0 ? len : len + n < size ? len + n : size - 1;
+}
+static void diag_dump(const System *s) {
+    for (const Rack *r = s->racks; r; r = r->next)
+        for (uint32_t i = 0; i < r->max_voices; ++i) {
+            Voice *v = r->voices[i];
+            if (!v) continue;
+            const int sampler = r->kind == KIND_SAMPLER;
+            const uint32_t channels = sampler ? v->channels : MAX_CH;
+            float in = 0.0f, out = 0.0f;
+            for (uint32_t c = 0; c < channels; ++c) { in = fmaxf(in, v->diag_in[c]); out = fmaxf(out, v->diag_out[c]); }
+            if (sampler ? v->state == ST_PLAYING : out != 0.0f) {
+                char text[900];
+                int len = 0;
+                text[0] = 0;
+                for (int k = 0; sampler && k < MAX_FILTERS; ++k) {
+                    const Biquad *f = &v->filters[k];
+                    if (f->used) len = diag_append(text, len, (int)sizeof(text), " F%d[loc %u type %#x fc %.0f q %.2f lvl %.3f mask %#x]", k, f->location, f->type, f->fc, f->q, f->level, f->mask);
+                }
+                for (uint32_t p = 0; p < MAX_PORTS; ++p) {
+                    const Port *port = &v->ports[p];
+                    if (!port->dest) continue;
+                    float highest = 0.0f;
+                    if (port->matrix >= 0 && (uint32_t)port->matrix < r->max_matrices) {
+                        const Matrix *m = &v->matrices[port->matrix];
+                        for (uint32_t k = 0; k < m->count; ++k) if (m->level[k] > highest) highest = m->level[k];
+                    }
+                    len = diag_append(text, len, (int)sizeof(text), " p%u->%#x:%p in%u vol %.3f mtx%d max %.3f;", p, port->dest->rack->id, (void *)port->dest, port->input, port->volume, port->matrix, highest);
+                }
+                if (v->delay && v->delay->used) len = diag_append(text, len, (int)sizeof(text), " DELAY type %d dry %.3f wet %.3f gain %.3f fb %.3f taps %u mask %#x flags %#x", v->delay->type, v->delay->dry, v->delay->wet, v->delay->gain, v->delay->feedback, v->delay->taps, v->delay->mask, v->delay->flags);
+                if (v->chorus && v->chorus->used) len = diag_append(text, len, (int)sizeof(text), " CHORUS dry %.3f wet %.3f gain %.3f mask %#x phases %u", v->chorus->dry, v->chorus->wet, v->chorus->gain, v->chorus->mask, v->chorus->phases);
+                len = diag_append(text, len, (int)sizeof(text), sampler ? " CH decoded/out" : " CH");
+                for (uint32_t c = 0; c < channels; ++c) {
+                    if (sampler) len = diag_append(text, len, (int)sizeof(text), " %.3f/%.3f", v->diag_in[c], v->diag_out[c]);
+                    else len = diag_append(text, len, (int)sizeof(text), " %.4f", v->diag_out[c]);
+                }
+                if (sampler) note("DIAG smp %p wave %#x ch %u pitch %.2f env %.3f decoded %.4f out %.4f%s", (void *)v, v->sampler->wave, v->sampler->wave_channels, v->sampler->pitch, v->sampler->env_level, in, out, text);
+                else note("DIAG bus %#x %p ch %u out %.4f fx %d%s", r->id, (void *)v, v->channels, out, v->user_fx != NULL, text);
+            }
+            memset(v->diag_in, 0, sizeof(v->diag_in));
+            memset(v->diag_out, 0, sizeof(v->diag_out));
+        }
+}
 static void summary(const System *s) {
     unsigned playing = 0, ready = 0;
     for (const Rack *r = s->racks; r; r = r->next)
@@ -2033,6 +2189,7 @@ static ABI int32_t ngs2_render(uintptr_t handle, const RenderBuffer *buffers, ui
             Voice *v = r->voices[i];
             v->fed = 0;
             if (v->has_input) { for (int c = 0; c < MAX_CH; ++c) memset(v->input + (size_t)c * MAX_GRAIN, 0, n * sizeof(float)); v->has_input = 0; }
+            if (v->has_side) { for (int c = MAX_CH; c < 2 * MAX_CH; ++c) memset(v->input + (size_t)c * MAX_GRAIN, 0, n * sizeof(float)); v->has_side = 0; }
         }
     }
     for (Rack *r = s->racks; r; r = r->next)
@@ -2055,6 +2212,10 @@ static ABI int32_t ngs2_render(uintptr_t handle, const RenderBuffer *buffers, ui
     stat_render_ns += ns;
     if (ns > stat_render_max_ns) stat_render_max_ns = ns;
     ++stat_render_count;
+    if (diag_enabled() && s->rate && !(s->renders % (5u * s->rate / n))) {
+        note("DIAG ---- render %llu", (unsigned long long)s->renders);
+        diag_dump(s);
+    }
     if (log_enabled() && s->rate && !(s->renders % (30u * s->rate / n))) summary(s);
     pthread_mutex_unlock(&lock);
     return NGS2_OK;
