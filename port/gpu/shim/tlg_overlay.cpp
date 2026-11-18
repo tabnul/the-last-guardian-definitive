@@ -136,6 +136,10 @@ float base_scale = 1.0f;
 // Present rate for the FPS counter.
 std::chrono::steady_clock::time_point last_present{};
 float frame_ms_avg = 0.0f;
+// Frame generation: every image on screen (real and generated) for the "Frame gen" line; shown while generated images came in the last half second
+std::atomic<bool> presenting_generated{false};
+std::chrono::steady_clock::time_point last_shown{}, last_generated{};
+float shown_ms_avg = 0.0f;
 
 void SetOpen(bool value) {
     if (menu_open.exchange(value) == value) {
@@ -466,6 +470,9 @@ std::string OverlayText() {
     P::Sample sample = P::Latest();
     sample.fps = frame_ms_avg > 0.0f ? 1000.0f / frame_ms_avg : 0.0f;
     sample.low1_fps = Low1Fps();
+    if (shown_ms_avg > 0.0f && std::chrono::steady_clock::now() - last_generated < std::chrono::milliseconds(500)) {
+        sample.fg_fps = 1000.0f / shown_ms_avg;
+    }
     sample.frame_ms = frame_ms_avg;
     sample.upscaler = BackendRuns() ? std::string{} : UpscalerLabel(s.upscaler); // VKB: ours has no upscaler (yet)
     return P::Format(sample, items, s.overlay_layout == 0);
@@ -3014,14 +3021,28 @@ void SetTextEntry(bool active, const std::string& prompt, const std::string& tex
     text_entry_text = text;
 }
 
+void SetPresentingGenerated(bool generated) {
+    presenting_generated.store(generated, std::memory_order_relaxed);
+}
+
 void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     // Present interval for the FPS readout (measured also while nothing is drawn).
     const auto now = std::chrono::steady_clock::now();
-    const float ms = std::chrono::duration<float, std::milli>(now - last_present).count();
-    last_present = now;
+    const bool generated = presenting_generated.load(std::memory_order_relaxed);
+    const float ms = std::chrono::duration<float, std::milli>(now - last_shown).count(); // any image on screen (ImGui's time step)
+    last_shown = now;
     if (ms > 0.0f && ms < 1000.0f) {
-        frame_ms_avg = frame_ms_avg == 0.0f ? ms : frame_ms_avg * 0.95f + ms * 0.05f;
-        NoteFrameTime(now, ms);
+        shown_ms_avg = shown_ms_avg == 0.0f ? ms : shown_ms_avg * 0.95f + ms * 0.05f;
+    }
+    if (generated) {
+        last_generated = now;
+    } else { // the FPS counter, frame time and 1% low: real frames only
+        const float real_ms = std::chrono::duration<float, std::milli>(now - last_present).count();
+        last_present = now;
+        if (real_ms > 0.0f && real_ms < 1000.0f) {
+            frame_ms_avg = frame_ms_avg == 0.0f ? real_ms : frame_ms_avg * 0.95f + real_ms * 0.05f;
+            NoteFrameTime(now, real_ms);
+        }
     }
     ConfirmRestart();
     QuitHoldTick();

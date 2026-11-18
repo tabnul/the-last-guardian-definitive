@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <string>
 #include <nlohmann/json_fwd.hpp>
 #include "common/types.h"
 #include "native/native_device.h"
@@ -59,6 +60,15 @@ bool ViewExtent(u64 view_id, u32& width, u32& height, u32* depth = nullptr, u64*
 void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name);
 /// note 41, debug only: `size` bytes of `buffer` at `offset` (the GPU's copy) to log/vkb_image_dump/<name>_<size>B.gpu once the GPU has it
 void DumpBuffer(vk::CommandBuffer cmd, vk::Buffer buffer, u64 offset, u64 size, const std::string& name);
+/// note 91: the image `image` (a pass attachment, by its Vulkan handle) at full size, as DumpView
+void DumpImageHandle(vk::CommandBuffer cmd, vk::Image image, const std::string& name);
+/// F1: the format, size and kind of our image `image` (false: not one of ours); a scan, once a frame at most
+bool ImageFacts(vk::Image image, vk::Format& format, u32& width, u32& height, bool& depth);
+/// A view recorded into the graphics stream, destroyed once the GPU has done the submit that may use it (as views of deleted engine objects)
+void RetireView(vk::ImageView view);
+/// note 91: dump files queued and not yet written; waits (up to `timeout_ms`) until none is left
+[[nodiscard]] u64 DumpsPending();
+bool WaitDumps(u64 timeout_ms);
 /// Our sampler for an engine sampler object, made once from its Direct3D 11 description (V2d)
 /// note 40: `compare` for a shader that samples it with a depth compare (the S# compares per instruction on GCN; a Vulkan sampler compares for all its reads)
 [[nodiscard]] vk::Sampler SamplerFor(u64 sampler_object, bool compare = false);
@@ -92,7 +102,26 @@ void NoteBind(u32 kind, const BufferWindow& w, u64 size, bool written);
 void BufferCpuWritten(u64 address, u64 size);
 /// V2e: the CPU wrote a texture's memory after its creation (UpdateSubresource, the dynamic texture fill): our image gets the contents again (the upload batch, which the
 /// queue runs before the frame stream: a dispatch earlier in the same frame sees the new contents too)
-void TextureCpuWritten(u64 texture_id);
+void TextureCpuWritten(u64 texture_id, u32 subresource = ~0u); ///< subresource: the one UpdateSubresource named (~0u: the whole texture)
+/// api-contract.md Y6: the engine handed the CPU a plain pointer to this buffer range (AsyncMap): its bytes live where the pointer writes (our device copy is retired)
+void BufferCpuAddressable(u64 buffer_id);
+/// api-contract.md W5: the engine moved texture `old_id` to new memory as texture `new_id` (from mip `first_mip` on): our new image gets the old image's contents
+void TextureMoved(u64 new_id, u64 old_id, u32 first_mip);
+/// api-contract.md W5b: the engine's buffer move (GpuHeap_MoveOneResource): the new memory gets the old contents now when the old memory holds them (false: copy in the stream)
+bool MoveBufferNow(u64 destination, u64 source, u64 bytes);
+/// api-contract.md W16: the engine copied mip `mip`, layer `src_layer` of texture `src_id` as raw memory into layer `dst_layer` of texture `dst_id` (probe cubemaps)
+void TextureLayerCopied(u64 dst_id, u32 dst_layer, u64 src_id, u32 src_layer, u32 mip);
+/// API contract census (debug, TLG_VKB_CONTRACT_CENSUS=1): counts by key, in the objects report under "contract_census"
+bool ContractCensusOn();
+void ContractNote(const std::string& key);
+/// api-contract.md V4 / review A6: an engine buffer view's byte range inside its buffer (`bytes` long), from the view's own V# (SRV at + 0x78, UAV at + 0x74).
+/// False with offset 0, size = bytes: the whole buffer.
+bool ViewRange(u64 view, bool srv, u64 buffer, u64 bytes, u64& offset, u64& size);
+/// C10: a texture bound as target 7 (the target-7 mode), and a shader reading a texture (counted when it was a target-7 texture)
+void ContractTarget7(u64 texture_id, const std::string& key);
+void ContractSampled(u64 texture_id);
+/// Y6: where our bytes of an engine range live ("in place" or a device copy the CPU cannot see)
+std::string ContractWhereLives(u64 address, u64 size);
 /// The engine read a file into [address, address + bytes) (its file layer, note 81): every texture there gets its contents again; returns how many
 u32 MemoryLoaded(u64 address, u64 bytes);
 /// debug (tint hunt): every 3D texture uploaded again from the engine's memory; returns how many

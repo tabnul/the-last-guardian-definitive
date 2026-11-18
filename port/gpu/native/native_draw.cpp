@@ -3029,6 +3029,10 @@ const VkbVulkan::FixedState* Build(u64 ctx, const DeviceAddresses& dev) {
     for (u32 i = 0; i < 4; ++i) {
         s.blend_constants[i] = Rd<float>(ctx, Ctx::BlendFactor + i * 4);
     }
+    if (Core::Vkb::ContractCensusOn()) { // api-contract.md S7 / S10 (debug): per fixed state built
+        Core::Vkb::ContractNote(fmt::format("S7 alpha to coverage {}", Rd<u8>(blend, 0x30)));
+        Core::Vkb::ContractNote(fmt::format("S10 depth bias {} clamp {} slope {}", Rd<s32>(raster, 0x3c), Rd<float>(raster, 0x40), Rd<float>(raster, 0x44)));
+    }
     // rasterizer: D3D11_RASTERIZER_DESC (fill, cull, front counter clockwise, bias values, depth clip)
     {
         const u32 fill = Rd<u32>(raster, 0x30);
@@ -7592,6 +7596,10 @@ u64 PS4_SYSV_ABI TagAscCsCopy(u64 jcc, u64 destination, u64 source, u64 bytes_ar
     }
     if (Vkb::On()) [[unlikely]] {
         Core::Vkb::WorkCensus::Note("async_cs_copy", ret, bytes); // D2 census (debug)
+        // api-contract.md W5b: the engine's buffer move (GpuHeap_MoveOneResource, the call at 01f7eec3) swaps the holder to the new buffer as soon as this returns
+        if (ret - ImageBase() + 0x1000000 == 0x1f7eec8 && Core::Vkb::MoveBufferNow(destination, source, bytes)) {
+            return 1;
+        }
         (void)Core::Vkb::CopyBuffer(destination, source, bytes); // our copy in the frame stream
         return 1;
     }
@@ -7631,6 +7639,12 @@ u64 PS4_SYSV_ABI TagAscCsCopy(u64 jcc, u64 destination, u64 source, u64 bytes_ar
 using GuestFunction6 = u64(PS4_SYSV_ABI*)(u64, u64, u64, u64, u64, u64);
 bool StripPackets(u64 begin, u64 end);
 
+std::atomic<u64> g_aabb_count_buffer{0};         ///< K1 check: the render device's + 0x27a8 (set at BeginRecording)
+std::atomic<u32> g_aabb_readbacks_since_read{0}; ///< K1 check: CounterReadbacks into it since the last AABB read (a BeginRecording that dispatched)
+std::atomic<u32> g_rec_groups_at_dispatch{0};    ///< K1 check: the recording BeginRecording's group count (set at its start)
+std::atomic<u64> c_aabb_guarded{0};              ///< K2: AABB reads skipped because their records name groups not in the table
+std::atomic<u32> g_reads_since_dispatch{0}, g_dispatch_groups{0}; ///< K1 check: reads of the records since the last AABB dispatch; that dispatch's frame group count
+
 /// FUN_02471530(async compute context, counter buffer, unordered access view): hands an append / consume counter back to its
 /// buffer. A counter without a GDS slot or with a pending initial value is a CPU write of that value; otherwise the GPU
 /// counter in GDS is copied to the buffer's memory (a DMA packet and a scratch label in the game's function): a GDS read-back
@@ -7639,6 +7653,11 @@ u64 PS4_SYSV_ABI TagAscCounterReadback(u64 jcc, u64 buffer, u64 view, u64 a3, u6
     const auto valid = [](u64 pointer) { return IsHeapPointer(pointer) && (pointer & 7) == 0; };
     if (jcc == 0 || !valid(buffer) || !valid(view)) {
         return 0;
+    }
+    if (buffer == g_aabb_count_buffer.load(std::memory_order_relaxed)) {
+        g_aabb_readbacks_since_read.fetch_add(1, std::memory_order_relaxed); // K1 check: the AABB count's readback (BeginRecording dispatched)
+        g_reads_since_dispatch.store(0, std::memory_order_relaxed);
+        g_dispatch_groups.store(g_rec_groups_at_dispatch.load(std::memory_order_relaxed), std::memory_order_relaxed);
     }
     const u64 memory = ((static_cast<u64>(Rd<u32>(buffer, 0x64)) & 0xfff) << 32) + Rd<u32>(buffer, 0x60);
     if (memory == 0 || (memory & 3) != 0) {
@@ -7898,6 +7917,120 @@ void NoteRenderFrameFence(u64 ctx, u64 label) {
     typed.interrupt = false;
     Core::NativeSync::Typed::Expect(cursor - 6 * sizeof(u32), typed, Core::NativeSync::Typed::KindEop);
 }
+/// 01c804a0 (probe cubemaps into the cube array): mid hook at 01c80691, just before its CsCopyBufferDwords of one mip / face. [rbp - 0x60] = the cube array's T#
+/// (its texture + 0x70), r15 = the probe view's T# (view + 0x58; the view's texture at + 0x30), r14 = the mip, r12 = the face, r13 + r12 = the cube array's layer.
+u64 PS4_SYSV_ABI ProbeFaceCopy(Core::GuestHooks::MidContext* c) {
+    if (!Core::Vkb::On() || c->r15 < 0x58 || c->rbp < 0x60) {
+        return 0;
+    }
+    const u64 dst_tsharp = Rd<u64>(c->rbp - 0x60, 0);
+    const u64 view = c->r15 - 0x58;
+    if (!IsHeapPointer(dst_tsharp) || !IsHeapPointer(view)) {
+        return 0;
+    }
+    const u64 dst_texture = dst_tsharp - 0x70;
+    const u64 src_texture = Rd<u64>(view, 0x30);
+    if (src_texture == 0) {
+        return 0;
+    }
+    const u32 face = static_cast<u32>(c->r12), mip = static_cast<u32>(c->r14), layer = static_cast<u32>(c->r13 + c->r12);
+    Core::Vkb::TextureLayerCopied(Rd<u64>(dst_texture, 0x10), layer, Rd<u64>(src_texture, 0x10), face, mip);
+    return 0; // the engine's copy runs (its guest memory stays the same as our image)
+}
+/// api-contract.md K1 check: the AABB readback reader (01c4c570, AabbCompute.cpp) at 01c4c5de, right after its wait for the readback label (r14 = the render device,
+/// rdx = the frame data). It reads the record count (device + 0x27a8, written by CounterReadback) and the records (+ 0x27a0, AsyncCopyResource of + 0x2798) the last
+/// BeginRecording's AABB dispatches made; each record's group (dword 0x20 >> 16) indexes the frame data's group table (+ 0x31e60, count + 0x31e68) with no check, and
+/// a group past the table was the crash after the shield cutscene. Counts reads, records and records whose group is not in the table (logged, the first ones in full),
+/// and BeginRecordings with no read between them (the case where an older unit's end could land after a newer submit).
+std::atomic<u64> c_aabb_reads{0}, c_aabb_records{0}, c_aabb_bad{0}, c_aabb_bad_reads{0}, c_aabb_unpaired{0}, c_aabb_reads_no_readback{0};
+std::atomic<u32> g_recordings_since_read{0};
+std::atomic<u64> g_rec_frame{0};               ///< the last recording BeginRecording's frame data
+std::atomic<u32> g_rec_groups{0}, g_rec_active{0}; ///< its group count / active groups (+0x18 != 0 and +0x30 != 0) at its entry
+u32 ActiveGroups(u64 frame) {
+    const u32 groups = Rd<u32>(frame, 0x31e68);
+    const u64 table = Rd<u64>(frame, 0x31e60);
+    u32 active = 0;
+    for (u32 i = 0; i < groups && i < 4096 && table != 0; ++i) {
+        const u64 g = Rd<u64>(table, i * 8ull);
+        active += IsHeapPointer(g) && Rd<u32>(g, 0x18) != 0 && Rd<u32>(g, 0x30) != 0 ? 1 : 0;
+    }
+    return active;
+}
+u64 BufferMemory(u64 buffer) {
+    return IsHeapPointer(buffer) ? (static_cast<u64>(Rd<u32>(buffer, 0x60)) | (static_cast<u64>(Rd<u32>(buffer, 0x64)) & 0xfff) << 32) : 0;
+}
+std::atomic<u32> g_last_recordings{0}, g_last_readbacks{0}; ///< at the reader's start: BeginRecordings / AABB CounterReadbacks since its previous start
+/// The reader's start (01c4c5de, after its label wait): what happened since its previous start
+u64 PS4_SYSV_ABI AabbReadStart(Core::GuestHooks::MidContext* c) {
+    (void)c;
+    const u32 recordings = g_recordings_since_read.exchange(0, std::memory_order_relaxed);
+    g_last_recordings.store(recordings, std::memory_order_relaxed);
+    g_last_readbacks.store(g_aabb_readbacks_since_read.exchange(0, std::memory_order_relaxed), std::memory_order_relaxed);
+    if (recordings > 1) {
+        c_aabb_unpaired.fetch_add(1, std::memory_order_relaxed);
+    }
+    return 0;
+}
+/// api-contract.md K2 guard (the class of tabnul's cloth_null_guard: an engine race the high frame rate exposes). The reader's record block at 01c4cd08, right after its
+/// AsyncMaps of the count (+ 0x27a8, pointer at [rbp - 0x4a0]) and the records (+ 0x27a0, pointer at [rbp - 0x4b0]) and before its own "no records" test
+/// (r12 = the frame data, r14 = the render device). The records are the last AABB pass's; a BeginRecording that found no active group ran none, and the game's jobs
+/// may fill the group table before this read, so the records can belong to another table (after the flashback: a 7-group pass read against a 4-group table, a group
+/// past its end, the crash). A read whose records name a group not in the table is not this table's: its count is set to 0 and the engine's own test skips it.
+/// LEGACY(aabb_guard): TLG_LEGACY_AABB_GUARD=1 lets the read run (only counted and logged).
+u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
+    static const bool guard = [] { const char* e = std::getenv("TLG_LEGACY_AABB_GUARD"); return e == nullptr || e[0] != '1'; }();
+    const u64 device = c->r14, frame = c->r12;
+    const u32 recordings = g_last_recordings.load(std::memory_order_relaxed), readbacks = g_last_readbacks.load(std::memory_order_relaxed);
+    if (!IsHeapPointer(device) || !IsHeapPointer(frame) || c->rbp < 0x4b0) {
+        return 0;
+    }
+    const u64 count_memory = Rd<u64>(c->rbp - 0x4a0, 0), records = Rd<u64>(c->rbp - 0x4b0, 0);
+    const u64 table = Rd<u64>(frame, 0x31e60);
+    if (count_memory == 0 || records == 0 || table == 0 || Rd<u32>(count_memory, 0) == 0) {
+        return 0;
+    }
+    const u32 reads_since_dispatch = g_reads_since_dispatch.fetch_add(1, std::memory_order_relaxed);
+    const u32 count = std::min(Rd<u32>(count_memory, 0), 0x2000u), groups = Rd<u32>(frame, 0x31e68);
+    static std::once_flag announced;
+    std::call_once(announced, [&] { TLG_LOG(CP, Warn, "K2 AABB guard active (first read: {} records, {} groups, guard {})", count, groups, guard ? "on" : "off"); });
+    u32 bad = 0, first_bad = 0, bad_group = 0;
+    for (u32 i = 0; i < count; ++i) {
+        const u32 group = Rd<u32>(records + i * 0x90ull, 0x80) >> 16;
+        if (group >= groups || Rd<u64>(table, group * 8ull) == 0) {
+            if (bad++ == 0) {
+                first_bad = i, bad_group = group;
+            }
+        }
+    }
+    if (readbacks == 0 && count != 0) {
+        c_aabb_reads_no_readback.fetch_add(1, std::memory_order_relaxed); // the records of an earlier dispatch (no CounterReadback since the last read)
+    }
+    if (const u64 reads = c_aabb_reads.fetch_add(1, std::memory_order_relaxed) + 1; reads % 1800 == 0) {
+        TLG_LOG(CP, Warn, "K1 AABB readback: {} reads, {} records, {} with a group not in the table, {} reads after more than one BeginRecording, {} reads with records but no "
+                "readback since the last, K2 reads skipped: {}",
+                reads, c_aabb_records.load() + count, c_aabb_bad.load(), c_aabb_unpaired.load(), c_aabb_reads_no_readback.load(), c_aabb_guarded.load());
+    }
+    c_aabb_records.fetch_add(count, std::memory_order_relaxed);
+    if (bad != 0) {
+        c_aabb_bad.fetch_add(bad, std::memory_order_relaxed);
+        const u64 reads_bad = c_aabb_bad_reads.fetch_add(1, std::memory_order_relaxed);
+        if (reads_bad < 16) {
+            const u64 label = Rd<u64>(device, 0x2c0);
+            TLG_LOG(CP, Error,
+                    "K1 AABB readback: {} of {} records name a group not in the table ({} groups, {} active now; first: record {} group {}), label {:#x} = {:#x}, BeginRecordings "
+                    "since the last read {}, CounterReadbacks since {}, records read {} times before since their dispatch (its frame had {} groups), reader frame {:#x}, last "
+                    "BeginRecording frame {:#x} with {} groups / {} active at its start, unpaired so far {}",
+                    bad, count, groups, ActiveGroups(frame), first_bad, bad_group, label, IsHeapPointer(label) ? Rd<u64>(label, 0) : 0, recordings, readbacks,
+                    reads_since_dispatch, g_dispatch_groups.load(), frame, g_rec_frame.load(), g_rec_groups.load(), g_rec_active.load(), c_aabb_unpaired.load());
+        }
+        if (guard) {
+            Wr<u32>(count_memory, 0, 0); // K2: not this table's records: the engine's test (count 0) skips the read
+            c_aabb_guarded.fetch_add(1, std::memory_order_relaxed);
+            TLG_LOG(CP, Warn, "K2 AABB guard: read of {} records skipped ({} so far)", count, c_aabb_guarded.load());
+        }
+    }
+    return 0; // the engine's read runs (with count 0 after the guard)
+}
 u64 PS4_SYSV_ABI RenderFrameFenceA(Core::GuestHooks::MidContext* c) {
     NoteRenderFrameFence(c->rbx, c->r12);
     return 0;
@@ -8067,9 +8200,9 @@ u64 PS4_SYSV_ABI FlipInterrupt(Core::GuestHooks::MidContext* c) {
 /// 0x11 by the CPU, then a release memory stores 1 (64 bit) there (7 dwords), a wait for 1 (7 dwords, poll interval 10) and a CPU style write of 0x10 (64 bit, 6 dwords). The first mid hook
 /// is right after the release packet's address is known (rax = the packet, r14 = the label), the second where the three packets are done (rax = the cursor): when the cursor moved by
 /// exactly the three packets, the wait and the write are typed too.
-thread_local u64 t_csub_packet = 0, t_csub_label = 0;
+thread_local u64 t_csub_packet = 0, t_csub_label = 0, t_csub_unit = 0;
 thread_local u32 t_csub_queue = 0;
-void TypedUnitRelease(u64 ctx, u64 packet, u64 label, u64 value, bool unit) {
+void TypedUnitRelease(u64 ctx, u64 packet, u64 label, u64 value, bool unit, bool shared_label = false) {
     t_csub_packet = 0;
     if (Core::Vkb::On()) {
         if (!IsHeapPointer(ctx) || !IsHeapPointer(ctx + 0x1ce8)) {
@@ -8082,11 +8215,14 @@ void TypedUnitRelease(u64 ctx, u64 packet, u64 label, u64 value, bool unit) {
         fence.value = value;
         fence.source = Core::NativeSync::Source::Immediate64;
         fence.interrupt = true;
-        Core::Vkb::Fence(fence, queue);
+        // api-contract.md K1: JsComputeQueue_Submit's label is shared by its units (one per caller, reused every frame): this unit is now its newest
+        const u64 unit_number = shared_label ? Core::Vkb::BeginLabelUnit(fence.address) : 0;
+        Core::Vkb::Fence(fence, queue, unit_number);
         if (unit) {
             t_csub_packet = 1; // the unit's write follows (ComputeUnitEnd)
             t_csub_label = label;
             t_csub_queue = queue;
+            t_csub_unit = unit_number;
         }
         return;
     }
@@ -8105,7 +8241,7 @@ void TypedUnitRelease(u64 ctx, u64 packet, u64 label, u64 value, bool unit) {
     Core::NativeSync::Typed::Expect(packet, typed, Core::NativeSync::Typed::KindRelease);
 }
 u64 PS4_SYSV_ABI ComputeSubmitRelease(Core::GuestHooks::MidContext* c) {
-    TypedUnitRelease(c->rbx, c->rax, c->r14, 1, true);
+    TypedUnitRelease(c->rbx, c->rax, c->r14, 1, true, true);
     return 0;
 }
 /// FUN_024712d0 (the same unit, label in r12) and FUN_02471f40 (the fence signal: label NOP + the release alone, value 0x10, label in r15; AscWaitFence waits for it)
@@ -8124,7 +8260,7 @@ void ComputeUnitEnd(u64 cursor) {
         if (packet != 0) {
             // the unit's wait for 1 (nothing to wait for) and its CPU style write of 0x10 (64 bit)
             static const u32 data[2] = {0x10, 0};
-            Core::Vkb::Write((label & 0xfffffffcull) | ((label >> 32) & 0xffffull) << 32, data, 8, t_csub_queue);
+            Core::Vkb::Write((label & 0xfffffffcull) | ((label >> 32) & 0xffffull) << 32, data, 8, t_csub_queue, t_csub_unit);
         }
         return;
     }
@@ -8163,6 +8299,9 @@ u64 PS4_SYSV_ABI AscFencedEnd(Core::GuestHooks::MidContext* c) {
 /// JsComputeContext::AsyncMap (FUN_02473600): the engine hands out the CPU address of a resource the async queue computed. The game's
 /// function runs; the range it returns is noted (explicit readbacks, step 1: measurement only).
 u64 PS4_SYSV_ABI NoteAsyncMap(u64 resource, u64 out, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    if (Core::Vkb::On() && Core::Vkb::ContractCensusOn()) {
+        Core::Vkb::ContractNote("Y6 AsyncMap hook entered");
+    }
     static std::atomic<u64> original_entry{0};
     u64 original = original_entry.load(std::memory_order_relaxed);
     if (original == 0) {
@@ -8175,7 +8314,40 @@ u64 PS4_SYSV_ABI NoteAsyncMap(u64 resource, u64 out, u64 a2, u64 a3, u64 a4, u64
     reinterpret_cast<GuestFunction6>(original)(resource, out, a2, a3, a4, a5);
     const u64 mapped = Rd<u64>(out, 0);
     const u32 mapped_size = Rd<u32>(out, 8);
+    if (Core::Vkb::On() && mapped != 0 && mapped_size != 0 && Rd<u32>(resource, 0x124) == 1) {
+        Core::Vkb::BufferCpuAddressable(Rd<u64>(resource, 0x10)); // api-contract.md Y6: the buffer lives where this pointer writes (by its engine id)
+    }
+    if (Core::Vkb::On() && Core::Vkb::ContractCensusOn() && mapped != 0) { // api-contract.md Y6 (debug): the CPU reads this memory in place
+        const u32 kind = Rd<u32>(resource, 0x124);
+        Core::Vkb::ContractNote(kind == 1 ? fmt::format("Y6 AsyncMap of a buffer ({} B, caller {:#x}): ours lives in {}", mapped_size, ret - ImageBase() + 0x1000000,
+                                                        Core::Vkb::ContractWhereLives(mapped, std::max<u32>(mapped_size, 4)))
+                                          : fmt::format("Y6 AsyncMap of a texture (kind {}, caller {:#x}): our image never writes the memory back", kind, ret - ImageBase() + 0x1000000));
+    }
     return 1;
+}
+
+/// RenderTexture_CopyToNewMemory (01c97a00, from GpuHeap_MoveOneResource / GpuHeap_DropTopMipsOverBudget): (old render texture, compute queue, mip) -> the new render
+/// texture, whose memory the engine fills by a raw copy of the old one's (mip -1: the whole texture; else from that mip on into a half-size texture). The engine's function
+/// runs; then our new image gets the old image's contents (api-contract.md W5, by the two engine objects: each render texture's Js texture at + 0x40, its id at + 0x10).
+u64 PS4_SYSV_ABI TextureMove(u64 old_texture, u64 queue, u64 mip, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)ret;
+    if (!Core::Vkb::On() || old_texture == 0) {
+        return 0; // the original runs
+    }
+    static const u64 original = Core::GuestHooks::OriginalEntry("TextureMove");
+    if (original == 0) {
+        return 0;
+    }
+    const u64 old_js = Rd<u64>(old_texture, 0x40);
+    const u64 moved = reinterpret_cast<GuestFunction6>(original)(old_texture, queue, mip, a3, a4, a5);
+    if (moved != 0 && old_js != 0 && IsHeapPointer(moved)) {
+        const u64 new_js = Rd<u64>(moved, 0x40);
+        const s32 first = static_cast<s32>(mip);
+        if (new_js != 0) {
+            Core::Vkb::TextureMoved(Rd<u64>(new_js, 0x10), Rd<u64>(old_js, 0x10), first < 0 ? 0u : static_cast<u32>(first));
+        }
+    }
+    return moved | (1ull << 63); // the original ran here: its result is the hooked function's value
 }
 
 /// FUN_01c4c570: the worker job that reads the four staging ranges. The window between entering and leaving it is the time the CPU may read
@@ -8733,6 +8905,19 @@ void InstallUnmapSlot();
 
 u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret, u64 caller_rsp) {
     (void)a1, (void)a2, (void)a3, (void)a4, (void)a5, (void)ret, (void)caller_rsp;
+    if ((a2 & 0xff) != 0) {
+        g_recordings_since_read.fetch_add(1, std::memory_order_relaxed); // K1 check: a BeginRecording that records (AabbReadCheck)
+        if (IsHeapPointer(device) && IsHeapPointer(a1)) {
+            g_aabb_count_buffer.store(Rd<u64>(device, 0x27a8), std::memory_order_relaxed);
+            g_rec_frame.store(a1, std::memory_order_relaxed);
+            g_rec_groups.store(Rd<u32>(a1, 0x31e68), std::memory_order_relaxed);
+            g_rec_groups_at_dispatch.store(Rd<u32>(a1, 0x31e68), std::memory_order_relaxed);
+            g_rec_active.store(ActiveGroups(a1), std::memory_order_relaxed);
+        }
+    }
+    if (Core::Vkb::On() && Core::Vkb::ContractCensusOn()) { // api-contract.md Y6 (debug): BeginRecording returns at once when its third argument is 0
+        Core::Vkb::ContractNote(fmt::format("Y6 BeginRecording called, record flag {}, frameData+0x31e50 {}", a2 & 0xff, IsHeapPointer(a1) ? Rd<u32>(a1, 0x31e50) : 0xffffffffu));
+    }
     if (!Core::NativeUpdates::enabled.load(std::memory_order_relaxed) || !IsHeapPointer(device)) {
         return 0;
     }
@@ -10806,6 +10991,9 @@ u64 PS4_SYSV_ABI FileReadDone(u64 fs, u64 op, u64 event, u64 error, u64 a4, u64 
             }
         }
     }
+    if (static_cast<s32>(error) != 0) {
+        return 0; // review B2: a failed read brought no data (the engine marks its file state failed, 01f461f0): nothing is uploaded; the pending entry is gone
+    }
     for (const auto& [buf, len] : ranges) {
         FileLoads::Loaded(buf, len);
     }
@@ -10838,7 +11026,7 @@ u64 PS4_SYSV_ABI TextureUpdateSubresource(u64 context, u64 resource, u64 subreso
             Core::Vkb::WorkCensus::Note("update_texture", ret, static_cast<u64>(Rd<u32>(resource, 0x180)) * Rd<u32>(resource, 0x184)); // D2 census (debug): bytes = texels of the top level
             Core::Vkb::WorkCensus::Scope scope{"UpdateSubresource"};
             reinterpret_cast<GuestFunction6>(original)(context, resource, subresource, box, data, 0);
-            Core::Vkb::TextureCpuWritten(Rd<u64>(resource, 0x10)); // V2e: the engine wrote the texture's memory (tiled): our image gets the contents again
+            Core::Vkb::TextureCpuWritten(Rd<u64>(resource, 0x10), static_cast<u32>(subresource)); // V2e / review A3: that subresource of our image gets the contents again
             return 1ull << 63;
         }
         return 0;
@@ -10940,7 +11128,7 @@ u64 PS4_SYSV_ABI ComputeUpdateSubresource(u64 context, u64 resource, u64 subreso
             Core::Vkb::WorkCensus::Note("update_texture", ret, static_cast<u64>(Rd<u32>(resource, 0x180)) * Rd<u32>(resource, 0x184)); // D2 census (debug): bytes = texels of the top level
             Core::Vkb::WorkCensus::Scope scope{"UpdateSubresource"};
             reinterpret_cast<GuestFunction6>(original)(context, resource, subresource, box, data, 0);
-            Core::Vkb::TextureCpuWritten(Rd<u64>(resource, 0x10)); // V2e: the engine wrote the texture's memory (tiled): our image gets the contents again
+            Core::Vkb::TextureCpuWritten(Rd<u64>(resource, 0x10), static_cast<u32>(subresource)); // V2e / review A3: that subresource of our image gets the contents again
             return 1ull << 63;
         }
         return 0;
@@ -11606,6 +11794,18 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "asyncmap_note") {
         return reinterpret_cast<u64>(&NoteAsyncMap);
+    }
+    if (name == "probe_face_copy") {
+        return reinterpret_cast<u64>(&ProbeFaceCopy);
+    }
+    if (name == "aabb_read_check") {
+        return reinterpret_cast<u64>(&AabbReadCheck);
+    }
+    if (name == "aabb_read_start") {
+        return reinterpret_cast<u64>(&AabbReadStart);
+    }
+    if (name == "texture_move") {
+        return reinterpret_cast<u64>(&TextureMove);
     }
     if (name == "tag_fence") {
         return reinterpret_cast<u64>(&TagFenceSignal);

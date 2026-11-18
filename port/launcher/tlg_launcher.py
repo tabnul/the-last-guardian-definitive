@@ -592,10 +592,16 @@ def fg_modes(ini):
     return [0, 2] if ini.get('dlss_fg_supported') == '0' else [0, 1, 2]
 
 
+def fg_modes_for(settings, ini):
+    """fg_modes for the renderer picked: the engine-to-Vulkan backend has DLSS frame generation only (its own
+    DLSS glue: the default renderer's dlss_fg_supported check never runs with it)."""
+    return [0, 1] if tlg_run.backend_on(settings) else fg_modes(ini)
+
+
 def fg_shown(settings, ini):
     """The mode the row shows and the game runs: Off while blocked or without the card for it."""
     stored = fg_mode_of(ini)
-    return 0 if fg_blocked(settings, ini) or stored not in fg_modes(ini) else stored
+    return 0 if fg_blocked(settings, ini) or stored not in fg_modes_for(settings, ini) else stored
 
 
 def dlss_unsupported(ini):
@@ -1282,6 +1288,8 @@ class Launcher:
                 if key in self.vars:
                     self.vars[key].set(value)
             self.update_fg()
+            if getattr(self, 'video_state', None):
+                self.show_video_rows(*self.video_state)  # the Anti-aliasing row is the backend's own
         if not tlg_run.backend_on(self.settings):
             for widget in getattr(self, 'their_widgets', []):
                 try:
@@ -1300,7 +1308,7 @@ class Launcher:
         under it; the game treats it as off then and tlg.ini keeps the choice."""
         if ini is None:
             ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
-        modes = fg_modes(ini)
+        modes = fg_modes_for(self.settings, ini)
         self.fg_box.configure(state='readonly', values=[FG_NAMES.get(mode, self.t('aa_off')) for mode in modes])
         self.fg_box.current(modes.index(fg_shown(self.settings, ini)))
         if fg_blocked(self.settings, ini):
@@ -1313,6 +1321,9 @@ class Launcher:
     def update_aa_note(self, ini):
         # DLSS or FSR 4 stays the choice in tlg.ini; the game runs FSR 3.1 while the card lacks it.
         mode = self.video_state[1]
+        if tlg_run.backend_on(self.settings):  # the default renderer's DLSS / FSR 4 checks say nothing about the backend
+            self.aa_note.grid_remove()
+            return
         if (mode == 'dlss' and dlss_unsupported(ini)) or (mode == 'fsr4' and fsr4_unsupported(ini)):
             self.aa_note.configure(text=self.t('aa_no_dlss' if mode == 'dlss' else 'aa_no_fsr4'))
             self.aa_note.grid()
@@ -1336,8 +1347,9 @@ class Launcher:
         choices = AA_CHOICES
         values = [value for _, value in choices]
         self.aa_box.configure(state='readonly', values=[self.t(label) for label, _ in choices])
-        # An upscaler as the method: the row shows Off, greyed out (user, 2026-11-10).
-        free = method == METHOD_OFF
+        # An upscaler as the method: the row shows Off, greyed out (user, 2026-11-10). With the backend (no upscaler,
+        # drawn at the output size) the row is its anti-aliasing: usable, showing the stored choice (DLSS as DLAA).
+        free = method == METHOD_OFF or tlg_run.backend_on(self.settings)
         self.aa_box.current(values.index(upscaler) if free and upscaler in values else 0)
         if not free:
             self.aa_box.configure(state='disabled')
@@ -1639,7 +1651,8 @@ class Launcher:
         ttk.Checkbutton(video, text=self.t('photo_hdr'), variable=self.photo_hdr_var,
                         command=photo_hdr_toggled).grid(row=17, column=0, columnspan=2, sticky='w')
         self.hint(video, 17, 2, 'photo_hdr_hint')
-        self.theirs(*video.grid_slaves(row=17, column=0), self.method_box, self.quality_box, self.aa_box, self.fg_box)
+        # Anti-aliasing and Frame generation stay usable with the backend (DLAA / FSR 3.1, DLSS frame generation: tlg_run.backend_aa_env)
+        self.theirs(*video.grid_slaves(row=17, column=0), self.method_box, self.quality_box)
         self.build_aa_filters(video, 18)
 
         memory = section(main, self.t('memory'))
@@ -2449,12 +2462,16 @@ class Launcher:
         current_ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
         # Only a pick in the row itself: while it shows Off for another reason (30 FPS, no DLSS
         # frame generation on this card) tlg.ini keeps the stored choice.
-        modes = fg_modes(current_ini)
+        modes = fg_modes_for(self.settings, current_ini)
         picked = modes[self.fg_box.current()] if 0 <= self.fg_box.current() < len(modes) else 0
         if not fg_blocked(self.settings, current_ini) and picked != fg_shown(self.settings, current_ini):
             values['frame_generation'] = picked
-        preset, upscaler = video_choice(self.video_state, self.method_box.current(), self.quality_box.current(),
-                                        self.aa_box.current())
+        if tlg_run.backend_on(self.settings) and 0 <= self.aa_box.current() < len(AA_CHOICES):
+            # the backend: the Anti-aliasing row is the pick (native size, as the backend draws)
+            preset, upscaler = 0, AA_CHOICES[self.aa_box.current()][1]
+        else:
+            preset, upscaler = video_choice(self.video_state, self.method_box.current(), self.quality_box.current(),
+                                            self.aa_box.current())
         self.show_video_rows(preset, upscaler)
         self.update_aa_note(current_ini)
         self.update_strength(current_ini)

@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// F1d (engine-vulkan-backend.md): the game's motion target (UV units, current - previous, unjittered) as the motion DLSS reads (render pixels, previous -
+// current, scale 1); their camera_motion.comp mode 2. NaN / Inf become no motion.
+#version 450
+#extension GL_EXT_samplerless_texture_functions : require
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform texture2D game_motion;
+layout(binding = 1, rg16f) uniform writeonly image2D motion_px;
+
+layout(push_constant) uniform Constants {
+    vec2 size;
+};
+
+void main() {
+    const ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixel, ivec2(size)))) {
+        return;
+    }
+    const vec2 game = texelFetch(game_motion, pixel, 0).rg;
+    const vec2 result = any(isnan(game)) || any(isinf(game)) ? vec2(0.0) : -game * size;
+    imageStore(motion_px, pixel, vec4(result, 0.0, 0.0));
+}

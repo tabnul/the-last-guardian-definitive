@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "native/native_vkb_aa.h"
+#include "native/native_vkb_shader_dump.h"
+#include "native/native_framewalk.h"
 #include "native/native_debug_server.h"
 #include "native/native_marker.h"
 #include "native/native_vkb_compute.h"
@@ -220,6 +223,7 @@ bool Ready() {
     profile = Core::Vkb::Device::Profile();
     pools = std::make_unique<VkbShader::Pools>();
     Stream::Init(*instance);
+    Core::Vkb::Aa::Init(*instance);
     return true;
 }
 
@@ -336,6 +340,7 @@ void Compile(u64 ctx, u64 shader, Variant& v) {
     }
     const vk::Device device = instance->GetDevice();
     v.module = VkbVulkan::CompileSPV(spv, device);
+    Core::Vkb::ShaderDump::Keep(v.async ? Core::Vkb::ShaderDump::Stage::AsyncCompute : Core::Vkb::ShaderDump::Stage::Compute, v.info->pgm_hash, spv, params.code); // note 89
     // our layout: the module's ABI (storage buffers, then images, then samplers; one push-descriptor set; the push data block)
     u32 index = 0;
     boost::container::small_vector<vk::DescriptorSetLayoutBinding, 32> bindings;
@@ -581,8 +586,10 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
         }
         const bool view = (src.kind == 1 && (Rd<u32>(object, 0x44) == 1 || Rd<u32>(object, 0x44) == 0xb)) || (src.kind == 4 && Rd<u32>(object, 0x44) == 1);
         const u64 buffer = view ? Rd<u64>(object, 0x30) : 0;
-        const u64 size = buffer != 0 ? Rd<u32>(buffer, 0x180) : 0;
-        return size != 0 && Core::Vkb::BufferOfObject(buffer, 0, size, w) && bind_window(index, Rd<u64>(buffer, 0x30), size, w);
+        const u64 bytes = buffer != 0 ? Rd<u32>(buffer, 0x180) : 0;
+        u64 offset = 0, size = bytes; // api-contract.md V4 / review A6: the view's own range of its buffer (SRV kind 1, UAV kind 4)
+        Core::Vkb::ViewRange(object, src.kind == 1, buffer, bytes, offset, size);
+        return bytes != 0 && Core::Vkb::BufferOfObject(buffer, offset, size, w) && bind_window(index, Rd<u64>(buffer, 0x30) + offset, size, w);
     };
     for (u32 i = 0; i < v.buffers.size(); ++i) {
         const Source& src = v.buffers[i];
@@ -725,6 +732,17 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
             }
         }
     }
+    // api-contract.md W7 census (debug): the device context's dispatch (FUN_0247dad0) also writes each counter UAV's initial count (ctx + 0x20d8, not -1) into GDS
+    // (ctx + 0x130b8) before the dispatch; ours does it for the async context only
+    if (!v.async && Core::Vkb::ContractCensusOn()) {
+        for (u32 index = 0; index < 8; ++index) {
+            const u64 view = Rd<u64>(ctx, 0x2098 + index * 8);
+            if (view != 0 && IsHeapPointer(view) && Rd<u32>(view, 0x44) == 1 && (Rd<u8>(view, 0x50) & 2) != 0) {
+                Core::Vkb::ContractNote(Rd<u32>(ctx, 0x20d8 + index * 4) != 0xffffffffu ? "W7 device dispatch with a counter UAV and an initial count"
+                                                                                          : "W7 device dispatch with a counter UAV, count kept");
+            }
+        }
+    }
     static std::unordered_map<u64, bool> logged_shaders;
     if (const u64 sid = Rd<u64>(shader, 0x10); !logged_shaders[sid]) {
         logged_shaders[sid] = true;
@@ -781,7 +799,8 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
     }
     const bool dump_buffers = !dump_views.empty(); // the TLG_VKB_IMAGE_DUMP_CS dump only (the frame dump takes images alone)
     FrameDumpDispatch(ctx, v, dump_views);
-    Stream::Defer(Stream::Work::Dispatch, [dump_views = std::move(dump_views), dump_buffers, uses = std::move(uses), gds_inits = std::move(gds_inits), buffer_infos = std::move(buffer_infos), image_infos = std::move(image_infos),
+    const std::array<float, 2> aa_jitter = v.info->pgm_hash == Core::Vkb::Aa::CombineCs && Core::Vkb::Aa::On() ? Core::Vkb::Aa::OnCombineQueued() : std::array<float, 2>{};
+    Stream::Defer(Stream::Work::Dispatch, [aa_jitter, dump_views = std::move(dump_views), dump_buffers, uses = std::move(uses), gds_inits = std::move(gds_inits), buffer_infos = std::move(buffer_infos), image_infos = std::move(image_infos),
                                            sampler_infos = std::move(sampler_infos), image_types = std::move(image_types), pipeline = v.pipeline, layout = v.pipeline_layout, push,
                                            args_buffer, args_offset, x, y, z, sid = Rd<u64>(shader, 0x10), hash = v.info->pgm_hash,
                                            stageable = std::move(stageable)](vk::CommandBuffer cmd) mutable {
@@ -789,6 +808,9 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
         for (const auto& [offset, init] : gds_inits) {
             Stream::Hazard(cmd, {Stream::BufferUse(Stream::GdsBuffer(), offset, 4, true)}, Stream::Agent::Transfer);
             cmd.fillBuffer(Stream::GdsBuffer(), offset, 4, init);
+        }
+        if (hash == Core::Vkb::Aa::CombineCs && Core::Vkb::Aa::On()) [[unlikely]] { // F1: native AA writes the scene colour the combine reads
+            Core::Vkb::Aa::BeforeCombine(cmd, aa_jitter);
         }
         // V4d: a barrier only when the dispatch touches what earlier work since the last barrier wrote (or writes what it read)
         if (!no_barrier) {
@@ -890,6 +912,9 @@ void Dispatch(u64 ctx, u32 x, u32 y, u32 z, u64 indirect_address) {
         c_skip_not_compiled.fetch_add(1, std::memory_order_relaxed);
         return;
     }
+    if (Core::FrameWalk::DebuggerMode() && it->second->info) [[unlikely]] { // note 89: the shaders of the scene for the freeze
+        Core::Vkb::ShaderDump::NoteDispatch(it->second->info->pgm_hash, it->second->async);
+    }
     static const bool no_record = [] { const char* e = std::getenv("TLG_VKB_NO_RECORD"); return e != nullptr && *e == '1'; }(); // kill experiment: compile only (V3a)
     // note 71 bound only: TLG_VKB_TEST_SKIP_HASHES=hex,... skips the device-context dispatches of those shaders (the async ones: TLG_VKB_TEST_SKIP_ASYNC_HASHES); the picture is wrong
     static const std::vector<u64> skip_device = [] {
@@ -946,6 +971,9 @@ void DispatchAsync(u64 jcc, u32 x, u32 y, u32 z) {
     if (!it->second->ok) {
         c_skip_not_compiled.fetch_add(1, std::memory_order_relaxed);
         return;
+    }
+    if (Core::FrameWalk::DebuggerMode() && it->second->info) [[unlikely]] { // note 89: the shaders of the scene for the freeze
+        Core::Vkb::ShaderDump::NoteDispatch(it->second->info->pgm_hash, it->second->async);
     }
     // note 39 bound only: TLG_VKB_TEST_SKIP_ASYNC_HASHES=hex,hex,... skips the async dispatches of those shaders (the picture is wrong)
     static const std::vector<u64> skip_hashes = [] {

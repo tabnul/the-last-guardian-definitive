@@ -10,6 +10,8 @@
 #include "native/shadps4/video_core/host_shaders/fill_pattern_comp.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_shader_util.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_platform.h"
+#include <condition_variable>
+#include <functional>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -27,6 +29,7 @@
 #include <boost/container/small_vector.hpp>
 #include <nlohmann/json.hpp>
 
+#include "common/thread.h"
 #include "common/logging/log.h"
 #include "common/path_util.h"
 #include "native/native_content.h"
@@ -44,6 +47,53 @@
 namespace Core::Vkb {
 void BumpBufferEpoch(); ///< note 46: an A1 memo answer may have changed (definitions below)
 void BumpViewEpoch();
+
+/// API contract census (documents/tlg/native plan/engine/api-contract.md, step C8; debug, TLG_VKB_CONTRACT_CENSUS=1): counts of the engine values the contract rows
+/// depend on (sampler descriptions, texture and view formats, clear formats, alpha to coverage, depth bias, a texture copied into and then rewritten by the CPU)
+namespace {
+std::mutex contract_mutex;
+std::map<std::string, u64> contract_counts;
+std::set<u64> contract_copy_destinations; ///< texture ids a GPU copy wrote (row L7)
+} // namespace
+bool ContractCensusOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_CONTRACT_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+void ContractNote(const std::string& key) {
+    if (!ContractCensusOn()) {
+        return;
+    }
+    std::scoped_lock lock{contract_mutex};
+    ++contract_counts[key];
+}
+namespace {
+std::set<u64> contract_target7; ///< C10: texture ids bound as target 7
+} // namespace
+void ContractTarget7(u64 texture_id, const std::string& key) {
+    if (!ContractCensusOn()) {
+        return;
+    }
+    std::scoped_lock lock{contract_mutex};
+    contract_target7.insert(texture_id);
+    ++contract_counts[key];
+}
+void ContractSampled(u64 texture_id) {
+    if (!ContractCensusOn() || texture_id == 0) {
+        return;
+    }
+    std::scoped_lock lock{contract_mutex};
+    if (contract_target7.contains(texture_id)) {
+        ++contract_counts[fmt::format("C10 a shader reads target-7 texture {}", texture_id)];
+    }
+}
+nlohmann::json ContractReport() {
+    nlohmann::json j = nlohmann::json::object();
+    std::scoped_lock lock{contract_mutex};
+    for (const auto& [key, n] : contract_counts) {
+        j[key] = n;
+    }
+    return j;
+}
 
 namespace {
 
@@ -184,6 +234,7 @@ struct DeviceBuffer {
     VkBuffer buffer{};
     VmaAllocation allocation{};
     u64 id{};
+    bool gpu_writes{}; ///< bound as an unordered access view: the GPU writes it (its bytes are ours alone)
 };
 
 std::mutex mutex;
@@ -191,6 +242,8 @@ std::unordered_map<u64, Image> images;
 std::unordered_map<u64, View> views;
 std::unordered_map<u64, u64> image_at_address; ///< V4c: the newest render target image at an engine texture's memory, by address
 std::map<u64, DeviceBuffer> device_buffers;
+std::unordered_map<u64, u64> devbuf_hash; ///< api-contract.md Y7 census: device buffer start -> hash of its guest memory at the last check (under `mutex`)
+std::unordered_map<u64, std::string> devbuf_desc; ///< api-contract.md Y7 census: device buffer start -> its engine description (under `mutex`)
 std::unordered_map<u64, u64> device_buffer_start; ///< engine id -> start address
 std::deque<Doomed> doomed;
 std::unique_ptr<VkbVulkan::HostImport> host_import;
@@ -206,7 +259,8 @@ std::atomic<u64> c_display_found{0}, c_display_missed{0}, c_display_not_general{
 std::atomic<u64> c_attach_views{0}, c_attach_refused{0}, c_clears_color{0}, c_clears_depth{0}, c_clear_no_view{0};
 std::atomic<u64> c_samplers_made{0}, c_samplers_invalid{0}, c_sampler_minmax{0}, c_sampler_border_rounded{0}, c_sampler_mirror_once{0};
 std::unordered_map<u64, vk::Sampler> samplers; ///< by engine sampler id (mutex)
-std::atomic<u64> c_reupload_wanted{0}, c_reupload_done{0}, c_reupload_no_image{0};
+std::atomic<u64> c_reupload_wanted{0}, c_reupload_done{0}, c_reupload_no_image{0}, c_reupload_in_stream{0}, c_moved_textures{0}, c_moved_no_image{0},
+    c_moved_mismatch{0};
 std::atomic<u64> c_cpu_writes{0}, c_cpu_write_bytes{0}, c_copies{0}, c_copy_bytes{0}, c_copies_device{0}, c_copy_unresolved{0}, c_copy_overlap{0}, c_fills{0}, c_fill_unresolved{0};
 std::atomic<u64> c_buffers{0}, c_buffers_in_place{0}, c_buffers_not_in_place{0}, c_buffer_bytes{0}, c_too_early{0}, c_deleted_unknown{0};
 
@@ -311,6 +365,9 @@ Image* MakeImage(const Object& texture) {
     Image img;
     img.is_depth = (texture.bind & BindDepthStencil) != 0;
     img.format = img.is_depth ? DepthFormat(texture.format) : ColorFormat(texture.format);
+    if (ContractCensusOn()) {
+        ContractNote(fmt::format("R texture dxgi {} {} bind {:#x} -> {}", texture.format, img.is_depth ? "depth" : "color", texture.bind, vk::to_string(img.format)));
+    }
     if (img.format == vk::Format::eUndefined) {
         c_images_unmapped_format.fetch_add(1, std::memory_order_relaxed);
         static std::atomic<u32> logged{0};
@@ -460,8 +517,11 @@ bool ViewRange(Kind kind, const Object& view, const Image& img, Range& r) {
         case 3: r = {vk::ImageViewType::e2D, d[1], 1, 0, 1}; break;
         case 4: r = {vk::ImageViewType::e2DArray, d[1], 1, d[2], d[3]}; break;
         case 5: r = {vk::ImageViewType::e2D, 0, 1, 0, 1}; break;
-        case 6: r = {vk::ImageViewType::e2DArray, 0, 1, d[0], d[1]}; break;
+        case 6: r = {vk::ImageViewType::e2DArray, 0, 1, d[1], d[2]}; break; // api-contract.md V7: after the Flags word (it was read as FirstArraySlice)
         default: r.mips = 1; return true;
+        }
+        if (ContractCensusOn() && (dim == 5 || dim == 6)) {
+            ContractNote("V7 multisample depth view");
         }
     } else {
         // render target and unordered access views: format, dimension, mip slice, then the array or depth slices
@@ -475,6 +535,11 @@ bool ViewRange(Kind kind, const Object& view, const Image& img, Range& r) {
         case 7: r = {vk::ImageViewType::e2DArray, 0, 1, d[0], d[1]}; break;
         case 8: r = {vk::ImageViewType::e3D, d[0], 1, 0, 1, true}; break;
         default: r.mips = 1; return true;
+        }
+        if (ContractCensusOn() && dim == 8) { // api-contract.md V7 (debug): a 3D render target / UAV's depth slices (FirstWSlice, WSize) against the volume at that mip
+            const u32 depth = std::max(img.depth >> std::min<u32>(d[0], 31), 1u);
+            const bool whole = d[1] == 0 && (d[2] == ~0u || d[2] >= depth);
+            ContractNote(fmt::format("V7 3D {} view: {}", kind == Kind::RenderTargetView ? "render target" : "unordered access", whole ? "whole volume" : "a slice range"));
         }
     }
     // -1 (all remaining) and out of range values are clamped to the image
@@ -508,6 +573,11 @@ bool ViewRange(Kind kind, const Object& view, const Image& img, Range& r) {
     }
     if (clamped) {
         c_views_clamped.fetch_add(1, std::memory_order_relaxed);
+        if (ContractCensusOn()) { // api-contract.md V6 (debug): what a clamped view asked for against what our image has
+            ContractNote(fmt::format("V6 view range clamped: kind {} dim {} desc {} {} {} {} | image {}x{}x{} mips {} layers {} {} -> view mips {}+{} layers {}+{}", static_cast<u32>(kind), dim,
+                                     d[0], d[1], d[2], d[3], img.width, img.height, img.depth, all_mips, all_layers, vk::to_string(img.format), r.base_mip, r.mips,
+                                     r.base_layer, r.layers));
+        }
     }
     return true;
 }
@@ -993,6 +1063,10 @@ void ViewCreated(const Object& view, const Object& resource) {
         format = img->format;
         c_fixed_view_format_forced.fetch_add(1, std::memory_order_relaxed);
     }
+    if (ContractCensusOn()) {
+        ContractNote(fmt::format("V view kind {} dxgi {} of texture dxgi {} -> {}", static_cast<u32>(view.kind), view.has_desc ? static_cast<s64>(view.desc[0]) : -1,
+                                 resource.format, vk::to_string(format)));
+    }
     const vk::ImageViewCreateInfo ci{
         .image = img->image,
         .viewType = r.type,
@@ -1089,8 +1163,12 @@ void BufferCreated(const Object& buffer) {
                 BumpBufferEpoch(); // note 46: A1 memo answers may change
                 c_dev_replaced.fetch_add(1, std::memory_order_relaxed);
             }
-            device_buffers[buffer.address] = {buffer.address + buffer.bytes, handle, allocation, buffer.id};
+            device_buffers[buffer.address] = {buffer.address + buffer.bytes, handle, allocation, buffer.id, (buffer.bind & BindUnorderedAccess) != 0};
             device_buffer_start[buffer.id] = buffer.address;
+            devbuf_hash.erase(buffer.address); // Y7 census: a new buffer at this memory starts a new baseline
+            if (ContractCensusOn()) {
+                devbuf_desc[buffer.address] = fmt::format("usage {} bind {:#x} cpu {:#x} misc {:#x} stride {}", buffer.usage, buffer.bind, buffer.cpu_access, buffer.misc, buffer.stride);
+            }
         }
         c_dev_buffers.fetch_add(1, std::memory_order_relaxed);
         c_dev_bytes.fetch_add(buffer.bytes, std::memory_order_relaxed);
@@ -1139,6 +1217,14 @@ void BufferCreated(const Object& buffer) {
     } else {
         c_buffers_not_in_place.fetch_add(1, std::memory_order_relaxed);
     }
+}
+
+void RetireView(vk::ImageView view) {
+    if (!view) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    doomed.push_back({static_cast<u32>(GraphicsSubmits()) + DestroyDelay(), {}, {}, view});
 }
 
 namespace {
@@ -1193,6 +1279,7 @@ void ObjectDeletedNow(u64 id) {
         if (const auto d = device_buffers.find(b->second); d != device_buffers.end() && d->second.id == id) {
             doomed.push_back({due, {}, {}, {}, d->second.buffer, d->second.allocation});
             c_dev_bytes.fetch_sub(d->second.end - d->first, std::memory_order_relaxed);
+            devbuf_hash.erase(d->first); // Y7 census
             device_buffers.erase(d);
             BumpBufferEpoch(); // note 46: A1 memo answers may change
         }
@@ -1220,6 +1307,10 @@ void ObjectDeletedNow(u64 id) {
         }
         doomed.push_back({due, i->second.image, i->second.allocation, {}});
         c_image_bytes.fetch_sub(i->second.bytes, std::memory_order_relaxed);
+        if (ContractCensusOn()) { // review A2: copy-destination history ends with the texture
+            std::scoped_lock census_lock{contract_mutex};
+            contract_copy_destinations.erase(id);
+        }
         images.erase(i);
         BumpViewEpoch(); // note 46: A1 memo answers may change
         return;
@@ -1541,12 +1632,50 @@ bool FrameRingInPlace(u64& buffer_handle, u64& begin, u64& end) {
     return buffer_handle != 0;
 }
 
+namespace {
+/// api-contract.md Y7 census (debug, with TLG_VKB_CONTRACT_CENSUS=1): the guest memory under each GPU-written device buffer, hashed every 60 graphics submits; a change
+/// no BufferCpuWritten announced is a CPU write (or a file read) our device copy never gets
+void DeviceBufferWriteCheck() {
+    if (!ContractCensusOn() || (GraphicsSubmits() % 60) != 0) {
+        return;
+    }
+    std::vector<std::tuple<u64, u64, u64>> ranges; // start, end, id
+    {
+        std::scoped_lock lock{mutex};
+        for (const auto& [start, d] : device_buffers) {
+            ranges.emplace_back(start, d.end, d.id);
+        }
+    }
+    for (const auto& [start, end, id] : ranges) {
+        const u64 h = HashGuest(start, end - start);
+        bool changed = false;
+        {
+            std::scoped_lock lock{mutex};
+            auto [it, fresh] = devbuf_hash.try_emplace(start, h);
+            changed = !fresh && it->second != h;
+            it->second = h;
+        }
+        if (changed) {
+            std::string desc;
+            {
+                std::scoped_lock lock{mutex};
+                if (const auto d = devbuf_desc.find(start); d != devbuf_desc.end()) {
+                    desc = d->second;
+                }
+            }
+            ContractNote(fmt::format("Y7 guest memory of a GPU-written device buffer changed unannounced ({} B, {})", end - start, desc));
+        }
+    }
+}
+} // namespace
+
 void ObjectsTick() {
     if (!On() || !device_ready) {
         return;
     }
     DestroyDue(static_cast<u32>(GraphicsSubmits()), false);
     CensusFrame();
+    DeviceBufferWriteCheck();
     if (DeviceBuffersMode() != 0) {
         std::vector<std::pair<u64, u64>> marks;
         {
@@ -1792,6 +1921,16 @@ nlohmann::json LookupReport() {
 bool ViewForComputeLookup(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, vk::ImageView& out, vk::Image* image);
 bool ViewForCompute(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, vk::ImageView& out, vk::Image* image) {
     const LookupTimer lookup_timer{0};
+    if (ContractCensusOn()) { // api-contract.md C10 (debug): a shader reads a texture the target-7 mode drew into
+        u64 texture = 0;
+        {
+            std::scoped_lock lock{mutex};
+            if (const auto v = views.find(view_id); v != views.end()) {
+                texture = v->second.texture_id;
+            }
+        }
+        ContractSampled(texture);
+    }
     if (!MemoOn()) {
         return ViewForComputeLookup(view_id, want, cmd, out, image);
     }
@@ -1919,12 +2058,21 @@ bool CopyTexture(u64 destination_id, u32 destination_sub, u64 source_id, u32 sou
         c_tex_copy_mismatch.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
-    const vk::ImageAspectFlags aspect = !to.is_depth ? vk::ImageAspectFlags{vk::ImageAspectFlagBits::eColor} : vk::ImageAspectFlags{vk::ImageAspectFlagBits::eDepth};
+    // a depth copy carries the stencil plane too where both images have one (api-contract review A4: ExCsDepthCopy, 0248e800, dispatches one raw copy over the
+    // depth surface and one over the stencil surface)
+    const vk::ImageAspectFlags aspect = !to.is_depth                                         ? vk::ImageAspectFlags{vk::ImageAspectFlagBits::eColor}
+                                        : HasStencil(to.format) && HasStencil(from.format) ? (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil)
+                                                                                           : vk::ImageAspectFlags{vk::ImageAspectFlagBits::eDepth};
     const bool volume = to.type == vk::ImageType::e3D;
     const vk::ImageCopy region{.srcSubresource = {aspect, from_mip, volume ? 0u : from_layer, 1},
                                .dstSubresource = {aspect, to_mip, volume ? 0u : to_layer, 1},
                                .extent = a};
     lock.unlock(); // (no job is made under this module's lock: the recording thread's tick takes it)
+    if (ContractCensusOn()) {
+        std::scoped_lock census_lock{contract_mutex};
+        contract_copy_destinations.insert(destination_id);
+        ++contract_counts[fmt::format("W texture copy {} -> {}", vk::to_string(from.format), vk::to_string(to.format))];
+    }
     Stream::NoteBytes(Stream::Work::Copy, static_cast<u64>(region.extent.width) * region.extent.height * region.extent.depth * TexelBytes(to.format));
     Stream::Defer(Stream::Work::Copy, [src = from.image, dst = to.image, region](vk::CommandBuffer cmd) {
         Stream::Hazard(cmd, {Stream::ImageUse(src, false), Stream::ImageUse(dst, true)});
@@ -2059,6 +2207,7 @@ void BufferCpuWritten(u64 address, u64 size) {
             return;
         }
         device_buffer = d->buffer, offset = address - start;
+        devbuf_hash.erase(start); // Y7 census: an announced write
     }
     const BufferWindow w = SourceWindow(address, size);
     if (!w.buffer) {
@@ -2131,6 +2280,61 @@ std::string DescribeView(u64 view_id) {
 
 /// note 41, debug only: copies the subresource of our view of engine view `view_id` (its first mip and layer) into a host buffer and writes it, once the GPU has
 /// done this command buffer, to log/vkb_image_dump/<name>_<w>x<h>_<format>.bin (raw texels; depth images: the depth aspect). Recording thread, lock held, outside a pass.
+void DumpImageCore(vk::CommandBuffer cmd, vk::Image image, vk::Format format, u32 width, u32 height, u32 slices, u32 mip, u32 layer, bool depth, const std::string& name);
+/// note 91: the dump files are written by one thread in order (a thread per file was fine for one draw; a frame capture writes thousands)
+namespace {
+struct DumpTask {
+    u64 after{};
+    std::function<void()> work;
+};
+std::mutex dump_mutex;
+std::condition_variable dump_cv;
+std::deque<DumpTask> dump_tasks;
+std::atomic<u64> dump_pending{0};
+bool dump_thread_started = false;
+void QueueDump(u64 after, std::function<void()> work) {
+    dump_pending.fetch_add(1, std::memory_order_relaxed);
+    {
+        std::scoped_lock lock{dump_mutex};
+        dump_tasks.push_back({after, std::move(work)});
+        if (!dump_thread_started) {
+            dump_thread_started = true;
+            std::thread([] {
+                Common::SetCurrentThreadName("vkb:dumps");
+                for (;;) {
+                    DumpTask t;
+                    {
+                        std::unique_lock l{dump_mutex};
+                        dump_cv.wait(l, [] { return !dump_tasks.empty(); });
+                        t = std::move(dump_tasks.front());
+                        dump_tasks.pop_front();
+                    }
+                    Stream::Wait(t.after);
+                    t.work();
+                    dump_pending.fetch_sub(1, std::memory_order_relaxed);
+                }
+            }).detach();
+        }
+    }
+    dump_cv.notify_one();
+}
+} // namespace
+
+u64 DumpsPending() {
+    return dump_pending.load(std::memory_order_relaxed);
+}
+
+bool WaitDumps(u64 timeout_ms) {
+    const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    while (dump_pending.load() != 0) {
+        if (std::chrono::steady_clock::now() > end) {
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    return true;
+}
+
 void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
     vk::Image image{};
     vk::Format format{};
@@ -2154,6 +2358,10 @@ void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
             slices = std::max(1u, i->second.depth >> mip); // the whole volume (slices one after another)
         }
     }
+    DumpImageCore(cmd, image, format, width, height, slices, mip, layer, depth, name);
+}
+
+void DumpImageCore(vk::CommandBuffer cmd, vk::Image image, vk::Format format, u32 width, u32 height, u32 slices, u32 mip, u32 layer, bool depth, const std::string& name) {
     u32 texel = 0;
     switch (format) {
     case vk::Format::eR8Unorm: texel = 1; break;
@@ -2202,17 +2410,48 @@ void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
     const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump";
     const std::string file = (dir / (slices > 1 ? fmt::format("{}_{}x{}x{}_{}.bin", name, width, height, slices, vk::to_string(format))
                                                  : fmt::format("{}_{}x{}_{}.bin", name, width, height, vk::to_string(format)))).string();
-    std::thread([buffer, allocation, mapped = info.pMappedData, bytes, after, dir, file] {
+    QueueDump(after, [buffer, allocation, mapped = info.pMappedData, bytes, after, dir, file] {
         Stream::Wait(after);
         std::error_code ec;
-        std::filesystem::create_directories(dir, ec);
+        std::filesystem::create_directories(std::filesystem::path(file).parent_path(), ec);
         if (FILE* f = std::fopen(file.c_str(), "wb")) {
             std::fwrite(mapped, 1, bytes, f);
             std::fclose(f);
         }
         vmaDestroyBuffer(instance->GetAllocator(), buffer, allocation);
         LOG_INFO(Render_Vulkan, "vkb image dump written: {}", file);
-    }).detach();
+    });
+}
+
+bool ImageFacts(vk::Image handle, vk::Format& format, u32& width, u32& height, bool& depth) {
+    std::scoped_lock lock{mutex};
+    for (const auto& [id, img] : images) {
+        if (img.image == handle) {
+            format = img.format, width = img.width, height = img.height, depth = img.is_depth;
+            return true;
+        }
+    }
+    return false;
+}
+
+void DumpImageHandle(vk::CommandBuffer cmd, vk::Image handle, const std::string& name) {
+    vk::Format format{};
+    u32 width = 0, height = 0;
+    bool depth = false, found = false;
+    {
+        std::scoped_lock lock{mutex};
+        for (const auto& [id, img] : images) {
+            if (img.image == handle) {
+                format = img.format, width = img.width, height = img.height, depth = img.is_depth, found = true;
+                break;
+            }
+        }
+    }
+    if (!found) {
+        LOG_WARNING(Render_Vulkan, "vkb image dump {}: unknown image", name);
+        return;
+    }
+    DumpImageCore(cmd, handle, format, width, height, 1, 0, 0, depth, name);
 }
 
 void DumpBuffer(vk::CommandBuffer cmd, vk::Buffer source, u64 offset, u64 size, const std::string& name) {
@@ -2237,16 +2476,16 @@ void DumpBuffer(vk::CommandBuffer cmd, vk::Buffer source, u64 offset, u64 size, 
     const u64 after = Stream::RecordingValue();
     const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump";
     const std::string file = (dir / fmt::format("{}_{}B.gpu", name, size)).string();
-    std::thread([buffer, allocation, mapped = info.pMappedData, size, after, dir, file] {
+    QueueDump(after, [buffer, allocation, mapped = info.pMappedData, size, after, dir, file] {
         Stream::Wait(after);
         std::error_code ec;
-        std::filesystem::create_directories(dir, ec);
+        std::filesystem::create_directories(std::filesystem::path(file).parent_path(), ec);
         if (FILE* f = std::fopen(file.c_str(), "wb")) {
             std::fwrite(mapped, 1, size, f);
             std::fclose(f);
         }
         vmaDestroyBuffer(instance->GetAllocator(), buffer, allocation);
-    }).detach();
+    });
 }
 
 // note 42: a staging texture's data (CopyResource into a usage-3 texture, then Map READ) comes from host buffers our copies fill. Each staging subresource has a ring
@@ -2451,50 +2690,43 @@ vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
     const u32 aniso = RdObj<u32>(d, 20);
     const u32 compare_func = RdObj<u32>(d, 24);
     float min_lod = RdObj<float>(d, 44), max_lod = RdObj<float>(d, 48);
-    bool linear = true, mip_linear = true, anisotropic = false;
-    switch (filter) {
-    case 0x0:
-        linear = false, mip_linear = false;
-        break;
-    case 0x7:
-    case 0x10:
-        break;
-    case 0x8:
-        anisotropic = instance->IsAnisotropicFilteringSupported();
-        break;
-    default:
-        c_samplers_invalid.fetch_add(1, std::memory_order_relaxed); // an engine filter value not met before: trilinear
-        if (c_samplers_invalid.load(std::memory_order_relaxed) <= 8) {
-            LOG_WARNING(Render_Vulkan, "vkb sampler: engine filter value {:#x} not known, trilinear", filter);
-        }
-        break;
+    if (ContractCensusOn()) {
+        ContractNote(fmt::format("S sampler filter {} address {} {} {} bias {} aniso {} compare {} cmp_used {} lod {} {}", filter, address[0], address[1], address[2], bias, aniso,
+                                 compare_func, compare ? 1 : 0, min_lod, max_lod));
     }
+    // api-contract.md S1 / S2 (JsDevice_CreateSamplerState 02492e40): the filter is `Filter % 9` into the engine's three tables (mag 025e0840, min 025e0870,
+    // mip 025e08a0: point / linear / anisotropic per index; 9..17 are the same nine with a comparison); the address mode is the engine's value 0 wrap, 1 mirror,
+    // 2 clamp, 3 border, 4 mirror once (table 025e08d0 -> GNM 0, 1, 2, 6, 3); the maximum anisotropy is rounded up to 1 / 2 / 4 / 8 / 16
+    static constexpr u8 MagTable[9] = {0, 0, 1, 1, 0, 0, 1, 1, 3}; // 0 point, 1 linear, 3 anisotropic
+    static constexpr u8 MinTable[9] = {0, 0, 0, 0, 1, 1, 1, 1, 3};
+    static constexpr u8 MipTable[9] = {1, 2, 1, 2, 1, 2, 1, 2, 2}; // 1 point, 2 linear
+    const u32 f = filter % 9;
+    const bool mag_linear = MagTable[f] != 0, min_linear = MinTable[f] != 0, mip_linear = MipTable[f] == 2;
+    const bool anisotropic = MagTable[f] == 3 && instance->IsAnisotropicFilteringSupported();
+    const float aniso_level = aniso <= 1 ? 1.0f : aniso == 2 ? 2.0f : aniso <= 4 ? 4.0f : aniso <= 8 ? 8.0f : 16.0f;
     const auto address_mode = [](u32 mode) {
         switch (mode) {
         case 0: return vk::SamplerAddressMode::eRepeat;
         case 1: return vk::SamplerAddressMode::eMirroredRepeat;
         case 2: return vk::SamplerAddressMode::eClampToEdge;
-        case 3:
-        case 5:
-        case 7: c_sampler_mirror_once.fetch_add(1, std::memory_order_relaxed); return vk::SamplerAddressMode::eMirrorClampToEdge;
-        case 4:
-        case 6: return vk::SamplerAddressMode::eClampToBorder;
-        default: c_samplers_invalid.fetch_add(1, std::memory_order_relaxed); return vk::SamplerAddressMode::eRepeat;
+        case 3: return vk::SamplerAddressMode::eClampToBorder; // the border colour: type 0, transparent black
+        case 4: c_sampler_mirror_once.fetch_add(1, std::memory_order_relaxed); return vk::SamplerAddressMode::eMirrorClampToEdge;
+        default: c_samplers_invalid.fetch_add(1, std::memory_order_relaxed); return vk::SamplerAddressMode::eRepeat; // the engine asserts above 4
         }
     };
     if (compare_func < 1 || compare_func > 8) {
         c_samplers_invalid.fetch_add(1, std::memory_order_relaxed);
     }
     const vk::SamplerCreateInfo ci{
-        .magFilter = linear ? vk::Filter::eLinear : vk::Filter::eNearest,
-        .minFilter = linear ? vk::Filter::eLinear : vk::Filter::eNearest,
+        .magFilter = mag_linear ? vk::Filter::eLinear : vk::Filter::eNearest,
+        .minFilter = min_linear ? vk::Filter::eLinear : vk::Filter::eNearest,
         .mipmapMode = mip_linear ? vk::SamplerMipmapMode::eLinear : vk::SamplerMipmapMode::eNearest,
         .addressModeU = address_mode(address[0]),
         .addressModeV = address_mode(address[1]),
         .addressModeW = address_mode(address[2]),
-        .mipLodBias = bias,
+        .mipLodBias = 0.0f, // api-contract.md S3: the engine never writes the S#'s bias field (MipLODBias is ignored)
         .anisotropyEnable = anisotropic,
-        .maxAnisotropy = anisotropic ? std::clamp(static_cast<float>(aniso), 1.0f, instance->MaxSamplerAnisotropy()) : 1.0f,
+        .maxAnisotropy = anisotropic ? std::min(aniso_level, instance->MaxSamplerAnisotropy()) : 1.0f,
         .compareEnable = compare,
         .compareOp = static_cast<vk::CompareOp>(compare_func >= 1 && compare_func <= 8 ? compare_func - 1 : 7),
         .minLod = min_lod,
@@ -2626,6 +2858,10 @@ bool ClearColor(u64 view_id, const float* color) {
     vk::ImageSubresourceRange range = v->second.range;
     range.aspectMask = vk::ImageAspectFlagBits::eColor;
     const vk::Image clear_image = i->second.image;
+    if (ContractCensusOn()) {
+        ContractNote(fmt::format("W1 clear view {} image {} colour {:.3g} {:.3g} {:.3g} {:.3g}", vk::to_string(v->second.format), vk::to_string(i->second.format), color[0], color[1],
+                                 color[2], color[3]));
+    }
     lock.unlock();
     Stream::Defer(Stream::Work::Clear, [image = clear_image, value, range](vk::CommandBuffer cmd) {
         Stream::Hazard(cmd, {Stream::ImageUse(image, true)});
@@ -2639,6 +2875,14 @@ bool ClearDepthStencil(u64 view_id, u32 flags, float depth, u32 stencil) {
     if (!On() || !device_ready || (flags & 3) == 0) {
         return false;
     }
+    // api-contract.md W12: the engine clamps the clear depth to [0, 1] (below 0 -> 0, above 1 -> 1; 024860c0) and writes the stencil value with a full mask
+    if (const float clamped = depth < 0.0f ? 0.0f : std::min(depth, 1.0f); clamped != depth || depth != depth) {
+        if (ContractCensusOn()) {
+            ContractNote("W12 clear depth outside [0, 1] (clamped)");
+        }
+        depth = depth != depth ? 0.0f : clamped;
+    }
+    stencil &= 0xffu;
     std::unique_lock lock{mutex};
     const auto v = views.find(view_id);
     const auto i = v != views.end() ? images.find(v->second.texture_id) : images.end();
@@ -2667,7 +2911,7 @@ bool ClearDepthStencil(u64 view_id, u32 flags, float depth, u32 stencil) {
     return true;
 }
 
-void TextureCpuWritten(u64 texture_id) {
+void TextureCpuWritten(u64 texture_id, u32 subresource) {
     if (!On() || !device_ready) {
         return;
     }
@@ -2690,7 +2934,36 @@ void TextureCpuWritten(u64 texture_id) {
         image = img.image, format = img.format, mips = img.mips, layers = img.layers, layout = img.layout;
     }
     c_reupload_wanted.fetch_add(1, std::memory_order_relaxed);
-    if (Upload::TextureContents(texture_id, image, format, mips, layers, layout)) {
+    if (ContractCensusOn()) { // api-contract.md R9 (debug): our image's size against the engine's live T# (a moved texture's T# is rewritten to its logical size)
+        u32 w = 0, h = 0, m = 0, iw = 0, ih = 0;
+        {
+            std::scoped_lock lock{mutex};
+            if (const auto it = images.find(texture_id); it != images.end()) {
+                iw = it->second.width, ih = it->second.height;
+            }
+        }
+        if (Upload::LiveExtent(texture_id, w, h, m) && (w != iw || h != ih)) {
+            ContractNote(fmt::format("R9 re-upload: image {}x{}, engine T# {}x{} ({} mips)", iw, ih, w, h, m));
+        }
+    }
+    if (ContractCensusOn()) { // L5 / L7 (debug), before the stream / batch split (api-contract review A2)
+        std::scoped_lock census_lock{contract_mutex};
+        ++contract_counts[contract_copy_destinations.contains(texture_id) ? "L7 cpu rewrite of a texture a GPU copy wrote" : "L5 cpu rewrite of a texture"];
+    }
+    // api-contract.md L5 / L6 / L8 / W5: the new contents are a job of the frame stream, made here, where the engine changed the memory (its hazard barriers order the
+    // copy after the earlier reads of the image and before the later ones). LEGACY(upload_batch): TLG_LEGACY_UPLOAD_BATCH=1 uploads in the batch that runs before the frame
+    static const bool upload_batch = [] { const char* e = std::getenv("TLG_LEGACY_UPLOAD_BATCH"); return e != nullptr && e[0] == '1'; }();
+    if (!upload_batch && layout == vk::ImageLayout::eGeneral && Stream::Ready()) {
+        if (ContractCensusOn()) {
+            ContractNote("L5 cpu rewrite of a texture, in the stream");
+        }
+        if (Upload::TextureContentsInStream(texture_id, image, format, mips, layers, subresource)) {
+            c_reupload_done.fetch_add(1, std::memory_order_relaxed);
+            c_reupload_in_stream.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+    }
+    if (Upload::TextureContents(texture_id, image, format, mips, layers, layout, subresource)) {
         c_reupload_done.fetch_add(1, std::memory_order_relaxed);
     }
 }
@@ -2752,14 +3025,27 @@ u32 MemoryLoaded(u64 address, u64 bytes) {
                 copies.push_back({lo, hi - lo, device, lo - start});
             }
         };
-        if (auto it = watched.upper_bound(address); it != watched.begin()) {
-            for (--it; it != watched.end() && it->first < address + bytes; ++it) {
-                if (it->second.state == Watched::State::Device) {
-                    add(it->first, it->second.end, it->second.device);
-                }
+        // every tracked buffer the read overlaps: the one holding its start (if any), then all that begin inside it (api-contract review B1: a read that begins
+        // before the first tracked buffer used to skip them all)
+        auto it = watched.upper_bound(address);
+        if (it != watched.begin() && std::prev(it)->second.end > address) {
+            --it;
+        }
+        for (; it != watched.end() && it->first < address + bytes; ++it) {
+            if (it->second.state == Watched::State::Device) {
+                add(it->first, it->second.end, it->second.device);
             }
         }
         // (not the GPU-written device buffers of V2f: their contents are ours alone, note 84)
+        if (ContractCensusOn()) { // api-contract.md Y7 (debug): a file read into memory under a GPU-written device buffer
+            auto d = device_buffers.upper_bound(address);
+            if (d != device_buffers.begin() && std::prev(d)->second.end > address) {
+                --d;
+            }
+            for (; d != device_buffers.end() && d->first < address + bytes; ++d) {
+                ContractNote(fmt::format("Y7 file read into a GPU-written device buffer ({} B)", d->second.end - d->first));
+            }
+        }
     }
     for (const Copy& c : copies) {
         const BufferWindow src = SourceWindow(c.guest, c.bytes);
@@ -2794,9 +3080,257 @@ u32 ReuploadVolumes() {
     return static_cast<u32>(ids.size());
 }
 
+/// api-contract.md Y6 (debug census): where the bytes of a range the CPU reads in place (AsyncMap) live on our side: "device" = our separate device copy (the guest
+/// memory the CPU reads is stale), "in place" = imported guest memory or the frame ring
+std::string ContractWhereLives(u64 address, u64 size) {
+    std::scoped_lock lock{mutex};
+    u64 start = 0;
+    bool straddle = false;
+    if (DeviceBufferOf(address, size, start, straddle) != nullptr) {
+        return "a GPU-written device buffer";
+    }
+    if (straddle) {
+        return "straddles a device buffer";
+    }
+    if (auto it = watched.upper_bound(address); it != watched.begin()) {
+        --it;
+        if (address >= it->first && address < it->second.end && it->second.state == Watched::State::Device) {
+            return "a static device copy";
+        }
+    }
+    return "in place";
+}
+
+/// api-contract.md Y6: AsyncMap hands the CPU a plain pointer into the buffer's own memory (no Map, no Unmap, no copy): the engine's contract is that the buffer's bytes
+/// are where that pointer writes. A device copy of ours (a dynamic buffer's, refreshed only at Unmap) breaks it, so it is retired here and the buffer is read in place
+/// from now on (FindLocked falls back to the imported memory). A buffer the GPU writes keeps its device copy (its bytes are ours alone): counted, open to test.
+/// LEGACY(asyncmap_device): TLG_LEGACY_ASYNCMAP_DEVICE=1 keeps every device copy.
+std::atomic<u64> c_placed_by_asyncmap{0}, c_asyncmap_gpu_written{0};
+void BufferCpuAddressable(u64 buffer_id) {
+    static const bool legacy = [] { const char* e = std::getenv("TLG_LEGACY_ASYNCMAP_DEVICE"); return e != nullptr && e[0] == '1'; }();
+    if (!On() || !device_ready || legacy || buffer_id == 0) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    const auto by_id = device_buffer_start.find(buffer_id); // by the engine object (no address lookup)
+    if (by_id == device_buffer_start.end()) {
+        return;
+    }
+    const auto it = device_buffers.find(by_id->second);
+    if (it == device_buffers.end() || it->second.id != buffer_id) {
+        return;
+    }
+    if (it->second.gpu_writes) {
+        c_asyncmap_gpu_written.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    doomed.push_back({static_cast<u32>(GraphicsSubmits()) + DestroyDelay(), {}, {}, {}, it->second.buffer, it->second.allocation});
+    c_dev_bytes.fetch_sub(it->second.end - it->first, std::memory_order_relaxed);
+    device_buffer_start.erase(it->second.id);
+    devbuf_hash.erase(it->first);
+    device_buffers.erase(it);
+    BumpBufferEpoch(); // note 46: A1 memo answers may change
+    c_placed_by_asyncmap.fetch_add(1, std::memory_order_relaxed);
+}
+
+/// api-contract.md V4 / review A6: an engine buffer view's bytes inside its buffer, from the view's own V# (the engine keeps it on the buffer's current memory at every
+/// rename): offset = view base - buffer base (the buffer's V# at + 0x60), size = records x stride (bytes if no stride), clamped to the buffer. False: the whole buffer.
+std::atomic<u64> c_view_whole{0}, c_view_part{0}, c_view_outside{0};
+bool ViewRange(u64 view, bool srv, u64 buffer, u64 bytes, u64& offset, u64& size) {
+    offset = 0, size = bytes;
+    if (view == 0 || buffer == 0 || bytes == 0) {
+        return false;
+    }
+    const u32* v = reinterpret_cast<const u32*>(view + (srv ? 0x78 : 0x74));
+    const u64 base = static_cast<u64>(v[0]) | static_cast<u64>(v[1] & 0xfffu) << 32; // base: 44 bits
+    const u32 stride = (v[1] >> 16) & 0x3fffu;
+    const u64 records = stride != 0 ? u64{v[2]} * stride : u64{v[2]};
+    const u32* b = reinterpret_cast<const u32*>(buffer + 0x60);
+    const u64 buffer_base = static_cast<u64>(b[0]) | static_cast<u64>(b[1] & 0xfffu) << 32;
+    if (base < buffer_base || base >= buffer_base + bytes || records == 0) {
+        c_view_outside.fetch_add(1, std::memory_order_relaxed);
+        if (ContractCensusOn()) {
+            ContractNote("A6 buffer view outside its buffer (whole buffer bound)");
+        }
+        return false;
+    }
+    offset = base - buffer_base;
+    size = std::min(records, bytes - offset);
+    if (offset == 0 && size == bytes) {
+        c_view_whole.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    c_view_part.fetch_add(1, std::memory_order_relaxed);
+    if (ContractCensusOn()) {
+        ContractNote(offset != 0 ? "A6 buffer view starts inside its buffer (range bound)" : "A6 buffer view shorter than its buffer (range bound)");
+    }
+    return true;
+}
+
+/// api-contract.md W5: the engine moved a texture to new memory (RenderTexture_CopyToNewMemory, 01c97a00: a raw copy of the old texture's memory into a new texture's,
+/// from mip `first_mip` on; first_mip > 0 drops the top mips into a half-size texture). Our new image gets the old image's contents by an image copy in the frame
+/// stream, by the two engine objects (no address lookup, no upload from guest memory). LEGACY(upload_batch): TLG_LEGACY_UPLOAD_BATCH=1 does not follow moves.
+void TextureMoved(u64 new_id, u64 old_id, u32 first_mip) {
+    static const bool upload_batch = [] { const char* e = std::getenv("TLG_LEGACY_UPLOAD_BATCH"); return e != nullptr && e[0] == '1'; }();
+    if (!On() || !device_ready || upload_batch || new_id == 0 || old_id == 0 || new_id == old_id) {
+        return;
+    }
+    std::unique_lock lock{mutex};
+    const auto d = images.find(new_id);
+    const auto s = images.find(old_id);
+    if (d == images.end() || s == images.end()) {
+        c_moved_no_image.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    const Image& to = d->second;
+    const Image& from = s->second;
+    if (to.is_depth != from.is_depth || to.type != from.type || TexelBytes(to.format) != TexelBytes(from.format) || to.image == from.image) {
+        c_moved_mismatch.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    const vk::ImageAspectFlags aspect = !to.is_depth                                         ? vk::ImageAspectFlags{vk::ImageAspectFlagBits::eColor}
+                                        : HasStencil(to.format) && HasStencil(from.format) ? (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil)
+                                                                                           : vk::ImageAspectFlags{vk::ImageAspectFlagBits::eDepth};
+    const bool volume = to.type == vk::ImageType::e3D;
+    const u32 layers = volume ? 1u : std::min(std::max(to.layers, 1u), std::max(from.layers, 1u));
+    const auto extent = [](const Image& img, u32 mip) {
+        return vk::Extent3D{std::max(img.width >> mip, 1u), std::max(img.height >> mip, 1u), img.type == vk::ImageType::e3D ? std::max(img.depth >> mip, 1u) : 1u};
+    };
+    std::vector<vk::ImageCopy> regions;
+    u64 bytes = 0;
+    for (u32 m = 0; m < to.mips && m + first_mip < from.mips; ++m) {
+        const vk::Extent3D a = extent(to, m), b = extent(from, m + first_mip);
+        // the engine copies raw memory: a padded new texture (R9) holds the old one's texels at the same place, so the common part is copied
+        const vk::Extent3D e{std::min(a.width, b.width), std::min(a.height, b.height), std::min(a.depth, b.depth)};
+        if (a != b) {
+            c_moved_mismatch.fetch_add(1, std::memory_order_relaxed);
+        }
+        regions.push_back({.srcSubresource = {aspect, m + first_mip, 0, layers}, .dstSubresource = {aspect, m, 0, layers}, .extent = e});
+        bytes += static_cast<u64>(e.width) * e.height * e.depth * layers * TexelBytes(to.format);
+    }
+    const vk::Image src = from.image, dst = to.image;
+    lock.unlock(); // (no job is made under this module's lock: the recording thread's tick takes it)
+    if (regions.empty()) {
+        c_moved_mismatch.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    Stream::NoteBytes(Stream::Work::Copy, bytes);
+    Stream::Defer(Stream::Work::Copy, [src, dst, regions = std::move(regions)](vk::CommandBuffer cmd) {
+        Stream::Hazard(cmd, {Stream::ImageUse(src, false), Stream::ImageUse(dst, true)});
+        cmd.copyImage(src, vk::ImageLayout::eGeneral, dst, vk::ImageLayout::eGeneral, regions);
+    });
+    c_moved_textures.fetch_add(1, std::memory_order_relaxed);
+    if (ContractCensusOn()) {
+        std::scoped_lock census_lock{contract_mutex};
+        contract_copy_destinations.insert(new_id);
+        ++contract_counts[first_mip == 0 ? "W5 texture moved (image copy)" : "W5 texture top mips dropped (image copy)"];
+    }
+}
+
+/// api-contract.md W5b: the engine's buffer move (GpuHeap_MoveOneResource 01f7e850, its buffer branch: a new buffer, the async copy old -> new at 01f7eec3, then the
+/// holder swapped to the new buffer at once, so CPU readers (e.g. FUN_01d7a890, the effects' vertex clusters, which turn floats read from it into array indexes)
+/// may read the new memory right away). On PS4 the async queue runs that copy within moments; our frame stream would run it a frame or more later. So the copy is
+/// made now, on the CPU, when the old memory holds the contents (nothing of ours writes it on the GPU: no GPU-written device copy, no pending in-place GPU write,
+/// not marked GPU-written); else it stays our copy in the frame stream (false). LEGACY(move_in_stream): TLG_LEGACY_MOVE_IN_STREAM=1 always in the stream.
+std::atomic<u64> c_moves_now{0}, c_moves_in_stream{0};
+bool MoveBufferNow(u64 destination, u64 source, u64 bytes) {
+    static const bool legacy = [] { const char* e = std::getenv("TLG_LEGACY_MOVE_IN_STREAM"); return e != nullptr && e[0] == '1'; }();
+    if (!On() || !device_ready || legacy || bytes == 0 || destination == source || (destination < source + bytes && source < destination + bytes)) {
+        return false;
+    }
+    bool gpu_side = false;
+    {
+        std::scoped_lock lock{mutex};
+        for (auto d = device_buffers.upper_bound(source); !gpu_side && d != device_buffers.begin();) { // the device copy holding the start, and those inside
+            --d;
+            if (d->second.end > source) {
+                gpu_side = d->second.gpu_writes;
+            }
+            break;
+        }
+        for (auto d = device_buffers.lower_bound(source); !gpu_side && d != device_buffers.end() && d->first < source + bytes; ++d) {
+            gpu_side = d->second.gpu_writes;
+        }
+        if (!gpu_side) {
+            if (const Watched* w = WatchedAt(source, bytes)) {
+                gpu_side = w->gpu_written;
+            }
+        }
+    }
+    if (!gpu_side) {
+        std::scoped_lock marks_lock{gpu_write_mutex};
+        for (const auto& [a, n] : gpu_write_pending) {
+            if (a < source + bytes && source < a + n) {
+                gpu_side = true;
+                break;
+            }
+        }
+    }
+    if (gpu_side) {
+        c_moves_in_stream.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    std::memcpy(reinterpret_cast<void*>(destination), reinterpret_cast<const void*>(source), bytes);
+    BufferCpuWritten(destination, bytes); // a copy of ours of the new memory (if any) takes the bytes
+    c_moves_now.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+/// api-contract.md W16: the probe cubemap copy (01c804a0): the engine copies each mip / face of a probe texture as raw memory into its slot of a cube-array texture
+/// (layer = slot x 6 + face, CsCopyBufferDwords at 01c806a0). Our images get the same copy, image to image by the two engine objects, in the frame stream.
+std::atomic<u64> c_layer_copies{0}, c_layer_copy_refused{0};
+void TextureLayerCopied(u64 dst_id, u32 dst_layer, u64 src_id, u32 src_layer, u32 mip) {
+    if (!On() || !device_ready || dst_id == 0 || src_id == 0 || dst_id == src_id) {
+        return;
+    }
+    std::unique_lock lock{mutex};
+    const auto d = images.find(dst_id);
+    const auto s = images.find(src_id);
+    if (d == images.end() || s == images.end() || d->second.is_depth || s->second.is_depth || d->second.type == vk::ImageType::e3D ||
+        s->second.type == vk::ImageType::e3D || mip >= d->second.mips || mip >= s->second.mips || dst_layer >= d->second.layers || src_layer >= s->second.layers ||
+        d->second.format != s->second.format) {
+        c_layer_copy_refused.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    const auto extent = [mip](const Image& img) { return vk::Extent3D{std::max(img.width >> mip, 1u), std::max(img.height >> mip, 1u), 1u}; };
+    const vk::Extent3D a = extent(d->second), b = extent(s->second);
+    const vk::ImageCopy region{.srcSubresource = {vk::ImageAspectFlagBits::eColor, mip, src_layer, 1},
+                               .dstSubresource = {vk::ImageAspectFlagBits::eColor, mip, dst_layer, 1},
+                               .extent = {std::min(a.width, b.width), std::min(a.height, b.height), 1}};
+    const vk::Image src = s->second.image, dst = d->second.image;
+    lock.unlock(); // (no job is made under this module's lock: the recording thread's tick takes it)
+    Stream::NoteBytes(Stream::Work::Copy, u64{region.extent.width} * region.extent.height * TexelBytes(d->second.format));
+    Stream::Defer(Stream::Work::Copy, [src, dst, region](vk::CommandBuffer cmd) {
+        Stream::Hazard(cmd, {Stream::ImageUse(src, false), Stream::ImageUse(dst, true)});
+        cmd.copyImage(src, vk::ImageLayout::eGeneral, dst, vk::ImageLayout::eGeneral, region);
+    });
+    c_layer_copies.fetch_add(1, std::memory_order_relaxed);
+}
+
 bool CopyBuffer(u64 destination, u64 source, u64 bytes) {
     if (!device_ready || bytes == 0) {
         return false;
+    }
+    if (ContractCensusOn()) { // api-contract.md W5 (debug): a buffer copy whose destination is a texture's memory (the engine's memory move, FUN_01c97a00)
+        std::string key = "W5 buffer copy into no texture";
+        {
+            std::scoped_lock lock{mutex};
+            for (const auto& [id, img] : images) {
+                if (img.address != 0 && img.address < destination + bytes && destination < img.address + std::max<u64>(img.guest_bytes, 1)) {
+                    key = fmt::format("W5 buffer copy into a texture ({}, {} written by the GPU, source {} texture)", vk::to_string(img.format), img.gpu_written ? "" : "not",
+                                      [&] {
+                                          for (const auto& [sid, simg] : images) {
+                                              if (simg.address != 0 && simg.address < source + bytes && source < simg.address + std::max<u64>(simg.guest_bytes, 1)) {
+                                                  return "a";
+                                              }
+                                          }
+                                          return "no";
+                                      }());
+                    break;
+                }
+            }
+        }
+        ContractNote(key);
     }
     BufferWindow to, from;
     if (!FindLocked(destination, bytes, to) || !FindLocked(source, bytes, from)) {
@@ -3064,6 +3598,7 @@ nlohmann::json ObjectsReport() {
     const u64 made = c_images_created.load();
     return nlohmann::json(
                          {{"view_channel_census", channel_census},
+                          {"contract_census", ContractReport()},
                           {"display_texture", g_display_texture.load(std::memory_order_relaxed)},
                           {"images_live", live_images},
                           {"images_created", made},
@@ -3139,7 +3674,13 @@ nlohmann::json ObjectsReport() {
                           {"clears", {{"color", c_clears_color.load()}, {"depth_stencil", c_clears_depth.load()}, {"no_view", c_clear_no_view.load()}}},
                           {"our_samplers", {{"made", c_samplers_made.load()}, {"invalid_description", c_samplers_invalid.load()}, {"min_max_reduction", c_sampler_minmax.load()},
                                             {"border_rounded", c_sampler_border_rounded.load()}, {"mirror_once", c_sampler_mirror_once.load()}}},
-                          {"texture_updates", {{"wanted", c_reupload_wanted.load()}, {"uploaded", c_reupload_done.load()}, {"no_image", c_reupload_no_image.load()}}},
+                          {"texture_updates", {{"wanted", c_reupload_wanted.load()}, {"uploaded", c_reupload_done.load()}, {"no_image", c_reupload_no_image.load()},
+                                               {"in_stream", c_reupload_in_stream.load()}, {"moved_textures", c_moved_textures.load()}, {"moved_no_image", c_moved_no_image.load()},
+                                               {"moved_mismatch", c_moved_mismatch.load()}}},
+                          {"buffer_moves", {{"copied_at_the_move", c_moves_now.load()}, {"in_the_stream", c_moves_in_stream.load()}}},
+                          {"probe_layer_copies", {{"copied", c_layer_copies.load()}, {"refused", c_layer_copy_refused.load()}}},
+                          {"buffer_views", {{"whole", c_view_whole.load()}, {"range", c_view_part.load()}, {"outside", c_view_outside.load()}}},
+                          {"asyncmap_buffers", {{"placed_in_place", c_placed_by_asyncmap.load()}, {"gpu_written_kept_device_copy", c_asyncmap_gpu_written.load()}}},
                           {"file_reads_into_textures", {{"reads", c_loaded_reads.load()}, {"textures", c_loaded_textures.load()}, {"buffers", c_loaded_buffers.load()}}},
                           {"texture_copies", {{"copies", c_tex_copies.load()}, {"no_image", c_tex_copy_no_image.load()}, {"mismatch", c_tex_copy_mismatch.load()}}},
                           {"buffer_lookups", {{"range_leaves_a_device_buffer", c_find_straddle.load()}, {"not_in_place", c_find_none.load()}}},

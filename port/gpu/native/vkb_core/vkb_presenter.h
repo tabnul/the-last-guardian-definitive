@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include <chrono>
+
 #include <condition_variable>
 #include <deque>
 #include <memory>
@@ -34,6 +36,11 @@ struct Frame {
     vk::Semaphore ready_semaphore{};
     u64 ready_tick{};
     u8 id{};
+    // F2 frame generation: the image made between the previous frame and this one (presented first), ready when made from fresh inputs
+    vk::Image fg_image{};
+    VmaAllocation fg_allocation{};
+    vk::ImageView fg_view{};
+    bool fg_ready{};
 };
 
 /// The engine-to-Vulkan backend's presenter (merge note 5), written for the backend: its own instance, device, swapchain and schedulers. It shows the backend's
@@ -72,6 +79,10 @@ private:
     void RecreateFrame(Frame* frame, u32 width, u32 height);
     void SetExpectedGameSize(s32 width, s32 height);
     Frame* ClearFrame(Scheduler& scheduler);
+    /// F2 (TLG_VKB_FG=dlss): DLSS frame generation into frame->fg_image from the finished frame and the AA's depth and motion (native_vkb_aa.h)
+    void RecordFrameGeneration(Frame* frame, vk::CommandBuffer cmdbuf);
+    /// One image (the frame's or its generated one) into the swapchain, with the overlay; `real`: the frame's own (its fence, the captures)
+    bool PresentImage(Frame* frame, vk::Image source, bool real, bool is_reusing_frame);
 
     Frontend::WindowSDL& window;
     Instance instance;
@@ -90,6 +101,18 @@ private:
     float expected_ratio{16.0f / 9.0f};
     s32 expected_frame_width{1920};
     s32 expected_frame_height{1080};
+    // F2
+    int fg_state{-1}; ///< -1 not asked yet, 0 not available, 1 available
+    bool fg_failed{};
+    u32 fg_width{}, fg_height{};
+    vk::Format fg_format{};
+    float fg_interval_ms{16.6f};
+    std::chrono::steady_clock::time_point fg_last_flip{};
+    u64 fg_presented{};
+    /// The present_scheduler tick of the submit that last waited on each swapchain acquire semaphore (by Swapchain::GetFrameIndex): waited before the semaphore is
+    /// acquired with again. With frame generation two presents per frame turn the rotation over twice as fast, and the generated present has no fence of its own
+    /// (VUID-vkAcquireNextImageKHR-semaphore-01779, then device lost: owner play 2026-11-16)
+    std::vector<u64> acquire_slot_ticks;
 };
 
 extern std::unique_ptr<Presenter> g_presenter;

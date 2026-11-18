@@ -26,6 +26,7 @@
 #include "common/path_util.h"
 #include "core/emulator_settings.h"
 #include "sdl_window.h"
+#include "native/native_vkb_dlss_glue.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_platform.h"
 
 #ifdef __APPLE__
@@ -308,6 +309,7 @@ vk::UniqueInstance CreateInstance(Frontend::WindowSystemType window_type, bool e
 
     const auto layers = GetInstanceLayers(enable_validation, enable_crash_diagnostic);
     auto extensions = GetLayerExtensions(GetInstanceExtensions(window_type, true), layers);
+    Core::Vkb::DlssGlue::AppendInstanceExtensions(extensions); // F1d: DLAA (TLG_VKB_AA=dlaa): what NGX needs
 
     const vk::ApplicationInfo application_info = {
         .pApplicationName = "shadPS4",
