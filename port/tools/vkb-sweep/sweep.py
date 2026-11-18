@@ -151,7 +151,11 @@ def main():
     reference = {}
     if "--reference" in args:
         i = args.index("--reference")
+        if i + 1 >= len(args):
+            sys.exit(__doc__)
         reference = verdict.rows(os.path.abspath(args[i + 1]))
+        if not reference:
+            sys.exit(f"--reference {args[i + 1]}: no results-vkb0.jsonl there or it is empty")
         del args[i:i + 2]
     if len(args) < 3 or args[1] not in ("0", "1") or not args[2].isdigit() or int(args[2]) < 1:
         sys.exit(__doc__)
@@ -181,6 +185,9 @@ def main():
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
     listing = verdict.load_list()
+    if vkb == "1" and not reference:
+        print("WARNING: no --reference: every scene of this sweep has no normal-renderer data, so every scene is "
+              "'log only' and the lines are not compared", flush=True)
     todo = [s for s in scenes if s not in done]
     print(f"sweep vkb{vkb}: {len(scenes)} scenes, {len(scenes) - len(todo)} done before, {len(todo)} to run, "
           f"{takes} takes each, out {root}", flush=True)

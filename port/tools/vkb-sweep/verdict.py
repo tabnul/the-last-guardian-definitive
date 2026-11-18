@@ -29,7 +29,9 @@ def load_list(path=LIST):
     out = {}
     if os.path.exists(path):
         for line in open(path):
-            if line.strip() and not line.startswith("#"):
+            if line.strip() and not line.lstrip().startswith("#"):
+                if len(line.split(None, 3)) < 3 or line.split()[0] not in ("proposed", "confirmed"):
+                    sys.exit(f"{path}: bad line (STATUS must be proposed or confirmed, then STAGE SCENE): {line.strip()}")
                 status, stage, scene, *reason = line.split(None, 3)
                 out[(stage, scene)] = (status, reason[0].strip() if reason else "")
     return out
@@ -41,7 +43,7 @@ def kinds(path):
     if path and os.path.exists(path):
         for l in open(path, errors="replace"):
             if KIND.search(l):
-                found.add(re.sub(r"0x[0-9a-fA-F]+|\d+", "N", l.strip())[:200])
+                found.add(re.sub(r"0x[0-9a-fA-F]+|[0-9a-fA-F]{8,}|\d+", "N", l.strip())[:200])
     return found
 
 
@@ -55,7 +57,9 @@ def logs_of(row):
     for t in row["takes"]:
         p = t.get("picture")
         if p:
-            out.append(re.sub(r"(\.blank)?\.png$", ".log", p))
+            log = re.sub(r"(\.blank)?\.png$", ".log", p)
+            if os.path.exists(log):  # a log file that is gone is "no log", never an empty clean one
+                out.append(log)
     return out
 
 
@@ -67,7 +71,7 @@ def log_verdict(row, ref_row=None):
     if not takes:
         why.append("ran: no take")
     for t in takes:
-        if not t["ok"] and not t.get("blank"):
+        if not t["ok"] and not t["status"].startswith("picture failed: blank"):
             why.append(f"ran: take {t['take']}: {t['status']}")
         if t.get("crash"):
             why.append(f"crash: take {t['take']}: game ended by itself")
@@ -77,7 +81,7 @@ def log_verdict(row, ref_row=None):
             why.append(f"frames: take {t['take']}: flat picture, the normal renderer's is not")  # a flat scene stays flat
     mine = logs_of(row)
     ref = logs_of(ref_row) if ref_row else []
-    ref_kinds = set().union(*[kinds(p) for p in ref]) if ref else None
+    ref_kinds = set().union(*[kinds(p) for p in ref]) if ref else None  # None = no reference log: not compared
     ref_faults = max([faults(p) for p in ref] or [0])
     if any(faults(p) > ref_faults for p in mine):
         why.append(f"crash: Fault: exception lines {max(faults(p) for p in mine)} (normal renderer {ref_faults})")
@@ -87,6 +91,8 @@ def log_verdict(row, ref_row=None):
         if new:
             why.append(f"lines: {len(new)} line kind(s) the normal renderer does not give")
     for t in takes:
+        if row["vkb"] == 1 and t["ok"] and not t.get("counters"):
+            why.append(f"skips: take {t['take']}: no counters kept (stats file missing), skips unknown")
         c = {k: v for k, v in (t.get("counters") or {}).items() if v}
         if row["vkb"] == 1 and c:
             why.append(f"skips: take {t['take']}: {c}")
@@ -99,7 +105,9 @@ def group(stage, scene, ref_row, listing=None):
     status, reason = (listing if listing is not None else load_list()).get((stage, scene), (None, ""))
     if status == "confirmed":
         return "log only", reason
-    if not ref_row or sum(1 for t in ref_row["takes"] if t["ok"]) < 2:
+    if not ref_row:
+        return "log only", "no normal-renderer result for this scene (is --reference given and right?)"
+    if sum(1 for t in ref_row["takes"] if t["ok"]) < 2:
         return "log only", "no usable picture of the normal renderer (fewer than 2 good takes)"
     return "picture", ""
 
@@ -117,7 +125,11 @@ def main():
     ref = {}
     if "--reference" in args:
         i = args.index("--reference")
+        if i + 1 >= len(args):
+            sys.exit(__doc__)
         ref = rows(args[i + 1])
+        if not ref:
+            sys.exit(f"--reference {args[i + 1]}: no results-vkb0.jsonl there or it is empty")
         del args[i:i + 2]
     if len(args) != 1:
         sys.exit(__doc__)
