@@ -1,11 +1,13 @@
-# vkb-sweep: one comparable picture of one scene
+# vkb-sweep: comparable pictures of the scenes
 
 Scripts for the Linux test box. No AI inside. They take the same picture of one scene with the normal
-renderer (`TLG_VKB=0`) and with the new engine (`TLG_VKB=1`), and measure how far two pictures differ.
+renderer (`TLG_VKB=0`) and with the new engine (`TLG_VKB=1`), run that over a list of scenes, and measure how
+far two pictures differ.
 
 ```
 source /home/runner/loop/build-env
 python3 shot.py OUT STAGE SCENE VKB TAKES [--cam "X Y Z PITCH YAW"] [NAME=VALUE ...]
+python3 sweep.py OUT VKB TAKES [--scenes FILE] [NAME=VALUE ...]
 python3 compare.py A.png B.png [DIFF.png]
 ```
 
@@ -69,6 +71,38 @@ An existing picture or log is never overwritten: new takes get the next free num
 to `OUT/save_backup` for the run and put back at the end; a backup left from a broken run stops the next run.
 
 Keep `OUT` outside the repository: pictures of the game go only to the `shots` branch of the work repo, never into a code branch.
+
+## sweep.py: a list of scenes
+
+One command for a list of scenes and one renderer, unattended. Every take is one run of `shot.py`, so every
+take is a fresh game start with the GPU memory guard and the fixed recipe above.
+
+- The list: by default every point of `../scene-check/scenes.json` minus the three the scene check skips
+  (`SKIP` in `scene_check.py`, read from there so there is one list): 219 scenes, in story order.
+  `--scenes FILE` takes `STAGE SCENE` lines instead.
+- Counters: the debug server is on for every take (`TLG_DEBUG_SERVER_PORT=8790` unless given), and `shot.py`
+  keeps `/stats` and `/native` at the moment of the picture as `vkbV_takeN.stats.json` and `.native.json`.
+  (`shot.py` does this whenever `TLG_DEBUG_SERVER_PORT` is given; without it, nothing changes.)
+- One result line per scene (JSON) in `OUT/results-vkbV.jsonl`, written as soon as the scene is done, and a
+  short line on the screen. Per take: status, picture path, blank yes/no, crash yes/no (the game ended by
+  itself before the take was done), guard yes/no, log counts (`<Error>`/`<Critical>` lines, `<Warning>` lines,
+  `Fault: exception` lines), the new engine's skip and fail counters (left out when the game does not report
+  them; the normal renderer reports none), peak GTT. With 2 or more good takes: `noise`, take 1 against
+  take 2 of the same renderer (mean, share of pixels above 8, 16, 32, largest; the same numbers as `compare.py`).
+- Resumable: a scene with a result line is not run again. Takes that ended (their line is in
+  `OUT/STAGE__SCENE/vkbV_shot.txt`, the output of `shot.py`) count; a take cut off by a stop is left and a new
+  one is made. Run the same command again to go on. A scene where the guard fired also gets its line (with
+  `guard` set), so it is not started again by a resume.
+- It stops (resume later with the same command) on Ctrl+C or SIGTERM (the running take is ended cleanly and
+  the save is put back), when `shot.py` cannot run at all (the game is still running, a save backup is left,
+  the display is in use), and when the GPU memory guard fired. A failed take of a scene does not stop it.
+- No limits are applied: it records, it does not judge clean or not clean (issue 9).
+
+Example, the answer key (normal renderer, 2 takes per scene):
+
+```
+nohup python3 sweep.py ~/sweep/answer-key 0 2 > ~/sweep/answer-key/sweep.out 2>&1 &
+```
 
 ## compare.py
 

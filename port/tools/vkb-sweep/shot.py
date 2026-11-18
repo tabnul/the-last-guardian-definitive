@@ -11,7 +11,7 @@ Usage: shot.py OUT STAGE SCENE VKB TAKES [--cam "X Y Z PITCH YAW"] [NAME=VALUE .
 The fixed camera is taken from the game's own camera in the first take ever made of that scene and kept in
 OUT/STAGE__SCENE/camera.txt; every later take, of either renderer, uses the same one. --cam overrides it.
 Run with the build environment loaded (source /home/runner/loop/build-env on the test box)."""
-import glob, os, re, shutil, signal, subprocess, sys, threading, time
+import glob, os, re, shutil, signal, subprocess, sys, threading, time, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import compare  # noqa: E402  (blank picture check)
@@ -341,6 +341,7 @@ def steps(game, send, out, tag, stage, scene, env, cam_file, cam_arg):
     game.wait(SETTLE_S)
     png = os.path.join(out, tag + ".png")
     size = picture(png)
+    counters(env, out, tag)
     if size.startswith(("no", "import")):
         return "picture failed: " + size
     # a blank picture (black screen) can never be compared: the take fails and the picture is set aside
@@ -350,6 +351,22 @@ def steps(game, send, out, tag, stage, scene, env, cam_file, cam_arg):
         return f"picture failed: {why} (kept as {tag}.blank.png)"
     faults = sum(1 for l in game.lines() if "Fault: exception" in l)
     return f"ok {size}, faults {faults}"
+
+
+def counters(env, out, tag):
+    """With TLG_DEBUG_SERVER_PORT set (NAME=VALUE), the game's counters at the moment of the picture are kept as
+    TAG.stats.json and TAG.native.json (the debug server's /stats and /native). A failed read is said, not hidden."""
+    port = env.get("TLG_DEBUG_SERVER_PORT")
+    if not port:
+        return
+    for name in ("stats", "native"):
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/{name}", timeout=5) as r:
+                data = r.read()
+            with open(os.path.join(out, f"{tag}.{name}.json"), "wb") as f:
+                f.write(data)
+        except (OSError, ValueError) as e:
+            print(f"  counters: /{name} not read: {e}", flush=True)
 
 
 def main():
