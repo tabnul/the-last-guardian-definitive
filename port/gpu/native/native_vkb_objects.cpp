@@ -1421,12 +1421,13 @@ void CensusTag(u64 tag) {
 extern std::atomic<u64> g_buffer_epoch; // note 46, defined below
 namespace {
 struct ObjectBufferMemo {
-    u64 object{}, id{}, epoch{~0ull}, bytes{};
+    u64 object{}, id{}, epoch{~0ull}, memory{}, bytes{}; ///< memory and bytes: what the window was resolved for (issue 12)
     BufferWindow window{};
     bool ok{};
 };
 thread_local std::unique_ptr<std::array<ObjectBufferMemo, 4096>> t_object_buffers;
 std::atomic<u64> c_r7_ring_buffers{0}, c_r7_window_checks{0}, c_r7_window_differs{0}, c_r7_hits{0}, c_r7_resolves{0}, c_r7_whole_failed{0}, c_r7_range_fallback{0}, c_r7_past_end{0}, c_r7_ring_cb{0}, c_r7_cb_copied{0};
+std::atomic<u64> c_memo_memory_moved{0}; ///< entries that matched object, id and epoch but not memory or bytes (switch on: resolved again; off: the old window served)
 } // namespace
 void NoteConstantCopied() {
     c_r7_cb_copied.fetch_add(1, std::memory_order_relaxed);
@@ -1465,9 +1466,16 @@ bool BufferOfObjectFields(u64 buffer, u64 id, u64 memory, u64 bytes, u64 offset,
     }
     ObjectBufferMemo& m = (*t_object_buffers)[((buffer >> 4) ^ (buffer >> 16) ^ id) & 4095];
     const u64 epoch = g_buffer_epoch.load(std::memory_order_acquire);
-    if (m.object != buffer || m.id != id || m.epoch != epoch) {
+    // issue 12: a buffer keeps object and id while its memory moves (skin ring rename, recording ring, the engine's buffer move); the entry answers only for the memory it was resolved for. TLG_VKB_MEMO_BY_MEMORY=0: the old key
+    static const bool by_memory = [] { const char* e = std::getenv("TLG_VKB_MEMO_BY_MEMORY"); return e == nullptr || e[0] != '0'; }();
+    const bool same_key = m.object == buffer && m.id == id && m.epoch == epoch;
+    const bool same_memory = m.memory == memory && m.bytes == bytes;
+    if (same_key && !same_memory) {
+        c_memo_memory_moved.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (!same_key || (by_memory && !same_memory)) {
         c_r7_resolves.fetch_add(1, std::memory_order_relaxed);
-        m = {buffer, id, epoch, bytes, {}, false};
+        m = {buffer, id, epoch, memory, bytes, {}, false};
         if (memory != 0 && bytes != 0) {
             m.ok = FindLocked(memory, bytes, m.window);
             // its device copy may have been made just now (R3d): the answer stands only for this epoch
@@ -1510,7 +1518,7 @@ bool BufferOfObjectFields(u64 buffer, u64 id, u64 memory, u64 bytes, u64 offset,
 nlohmann::json BindByObjectReport() {
     return {{"object_hits", c_r7_hits.load()}, {"object_resolves", c_r7_resolves.load()}, {"whole_buffer_not_one_window", c_r7_whole_failed.load()},
             {"range_by_address_fallback", c_r7_range_fallback.load()}, {"index_past_the_end", c_r7_past_end.load()}, {"constants_in_the_frame_ring", c_r7_ring_cb.load()},
-            {"constants_copied_at_the_draw", c_r7_cb_copied.load()}, {"window_checks_differs", {c_r7_window_checks.load(), c_r7_window_differs.load()}}, {"buffers_in_the_frame_ring", c_r7_ring_buffers.load()}};
+            {"constants_copied_at_the_draw", c_r7_cb_copied.load()}, {"window_checks_differs", {c_r7_window_checks.load(), c_r7_window_differs.load()}}, {"buffers_in_the_frame_ring", c_r7_ring_buffers.load()}, {"memo_memory_moved", c_memo_memory_moved.load()}};
 }
 bool R7CensusOn() {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_R7_CENSUS"); return e != nullptr && e[0] == '1'; }();
