@@ -118,3 +118,21 @@ Prints the mean absolute difference per channel (0..255), the share of pixels wh
 difference is above 8, 16 and 32, and the largest difference. With a third path it writes a difference
 picture (4x brighter). It refuses a blank picture (exit code 2), so a black screen is never compared.
 No clean / not clean limits are applied here: those are the owner's call (issue 9). The blank limits (8 and 99.5%) only decide whether a picture can be compared at all.
+
+## Log only group and the log verdict (verdict.py)
+
+`log-only.txt` lists scenes that are left out of the PICTURE comparison (cutscenes and the like): `STATUS STAGE
+SCENE REASON`. `STATUS` is `proposed` or `confirmed`. Only the owner confirms (an issue); the tools honour only
+`confirmed` entries, a `proposed` scene is judged by picture as before. A scene without a usable normal-renderer
+picture (fewer than 2 good takes) is log only by itself.
+
+Every scene gets a log verdict, next to the picture verdict (log only scenes get nothing else): `ran` (the photo
+moment was reached, the game did not end by itself), `frames` (the game window was captured; a flat picture fails
+only where the normal renderer's is not flat), `crash` (no more `Fault: exception` lines than the normal
+renderer's log of that scene), `lines` (no `<Error>`/`<Critical>`/`<Warning>` line kind that the normal renderer's
+log of that scene does not have; numbers and addresses are blanked, so one kind counts once), `skips` (new engine:
+all skip/fail counters 0). No reference log: `lines` is not compared and says so.
+
+`sweep.py ... --reference DIR` writes `group`, `group_reason` and `log_verdict` into every result line (DIR = the
+normal renderer's sweep). `python3 verdict.py RESULTS.jsonl [--reference DIR]` prints them for a finished sweep
+with the count per group. Nothing in the game or the engine changes.
