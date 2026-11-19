@@ -9,6 +9,29 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-19 - Cube images are bound as the 2D arrays the recompiled shaders declare (not yet merged)
+
+- **Problem:** The pots in s10_03_Escape_Pitfall_001 lost their teal reflection (issue 34). The recompiled shaders
+  declare every cube image as a 2D array and pick the layer themselves (probe slot x 6 + face). The new engine bound
+  a Vulkan cube view instead, and its bind code cut that view to the first cube (6 layers). The deferred lighting pass
+  reads a cube array of 64 probe slots, so every probe read slot 0's cube. Found by comparing RenderDoc captures of
+  both renderers (the normal renderer binds all 384 layers as a 2D array).
+- **Considered:** (A) ask for a 2D array view of the whole view range for every cube binding, one shared mapping for
+  draws and dispatches (the two identical copies become one); nothing recompiled. (B) let the shader translator declare
+  real cube and cube-array images: every shader with a cube is compiled again, and the shaders compute the layer
+  themselves, so the cube type does not fit them. (C) only for cube arrays (more than 6 layers): a special case, and
+  single cubes would keep a view type that does not match the declaration (undefined in Vulkan, works on AMD by luck).
+- **Choice:** A. It fixes the cause for every cube in every shader (principle 10), the view type now matches the
+  declaration on every driver (6), no measurable cost (11), fewer paths (one mapping instead of two). Switch
+  `TLG_VKB_CUBE_AS_ARRAY` (default on; `=0` the old way). Counter `cube_bindings_as_array` in the objects report.
+  Left for a separate change: the view's level count (the probe array's own descriptor says 7 levels, the Direct3D
+  description 8).
+- **Who:** box (rule 14).
+- **Links:** issue 34 (https://github.com/tabnul/tlg-vkb-work/issues/34); pull request for branch
+  `fix/vkb-cube-as-array`.
+
+---
+
 ## 2026-11-18 - First vertex of a direct draw: Vulkan adds it only when the shader does not (not yet merged)
 
 - **Problem:** s02_05_Tritrigger_Get_001 gave "photo setup failed" in both takes (scoreboard issue 36). The scene was
