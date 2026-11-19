@@ -27,6 +27,26 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 - **Who:** box (rule 14).
 - **Links:** issue 57 (https://github.com/tabnul/tlg-vkb-work/issues/57); pull request for branch `fix/vkb-taa`.
 
+## 2026-11-19 - The frame ring is mapped below 40 bits with a placed mapping (not yet merged)
+
+- **Problem:** On this box (AMD, Linux) the frame ring never moves into graphics memory (R3a): the driver picks an
+  address above 40 bits for the CPU's view of it, and the game's buffer descriptions hold only 40 bit addresses. One
+  error line in every take (issue 36, log cause B), and ring data takes the slower guest / staging / memo routes.
+- **Considered:** (1) ask the driver to map the same memory at an address we reserve below 40 bits
+  (`VK_EXT_map_memory_placed`, asked once at start; the range comes from the runtime's own low memory); (2) import
+  private memory we place below 40 bits (`VK_EXT_external_memory_host`): host memory, not device memory, so a card
+  with its own memory reads the ring over the bus; (3) count the ring's window in the GPU pool as device memory: only
+  renames the in-place route, AMD Linux only, a special path.
+- **Choice:** 1. It removes the cause for every driver with the feature (principle 10), keeps today's way as the second
+  path with a message that says why (principle 6), keeps the same kind of memory (11), and adds no special path. Linux
+  only for now: on Windows the reservation would need a placeholder, not built; Windows keeps today's way unchanged.
+  Switch `TLG_VKB_RING_PLACED` (default on; `=0` today's way). The report's `frame_ring_in_device_memory` names the route.
+  Proof: garden 2 takes per arm on this box, and the medium check in the pull request.
+- **Who:** box (rule 14).
+- **Links:** issue 36 (https://github.com/tabnul/tlg-vkb-work/issues/36), design note
+  https://github.com/tabnul/tlg-vkb-work/issues/36#issuecomment-6999062612 ; pull request for branch
+  `fix/vkb-ring-placed-map`.
+
 ## 2026-11-19 - Every anti-aliasing choice in tlg.ini reaches the new engine, read as the game reads it (not yet merged)
 
 - **Problem:** with the new engine, some tlg.ini choices gave no anti-aliasing at all, without a line: FSR 4.1.1
@@ -66,6 +86,33 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 - **Who:** owner set the rules; box chose the way (rule 14).
 - **Links:** issue 55 (https://github.com/tabnul/tlg-vkb-work/issues/55); pull request 51 (the owner's rules); pull request
   for branch `fix/vkb-fsr4`.
+
+## 2026-11-19 - The game's "CreateBlob: Error" line for never-shipped shader variants becomes one info line per name (not yet merged)
+
+- **Problem:** with both renderers, on this box and on Windows, every run logs about 70-90 lines
+  `CreateBlob: Error. Cannot open file data_trico/ps4_shader_cache/material/<name>.sb.` The text is the game's
+  own message, not the port's. The game builds these names itself from a material's variant keys and, when the
+  file is missing, uses its own fallback shader. None of the names is in any of the game's archives, under any
+  case or folder, while the same lookup finds the other material shaders. So the line reports a state of the
+  shipped game, not a fault of the port, but it reads as an error in every log check.
+- **Considered:** (1) a short table in the port's shared file code: whole game lines of a listed form are written at
+  info level once per name, but only after the port has checked the name against the index of every archive the
+  game can open; (2) the same without the check, with a cap on the number of names as a guard (rejected after the
+  second read: a partly broken install would also read as "not shipped"); (3) patch the game's call to its print
+  function in the blob loader (a game hook in shared code, tied to one game build, changes game code for a log
+  line); (4) leave the text and only teach the log checks that the line is known (the owner still sees "Error" in
+  every log, on every machine).
+- **Choice:** (1). The level follows a fact checked on the player's own install: a name in none of the archives
+  was never shipped (info line, once per name); a name that IS in an archive means the game failed to load a file
+  that exists, and the game's error line stays; an archive index that cannot be read keeps the error line too.
+  It works the same on Linux and Windows and for a packed game, touches no game code and neither renderer, and
+  keeps every other game line as it is. Cost: the archive indexes are read once, at the first such line (0.02 s and
+  about 2 MB on this box). Switch `TLG_GAME_NOTES=0` gives the old output. Limit: an archive FILE that is missing
+  from the game folder altogether is not seen by the check (the port has no list of what a full install holds); all
+  material shaders sit in the boot archive and its update, without which the game does not start (assumed).
+- **Who:** box (rule 14c), on the owner's job of 2026-11-19 ("log once per name at info level" if the files do
+  not exist and nothing is lost).
+- **Links:** issue 49, issue 47 (owner comment), pull request: see issue 49.
 
 ## 2026-11-19 - The new engine applies the player's picture settings the way the normal renderer does (not yet merged)
 
