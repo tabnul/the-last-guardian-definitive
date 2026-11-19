@@ -1,5 +1,5 @@
 import sys, os
-sys.path.insert(0, "/home/runner/diag/i34/rdoc/py")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
 cap, ctrl = open_cap(os.environ["RDOC_CAP"])
 want = os.environ.get("RDOC_DIM", "240,135,1")

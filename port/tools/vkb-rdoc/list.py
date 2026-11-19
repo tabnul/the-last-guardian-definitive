@@ -1,5 +1,5 @@
 import sys, os
-sys.path.insert(0, "/home/runner/diag/i34/rdoc/py")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
 cap_path = os.environ["RDOC_CAP"]; outp = os.environ["RDOC_OUT"]
 cap, ctrl = open_cap(cap_path)
