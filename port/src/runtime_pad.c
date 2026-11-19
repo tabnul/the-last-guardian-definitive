@@ -687,9 +687,63 @@ typedef struct { uint32_t ms, buttons; uint8_t axes[4], l2, r2; } PadSample;
 static pthread_mutex_t timeline_mutex=PTHREAD_MUTEX_INITIALIZER;
 static FILE *timeline_file;
 static uint64_t timeline_t0, timeline_mark; /* timeline_mark: F9 or the replay start (0: none yet) */
+/* TLG_PAD_REPLAY_AFTER=<event text>@<ms>: the replay starts <ms> after the first timeline event that contains <event text> (e.g.
+ * "FA_a04_AntennaRoom_001@7974": where the player pressed F9 after the scene loaded), instead of waiting for "replay" in TLG_PAD_FILE. */
+static uint64_t replay_due; /* now_us() time the replay starts at (0: none) */
+static void replay_after(const char *event) {
+    static int done;
+    const char *want=getenv("TLG_PAD_REPLAY_AFTER");
+    const char *at=want ? strrchr(want,'@') : NULL;
+    if (done || !at) return;
+    char text[256];
+    const size_t n=(size_t)(at-want) < sizeof text-1 ? (size_t)(at-want) : sizeof text-1;
+    memcpy(text,want,n); text[n]=0;
+    if (!n || !strstr(event,text)) return;
+    done=1;
+    replay_due=now_us()+(uint64_t)strtoull(at+1,NULL,10)*1000u;
+    printf("Runtime: pad replay due %s ms after '%s'\n",at+1,event);
+}
+/* TLG_PAD_REPLAY_SYNC=<the recording's timeline file>: the replay's clock follows the recorded run. When the game logs the next event
+ * the recording logged (same text, in order; up to 8 recorded events may be missing), the replay clock is set to that event's recorded
+ * time, so a cutscene that starts later than in the recording does not leave the later inputs early. */
+typedef struct { uint32_t ms; char text[160]; } SyncEvent;
+static SyncEvent *sync_events; static size_t sync_count, sync_next; static int sync_loaded;
+static void sync_load(void) {
+    sync_loaded=1;
+    const char *path=getenv("TLG_PAD_REPLAY_SYNC");
+    FILE *f=path && *path ? fopen(path,"r") : NULL;
+    if (!f) return;
+    char line[256]; size_t cap=0;
+    while (fgets(line,sizeof line,f)) {
+        unsigned long long t0, since; int used=0;
+        if (sscanf(line,"%llu %llu %n",&t0,&since,&used)!=2 || !used) continue;
+        char *text=line+used; text[strcspn(text,"\r\n")]=0;
+        if (!strncmp(text,"F9 ",3) || !strcmp(text,"replay started")) continue;
+        if (sync_count==cap && !(sync_events=realloc(sync_events,(cap=cap ? cap*2 : 256)*sizeof(*sync_events)))) { sync_count=0; break; }
+        sync_events[sync_count].ms=(uint32_t)since;
+        snprintf(sync_events[sync_count].text,sizeof sync_events[sync_count].text,"%s",text);
+        ++sync_count;
+    }
+    fclose(f);
+    printf("Runtime: pad replay sync: %zu recorded events from %s\n",sync_count,path);
+}
+static void sync_event(const char *event, uint64_t t) {
+    if (!replay_start) return;
+    if (!sync_loaded) sync_load();
+    for (size_t j=sync_next; j<sync_count && j<sync_next+9; ++j) {
+        if (strcmp(sync_events[j].text,event)) continue;
+        const long long shift=(long long)((t-replay_start)/1000)-(long long)sync_events[j].ms;
+        replay_start=t-(uint64_t)sync_events[j].ms*1000u;
+        sync_next=j+1;
+        printf("Runtime: pad replay sync at '%s': %+lld ms\n",event,shift);
+        return;
+    }
+}
 static void timeline_write(const char *event, int mark) {
     static int checked;
     pthread_mutex_lock(&timeline_mutex);
+    replay_after(event);
+    sync_event(event,now_us());
     if (!checked) {
         checked=1;
         const char *path=getenv("TLG_PAD_TIMELINE"), *rec=getenv("TLG_PAD_RECORD");
@@ -744,6 +798,7 @@ static void record_sample(const PadData *d) {
 }
 static PadSample *replay; static size_t replay_count, replay_next;
 static void replay_sample(PadData *d) {
+    if (!replay_armed && replay_due && now_us()>=replay_due) { replay_armed=1; replay_start=0; replay_due=0; }
     if (!replay_armed) return;
     if (!replay_start) {
         static int loaded;
