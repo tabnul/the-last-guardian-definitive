@@ -1651,7 +1651,7 @@ class Launcher:
         ttk.Checkbutton(video, text=self.t('photo_hdr'), variable=self.photo_hdr_var,
                         command=photo_hdr_toggled).grid(row=17, column=0, columnspan=2, sticky='w')
         self.hint(video, 17, 2, 'photo_hdr_hint')
-        # Anti-aliasing and Frame generation stay usable with the backend (DLAA / FSR 3.1, DLSS frame generation: tlg_run.backend_aa_env)
+        # Anti-aliasing and Frame generation stay usable with the backend (DLAA / FSR 3.1 / FSR 4, DLSS frame generation: tlg_run.backend_aa_env)
         self.theirs(*video.grid_slaves(row=17, column=0), self.method_box, self.quality_box)
         self.build_aa_filters(video, 18)
 
