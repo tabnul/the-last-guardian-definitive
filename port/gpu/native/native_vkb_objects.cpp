@@ -43,6 +43,13 @@
 
 #include <vk_mem_alloc.h>
 #include <xxhash.h>
+#ifndef _WIN32
+#include <sys/mman.h>
+extern "C" {
+// runtime_memory.c: host memory the game can see, in [0x800000000, 0x1000000000) (below 40 bits); null when that range is full
+void* runtime_low_map(size_t size, int prot);
+}
+#endif
 
 
 namespace Core::Vkb {
@@ -1339,8 +1346,63 @@ void NoteFrameRing(u64 base, u64 size) {
     }
 }
 
-bool PlaceFrameRing(u64 allocator) {
+namespace {
+/// R3a placed ring (TLG_VKB_RING_PLACED, default on; =0: only the driver's own address, the way before): with VK_EXT_map_memory_placed the ring's memory is mapped at an
+/// address the runtime reserves for us below 40 bits (`runtime_low_map`, where the runtime keeps its own memory the game sees), so the engine's 40 bit buffer
+/// descriptions can hold it on every driver that has the feature. Without the feature (Windows, older drivers) the driver's own address is used, as before.
+bool RingVramOn() {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_RING_VRAM"); return e == nullptr || e[0] != '0'; }(); // default on since 2026-11-14 (note 29); =0: in place
+    return on;
+}
+bool RingPlacedOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RING_PLACED"); return e == nullptr || e[0] != '0'; }();
+    return on;
+}
+const char* ring_route = "not placed yet"; ///< the report's word for how the ring got (or did not get) its device memory; set once inside PlaceFrameRing's call_once
+std::string ring_placed_failure;           ///< why the placed route was not taken, when it was asked for and the driver has it (empty otherwise)
+std::atomic<bool> ring_decided{false};     ///< the two above are final (the report reads them only then)
+void RingDecided(const char* route) {
+    ring_route = route;
+    ring_decided.store(true, std::memory_order_release);
+}
+
+#ifndef _WIN32
+/// The ring's memory mapped at an address below 40 bits: null when the placed route cannot be taken (the reason in ring_placed_failure).
+void* MapRingPlaced(VmaAllocation allocation) {
+    VmaAllocationInfo info{};
+    vmaGetAllocationInfo(instance->GetAllocator(), allocation, &info);
+    const u64 align = instance->PlacedMapAlignment();
+    if (info.offset != 0 || info.size % align != 0) {
+        ring_placed_failure = fmt::format("the memory block (offset {:#x}, {} bytes) is not a whole, {}-aligned allocation", info.offset, info.size, align);
+        return nullptr;
+    }
+    // the runtime hands out its low memory page by page; a stricter alignment is reached by asking for more and using an aligned part of it
+    const u64 bytes = info.size + (align > 4096 ? align : 0);
+    void* const low = runtime_low_map(bytes, PROT_NONE);
+    if (low == nullptr) {
+        ring_placed_failure = fmt::format("the runtime has no free address range of {} MiB below 40 bits", bytes >> 20);
+        return nullptr;
+    }
+    const u64 at = (reinterpret_cast<u64>(low) + align - 1) & ~(align - 1);
+    const vk::MemoryMapPlacedInfoEXT placed{.pPlacedAddress = reinterpret_cast<void*>(at)};
+    const vk::MemoryMapInfo map{.pNext = &placed, .flags = vk::MemoryMapFlagBits::ePlacedEXT, .memory = info.deviceMemory, .offset = 0, .size = VK_WHOLE_SIZE};
+    void* mapped = nullptr;
+    const vk::Result result = instance->GetDevice().mapMemory2KHR(&map, &mapped);
+    if (result != vk::Result::eSuccess || reinterpret_cast<u64>(mapped) != at) {
+        ring_placed_failure = fmt::format("the driver did not map it at {:#x} ({}, got {})", at, vk::to_string(result), mapped);
+        if (result == vk::Result::eSuccess) {
+            (void)instance->GetDevice().unmapMemory2KHR(vk::MemoryUnmapInfo{.memory = info.deviceMemory});
+        }
+        munmap(low, bytes);
+        return nullptr;
+    }
+    return mapped;
+}
+#endif
+} // namespace
+
+bool PlaceFrameRing(u64 allocator) {
+    const bool on = RingVramOn();
     static std::once_flag once;
     static std::atomic<bool> placed{false};
     if (!on || allocator == 0 || !device_ready) {
@@ -1348,8 +1410,14 @@ bool PlaceFrameRing(u64 allocator) {
     }
     std::call_once(once, [allocator] {
         const u64 size = *reinterpret_cast<const u32*>(allocator);
+#ifndef _WIN32
+        const bool want_placed = RingPlacedOn() && instance->IsMapMemoryPlacedSupported();
+#else
+        const bool want_placed = false;
+#endif
+        const u64 align = want_placed ? instance->PlacedMapAlignment() : 1;
         const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-                                    .size = size + VramRingSlack,
+                                    .size = (size + VramRingSlack + align - 1) / align * align,
                                     .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                                              VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
                                              VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
@@ -1357,28 +1425,55 @@ bool PlaceFrameRing(u64 allocator) {
         VmaAllocationCreateInfo alloc{};
         alloc.usage = VMA_MEMORY_USAGE_UNKNOWN;
         alloc.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        alloc.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+        alloc.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT | (want_placed ? 0 : VMA_ALLOCATION_CREATE_MAPPED_BIT); // placed: we map it ourselves, where we choose
         VmaAllocationInfo info{};
-        if (size == 0 || vmaCreateBuffer(instance->GetAllocator(), &ci, &alloc, &vram_ring_buffer, &vram_ring_allocation, &info) != VK_SUCCESS || info.pMappedData == nullptr) {
+        if (size == 0 || vmaCreateBuffer(instance->GetAllocator(), &ci, &alloc, &vram_ring_buffer, &vram_ring_allocation, &info) != VK_SUCCESS) {
+            RingDecided("in place: no device-local CPU-visible memory");
             LOG_ERROR(Render_Vulkan, "vkb R3a: no device-local CPU-visible memory for the frame ring ({} bytes): it stays in place", size);
             return;
         }
-        const u64 mapped = reinterpret_cast<u64>(info.pMappedData);
-        if (mapped + size + VramRingSlack > (1ull << 40)) {
-            // the engine's buffer descriptions hold 40 bit addresses
-            LOG_ERROR(Render_Vulkan, "vkb R3a: the frame ring's mapping {:#x} is above 40 bits: it stays in place", mapped);
+        void* host = info.pMappedData;
+        bool vma_mapped = false; // mapped by vmaMapMemory (unmapped again before the buffer is destroyed)
+#ifndef _WIN32
+        if (want_placed && (host = MapRingPlaced(vram_ring_allocation)) == nullptr) {
+            // the placed route failed: the driver's own address, as on a driver without the feature (named here and in the report: principle 5)
+            LOG_WARNING(Render_Vulkan, "vkb R3a: the frame ring cannot be mapped below 40 bits: {}; the driver's own address is tried", ring_placed_failure);
+            vma_mapped = vmaMapMemory(instance->GetAllocator(), vram_ring_allocation, &host) == VK_SUCCESS;
+            host = vma_mapped ? host : nullptr;
+        }
+#endif
+        if (host == nullptr) {
+            RingDecided("in place: the memory could not be mapped");
+            LOG_ERROR(Render_Vulkan, "vkb R3a: the frame ring's device memory ({} bytes) could not be mapped: it stays in place", size);
             vmaDestroyBuffer(instance->GetAllocator(), vram_ring_buffer, vram_ring_allocation);
             vram_ring_buffer = VK_NULL_HANDLE;
             return;
         }
-        std::memset(info.pMappedData, 0, size + VramRingSlack); // (what the guest memory behind a block held is not known; zero, not garbage)
+        const u64 mapped = reinterpret_cast<u64>(host);
+        if (mapped + size + VramRingSlack > (1ull << 40)) {
+            // the engine's buffer descriptions hold 40 bit addresses (only the driver's own address can be up there; a placed one is below by construction, as
+            // runtime_low_map stays below 0x1000000000)
+            RingDecided("in place: the driver's address is above 40 bits");
+            LOG_ERROR(Render_Vulkan, "vkb R3a: the frame ring's mapping {:#x} is above 40 bits: it stays in place ({})", mapped,
+                      !RingPlacedOn()                                  ? "TLG_VKB_RING_PLACED=0"
+                      : instance->IsMapMemoryPlacedSupported()          ? "a mapping below 40 bits failed, see above"
+                                                                       : "the driver has no placed mapping, VK_EXT_map_memory_placed; this is the way for such drivers");
+            if (vma_mapped) {
+                vmaUnmapMemory(instance->GetAllocator(), vram_ring_allocation);
+            }
+            vmaDestroyBuffer(instance->GetAllocator(), vram_ring_buffer, vram_ring_allocation); // (a persistent VMA mapping is unmapped by VMA)
+            vram_ring_buffer = VK_NULL_HANDLE;
+            return;
+        }
+        std::memset(host, 0, size + VramRingSlack); // (what the guest memory behind a block held is not known; zero, not garbage)
         host_side_ring_size.store(size, std::memory_order_relaxed);
         host_side_ring_base.store(*reinterpret_cast<const u64*>(allocator + 0x18), std::memory_order_release);
         vram_ring_end.store(mapped + size + VramRingSlack, std::memory_order_relaxed);
         vram_ring_base.store(mapped, std::memory_order_release);
         *reinterpret_cast<u64*>(allocator + 0x18) = mapped; // from the next allocation on, the blocks are ours (base + offset)
         placed.store(true, std::memory_order_release);
-        LOG_INFO(Render_Vulkan, "vkb R3a: the frame ring ({} MiB) is in device memory at {:#x}", size >> 20, mapped);
+        RingDecided(want_placed && ring_placed_failure.empty() ? "device memory, placed below 40 bits" : "device memory, at the driver's address");
+        LOG_INFO(Render_Vulkan, "vkb R3a: the frame ring ({} MiB) is in device memory at {:#x} ({})", size >> 20, mapped, ring_route);
     });
     return placed.load(std::memory_order_acquire);
 }
@@ -3750,7 +3845,8 @@ nlohmann::json ObjectsReport() {
                                return out;
                            }()},
                           {"layout_at_creation_jobs_images_by_upload_in_batch", {true, c_layout_jobs.load(), c_layout_images.load(), c_layout_by_upload.load(), c_layout_in_batch.load()}},
-                          {"frame_ring_in_device_memory", {{"on", vram_ring_base.load() != 0}, {"base", vram_ring_base.load()}, {"binds", c_ring_vram_binds.load()},
+                          {"frame_ring_in_device_memory", {{"on", vram_ring_base.load() != 0}, {"route", ring_decided.load(std::memory_order_acquire) ? ring_route : RingVramOn() ? "not placed yet" : "off (TLG_VKB_RING_VRAM=0)"},
+                                                           {"placed_failure", ring_decided.load(std::memory_order_acquire) ? ring_placed_failure : std::string{}}, {"base", vram_ring_base.load()}, {"binds", c_ring_vram_binds.load()},
                                                            {"ranges_leaving_it", c_ring_vram_straddle.load()}}},
                           {"in_place_sources", {{"note", "binds read in place (TLG_VKB_SOURCE_CENSUS=1): engine buffer static / dynamic / staging, frame ring, other"},
                                                 {"binds", {c_src_binds[0].load(), c_src_binds[1].load(), c_src_binds[2].load(), c_src_binds[3].load(), c_src_binds[4].load()}},
