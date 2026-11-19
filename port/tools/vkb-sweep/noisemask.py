@@ -8,7 +8,7 @@ pixels so that soft edges and a little movement are covered. More takes catch mo
 elsewhere, drifting mist, swaying grass, flickering flames, floating particles all land in the mask the same way.
 
 Usage:
-  noisemask.py make A.png B.png [C.png ...] MASK.png   build the mask (white = left out) from 2 or more takes and
+  noisemask.py make [--moving] A.png B.png [C.png ...] MASK.png   build (--moving: moving-things rule, as the sweep does for entries with `moving`) the mask (white = left out) from 2 or more takes and
                                            print its share of the picture
   noisemask.py list                        print noise-ignore.txt with its status per entry
 
@@ -90,8 +90,10 @@ def confirmed_mask(stage, scene, listing=None):
 
 def main():
     a = sys.argv[1:]
+    mv = "--moving" in a
+    a = [x for x in a if x != "--moving"]
     if a[:1] == ["make"] and len(a) >= 4:
-        print(f"ignored {make(a[1:-1], a[-1])}% of the picture")
+        print(f"ignored {make(a[1:-1], a[-1], moving=mv)}% of the picture")
     elif a == ["list"]:
         for (st, sc), (s, sh, c, r) in load_list().items():
             print(f"{s:9} {st} {sc} {sh}% {','.join(c)}")
