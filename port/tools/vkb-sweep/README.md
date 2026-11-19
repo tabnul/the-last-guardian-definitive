@@ -9,6 +9,8 @@ source /home/runner/loop/build-env
 python3 shot.py OUT STAGE SCENE VKB TAKES [--cam "X Y Z PITCH YAW"] [NAME=VALUE ...]
 python3 sweep.py OUT VKB TAKES [--scenes FILE] [NAME=VALUE ...]
 python3 compare.py A.png B.png [DIFF.png]
+
+`compare.py` leaves out a scene that is a confirmed line of `log-only.txt` (the folder name `STAGE__SCENE` is matched): it prints `log only: ...` and counts nothing, so a medium check can never count such a picture for or against a fix. (Owner 2026-11-19, issue 36.)
 ```
 
 Example:

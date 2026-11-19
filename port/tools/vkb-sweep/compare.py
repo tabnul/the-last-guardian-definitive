@@ -7,7 +7,7 @@ is above 8, 16 and 32, and the largest difference. DIFF.png (optional) is the di
 brighter so small differences can be seen.
 A blank picture (one flat colour, such as a black screen) is refused with exit code 2: it cannot be
 compared with anything."""
-import subprocess, sys
+import os, subprocess, sys
 
 BLANK_SPREAD, BLANK_SHARE = 8, 99.5  # blank: this share (%) of pixels within this distance of the most common colour
 
@@ -76,6 +76,17 @@ def main():
         del sys.argv[i:i + 2]
     if len(sys.argv) < 3:
         sys.exit(__doc__)
+    # a confirmed log-only scene (log-only.txt) is never counted by picture, for or against a fix
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("verdict", os.path.join(os.path.dirname(os.path.abspath(__file__)), "verdict.py"))
+    verdict = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(verdict)
+    listed = verdict.load_list()
+    for p in sys.argv[1:3]:
+        for part in os.path.abspath(p).split(os.sep):
+            if "__" in part and tuple(part.split("__", 1)) in listed and listed[tuple(part.split("__", 1))][0] == "confirmed":
+                print(f"log only: {part} is on the log-only list, picture not counted")
+                return
     wa, ha, a = rgb(sys.argv[1])
     wb, hb, b = rgb(sys.argv[2])
     if (wa, ha) != (wb, hb):
