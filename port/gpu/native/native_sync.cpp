@@ -304,7 +304,8 @@ void NoteUntyped(Kind kind, u64 packet_address) {
 nlohmann::json Report() {
     nlohmann::json j;
     j["note"] = "typed sync records (F1.2): converted_typed: packets turned into typed tags per kind; untyped: packets of that kind that had no typed record and stayed raw (must be 0; also a rare event "
-                "sync_untyped_<kind>); expected_never_met: records left whose packet was not converted (end of run tail)";
+                "sync_untyped_<kind>); expected_never_met: records left whose packet was not converted (end of run tail). With the new engine the stream is not walked "
+                "(its command buffers are not run; TLG_VKB_STREAM_SWEEP=1 walks it again), so all of these stay 0";
     std::scoped_lock lock{g_mutex};
     auto& converted = j["converted_typed"] = nlohmann::json::object();
     auto& untyped = j["untyped"] = nlohmann::json::object();
