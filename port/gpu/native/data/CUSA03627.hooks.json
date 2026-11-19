@@ -270,6 +270,20 @@
       "expect": "554889e541574156"
     },
     {
+      "name": "K2_TricoChain",
+      "ghidra": "0x17d3f40",
+      "mode": "mid",
+      "handler": "k2_trico_chain",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "K2_TaskObject",
+      "ghidra": "0x15a0160",
+      "mode": "mid",
+      "handler": "k2_task_object",
+      "expect": "554889e541574156"
+    },
+    {
       "name": "K2_FrameDataReset",
       "ghidra": "0x1dfdea0",
       "mode": "call",

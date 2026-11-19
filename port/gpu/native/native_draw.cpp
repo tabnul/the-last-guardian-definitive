@@ -9139,6 +9139,8 @@ std::array<FrameEntry, 8> frames{};
 std::map<std::string, u64> by_path;
 u64 registrations = 0, late = 0, last_alt = ~0ull, begins = 0, begins_alt = 0, begins_current = 0, last_begin_frame = 0, begin_frame_changes = 0;
 std::map<u64, u32> late_logged; ///< per producer, the late registrations logged in full (20 each)
+thread_local std::string t_chain; ///< the call chain at the entry of Trico's contact producer (017d3f40), set by the mid hook K2_TricoChain
+std::map<std::string, std::pair<u64, u64>> chains; ///< that chain -> (on time, late) registrations of 0x17d57e1
 u32 last_switch = ~0u;
 FrameEntry& Entry(u64 frame) { // (mutex held)
     for (auto& e : frames) {
@@ -9202,6 +9204,13 @@ void Registered(char table, u64 table_base, u64 group, u64 ret) {
     if (e.begins_since_reset != 0) {
         ++late;
     }
+    if (producer == 0x17d57e1) {
+        auto& c = chains[t_chain.empty() ? std::string("?") : t_chain];
+        (e.begins_since_reset != 0 ? c.second : c.first)++;
+        if ((c.first + c.second) % 2000 == 1) {
+            TLG_LOG(CP, Warn, "K2 census: Trico producer chain {}: on time {}, late {}", t_chain, c.first, c.second);
+        }
+    }
     if (registrations % 1800 == 0) {
         std::string summary;
         for (const auto& [k, v] : by_path) {
@@ -9254,6 +9263,43 @@ void Began(u64 frame, u64 recording, u64 ret) {
     }
 }
 } // namespace K2Census
+
+/// Mid hook at the entry of 017d3f40 (Trico's contact producer): the return addresses up the frame-pointer chain (game functions keep rbp), as ghidra addresses
+u64 PS4_SYSV_ABI K2TricoChain(Core::GuestHooks::MidContext* c) {
+    if (!K2Census::On()) {
+        return 0;
+    }
+    Guarded([&]() -> u64 {
+        const u64 base = ImageBase();
+        auto ghidra = [base](u64 a) { return a - base + 0x1000000; };
+        std::string chain = fmt::format("{:#x}", ghidra(Rd<u64>(c->rsp, 0)));
+        u64 rbp = c->rbp;
+        for (u32 i = 0; i < 10 && rbp >= c->rsp && rbp < c->rsp + (4ull << 20) && (rbp & 7) == 0; ++i) { // a frame of this thread's stack
+            const u64 ra = Rd<u64>(rbp, 8);
+            if (ra < base || ra > base + 0x4000000) {
+                break;
+            }
+            chain += fmt::format(" < {:#x}", ghidra(ra));
+            rbp = Rd<u64>(rbp, 0);
+        }
+        K2Census::t_chain = chain;
+        return 0;
+    });
+    return 0;
+}
+
+/// Mid hook at the entry of 015a0160 (the task execute above Trico's producer): its object, to match against the task list (debug, K2 census)
+u64 PS4_SYSV_ABI K2TaskObject(Core::GuestHooks::MidContext* c) {
+    if (!K2Census::On()) {
+        return 0;
+    }
+    static std::atomic<u32> logged{0};
+    static std::atomic<u64> last{0};
+    if (c->rdi != last.exchange(c->rdi) && logged.fetch_add(1) < 8) {
+        TLG_LOG(CP, Warn, "K2 census: 015a0160 runs on object {:#x} (vtable {:#x})", c->rdi, IsHeapPointer(c->rdi) ? Rd<u64>(c->rdi, 0) - ImageBase() + 0x1000000 : 0);
+    }
+    return 0;
+}
 
 u64 PS4_SYSV_ABI K2RegisterB(u64 table_base, u64 group, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
     (void)a2, (void)a3, (void)a4, (void)a5;
@@ -12098,6 +12144,12 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "k2_register_c") {
         return reinterpret_cast<u64>(&K2RegisterC);
+    }
+    if (name == "k2_task_object") {
+        return reinterpret_cast<u64>(&K2TaskObject);
+    }
+    if (name == "k2_trico_chain") {
+        return reinterpret_cast<u64>(&K2TricoChain);
     }
     if (name == "k2_frame_reset") {
         return reinterpret_cast<u64>(&K2FrameReset);
