@@ -176,9 +176,18 @@ struct SamplerDesc {
     float min_lod{};
     float max_lod{};
     u32 valid{1};
-    u32 pad{};         ///< keeps the struct free of padding bytes (hashed)
+    u32 mipped{};      ///< issue 42: 1: the S# has a mip filter (not "none"; `mip_mode` cannot say so); also keeps the struct free of padding bytes (hashed)
 };
-static_assert(sizeof(SamplerDesc) == 64);
+// Its bytes are a cache key (hashed, compared): sixteen 4-byte fields and nothing else, so there are no padding bytes of unknown value
+static_assert(sizeof(SamplerDesc) == 16 * sizeof(u32) && alignof(SamplerDesc) == alignof(u32), "SamplerDesc must stay free of padding bytes: its bytes are a cache key");
+
+/// Issue 42: the one rule for the player's anisotropic filtering setting (`setting` 0, 2, 4, 8 or 16; 0: the game's own filter). The normal renderer's
+/// (texture_cache/sampler.cpp): forced on a sampler with a linear (not point) minification, a mip filter and more than its first level, never on a depth
+/// compare read. Every sampler path of the new engine (the S# description, the shader's constant S#, the engine's sampler objects) asks only this.
+/// Returns the forced level, 0 when not forced.
+[[nodiscard]] constexpr u32 ForcedAnisotropy(u32 setting, bool min_linear, bool mipped, float max_lod, bool is_depth) noexcept {
+    return setting > 1 && min_linear && mipped && max_lod > 0.0f && !is_depth ? setting : 0u;
+}
 
 /// Bits of one element of a texture of the console data format code (bits 20 to 25 of dword 1 of a T#, the numbers of the console's
 /// format list). 0 for a code that is not a plain colour format (and for any code above the list). F4.6: written out here so that

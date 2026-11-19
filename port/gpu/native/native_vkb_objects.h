@@ -76,7 +76,8 @@ void RetireView(vk::ImageView view);
 bool WaitDumps(u64 timeout_ms);
 /// Our sampler for an engine sampler object, made once from its Direct3D 11 description (V2d)
 /// note 40: `compare` for a shader that samples it with a depth compare (the S# compares per instruction on GCN; a Vulkan sampler compares for all its reads)
-[[nodiscard]] vk::Sampler SamplerFor(u64 sampler_object, bool compare = false);
+/// Issue 42: `bias_q` an extra mip bias in quarter steps, `aniso` the anisotropic filtering setting (0: the game's own filter), both from Aa::LookFor
+[[nodiscard]] vk::Sampler SamplerFor(u64 sampler_object, bool compare = false, s32 bias_q = 0, u32 aniso = 0);
 /// V4: a clear of engine render target view `view_id` (ClearRenderTargetView) / depth stencil view (ClearDepthStencilView: flags 1 depth, 2 stencil) as our image clear in the
 /// frame stream. False: counted.
 bool ClearColor(u64 view_id, const float* color);
