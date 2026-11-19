@@ -30,12 +30,16 @@ Core::NativeDesc::SamplerDesc SamplerDescFromSharp(const VkbAmdGpu::Sampler& sam
 }
 
 Sampler::Sampler(const VkbVulkan::Instance& instance, const Core::NativeDesc::SamplerDesc& sampler,
-                 const VkbAmdGpu::BorderColorBuffer border_color_base, const bool is_depth, float extra_lod_bias) {
+                 const VkbAmdGpu::BorderColorBuffer border_color_base, const bool is_depth, float extra_lod_bias, u32 forced_aniso) {
     using namespace VkbVulkan;
     using namespace VkbVulkan::Vkb;
-    const bool anisotropy_enable = instance.IsAnisotropicFilteringSupported() && sampler.aniso_filter != 0;
+    // issue 42 (part a): the anisotropic filtering setting, with the normal renderer's rule (texture_cache/sampler.cpp): mipmapped, linearly minified,
+    // not a depth read
+    const bool force = forced_aniso > 1 && !is_depth && sampler.min_filter == static_cast<u32>(vk::Filter::eLinear) && sampler.max_lod > 0.0f;
+    const bool anisotropy_enable = instance.IsAnisotropicFilteringSupported() && (force || sampler.aniso_filter != 0);
     const float max_anisotropy =
-        anisotropy_enable ? std::clamp(sampler.max_aniso, 1.0f, instance.MaxSamplerAnisotropy())
+        anisotropy_enable ? std::clamp(force ? std::max(sampler.max_aniso, static_cast<float>(forced_aniso)) : sampler.max_aniso, 1.0f,
+                                       instance.MaxSamplerAnisotropy())
                           : 1.0f;
     auto border_color = static_cast<vk::BorderColor>(sampler.border);
     if (border_color == vk::BorderColor::eFloatCustomEXT &&

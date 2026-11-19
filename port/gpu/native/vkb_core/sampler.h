@@ -23,7 +23,7 @@ class Sampler {
 public:
     explicit Sampler(const VkbVulkan::Instance& instance, const Core::NativeDesc::SamplerDesc& sampler,
                      const VkbAmdGpu::BorderColorBuffer border_color_base, bool is_depth,
-                     float extra_lod_bias = 0.0f);
+                     float extra_lod_bias = 0.0f, u32 forced_aniso = 0);
     ~Sampler();
 
     Sampler(const Sampler&) = delete;

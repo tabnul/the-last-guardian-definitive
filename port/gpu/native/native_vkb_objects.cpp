@@ -2682,14 +2682,15 @@ std::string DescribeSampler(u64 object) {
                        RdObj<float>(d, 16), RdObj<u32>(d, 20), RdObj<u32>(d, 24), RdObj<float>(d, 44), RdObj<float>(d, 48));
 }
 
-vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare);
-vk::Sampler SamplerFor(u64 object, bool compare) {
+vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare, s32 bias_q, u32 aniso);
+vk::Sampler SamplerFor(u64 object, bool compare, s32 bias_q, u32 aniso) {
     const LookupTimer lookup_timer{2};
     if (!device_ready || object == 0) {
         return {};
     }
     const u64 id = RdObj<u64>(object, 0x10);
-    const u64 key = id * 2 + (compare ? 1 : 0); // note 40: a compare sampler only for the shaders that sample with a compare
+    // note 40: a compare sampler only for the shaders that sample with a compare; issue 42: one per bias and anisotropy setting (bias -32..31, aniso 0..31)
+    const u64 key = ((id * 2 + (compare ? 1 : 0)) << 11) | (static_cast<u64>(std::clamp(bias_q, -32, 31) + 32) << 5) | std::min(aniso, 31u);
     SamplerMemo* memo = nullptr;
     if (MemoOn()) {
         if (!t_sampler_memo) {
@@ -2702,13 +2703,13 @@ vk::Sampler SamplerFor(u64 object, bool compare) {
         }
         c_memo_misses[2].fetch_add(1, std::memory_order_relaxed);
     }
-    const vk::Sampler found = SamplerForLookup(object, id, key, compare);
+    const vk::Sampler found = SamplerForLookup(object, id, key, compare, bias_q, aniso);
     if (memo != nullptr && found) {
         *memo = {key, found}; // samplers are never destroyed: one per engine sampler id
     }
     return found;
 }
-vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
+vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare, s32 bias_q, u32 aniso_setting) {
     std::scoped_lock lock{mutex};
     if (const auto it = samplers.find(key); it != samplers.end()) {
         return it->second;
@@ -2735,8 +2736,12 @@ vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
     static constexpr u8 MipTable[9] = {1, 2, 1, 2, 1, 2, 1, 2, 2}; // 1 point, 2 linear
     const u32 f = filter % 9;
     const bool mag_linear = MagTable[f] != 0, min_linear = MinTable[f] != 0, mip_linear = MipTable[f] == 2;
-    const bool anisotropic = MagTable[f] == 3 && instance->IsAnisotropicFilteringSupported();
-    const float aniso_level = aniso <= 1 ? 1.0f : aniso == 2 ? 2.0f : aniso <= 4 ? 4.0f : aniso <= 8 ? 8.0f : 16.0f;
+    // issue 42 (part a): the anisotropic filtering setting on textures with mip levels and a linear minification, depth compares excepted, as the normal
+    // renderer's texture_cache/sampler.cpp (its rule: min filter not point, a mip filter, max lod above 0, not a depth read)
+    const bool forced = aniso_setting > 1 && !compare && min_linear && max_lod > 0.0f;
+    const bool anisotropic = (MagTable[f] == 3 || forced) && instance->IsAnisotropicFilteringSupported();
+    const float game_level = MagTable[f] != 3 ? 1.0f : aniso <= 1 ? 1.0f : aniso == 2 ? 2.0f : aniso <= 4 ? 4.0f : aniso <= 8 ? 8.0f : 16.0f;
+    const float aniso_level = forced ? std::max(game_level, static_cast<float>(aniso_setting)) : game_level;
     const auto address_mode = [](u32 mode) {
         switch (mode) {
         case 0: return vk::SamplerAddressMode::eRepeat;
@@ -2757,7 +2762,8 @@ vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
         .addressModeU = address_mode(address[0]),
         .addressModeV = address_mode(address[1]),
         .addressModeW = address_mode(address[2]),
-        .mipLodBias = 0.0f, // api-contract.md S3: the engine never writes the S#'s bias field (MipLODBias is ignored)
+        // api-contract.md S3: the engine never writes the S#'s bias field (MipLODBias is ignored); issue 42 (part b): the scene texture bias while the AA runs
+        .mipLodBias = std::clamp(static_cast<float>(bias_q) * 0.25f, -instance->MaxSamplerLodBias(), instance->MaxSamplerLodBias()),
         .anisotropyEnable = anisotropic,
         .maxAnisotropy = anisotropic ? std::min(aniso_level, instance->MaxSamplerAnisotropy()) : 1.0f,
         .compareEnable = compare,
