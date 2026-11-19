@@ -9,6 +9,27 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-19 - The game's "CreateBlob: Error" line for never-shipped shader variants becomes one info line per name (not yet merged)
+
+- **Problem:** with both renderers, on this box and on Windows, every run logs about 70-90 lines
+  `CreateBlob: Error. Cannot open file data_trico/ps4_shader_cache/material/<name>.sb.` The text is the game's
+  own message, not the port's. The game builds these names itself from a material's variant keys; none of them
+  is in any of the game's archives, under any case or folder, while the same lookup finds the other material
+  shaders, and the game then uses its own fallback shader. So the line reports a state of the shipped game, not
+  a fault of the port, but it reads as an error in every log check.
+- **Considered:** (1) a short table in the port's shared file code: whole game lines of a listed form that are
+  proven to report no fault are written at info level, once per name, and counted in the end-of-run report;
+  (2) patch the game's call to its print function in the blob loader (a game hook in shared code, tied to one
+  game build, changes game code for a log line); (3) leave the text and only teach the log checks that the line
+  is known (the owner still sees "Error" in every log, on every machine).
+- **Choice:** (1). It fixes the level where the port hands the game's text to the log, works the same on Linux and
+  Windows, touches no game code and neither renderer, and keeps every other game line as it is. Only lines that
+  match the material shader-cache form exactly are changed; a missing system or particle shader still shows the
+  game's own text. Switch `TLG_GAME_NOTES=0` gives the old output.
+- **Who:** box (rule 14c), on the owner's job of 2026-11-19 ("log once per name at info level" if the files do
+  not exist and nothing is lost).
+- **Links:** issue 49, issue 47 (owner comment), pull request: see issue 49.
+
 ## 2026-11-19 - AABB read check: read the game's group table under the game's own lock (not yet merged)
 
 - **Problem:** In AL_a01_firstRoom_01 the new engine sometimes wrote the error `K1 AABB readback: N of N records name
