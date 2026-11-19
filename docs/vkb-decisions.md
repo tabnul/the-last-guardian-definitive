@@ -25,7 +25,9 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 - **Choice:** (1). It fixes the level where the port hands the game's text to the log, works the same on Linux and
   Windows, touches no game code and neither renderer, and keeps every other game line as it is. Only lines that
   match the material shader-cache form exactly are changed; a missing system or particle shader still shows the
-  game's own text. Switch `TLG_GAME_NOTES=0` gives the old output.
+  game's own text. The port can lose a whole archive, never one name inside it; so past 256 different names in one
+  run (a run asks for at most about 100, all 219 scenes together for 142) the game's own error text comes back with
+  one warning, and a broken install still shows as errors. Switch `TLG_GAME_NOTES=0` gives the old output.
 - **Who:** box (rule 14c), on the owner's job of 2026-11-19 ("log once per name at info level" if the files do
   not exist and nothing is lost).
 - **Links:** issue 49, issue 47 (owner comment), pull request: see issue 49.

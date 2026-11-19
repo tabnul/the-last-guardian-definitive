@@ -626,15 +626,18 @@ static ssize_t bounce_write(int h,const unsigned char *at,uint64_t size,int64_t 
  * "CreateBlob: Error. Cannot open file <name>." when its own archive index has no such file. For material shaders
  * the game builds the name from the material's variant keys and, when the file is missing, puts its stock
  * fallback shader in place (game code, no port code on that path). None of the names it asks for is in any of the
- * game's archives, under any case or folder, while the same lookup finds the other material shaders. */
+ * game's archives, under any case or folder, while the same lookup finds the other material shaders.
+ * The port can lose a whole archive (mount, read error), never one name inside it. A run asks for at most about a
+ * hundred such names (142 over all 219 scenes); far more means whole archives are missing: past GameNoteLimit
+ * different names the game's own text is written again, with one warning. */
 typedef struct { const char *prefix; size_t name_at; const char *tail; const char *note; } GameNote; /* name_at: where the name starts in the line */
 static const GameNote game_notes[]={
-    {"CreateBlob: Error. Cannot open file data_trico/ps4_shader_cache/material/",sizeof("CreateBlob: Error. Cannot open file ")-1,".\n",
+    {"CreateBlob: Error. Cannot open file data_trico/ps4_shader_cache/material/",sizeof("CreateBlob: Error. Cannot open file ")-1,".sb.\n",
      "Game note (info): shader cache variant %.*s is not shipped with the game; the game uses its fallback shader\n"},
 };
-enum { GameNoteNames=1024 };
+enum { GameNoteNames=1024, GameNoteLimit=256 };
 static uint64_t game_note_seen[GameNoteNames]; /* hashes of the names already written (0 = free slot) */
-static size_t game_note_lines, game_note_names;
+static size_t game_note_lines, game_note_names, game_note_over;
 static pthread_mutex_t game_note_lock=PTHREAD_MUTEX_INITIALIZER;
 static int game_notes_on(void) {
     static int v=-1;
@@ -649,18 +652,25 @@ static int game_note(int h,const char *text,uint64_t size) {
         if (size<=p+t || size>1024 || memcmp(text,n->prefix,p) || memcmp(text+size-t,n->tail,t)) continue;
         if (memchr(text,'\n',size-1)) continue; /* one whole line only */
         const char *name=text+n->name_at;
-        const int length=(int)(text+size-t-name);
+        const int length=(int)(text+size-t-name)+3; /* the name keeps its ".sb" */
         uint64_t hash=1469598103934665603ull;
         for (int k=0;k<length;++k) hash=(hash^(unsigned char)name[k])*1099511628211ull;
         if (!hash) hash=1;
-        int fresh=1;
+        int fresh=1, over=0;
         pthread_mutex_lock(&game_note_lock);
-        ++game_note_lines;
         size_t slot=hash%GameNoteNames, tries=0;
         while (game_note_seen[slot] && game_note_seen[slot]!=hash && ++tries<GameNoteNames) slot=(slot+1)%GameNoteNames;
         if (game_note_seen[slot]==hash) fresh=0;
-        else if (tries<GameNoteNames) { game_note_seen[slot]=hash; ++game_note_names; }
+        else if (game_note_names>=GameNoteLimit) over=++game_note_over;
+        else { game_note_seen[slot]=hash; ++game_note_names; }
+        if (!over) ++game_note_lines;
         pthread_mutex_unlock(&game_note_lock);
+        if (over) {
+            if (over==1)
+                printf("Runtime: warning: the game asks for more shader cache files that are not in its archives than a "
+                       "working install does (over %d names); from here on its own error lines are written\n",(int)GameNoteLimit);
+            return 0; /* the normal path writes the game's text */
+        }
         if (fresh) {
             char line[1200];
             const int m=snprintf(line,sizeof(line),n->note,length,name);
@@ -966,7 +976,7 @@ void runtime_file_report(void) {
     printf("Runtime: files opened=%zu, reads=%zu (%llu bytes; %zu chunks via the bounce buffer, %zu direct), writes=%zu, not found=%zu\n",
            opens,reads,(unsigned long long)bytes_read,bounce_reads,direct_reads,writes,missing);
     if (game_note_lines)
-        printf("Runtime: game notes (info): %zu lines of messages that report no fault, %zu different names, each written once\n",
-               game_note_lines,game_note_names);
+        printf("Runtime: game notes (info): %zu lines of messages that report no fault, %zu different names, each written once%s\n",
+               game_note_lines,game_note_names,game_note_over ? "; more names than a working install asks for, see the warning" : "");
 }
 
