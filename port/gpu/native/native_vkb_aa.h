@@ -16,7 +16,8 @@ class Instance;
 /// F1 (engine-vulkan-backend.md, note 92/93): native anti-aliasing on the game's own targets and motion vectors, as their renderer's "game motion" path.
 /// The motion pass (pixel shader 5fce13a4) gives the scene colour (target 0), the game's motion vectors (target 2) and the scene depth; right before the
 /// post-processing combine (compute 252f2091) the AA runs and writes its result back into the scene colour, so the game's post, tonemap and interface go on
-/// unchanged; the game's SMAA (vertex shader 0a449aef) is cleared instead of drawn while it runs. TLG_VKB_AA=fsr3 turns it on (off by default).
+/// unchanged; the game's SMAA (vertex shader 0a449aef) is cleared instead of drawn while it runs. TLG_VKB_AA turns it on (off by default): fsr3, fsr4 (FSR 4,
+/// native_vkb_fsr4.h), dlaa, or auto (the launcher on a fresh launch: DLAA if DLSS is installed, else FSR 4 on an RDNA 4 card, else FSR 3.1).
 namespace Core::Vkb::Aa {
 
 constexpr u64 MotionPassPs = 0x5fce13a4, CombineCs = 0x252f2091, SmaaVs = 0x0a449aef;
@@ -61,6 +62,8 @@ void NoteFg(bool made, bool presented, bool failed);
 /// every 100% above one more RCAS pass: their ExtraSharpen), b = the scene texture bias while the AA runs (their SceneMipBias), a = the anisotropic
 /// filtering setting (their forced anisotropy in texture_cache/sampler.cpp).
 [[nodiscard]] bool PicturePart(char part);
+/// FSR 4 native AA (TLG_VKB_FSR4: unset or 1 on, 0 = the old way: fsr4 runs as FSR 3.1, auto as dlaa, and the device does not ask for FSR 4's features)
+[[nodiscard]] bool Fsr4Switch();
 /// How a draw's samplers are made: the extra mip bias in quarter steps and the anisotropy setting (0: the game's own filter)
 struct SamplerLook {
     s32 bias_q = 0;

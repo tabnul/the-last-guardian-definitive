@@ -959,18 +959,21 @@ def backend_aa_env(settings, ini):
     """The Video page's Anti-aliasing and Frame generation rows for the engine-to-Vulkan backend
     (TLG_VKB_AA / TLG_VKB_FG, gpu/native/native_vkb_aa.cpp). The backend draws at the output size
     (no upscaler), so the row's choice is its anti-aliasing: DLAA (an upscaler choice of DLSS counts
-    as DLAA), FSR 3.1 (FSR 4 runs as FSR 3.1 here), or none (Off, TAA). Frame generation: DLSS only,
-    on top of an anti-aliasing (it takes the AA's depth and motion), off at a 30 FPS game rate."""
+    as DLAA), FSR 3.1, FSR 4, or none (Off, TAA). A player's choice is used as is; with nothing
+    chosen yet (no aa_row in tlg.ini: a fresh launch) the backend decides (TLG_VKB_AA=auto: DLAA if
+    DLSS is installed, else FSR 4 on an RDNA 4 card, else FSR 3.1; owner, pull request 51). Frame
+    generation: DLSS only, on top of an anti-aliasing (it takes the AA's depth and motion), off at
+    a 30 FPS game rate."""
     env = {}
     # tlg.ini dlss_supported / dlss_fg_supported are the default renderer's own DLSS checks: they never run with the
     # backend (which loads DLSS through its own glue, tlg_dlss.dll), so they say nothing here
     if ini.get('aa_row', '0') in ('0', ''):
-        choice = 'dlss'                     # a tlg.ini from before the row: DLSS (launcher upscaler_of)
+        choice = 'auto'                     # nothing chosen yet (fresh launch, or a tlg.ini from before the row)
     elif ini.get('dlaa', '1') in ('0', ''):
         choice = 'off'
     else:
         choice = ini.get('upscaler', 'dlss')
-    aa = {'dlss': 'dlaa', 'fsr3': 'fsr3', 'fsr4': 'fsr3'}.get(choice)
+    aa = {'auto': 'auto', 'dlss': 'dlaa', 'fsr3': 'fsr3', 'fsr4': 'fsr4'}.get(choice)
     blocked = settings.get('frame_rate') == '30' or ini.get('fps_limit') == '30'
     fg = ini.get('frame_generation', '0') == '1' and not blocked
     if fg and aa is None:
