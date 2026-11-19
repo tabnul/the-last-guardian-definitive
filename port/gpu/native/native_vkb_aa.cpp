@@ -478,7 +478,8 @@ bool EnsureDlaa(u32 w, u32 h) {
 }
 
 void DestroyContext() {
-    if (context != nullptr || fsr4_made) {
+    // every image below may still be in use by frames already sent (the output and TAA's histories too: second read of issue 57)
+    if (context != nullptr || fsr4_made || output != VK_NULL_HANDLE || taa_hist[0] != VK_NULL_HANDLE) {
         IdleDevice(instance->GetDevice());
     }
     if (context != nullptr) {
@@ -549,11 +550,16 @@ bool EnsureTaa(u32 w, u32 h, std::string& why) {
             bindings[i] = {.binding = i, .descriptorType = i < 4 ? vk::DescriptorType::eCombinedImageSampler : vk::DescriptorType::eStorageImage,
                            .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute};
         }
+        // each part made once; one that failed is tried again on the next call (null)
         if (!taa_set_layout) {
             taa_set_layout = device.createDescriptorSetLayout({.flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
                                                                .bindingCount = static_cast<u32>(bindings.size()), .pBindings = bindings.data()}).value;
+        }
+        if (taa_set_layout && !taa_layout) {
             const vk::PushConstantRange range{.stageFlags = vk::ShaderStageFlagBits::eCompute, .offset = 0, .size = 64};
             taa_layout = device.createPipelineLayout({.setLayoutCount = 1, .pSetLayouts = &taa_set_layout, .pushConstantRangeCount = 1, .pPushConstantRanges = &range}).value;
+        }
+        if (!taa_sampler) {
             taa_sampler = device.createSampler({.magFilter = vk::Filter::eNearest, .minFilter = vk::Filter::eNearest, .mipmapMode = vk::SamplerMipmapMode::eNearest,
                                                 .addressModeU = vk::SamplerAddressMode::eClampToEdge, .addressModeV = vk::SamplerAddressMode::eClampToEdge,
                                                 .addressModeW = vk::SamplerAddressMode::eClampToEdge}).value;
@@ -594,8 +600,13 @@ bool EnsureTaa(u32 w, u32 h, std::string& why) {
             why = "its history images could not be made";
             return false;
         }
-        taa_hist_views[i] = device.createImageView({.image = vk::Image{taa_hist[i]}, .viewType = vk::ImageViewType::e2D, .format = vk::Format::eR32G32B32A32Sfloat,
-                                                    .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}}).value;
+        const auto [vr, view] = device.createImageView({.image = vk::Image{taa_hist[i]}, .viewType = vk::ImageViewType::e2D, .format = vk::Format::eR32G32B32A32Sfloat,
+                                                        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}});
+        if (vr != vk::Result::eSuccess) {
+            why = "its history views could not be made";
+            return false; // the caller's DestroyContext frees the images made so far
+        }
+        taa_hist_views[i] = view;
     }
     taa_next = 0;
     return true;
