@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Issue 42: one RCAS pass on the AA's result (the scene colour, HDR, before the game's post-processing), as the normal renderer's taa_sharpen.comp
+// (their ExtraSharpen / DlssSharpen): strength 0..1 is AMD's range. Reads one RGBA16F image and writes another (the AA step ping-pongs them).
+// AMD's FSR 1 / RCAS headers are read from the normal renderer's folder (only read, never changed).
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0, rgba16f) uniform readonly image2D source_img;
+layout(binding = 1, rgba16f) uniform writeonly image2D result_img;
+layout(push_constant) uniform Params { float strength; float blend; };
+#define A_GPU 1
+#define A_GLSL 1
+#include "../../../../shadps4/video_core/host_shaders/fsr/ffx_a.h"
+#define FSR_RCAS_F 1
+#define FSR_RCAS_DENOISE 1
+float color_scale;
+vec3 loadColor(ivec2 p) {
+    return max(imageLoad(source_img, clamp(p, ivec2(0), imageSize(source_img) - 1)).rgb, vec3(0));
+}
+AF4 FsrRcasLoadF(ASU2 p) { return vec4(loadColor(p) / color_scale, 1); }
+void FsrRcasInputF(inout AF1 r, inout AF1 g, inout AF1 b) {}
+#include "../../../../shadps4/video_core/host_shaders/fsr/ffx_fsr1.h"
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(p, imageSize(result_img)))) return;
+    float amount = clamp(strength, 0.0, 1.0);
+    vec3 center = loadColor(p);
+    if (amount == 0.0) {
+        imageStore(result_img, p, vec4(center, 1));
+        return;
+    }
+    // RCAS limits assume normalized colour; a shared local scale also handles HDR input
+    vec3 left = loadColor(p + ivec2(-1, 0)), right = loadColor(p + ivec2(1, 0));
+    vec3 top = loadColor(p + ivec2(0, -1)), bottom = loadColor(p + ivec2(0, 1));
+    vec3 peak = max(center, max(max(left, right), max(top, bottom)));
+    color_scale = max(1.0, max(peak.r, max(peak.g, peak.b)));
+    vec3 low = min(center, min(min(left, right), min(top, bottom)));
+    // RCAS's approximate reciprocal can shift a constant colour, especially in HDR
+    if (all(lessThanEqual(peak - low, vec3(1e-6 * color_scale)))) {
+        imageStore(result_img, p, vec4(center, 1));
+        return;
+    }
+    uvec4 constants = uvec4(floatBitsToUint(exp2(-2.0 * (1.0 - amount))), 0, 0, 0);
+    vec3 sharpened;
+    FsrRcasF(sharpened.r, sharpened.g, sharpened.b, uvec2(p), constants);
+    imageStore(result_img, p, vec4(clamp(mix(center, sharpened * color_scale, clamp(blend, 0.0, 4.0)), vec3(0), vec3(color_scale)), 1));
+}
