@@ -1115,7 +1115,7 @@ void runtime_file_report(void) {
     printf("Runtime: files opened=%zu, reads=%zu (%llu bytes; %zu chunks via the bounce buffer, %zu direct), writes=%zu, not found=%zu\n",
            opens,reads,(unsigned long long)bytes_read,bounce_reads,direct_reads,writes,missing);
     if (game_note_lines || game_note_present || archive_index_state<0)
-        printf("Runtime: game notes (info): %zu lines of shader cache variants the game never shipped, %zu different names, each "
+        printf("Runtime: game notes (info): %zu lines of shader cache variants in none of the game's archives, %zu different names, each "
                "written once; %zu asked-for files that ARE in the archives kept their error line; archive index %s (%zu archives)\n",
                game_note_lines,game_note_names,game_note_present,archive_index_state>0 ? "read" : archive_index_state<0 ? "NOT readable" : "not needed",
                archive_index_files);
