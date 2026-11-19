@@ -87,7 +87,7 @@ struct Stage {
     std::vector<vk::ImageViewType> image_types;
     std::vector<std::unique_ptr<VideoCore::Vkb::Sampler>> constant_samplers; ///< per sampler: ours from the S# the shader holds as a constant (null: from a slot)
     std::vector<Core::NativeDesc::SamplerDesc> constant_descs; ///< issue 42: per sampler, the constant S#'s description (for a draw's bias / anisotropy)
-    std::vector<u8> constant_mipped;                           ///< issue 42: per sampler, the constant S# has a mip filter (their forced-anisotropy rule)
+    std::vector<u32> constant_ids;                             ///< issue 42: per sampler, a session-unique number of the constant S# (0: from a slot), for the per-thread memo
     bool has_flat{};
     std::unique_ptr<VkbShader::Info> info;
     VkbShader::RuntimeInfo runtime{};
@@ -501,6 +501,7 @@ u64 VariantKeyFull(u64 ctx, u64 vs, u64 ps, u64 fetch, const VkbVulkan::FixedSta
 }
 
 /// Compiles one stage (mutex held): its user data, program, translation, module and slot map
+std::atomic<u32> next_constant_id{1}; ///< issue 42: the session-unique numbers of the shaders' constant S#s (Stage::constant_ids)
 bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, VkbShader::Backend::Bindings& binding) {
     const HwStage hw = stage == 0 ? HwStage::Vertex : HwStage::Fragment;
     const SwStage sw = stage == 0 ? SwStage::Vertex : SwStage::Fragment;
@@ -606,20 +607,20 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
         Source s = SourceOf(sampler.sharp_fetch, flat, false, false);
         std::unique_ptr<VideoCore::Vkb::Sampler> constant;
         Core::NativeDesc::SamplerDesc constant_desc{};
-        bool mipped = false;
+        u32 constant_id = 0;
         using Summary = std::remove_cvref_t<decltype(sampler.sharp_fetch)>::Summary;
         if (s.cls == Source::Class::Unmapped && sampler.sharp_fetch.summary == Summary::MultiLoad && sampler.sharp_fetch.load_mask == 0) {
             // the S# is a constant of the shader's code (no table load): our sampler made from it, once
             const auto sharp = sampler.GetSharp(*out.info);
             constant_desc = VideoCore::Vkb::SamplerDescFromSharp(sharp);
-            mipped = sharp.mip_filter != VkbAmdGpu::MipFilter::None;
+            constant_id = next_constant_id.fetch_add(1, std::memory_order_relaxed);
             constant = std::make_unique<VideoCore::Vkb::Sampler>(*instance, constant_desc, VkbAmdGpu::BorderColorBuffer{}, sampler.is_depth);
             s.cls = Source::Class::ProgramConstant;
         }
         out.samplers.push_back(s);
         out.constant_samplers.push_back(std::move(constant));
         out.constant_descs.push_back(constant_desc);
-        out.constant_mipped.push_back(mipped ? 1 : 0);
+        out.constant_ids.push_back(constant_id);
         count(2, out.samplers.back());
     }
     return true;
@@ -1041,24 +1042,37 @@ inline void StageMix(u32 part, u64 v) {
     t_stage_hash[part] = (t_stage_hash[part] ^ v) * 0x100000001b3ull;
 }
 /// Issue 42: a shader's constant S# with a draw's bias / anisotropy (`look` not plain): made once per description and look, kept for the session as the
-/// slot samplers (Core::Vkb::SamplerFor); the plain one stays the stage's own
+/// slot samplers (Core::Vkb::SamplerFor); the plain one stays the stage's own. `look` is already the sampler's own (Aa::ForSampler: no bias on a depth read).
+/// A per-thread memo keyed by the constant's session-unique number answers the repeat draws; the shared table (one mutex) only a thread's first use.
 std::mutex constant_look_mutex;
 std::unordered_map<std::string, std::unique_ptr<VideoCore::Vkb::Sampler>> constant_look_samplers; ///< key: the description's bytes, bias, anisotropy, depth
+thread_local std::unordered_map<u64, vk::Sampler> t_constant_look; ///< key: constant number, bias, forced level, depth; samplers are never destroyed, numbers never reused
 vk::Sampler ConstantSamplerFor(const Stage& st, u32 i, bool is_depth, Core::Vkb::Aa::SamplerLook look) {
-    const u32 aniso = st.constant_mipped[i] != 0 ? look.aniso : 0u;
-    if (look.bias_q == 0 && aniso <= 1) {
+    const Core::NativeDesc::SamplerDesc& desc = st.constant_descs[i];
+    const u32 aniso = VideoCore::Vkb::ForcedAnisotropy(desc, look.aniso, is_depth); // the one rule (Core::NativeDesc::ForcedAnisotropy)
+    if (look.bias_q == 0 && aniso == 0) {
         return st.constant_samplers[i]->Handle();
     }
-    const Core::NativeDesc::SamplerDesc& desc = st.constant_descs[i];
-    std::string key(reinterpret_cast<const char*>(&desc), sizeof(desc)); // SamplerDesc has no padding bytes (native_desc.h)
+    const u64 memo_key = static_cast<u64>(st.constant_ids[i]) << 32 | static_cast<u64>(static_cast<u16>(look.bias_q)) << 16 | static_cast<u64>(aniso & 0x7fffu) << 1 |
+                         (is_depth ? 1u : 0u);
+    if (const auto it = t_constant_look.find(memo_key); it != t_constant_look.end()) {
+        return it->second;
+    }
+    static_assert(sizeof(Core::NativeDesc::SamplerDesc) == 16 * sizeof(u32), "its bytes are the key below: no padding bytes (native_desc.h)");
+    std::string key(reinterpret_cast<const char*>(&desc), sizeof(desc));
     const std::array<s32, 3> extra{look.bias_q, static_cast<s32>(aniso), is_depth ? 1 : 0};
     key.append(reinterpret_cast<const char*>(extra.data()), sizeof(extra));
-    std::scoped_lock lock{constant_look_mutex};
-    auto& made = constant_look_samplers[key];
-    if (!made) {
-        made = std::make_unique<VideoCore::Vkb::Sampler>(*instance, desc, VkbAmdGpu::BorderColorBuffer{}, is_depth, static_cast<float>(look.bias_q) * 0.25f, aniso);
+    vk::Sampler handle;
+    {
+        std::scoped_lock lock{constant_look_mutex};
+        auto& made = constant_look_samplers[key];
+        if (!made) {
+            made = std::make_unique<VideoCore::Vkb::Sampler>(*instance, desc, VkbAmdGpu::BorderColorBuffer{}, is_depth, static_cast<float>(look.bias_q) * 0.25f, aniso);
+        }
+        handle = made->Handle();
     }
-    return made->Handle();
+    t_constant_look.emplace(memo_key, handle);
+    return handle;
 }
 
 bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& push, u32& buffer_index, Bound& b, Ranges& ranges,
@@ -1259,8 +1273,9 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
         const Source& src = st.samplers[i];
         const u64 object = src.cls == Source::Class::Slot && src.kind == 2 ? SlotObject(ctx, st.index, 2, src.slot) : 0;
         const bool is_depth = i < info.samplers.size() && info.samplers[i].is_depth;
-        const vk::Sampler sampler = st.constant_samplers[i] ? ConstantSamplerFor(st, i, is_depth, look)
-                                    : object != 0              ? Core::Vkb::SamplerFor(object, is_depth, look.bias_q, look.aniso)
+        const Core::Vkb::Aa::SamplerLook own = Core::Vkb::Aa::ForSampler(look, is_depth);
+        const vk::Sampler sampler = st.constant_samplers[i] ? ConstantSamplerFor(st, i, is_depth, own)
+                                    : object != 0              ? Core::Vkb::SamplerFor(object, is_depth, own.bias_q, own.aniso)
                                                                : vk::Sampler{};
         if (!sampler) {
             c_skip_sampler.fetch_add(1, std::memory_order_relaxed);

@@ -68,5 +68,13 @@ struct SamplerLook {
 };
 /// `mrt_mask`: the pixel shader's colour outputs of a graphics draw (their rule: 5 or more = a scene material pass, which gets the bias); 0 for compute
 [[nodiscard]] SamplerLook LookFor(u32 mrt_mask);
+/// The look of one sampler of the draw: a depth compare read gets no extra bias (their Rasterizer::BindSamplers: `is_depth ? 0 : bias`); the anisotropy
+/// setting goes on, the one rule (Core::NativeDesc::ForcedAnisotropy) already leaves depth reads out
+[[nodiscard]] constexpr SamplerLook ForSampler(SamplerLook look, bool is_depth) noexcept {
+    if (is_depth) {
+        look.bias_q = 0;
+    }
+    return look;
+}
 
 } // namespace Core::Vkb::Aa

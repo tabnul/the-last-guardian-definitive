@@ -3,6 +3,7 @@
 
 #include "native/vkb_core/vkb_device.h"
 #include "native/native_vkb_objects.h"
+#include "native/native_desc.h"
 #include "native/native_tsharp_watch.h"
 #include "native/native_vkb_util.h"
 
@@ -2736,12 +2737,12 @@ vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare, s32 bias
     static constexpr u8 MipTable[9] = {1, 2, 1, 2, 1, 2, 1, 2, 2}; // 1 point, 2 linear
     const u32 f = filter % 9;
     const bool mag_linear = MagTable[f] != 0, min_linear = MinTable[f] != 0, mip_linear = MipTable[f] == 2;
-    // issue 42 (part a): the anisotropic filtering setting on textures with mip levels and a linear minification, depth compares excepted, as the normal
-    // renderer's texture_cache/sampler.cpp (its rule: min filter not point, a mip filter, max lod above 0, not a depth read)
-    const bool forced = aniso_setting > 1 && !compare && min_linear && max_lod > 0.0f;
-    const bool anisotropic = (MagTable[f] == 3 || forced) && instance->IsAnisotropicFilteringSupported();
+    // issue 42 (part a): the anisotropic filtering setting, with the normal renderer's rule (Core::NativeDesc::ForcedAnisotropy); the engine's mip table
+    // (api-contract.md S1) holds only point and linear, never "no mip filter"
+    const u32 forced = Core::NativeDesc::ForcedAnisotropy(aniso_setting, min_linear, MipTable[f] != 0, max_lod, compare);
+    const bool anisotropic = (MagTable[f] == 3 || forced != 0) && instance->IsAnisotropicFilteringSupported();
     const float game_level = MagTable[f] != 3 ? 1.0f : aniso <= 1 ? 1.0f : aniso == 2 ? 2.0f : aniso <= 4 ? 4.0f : aniso <= 8 ? 8.0f : 16.0f;
-    const float aniso_level = forced ? std::max(game_level, static_cast<float>(aniso_setting)) : game_level;
+    const float aniso_level = forced != 0 ? std::max(game_level, static_cast<float>(forced)) : game_level;
     const auto address_mode = [](u32 mode) {
         switch (mode) {
         case 0: return vk::SamplerAddressMode::eRepeat;

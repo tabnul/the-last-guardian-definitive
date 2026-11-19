@@ -681,7 +681,8 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
         const Source& src = v.samplers[si];
         const u64 object = src.cls == Source::Class::Slot ? SlotObject(ctx, src.kind, src.slot, v.async) : 0;
         const bool compare = si < v.info->samplers.size() && v.info->samplers[si].is_depth;
-        const vk::Sampler sampler = object != 0 ? Core::Vkb::SamplerFor(object, compare, look.bias_q, look.aniso) : vk::Sampler{};
+        const Core::Vkb::Aa::SamplerLook own = Core::Vkb::Aa::ForSampler(look, compare);
+        const vk::Sampler sampler = object != 0 ? Core::Vkb::SamplerFor(object, compare, own.bias_q, own.aniso) : vk::Sampler{};
         if (!sampler) {
             c_skip_sampler.fetch_add(1, std::memory_order_relaxed);
             return;

@@ -18,12 +18,14 @@ namespace VideoCore::Vkb {
 
 /// F4.1: the plain description read from an S# with the emulator's own helpers (the reference of the shadow compare)
 [[nodiscard]] Core::NativeDesc::SamplerDesc SamplerDescFromSharp(const VkbAmdGpu::Sampler& sampler) noexcept;
+/// Issue 42: Core::NativeDesc::ForcedAnisotropy (the one rule) for a description: the forced level, 0 when not forced
+[[nodiscard]] u32 ForcedAnisotropy(const Core::NativeDesc::SamplerDesc& sampler, u32 aniso_setting, bool is_depth) noexcept;
 
 class Sampler {
 public:
     explicit Sampler(const VkbVulkan::Instance& instance, const Core::NativeDesc::SamplerDesc& sampler,
                      const VkbAmdGpu::BorderColorBuffer border_color_base, bool is_depth,
-                     float extra_lod_bias = 0.0f, u32 forced_aniso = 0);
+                     float extra_lod_bias = 0.0f, u32 aniso_setting = 0);
     ~Sampler();
 
     Sampler(const Sampler&) = delete;
