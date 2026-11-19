@@ -298,6 +298,41 @@
       "expect": "554889e541574156"
     },
     {
+      "name": "AnimJobDone",
+      "ghidra": "0x1e4bb59",
+      "mode": "mid",
+      "handler": "anim_job_done",
+      "expect": "498b4424304c89f7"
+    },
+    {
+      "name": "AnimJobDonePrio",
+      "ghidra": "0x1e4bb95",
+      "mode": "mid",
+      "handler": "anim_job_done",
+      "expect": "498b4424304c89f7"
+    },
+    {
+      "name": "AnimGroupRelease",
+      "ghidra": "0x1e4bd50",
+      "mode": "call",
+      "handler": "anim_group_release",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "K2_Gather",
+      "ghidra": "0x1254880",
+      "mode": "call",
+      "handler": "k2_gather",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AnimQueryRecording",
+      "ghidra": "0x1255570",
+      "mode": "mid",
+      "handler": "anim_query_recording",
+      "expect": "554889e541574156"
+    },
+    {
       "name": "K2_FrameDataReset",
       "ghidra": "0x1dfdea0",
       "mode": "call",

@@ -16,6 +16,7 @@
 #include <map>
 #include <tuple>
 #include <memory>
+#include <condition_variable>
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
@@ -9141,6 +9142,34 @@ u64 registrations = 0, late = 0, last_alt = ~0ull, begins = 0, begins_alt = 0, b
 std::map<u64, u32> late_logged; ///< per producer, the late registrations logged in full (20 each)
 std::atomic<u32> last_event{0}; ///< the last of: 1 AnimationTick started, 2 query frame data reset, 3 its BeginRecording
 std::map<std::string, u64> trico_after; ///< Trico registrations by the last event before them
+std::atomic<u64> trico_regs{0};
+std::atomic<u32> trace_left{0}; ///< events still to log in the event trace window (opens at the 3000th Trico registration)
+/// Logs one ordered task event while the trace window is open (debug: the order of AnimationTick jobs, Gather's lock, the reset and the recording)
+std::atomic<u64> trico_ext{0}; ///< the extension whose job registers Trico's query (learned from the first registration)
+thread_local u64 t_job_ext = 0;
+void Trace(const char* what, u64 x = 0) {
+    if (trace_left.load(std::memory_order_relaxed) == 0) {
+        return;
+    }
+    static std::mutex tm;
+    static std::FILE* f = nullptr;
+    std::scoped_lock lock{tm};
+    if (trace_left.load(std::memory_order_relaxed) == 0) {
+        return;
+    }
+    if (f == nullptr) {
+        const char* path = std::getenv("TLG_K2_TRACE_FILE");
+        f = std::fopen(path != nullptr ? path : "k2_trace.txt", "w");
+    }
+    if (f != nullptr) {
+        const auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        std::fprintf(f, "%lld t%lu %s %#llx\n", static_cast<long long>(us), GetCurrentThreadId(), what, static_cast<unsigned long long>(x));
+        if (trace_left.fetch_sub(1, std::memory_order_relaxed) == 1) {
+            std::fclose(f);
+            f = nullptr;
+        }
+    }
+}
 thread_local std::string t_chain; ///< the call chain at the entry of Trico's contact producer (017d3f40), set by the mid hook K2_TricoChain
 std::map<std::string, std::pair<u64, u64>> chains; ///< that chain -> (on time, late) registrations of 0x17d57e1
 u32 last_switch = ~0u;
@@ -9207,6 +9236,30 @@ void Registered(char table, u64 table_base, u64 group, u64 ret) {
         ++late;
     }
     if (producer == 0x17d57e1) {
+        if (trico_ext.load(std::memory_order_relaxed) == 0 && t_job_ext != 0) {
+            trico_ext.store(t_job_ext, std::memory_order_relaxed);
+        }
+        if (trico_regs.fetch_add(1, std::memory_order_relaxed) == 3000) {
+            trace_left.store(400, std::memory_order_relaxed);
+        }
+        Trace(e.begins_since_reset != 0 ? "Trico registration LATE" : "Trico registration", t_job_ext);
+        {
+            static std::map<u64, std::pair<u64, u64>> by_ext; // job extension -> (on time, late)
+            auto& pe = by_ext[t_job_ext];
+            (e.begins_since_reset != 0 ? pe.second : pe.first)++;
+            if ((pe.first + pe.second) % 3000 == 1) {
+                std::string sum;
+                const u64 slot19 = Rd<u64>(Rd<u64>(ImageBase() + 0x6832568 - 0x1000000, 0), 0x98);
+                for (const auto& [x, v] : by_ext) {
+                    bool locked_list = false;
+                    for (u32 i = 0; IsHeapPointer(slot19) && i < Rd<u32>(slot19, 0x60) && i < 64; ++i) {
+                        locked_list |= Rd<u64>(Rd<u64>(slot19, 0x58), i * 8) == x;
+                    }
+                    sum += fmt::format("[ext {:#x}: on time {}, late {}, in Gather's lock list {}] ", x, v.first, v.second, locked_list);
+                }
+                TLG_LOG(CP, Warn, "K2 census: 0x17d57e1 registrations by job extension: {}", sum);
+            }
+        }
         static const char* names[] = {"none", "AnimationTick start", "reset", "BeginRecording"};
         const u32 ev = last_event.load(std::memory_order_relaxed);
         if (++trico_after[names[ev < 4 ? ev : 0]] % 2000 == 1) {
@@ -9237,7 +9290,8 @@ void Reset(u64 frame, u64 ret) {
     std::scoped_lock lock{mutex};
     FrameEntry& e = Entry(frame);
     if (ret - ImageBase() + 0x1000000 == 0x1253293) {
-        last_event.store(2, std::memory_order_relaxed); // the query frame data's reset (the world step)
+        last_event.store(2, std::memory_order_relaxed); // the query frame data's reset (DelayPrepareTick)
+        Trace("DelayPrepareTick: reset (then unlock)");
     }
     ++e.resets;
     e.reset_caller = ret - ImageBase() + 0x1000000;
@@ -9254,6 +9308,7 @@ void Began(u64 frame, u64 recording, u64 ret) {
     ++e.begins;
     if (recording == 1) {
         last_event.store(3, std::memory_order_relaxed); // the query frame data's BeginRecording (01255570 passes 1)
+        Trace("Frame: BeginRecording");
     }
     e.begin_caller = ret - ImageBase() + 0x1000000;
     u64 alt = 0;
@@ -9306,7 +9361,191 @@ u64 PS4_SYSV_ABI K2TricoChain(Core::GuestHooks::MidContext* c) {
 }
 
 /// Mid hook at the entry of 015a0160 (the task execute above Trico's producer): its object, to match against the task list (debug, K2 census)
+/// api-contract.md "K2 root, step 4" (fix A, TLG_ANIM_QUERY_ORDER=1 while tested). Each cycle: DelayPrepareTick resets the query frame data (then unlocks),
+/// DelayPostPhysicsComputeGather locks the extensions on its lock list (+ 0x8c; only the boy's), DelayPostPhysicsComputeFrame (01255570, NoSync) records. The
+/// next Task:AnimationTick runs one job per CharacterAnimationExt (slot 9, 015a0160); the soldiers' jobs register readback queries (0x17d57e1) and are not locked.
+/// On PS4 at 30 fps the recording waits on the render long enough that those jobs run first (91 % in time); above that the recording runs first, the next reset
+/// drops the queries and a pass with pending groups is skipped. The recording now waits until every unlocked extension that registered a query in the last
+/// AnimationTick generation has run in the next one; locked ones run after the reset by the engine's own rule and are never waited for. 50 ms bound.
+namespace AnimQueryOrder {
+bool On() {
+    static const bool on = [] { const char* e = std::getenv("TLG_ANIM_QUERY_ORDER"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+std::mutex mutex;
+std::condition_variable cv;
+u64 generation = 0;       ///< AnimationTick executions (mutex)
+u64 reset_generation = 0; ///< the generation at the last query frame data reset (mutex)
+u64 released_generation = 0; ///< debug: the last generation whose AnimationTick released its job groups (mutex)
+struct Ext {
+    u64 producer_generation{}; ///< the last generation in which this extension's job registered a query
+    u64 done_generation{};     ///< the last generation whose job of this extension finished
+    u64 started_generation{};  ///< debug: the last generation whose job started
+    u32 started_thread{};      ///< debug
+};
+std::unordered_map<u64, Ext> exts; ///< by extension object (mutex)
+thread_local u64 t_ext = 0, t_ext_generation = 0;
+std::atomic<u64> c_waits{0}, c_waited_us{0}, c_timeouts{0}, c_no_wait{0};
+void AnimationTickStarted() {
+    std::scoped_lock lock{mutex};
+    ++generation;
+}
+void ExtJobStarted(u64 ext) {
+    std::scoped_lock lock{mutex};
+    t_ext = ext, t_ext_generation = generation;
+    exts[ext].started_generation = generation;
+    exts[ext].started_thread = static_cast<u32>(GetCurrentThreadId());
+}
+void ExtJobDone(u64 ext) {
+    {
+        std::scoped_lock lock{mutex};
+        Ext& e = exts[ext];
+        e.done_generation = std::max(e.done_generation, t_ext == ext ? t_ext_generation : generation);
+    }
+    t_ext = 0;
+    cv.notify_all();
+}
+void QueryRegistered() {
+    if (t_ext == 0) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    exts[t_ext].producer_generation = t_ext_generation;
+}
+void QueryReset() {
+    std::scoped_lock lock{mutex};
+    reset_generation = generation;
+}
+void BeforeRecording() {
+    std::unique_lock lock{mutex};
+    const u64 target = reset_generation + 1; // the AnimationTick that follows this cycle's reset
+    std::erase_if(exts, [&](const auto& kv) { return kv.second.producer_generation + 4 < target && kv.second.done_generation + 4 < target; }); // gone or idle extensions
+    const auto ready = [&] {
+        bool any = false; // an unlocked extension registered a query in the last generation: only then is there a job to wait for
+        for (const auto& [obj, e] : exts) {
+            any |= e.producer_generation + 1 >= target && Rd<u32>(obj, 0x8c) == 0;
+        }
+        if (!any) {
+            return true;
+        }
+        if (generation < target) {
+            return false;
+        }
+        if (generation > target) {
+            return true; // the next AnimationTick already ran past this cycle: a producer that skipped it (suspended, out of range) is not coming
+        }
+        for (const auto& [obj, e] : exts) {
+            // an extension DelayPostPhysicsComputeGather locked (+ 0x8c, its lock list) runs only after DelayPrepareTick's reset: the engine's own order, never waited for
+            if (e.producer_generation + 1 >= target && e.done_generation < target && Rd<u32>(obj, 0x8c) == 0) {
+                return false; // an unlocked producer of the last generation has not run in this one yet
+            }
+        }
+        return true;
+    };
+    if (ready()) {
+        c_no_wait.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    const bool ok = cv.wait_for(lock, std::chrono::milliseconds(50), ready);
+    c_waits.fetch_add(1, std::memory_order_relaxed);
+    c_waited_us.fetch_add(static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count()), std::memory_order_relaxed);
+    if (!ok) {
+        if (c_timeouts.fetch_add(1, std::memory_order_relaxed) < 12) {
+            std::string pending;
+            for (const auto& [obj, e] : exts) {
+                if (e.producer_generation + 1 >= target && e.done_generation < target && Rd<u32>(obj, 0x8c) == 0) {
+                    pending += fmt::format(" {:#x} (produced {}, done {}, started {} on thread {}; +0x4c {:#x} +0x54 {} +0x8c {:#x} +0x90 {:#x})", obj, e.producer_generation, e.done_generation, e.started_generation, e.started_thread,
+                                           Rd<u32>(obj, 0x4c), Rd<u32>(obj, 0x54), Rd<u32>(obj, 0x8c), Rd<u32>(obj, 0x90));
+                }
+            }
+            TLG_LOG(CP, Warn, "anim query order: timeout on thread {}: generation {} (released {}), target {}, pending producers:{}", GetCurrentThreadId(), generation, released_generation, target, pending);
+        }
+    }
+    if (const u64 n = c_waits.load(std::memory_order_relaxed) + c_no_wait.load(std::memory_order_relaxed); n % 1800 == 0) {
+        TLG_LOG(CP, Warn, "anim query order: {} recordings, {} waited ({} us total), {} timed out", n, c_waits.load(), c_waited_us.load(), c_timeouts.load());
+    }
+}
+} // namespace AnimQueryOrder
+
+/// Mid hook right after the scheduler ran a job's callback (01e4bb59, r12 = the job): the end of an AnimationTick module job (callback 01caa310, its object at job + 0x40)
+u64 PS4_SYSV_ABI AnimJobDone(Core::GuestHooks::MidContext* c) {
+    if (!AnimQueryOrder::On() || AnimQueryOrder::t_ext == 0 || !IsHeapPointer(c->r12)) {
+        return 0;
+    }
+    if (Rd<u64>(c->r12, 8) - ImageBase() + 0x1000000 == 0x1caa310) {
+        AnimQueryOrder::ExtJobDone(AnimQueryOrder::t_ext); // the extension whose slot 9 this thread ran in this job
+    } else {
+        AnimQueryOrder::t_ext = 0; // slot 9 ran outside an AnimationTick job on this thread
+    }
+    return 0;
+}
+/// Call hook at the scheduler's group release (01e4bd50): from AnimationTick's end (return 0x1d0efa9) its job groups are released (debug for fix A)
+u64 PS4_SYSV_ABI AnimGroupRelease(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a0, (void)a1, (void)a2, (void)a3, (void)a4, (void)a5;
+    if (AnimQueryOrder::On() && ret - ImageBase() + 0x1000000 == 0x1d0efa9) {
+        std::scoped_lock lock{AnimQueryOrder::mutex};
+        AnimQueryOrder::released_generation = AnimQueryOrder::generation;
+    }
+    return 0;
+}
+/// Call hook at DelayPostPhysicsComputeGather's execute (01254880): it locks each listed extension (+0x8c = 1) until DelayPrepareTick unlocks it (debug trace)
+u64 PS4_SYSV_ABI K2Gather(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a0, (void)a1, (void)a2, (void)a3, (void)a4, (void)a5, (void)ret;
+    if (K2Census::On()) {
+        K2Census::Trace("Gather start (locks extensions)");
+        Guarded([&]() -> u64 {
+            static std::atomic<u64> n{0};
+            const u64 k = n.fetch_add(1, std::memory_order_relaxed);
+            if (k % 600 != 300 && k % 600 != 0) {
+                return 0;
+            }
+            const u64 slot19 = Rd<u64>(Rd<u64>(ImageBase() + 0x6832568 - 0x1000000, 0), 0x98);
+            if (!IsHeapPointer(slot19)) {
+                return 0;
+            }
+            const u32 count = Rd<u32>(slot19, 0x60), unlock_count = Rd<u32>(slot19, 0x108);
+            const u64 trico = K2Census::trico_ext.load(std::memory_order_relaxed);
+            std::string list;
+            bool has = false;
+            for (u32 i = 0; i < count && i < 64; ++i) {
+                const u64 e = Rd<u64>(Rd<u64>(slot19, 0x58), i * 8);
+                has |= e == trico;
+                list += fmt::format(" {:#x}", e);
+            }
+            bool has_unlock = false;
+            for (u32 i = 0; i < unlock_count && i < 256; ++i) {
+                has_unlock |= Rd<u64>(Rd<u64>(slot19, 0x100), i * 8) == trico;
+            }
+            TLG_LOG(CP, Warn, "K2 census: Gather #{}: flags +0x134 {:#x}, lock list {} (Trico {:#x} in it: {}), unlock list {} (Trico in it: {}):{}", k, Rd<u32>(slot19, 0x134), count, trico,
+                    has, unlock_count, has_unlock, list);
+            return 0;
+        });
+    }
+    return 0;
+}
+/// Mid hook at the entry of DelayPostPhysicsComputeFrame's execute (01255570): wait for the next AnimationTick's query producers (fix A)
+u64 PS4_SYSV_ABI AnimQueryRecording(Core::GuestHooks::MidContext* c) {
+    (void)c;
+    if (K2Census::On()) {
+        K2Census::Trace("Frame start");
+    }
+    if (AnimQueryOrder::On()) {
+        AnimQueryOrder::BeforeRecording();
+    }
+    return 0;
+}
+
 u64 PS4_SYSV_ABI K2TaskObject(Core::GuestHooks::MidContext* c) {
+    if (AnimQueryOrder::On() && IsHeapPointer(c->rdi) && Rd<u64>(c->rdi, 0) - ImageBase() + 0x1000000 == 0x26d54b8) {
+        AnimQueryOrder::ExtJobStarted(c->rdi); // a character animation extension's AnimationTick job (slot 9) starts on this thread
+    }
+    if (K2Census::On() && IsHeapPointer(c->rdi) && Rd<u64>(c->rdi, 0) - ImageBase() + 0x1000000 == 0x26d54b8) {
+        K2Census::t_job_ext = c->rdi;
+        if (c->rdi == K2Census::trico_ext.load(std::memory_order_relaxed)) {
+            K2Census::Trace("Trico's AnimationTick job start (lock word)", Rd<u32>(c->rdi, 0x8c));
+        }
+    }
     if (!K2Census::On()) {
         return 0;
     }
@@ -9368,14 +9607,21 @@ u64 PS4_SYSV_ABI K2Enqueue(Core::GuestHooks::MidContext* c) {
 /// Call hook at AnimationTick's execute (01d0ded0): marks its start for the K2 census (debug)
 u64 PS4_SYSV_ABI K2AnimationTick(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
     (void)a0, (void)a1, (void)a2, (void)a3, (void)a4, (void)a5, (void)ret;
+    if (AnimQueryOrder::On()) {
+        AnimQueryOrder::AnimationTickStarted();
+    }
     if (K2Census::On()) {
         K2Census::last_event.store(1, std::memory_order_relaxed);
+        K2Census::Trace("AnimationTick start");
     }
     return 0;
 }
 
 u64 PS4_SYSV_ABI K2RegisterB(u64 table_base, u64 group, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
     (void)a2, (void)a3, (void)a4, (void)a5;
+    if (AnimQueryOrder::On()) {
+        AnimQueryOrder::QueryRegistered();
+    }
     if (K2Census::On()) {
         Guarded([&]() -> u64 { K2Census::Registered('B', table_base, group, ret); return 0; });
     }
@@ -9383,6 +9629,9 @@ u64 PS4_SYSV_ABI K2RegisterB(u64 table_base, u64 group, u64 a2, u64 a3, u64 a4, 
 }
 u64 PS4_SYSV_ABI K2RegisterC(u64 table_base, u64 group, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
     (void)a2, (void)a3, (void)a4, (void)a5;
+    if (AnimQueryOrder::On()) {
+        AnimQueryOrder::QueryRegistered();
+    }
     if (K2Census::On()) {
         // table C is at + 0x31e48: its base passed here is frame data + 0x31e30 like B's (FrameData_AddReadbackGroupC takes the same block); checked by the path
         Guarded([&]() -> u64 { K2Census::Registered('C', table_base, group, ret); return 0; });
@@ -9391,6 +9640,9 @@ u64 PS4_SYSV_ABI K2RegisterC(u64 table_base, u64 group, u64 a2, u64 a3, u64 a4, 
 }
 u64 PS4_SYSV_ABI K2FrameReset(u64 frame, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
     (void)a1, (void)a2, (void)a3, (void)a4, (void)a5;
+    if (AnimQueryOrder::On() && ret - ImageBase() + 0x1000000 == 0x1253293) {
+        AnimQueryOrder::QueryReset(); // the world step (DelayPostPhysicsComputeGather) resets the query frame data
+    }
     if (K2Census::On()) {
         Guarded([&]() -> u64 { K2Census::Reset(frame, ret); return 0; });
     }
@@ -12217,6 +12469,18 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "k2_register_c") {
         return reinterpret_cast<u64>(&K2RegisterC);
+    }
+    if (name == "anim_job_done") {
+        return reinterpret_cast<u64>(&AnimJobDone);
+    }
+    if (name == "k2_gather") {
+        return reinterpret_cast<u64>(&K2Gather);
+    }
+    if (name == "anim_group_release") {
+        return reinterpret_cast<u64>(&AnimGroupRelease);
+    }
+    if (name == "anim_query_recording") {
+        return reinterpret_cast<u64>(&AnimQueryRecording);
     }
     if (name == "k2_animation_tick") {
         return reinterpret_cast<u64>(&K2AnimationTick);
