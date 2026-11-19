@@ -9,6 +9,24 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-19 - TAA in the new engine: the normal renderer's own TAA shader (not yet merged)
+
+- **Problem:** a player who chose TAA (in-game menu or launcher) got, in the new engine, an error line "the new engine has no
+  TAA yet" and FSR 3.1 instead (pull request 58). That line is a fault until TAA runs (rule 24).
+- **Considered:** (A) run the normal renderer's TAA shader itself: it is already compiled into the same library, so the
+  new engine loads that compiled shader as it is, with the inputs its anti-aliasing step already collects (scene colour,
+  depth, motion in pixels, the jitter) and its own two history images; the sharpening is the passes the new engine already
+  has (as for DLAA). (B) a copy of the TAA shader in the new engine's shader folder: two copies that can drift apart.
+  (C) keep FSR 3.1 for a TAA choice: the fault stays.
+- **Choice:** A. One TAA in the code base instead of two; the same picture rule as the normal renderer by construction; a
+  plain compute shader, so no card feature is involved. With this, every anti-aliasing the game's settings can load has
+  its own path in the new engine (off, FSR 3.1, FSR 4, DLAA, TAA). The TAA's depth test wants the game's camera; the new
+  engine reads none, and the normal renderer finds none in this game either, so both give it zeros (the same test).
+  Giving TAA a camera would change both renderers: the owner's call. Switch `TLG_VKB_TAA` (`=0` the old way: fault line
+  and FSR 3.1).
+- **Who:** box (rule 14).
+- **Links:** issue 57 (https://github.com/tabnul/tlg-vkb-work/issues/57); pull request for branch `fix/vkb-taa`.
+
 ## 2026-11-19 - Every anti-aliasing choice in tlg.ini reaches the new engine, read as the game reads it (not yet merged)
 
 - **Problem:** with the new engine, some tlg.ini choices gave no anti-aliasing at all, without a line: FSR 4.1.1
