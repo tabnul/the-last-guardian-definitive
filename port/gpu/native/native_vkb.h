@@ -70,6 +70,8 @@ bool FrameRingInPlace(u64& buffer_handle, u64& begin, u64& end);
 /// R3a (TLG_VKB_RING_VRAM, default on; =0 off): the engine's frame allocator ring (`JsDevice_AllocFrameGarlic`, VolatileGarlic: CPU write only, as Garlic on the console) is moved into
 /// device-local, CPU-visible memory of our own (resizable BAR): the allocator's base (`allocator + 0x18`) points at our mapping, so every frame block is GPU memory the
 /// engine writes directly; nothing is staged or read over the bus. Once, at the first allocation (blocks handed out before stay where they are). False when off or not possible.
+/// The mapping must be below 40 bits (the engine's buffer descriptions): with VK_EXT_map_memory_placed (Linux, TLG_VKB_RING_PLACED, default on) it is placed in the runtime's
+/// low memory; else the driver's own address is used and the ring stays in place when that is above 40 bits.
 bool PlaceFrameRing(u64 allocator);
 /// R3a: once the frame ring is in device memory, its old window in guest memory (host memory the CPU reads at full speed) for our own ring redirects (slot, skin,
 /// light): the game reads what they copy back on the CPU, so it stays there. False before or without the move.

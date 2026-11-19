@@ -209,17 +209,19 @@ bool Instance::CreateDevice() {
         vk::PhysicalDevicePrimitiveTopologyListRestartFeaturesEXT,
         vk::PhysicalDeviceShaderAtomicFloat2FeaturesEXT,
         vk::PhysicalDeviceWorkgroupMemoryExplicitLayoutFeaturesKHR,
-        vk::PhysicalDeviceImage2DViewOf3DFeaturesEXT, vk::PhysicalDeviceShaderClockFeaturesKHR>();
+        vk::PhysicalDeviceImage2DViewOf3DFeaturesEXT, vk::PhysicalDeviceShaderClockFeaturesKHR,
+        vk::PhysicalDeviceMapMemoryPlacedFeaturesEXT>();
     features = feature_chain.get().features;
 
     const vk::StructureChain properties_chain = physical_device.getProperties2<
         vk::PhysicalDeviceProperties2, vk::PhysicalDeviceVulkan11Properties,
         vk::PhysicalDeviceVulkan12Properties, vk::PhysicalDeviceVulkan13Properties,
-        vk::PhysicalDevicePushDescriptorPropertiesKHR>();
+        vk::PhysicalDevicePushDescriptorPropertiesKHR, vk::PhysicalDeviceMapMemoryPlacedPropertiesEXT>();
     vk11_props = properties_chain.get<vk::PhysicalDeviceVulkan11Properties>();
     vk12_props = properties_chain.get<vk::PhysicalDeviceVulkan12Properties>();
     vk13_props = properties_chain.get<vk::PhysicalDeviceVulkan13Properties>();
     push_descriptor_props = properties_chain.get<vk::PhysicalDevicePushDescriptorPropertiesKHR>();
+    placed_map_alignment = properties_chain.get<vk::PhysicalDeviceMapMemoryPlacedPropertiesEXT>().minPlacedMemoryMapAlignment;
     LOG_INFO(Render_Vulkan, "Physical device subgroup size {}", vk11_props.subgroupSize);
 
     if (available_extensions.empty()) {
@@ -357,6 +359,11 @@ bool Instance::CreateDevice() {
 #ifndef _WIN32
     // GPU pool (TLG_VKB_GPU_POOL): the guest pool as our memory, exported as a dma-buf file the runtime maps; only asked for on Linux
     external_memory_dma_buf = add_extension(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME) && add_extension(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME);
+    // R3a placed ring (TLG_VKB_RING_PLACED): memory mapped at an address we choose (below 40 bits, for the frame ring); asked once here, only on Linux (the address is
+    // reserved by the runtime with mmap, which a placed mapping replaces; Windows would need a placeholder reservation, not built)
+    if (feature_chain.get<vk::PhysicalDeviceMapMemoryPlacedFeaturesEXT>().memoryMapPlaced && placed_map_alignment != 0) {
+        map_memory_placed = add_extension(VK_KHR_MAP_MEMORY_2_EXTENSION_NAME) && add_extension(VK_EXT_MAP_MEMORY_PLACED_EXTENSION_NAME);
+    }
 #endif
     const bool calibrated_timestamps = add_extension(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
     calibrated_timestamps_supported = calibrated_timestamps;
@@ -568,6 +575,9 @@ bool Instance::CreateDevice() {
         vk::PhysicalDeviceShaderClockFeaturesKHR{
             .shaderSubgroupClock = shader_clock_features.shaderSubgroupClock,
         },
+        vk::PhysicalDeviceMapMemoryPlacedFeaturesEXT{
+            .memoryMapPlaced = true,
+        },
     };
 
     if (!custom_border_color) {
@@ -621,6 +631,9 @@ bool Instance::CreateDevice() {
     }
     if (!shader_clock) {
         device_chain.unlink<vk::PhysicalDeviceShaderClockFeaturesKHR>();
+    }
+    if (!map_memory_placed) {
+        device_chain.unlink<vk::PhysicalDeviceMapMemoryPlacedFeaturesEXT>();
     }
 
     auto [device_result, dev] = physical_device.createDeviceUnique(device_chain.get());

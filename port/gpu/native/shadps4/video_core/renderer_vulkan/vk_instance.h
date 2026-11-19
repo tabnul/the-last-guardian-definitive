@@ -153,6 +153,15 @@ public:
         return external_memory_dma_buf;
     }
 
+    /// Returns true if VK_KHR_map_memory2 and VK_EXT_map_memory_placed (feature memoryMapPlaced) are enabled (Linux only: R3a, the frame ring at an address below 40 bits)
+    bool IsMapMemoryPlacedSupported() const {
+        return map_memory_placed;
+    }
+    /// The alignment of a placed mapping's address and size (0 without the feature)
+    u64 PlacedMapAlignment() const {
+        return placed_map_alignment;
+    }
+
     /// Returns true if VK_KHR_maintenance8 is supported
     bool IsMaintenance8Supported() const {
         return maintenance_8;
@@ -581,6 +590,8 @@ private:
     bool maintenance_6{};
     bool external_memory_host{};
     bool external_memory_dma_buf{};
+    bool map_memory_placed{};
+    u64 placed_map_alignment{};
     bool maintenance_8{};
     bool attachment_feedback_loop{};
     bool image_2d_view_of_3d{};
