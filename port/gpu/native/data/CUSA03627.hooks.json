@@ -284,6 +284,20 @@
       "expect": "554889e541574156"
     },
     {
+      "name": "K2_Enqueue",
+      "ghidra": "0x1e4ac30",
+      "mode": "mid",
+      "handler": "k2_enqueue",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "K2_AnimationTick",
+      "ghidra": "0x1d0ded0",
+      "mode": "call",
+      "handler": "k2_animation_tick",
+      "expect": "554889e541574156"
+    },
+    {
       "name": "K2_FrameDataReset",
       "ghidra": "0x1dfdea0",
       "mode": "call",

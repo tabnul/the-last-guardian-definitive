@@ -9139,6 +9139,8 @@ std::array<FrameEntry, 8> frames{};
 std::map<std::string, u64> by_path;
 u64 registrations = 0, late = 0, last_alt = ~0ull, begins = 0, begins_alt = 0, begins_current = 0, last_begin_frame = 0, begin_frame_changes = 0;
 std::map<u64, u32> late_logged; ///< per producer, the late registrations logged in full (20 each)
+std::atomic<u32> last_event{0}; ///< the last of: 1 AnimationTick started, 2 query frame data reset, 3 its BeginRecording
+std::map<std::string, u64> trico_after; ///< Trico registrations by the last event before them
 thread_local std::string t_chain; ///< the call chain at the entry of Trico's contact producer (017d3f40), set by the mid hook K2_TricoChain
 std::map<std::string, std::pair<u64, u64>> chains; ///< that chain -> (on time, late) registrations of 0x17d57e1
 u32 last_switch = ~0u;
@@ -9205,6 +9207,15 @@ void Registered(char table, u64 table_base, u64 group, u64 ret) {
         ++late;
     }
     if (producer == 0x17d57e1) {
+        static const char* names[] = {"none", "AnimationTick start", "reset", "BeginRecording"};
+        const u32 ev = last_event.load(std::memory_order_relaxed);
+        if (++trico_after[names[ev < 4 ? ev : 0]] % 2000 == 1) {
+            std::string sum;
+            for (const auto& [k, v] : trico_after) {
+                sum += fmt::format("[after {}: {}] ", k, v);
+            }
+            TLG_LOG(CP, Warn, "K2 census: Trico registrations by last event: {}", sum);
+        }
         auto& c = chains[t_chain.empty() ? std::string("?") : t_chain];
         (e.begins_since_reset != 0 ? c.second : c.first)++;
         if ((c.first + c.second) % 2000 == 1) {
@@ -9225,6 +9236,9 @@ void Reset(u64 frame, u64 ret) {
     }
     std::scoped_lock lock{mutex};
     FrameEntry& e = Entry(frame);
+    if (ret - ImageBase() + 0x1000000 == 0x1253293) {
+        last_event.store(2, std::memory_order_relaxed); // the query frame data's reset (the world step)
+    }
     ++e.resets;
     e.reset_caller = ret - ImageBase() + 0x1000000;
     e.begins_since_reset = 0;
@@ -9238,6 +9252,9 @@ void Began(u64 frame, u64 recording, u64 ret) {
     FrameEntry& e = Entry(frame);
     ++e.begins_since_reset;
     ++e.begins;
+    if (recording == 1) {
+        last_event.store(3, std::memory_order_relaxed); // the query frame data's BeginRecording (01255570 passes 1)
+    }
     e.begin_caller = ret - ImageBase() + 0x1000000;
     u64 alt = 0;
     u32 bit = 0;
@@ -9296,7 +9313,63 @@ u64 PS4_SYSV_ABI K2TaskObject(Core::GuestHooks::MidContext* c) {
     static std::atomic<u32> logged{0};
     static std::atomic<u64> last{0};
     if (c->rdi != last.exchange(c->rdi) && logged.fetch_add(1) < 8) {
-        TLG_LOG(CP, Warn, "K2 census: 015a0160 runs on object {:#x} (vtable {:#x})", c->rdi, IsHeapPointer(c->rdi) ? Rd<u64>(c->rdi, 0) - ImageBase() + 0x1000000 : 0);
+        std::string words;
+        const u64 scheduler = Rd<u64>(ImageBase() + 0x69f2b40 - 0x1000000, 0);
+        if (IsHeapPointer(scheduler)) {
+            const u64 vt = Rd<u64>(scheduler, 0);
+            words += fmt::format(" scheduler {:#x} vtable {:#x} +0x70 -> {:#x}", scheduler, vt - ImageBase() + 0x1000000, Rd<u64>(vt, 0x70) - ImageBase() + 0x1000000);
+        }
+        for (u32 o = 8; o < 0x60 && IsHeapPointer(c->rdi); o += 8) {
+            words += fmt::format(" +{:#x}={:#x}", o, Rd<u64>(c->rdi, o));
+        }
+        const std::pair<const char*, u64> regs[] = {{"rbx", c->rbx}, {"r12", c->r12}, {"r13", c->r13}, {"r14", c->r14}, {"r15", c->r15}};
+        for (const auto& [rn, rv] : regs) {
+            if (IsHeapPointer(rv) && (rv & 7) == 0) {
+                const u64 fn = Rd<u64>(rv, 8);
+                if (fn >= ImageBase() && fn < ImageBase() + 0x4000000) {
+                    words += fmt::format(" | {} job? parent {:#x} callback {:#x} [6] {:#x}", rn, Rd<u64>(rv, 0), fn - ImageBase() + 0x1000000, Rd<u64>(rv, 0x30));
+                }
+            }
+        }
+        TLG_LOG(CP, Warn, "K2 census: 015a0160 runs on object {:#x} (vtable {:#x}), caller args rsi {:#x} rdx {:#x};{}", c->rdi,
+                IsHeapPointer(c->rdi) ? Rd<u64>(c->rdi, 0) - ImageBase() + 0x1000000 : 0, c->rsi, c->rdx, words);
+    }
+    return 0;
+}
+
+/// Mid hook at the entry of the task manager's enqueue (01e4ac30, vtable 026ebcc0 + 0x70): who enqueues a CharacterAnimationExt job (debug, K2 census)
+u64 PS4_SYSV_ABI K2Enqueue(Core::GuestHooks::MidContext* c) {
+    if (!K2Census::On() || !IsHeapPointer(c->rsi) || Rd<u64>(c->rsi, 0) - ImageBase() + 0x1000000 != 0x26d54b8) {
+        return 0;
+    }
+    Guarded([&]() -> u64 {
+        const u64 base = ImageBase();
+        std::string chain = fmt::format("{:#x}", Rd<u64>(c->rsp, 0) - base + 0x1000000);
+        u64 rbp = c->rbp;
+        for (u32 i = 0; i < 10 && rbp >= c->rsp && rbp < c->rsp + (4ull << 20) && (rbp & 7) == 0; ++i) {
+            const u64 ra = Rd<u64>(rbp, 8);
+            if (ra < base || ra > base + 0x4000000) {
+                break;
+            }
+            chain += fmt::format(" < {:#x}", ra - base + 0x1000000);
+            rbp = Rd<u64>(rbp, 0);
+        }
+        static std::mutex m;
+        static std::map<std::string, u64> seen;
+        std::scoped_lock lock{m};
+        if (seen[chain]++ % 1000 == 0) {
+            TLG_LOG(CP, Warn, "K2 census: CharacterAnimationExt {:#x} enqueued by {} (x{})", c->rsi, chain, seen[chain]);
+        }
+        return 0;
+    });
+    return 0;
+}
+
+/// Call hook at AnimationTick's execute (01d0ded0): marks its start for the K2 census (debug)
+u64 PS4_SYSV_ABI K2AnimationTick(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a0, (void)a1, (void)a2, (void)a3, (void)a4, (void)a5, (void)ret;
+    if (K2Census::On()) {
+        K2Census::last_event.store(1, std::memory_order_relaxed);
     }
     return 0;
 }
@@ -12144,6 +12217,12 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "k2_register_c") {
         return reinterpret_cast<u64>(&K2RegisterC);
+    }
+    if (name == "k2_animation_tick") {
+        return reinterpret_cast<u64>(&K2AnimationTick);
+    }
+    if (name == "k2_enqueue") {
+        return reinterpret_cast<u64>(&K2Enqueue);
     }
     if (name == "k2_task_object") {
         return reinterpret_cast<u64>(&K2TaskObject);
