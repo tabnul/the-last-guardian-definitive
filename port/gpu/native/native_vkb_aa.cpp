@@ -105,7 +105,7 @@ Kind ChoiceFault(const std::string& why) {
         std::scoped_lock lock{choice_fault_mutex};
         choice_fault = why;
     }
-    choice_notice_due.store(true, std::memory_order_relaxed);
+    choice_notice_due.store(true, std::memory_order_release);
     LOG_ERROR(Render_Vulkan, "vkb aa: {}. FSR 3.1 native AA runs instead", why);
     return Kind::Fsr3;
 }
@@ -123,12 +123,11 @@ Kind Resolve(const VkbVulkan::Instance& inst) {
     if (v == "fsr3" || v == "1") {
         return Kind::Fsr3;
     }
-    if (v == "off" || v == "0") {
-        LOG_INFO(Render_Vulkan, "vkb aa: anti-aliasing off (the player's choice: Off, the game's own)");
-        return Kind::Off;
-    }
-    if (v.empty()) {
-        LOG_INFO(Render_Vulkan, "vkb aa: TLG_VKB_AA not set (the engine was started without the launcher): anti-aliasing off");
+    if (v == "off" || v == "0" || v.empty()) {
+        if (ChoiceSwitch()) {
+            LOG_INFO(Render_Vulkan, "vkb aa: anti-aliasing off ({})", v.empty() ? "TLG_VKB_AA not set: the engine was started without the launcher"
+                                                                                  : "the player's choice: Off, the game's own");
+        }
         return Kind::Off;
     }
     if (v == "fsr4") {
@@ -493,7 +492,7 @@ void Fsr4Fault(const std::string& why) {
 }
 
 bool EnsureContext(u32 w, u32 h) {
-    if (choice_notice_due.exchange(false, std::memory_order_relaxed)) {
+    if (choice_notice_due.exchange(false, std::memory_order_acquire)) {
         std::scoped_lock lock{choice_fault_mutex};
         std::string text = choice_fault + ". FSR 3.1 is used instead.";
         text[0] = char(std::toupper(static_cast<unsigned char>(text[0])));

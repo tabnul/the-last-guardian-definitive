@@ -29,6 +29,11 @@ CASES = [
     ({'aa_row': '1'}, 'fsr3', 'fsr3'),
     ({'aa_row': '1', 'dlaa': '0', 'upscaler': 'fsr4'}, 'off', 'off'),
     ({'aa_row': '0', 'upscaler': 'taa'}, 'dlss', 'auto'),
+    ({'aa_row': '01', 'upscaler': 'taa'}, 'taa', 'taa'),             # numbers are read as the game's atoi reads them
+    ({'aa_row': 'abc', 'upscaler': 'taa'}, 'dlss', 'auto'),
+    ({'aa_row': '1', 'dlaa': '00', 'upscaler': 'fsr4'}, 'off', 'off'),
+    ({'aa_row': '1', 'dlaa': '2x', 'upscaler': 'fsr4'}, 'fsr4', 'fsr4'),
+    ({'aa_row': '1', 'dlaa': '', 'upscaler': 'fsr4'}, 'off', 'off'),
 ]
 GAME_RULE = ROOT / 'out' / 'gpu' / ('tlg-ini-upscaler.exe' if os.name == 'nt' else 'tlg-ini-upscaler')
 
@@ -49,6 +54,9 @@ class BackendAaEnvTests(unittest.TestCase):
     def test_frame_generation_needs_an_aa(self):
         env = tlg_run.backend_aa_env({}, {'aa_row': '1', 'upscaler': 'off', 'frame_generation': '1'})
         self.assertEqual(env, {'TLG_VKB_AA': 'dlaa', 'TLG_VKB_FG': 'dlss'})
+        # TAA with frame generation: the engine has no TAA, it says so and runs FSR 3.1 (frame generation makes its own inputs)
+        env = tlg_run.backend_aa_env({}, {'aa_row': '1', 'upscaler': 'taa', 'frame_generation': '1'})
+        self.assertEqual(env, {'TLG_VKB_AA': 'taa', 'TLG_VKB_FG': 'dlss'})
         env = tlg_run.backend_aa_env({'frame_rate': '30'}, {'aa_row': '1', 'upscaler': 'off', 'frame_generation': '1'})
         self.assertEqual(env, {'TLG_VKB_AA': 'off'})
 

@@ -6,6 +6,11 @@
 #include <cstdlib>
 #include "tlg_settings.h"
 
+#ifdef _WIN32
+static int setenv(const char* name, const char* value, int) { return _putenv_s(name, value); }
+static int unsetenv(const char* name) { return _putenv_s(name, ""); }
+#endif
+
 int main(int argc, char** argv) {
     using namespace TlgSettings;
     if (argc != 2) {

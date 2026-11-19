@@ -959,16 +959,25 @@ def texture_packs(folder):
 INI_UPSCALERS = ('off', 'fsr3', 'fsr4', 'fsr411', 'taa', 'dlss')
 
 
+def ini_int(ini, key, default):
+    """A tlg.ini number as the game reads it (TlgSettings::Set: C atoi; a key that is not there keeps the default)."""
+    if key not in ini:
+        return default
+    match = re.match(r'[ \t\n\v\f\r]*([+-]?[0-9]+)', ini[key])
+    return int(match.group(1)) if match else 0
+
+
 def loaded_upscaler(ini):
     """The upscaler the game itself loads from tlg.ini (TlgSettings::Load, before the card checks): a name it does not
     know keeps its default (fsr3); a file from before the AA row (no aa_row), and every upscaler but off, fsr3, fsr4 and
-    taa (dlss, fsr411), load as dlss; anti-aliasing off (dlaa=0) loads as off."""
+    taa (dlss, fsr411), load as dlss; anti-aliasing off (dlaa=0) loads as off. Not mirrored: the environment overrides
+    TLG_UPSCALER / TLG_DLAA (test runs), and spaces before a key (read_ini strips them, the game does not)."""
     upscaler = ini.get('upscaler', 'fsr3')
     if upscaler not in INI_UPSCALERS:
         upscaler = 'fsr3'
-    if ini.get('aa_row', '0') in ('0', '') or upscaler not in ('off', 'fsr3', 'fsr4', 'taa'):
+    if ini_int(ini, 'aa_row', 0) == 0 or upscaler not in ('off', 'fsr3', 'fsr4', 'taa'):
         upscaler = 'dlss'
-    if ini.get('dlaa', '1') in ('0', '') and upscaler != 'off':
+    if ini_int(ini, 'dlaa', 1) == 0 and upscaler != 'off':
         upscaler = 'off'
     return upscaler
 
@@ -997,7 +1006,7 @@ def backend_aa_env(settings, ini):
         aa = {'auto': 'auto', 'dlss': 'dlaa', 'fsr3': 'fsr3', 'fsr4': 'fsr4'}.get(choice)
     else:
         loaded = loaded_upscaler(ini)
-        if ini.get('aa_row', '0') in ('0', '') and loaded != 'off':
+        if ini_int(ini, 'aa_row', 0) == 0 and loaded != 'off':
             aa = 'auto'                     # nothing chosen yet (fresh launch, or a tlg.ini from before the row)
         else:
             aa = 'dlaa' if loaded == 'dlss' else loaded
