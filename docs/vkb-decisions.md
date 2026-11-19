@@ -9,6 +9,24 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-19 - Every anti-aliasing choice in tlg.ini reaches the new engine, read as the game reads it (not yet merged)
+
+- **Problem:** with the new engine, some tlg.ini choices gave no anti-aliasing at all, without a line: FSR 4.1.1
+  (`upscaler=fsr411`), TAA, an unknown name. The launcher had its own small table of choices; the third fix of that
+  kind (after pull requests 51 and 56), so treated as recurring (rule 14f).
+- **Considered:** (A) run FSR 4.1.1 in the new engine: cannot run on the test box, a second FSR 4 path, and the game's own
+  settings code reads `fsr411` in tlg.ini as DLSS anyway (no menu offers 4.1.1; only the test override
+  `TLG_UPSCALER=fsr411` runs it). (B) map `fsr411` to the new engine's FSR 4: one more table entry, differs from what the
+  game loads, TAA still without AA. (C) the launcher reads the choice with the game's own loading rule for every value
+  and passes it on; the engine names every value; a choice it has no AA for (TAA, an unknown name) is a fault (error
+  line, on-screen message, counter) and FSR 3.1 runs.
+- **Choice:** C. One rule instead of a table, checked by a test against the game's real loader; the new engine gets
+  the AA the normal renderer runs for the same file; nothing depends on the card. TAA in the new engine is a separate
+  job. Making `fsr411` mean FSR 4 would change settings code the normal renderer shares (principle 8): owner's call.
+  Switch `TLG_VKB_AA_CHOICE` (`=0` the old table).
+- **Who:** box (rule 14).
+- **Links:** issue 57 (https://github.com/tabnul/tlg-vkb-work/issues/57); pull request for branch `fix/vkb-aa-choice`.
+
 ## 2026-11-19 - The new engine runs FSR 4 itself; the owner's FSR rules for a choice, a fresh launch and a failure (not yet merged)
 
 - **Problem:** in the new engine a player's FSR 4 choice ran as FSR 3.1 (the launcher mapped it, the engine had no FSR 4).

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cctype>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -82,15 +83,53 @@ bool IsRdna4(const VkbVulkan::Instance& inst) {
     return inst.GetVendorID() == 0x1002 && (inst.GetDeviceID() & 0xff00u) == 0x7500u;
 }
 
-/// TLG_VKB_AA: fsr3 (or 1), fsr4, dlaa, auto (the launcher on a fresh launch: the player chose nothing), anything else off. The owner's rules (pull request 51):
-/// a choice is used as is (DLAA without DLSS is FSR 3.1, their DlssFallback); the fresh-launch default is DLSS if present, else FSR 4 on an RDNA 4 card,
-/// else FSR 3.1. TLG_VKB_FSR4=0: the old way (fsr4 runs as FSR 3.1, auto as dlaa).
+/// TLG_VKB_AA_CHOICE=0: the old way (a choice the engine has no AA for, taa or an unknown value, is AA off without a line).
+bool ChoiceSwitch() {
+    static const bool on = [] {
+        const char* e = std::getenv("TLG_VKB_AA_CHOICE");
+        return e == nullptr || e[0] != '0';
+    }();
+    return on;
+}
+
+/// A player's choice this engine has no AA for (issue 57): a fault, said in the log and (once the AA first runs) on screen; FSR 3.1 native AA runs, so the
+/// game keeps its anti-aliasing (owner, pull request 51: "The game is never left without AA"; the same reading as a chosen FSR 4 that fails, issue 55)
+std::atomic<u64> c_choice_faults{0};
+std::mutex choice_fault_mutex;
+std::string choice_fault;                  ///< why the choice could not be run (empty: no fault); written in Init, read by the report (under choice_fault_mutex)
+std::atomic<bool> choice_notice_due{false}; ///< the on-screen message waits for the first AA frame (Init runs while the game still loads)
+
+Kind ChoiceFault(const std::string& why) {
+    c_choice_faults.fetch_add(1, std::memory_order_relaxed);
+    {
+        std::scoped_lock lock{choice_fault_mutex};
+        choice_fault = why;
+    }
+    choice_notice_due.store(true, std::memory_order_relaxed);
+    LOG_ERROR(Render_Vulkan, "vkb aa: {}. FSR 3.1 native AA runs instead", why);
+    return Kind::Fsr3;
+}
+
+/// TLG_VKB_AA: fsr3 (or 1), fsr4, dlaa, off, taa, auto (the launcher on a fresh launch: the player chose nothing). The launcher passes every choice the game's
+/// own settings can hold (tlg_run.backend_aa_env, the rule of TlgSettings::Load). The owner's rules (pull request 51): a choice is used as is (DLAA without
+/// DLSS is FSR 3.1, their DlssFallback); the fresh-launch default is DLSS if present, else FSR 4 on an RDNA 4 card, else FSR 3.1; never without AA, so a
+/// choice this engine has no AA for (taa, an unknown value) is a fault and FSR 3.1 runs. Not set at all (a tool that starts the engine without the
+/// launcher): off, with an info line. TLG_VKB_FSR4=0: the old way for FSR 4 (fsr4 runs as FSR 3.1, auto as dlaa); TLG_VKB_AA_CHOICE=0: the old way for
+/// taa and unknown values (off, no line).
 Kind Resolve(const VkbVulkan::Instance& inst) {
     const char* e = std::getenv("TLG_VKB_AA");
     asked = e != nullptr ? e : "";
     const std::string v = asked;
     if (v == "fsr3" || v == "1") {
         return Kind::Fsr3;
+    }
+    if (v == "off" || v == "0") {
+        LOG_INFO(Render_Vulkan, "vkb aa: anti-aliasing off (the player's choice: Off, the game's own)");
+        return Kind::Off;
+    }
+    if (v.empty()) {
+        LOG_INFO(Render_Vulkan, "vkb aa: TLG_VKB_AA not set (the engine was started without the launcher): anti-aliasing off");
+        return Kind::Off;
     }
     if (v == "fsr4") {
         if (Fsr4Switch()) {
@@ -119,8 +158,15 @@ Kind Resolve(const VkbVulkan::Instance& inst) {
             return Kind::Fsr3;
         }
         LOG_WARNING(Render_Vulkan, "vkb aa: DLAA asked for, but tlg_dlss.dll / nvngx_dlss.dll are not next to the executable: AA off");
+        return Kind::Off;
     }
-    return Kind::Off;
+    if (!ChoiceSwitch()) {
+        return Kind::Off; // the old way
+    }
+    if (v == "taa") {
+        return ChoiceFault("TAA was chosen, but the new engine has no TAA yet");
+    }
+    return ChoiceFault(fmt::format("anti-aliasing '{}' is not a choice the new engine knows", v));
 }
 
 const VkbVulkan::Instance* instance = nullptr;
@@ -447,6 +493,12 @@ void Fsr4Fault(const std::string& why) {
 }
 
 bool EnsureContext(u32 w, u32 h) {
+    if (choice_notice_due.exchange(false, std::memory_order_relaxed)) {
+        std::scoped_lock lock{choice_fault_mutex};
+        std::string text = choice_fault + ". FSR 3.1 is used instead.";
+        text[0] = char(std::toupper(static_cast<unsigned char>(text[0])));
+        TlgOverlay::Notice(text, 15.0f);
+    }
     if ((context != nullptr || (Chosen() == Kind::Dlaa && output != VK_NULL_HANDLE) || (Chosen() == Kind::Fsr4 && fsr4_made)) && ctx_w == w && ctx_h == h) {
         return true;
     }
@@ -1009,6 +1061,7 @@ nlohmann::json Report() {
     return {{"on", On()},
             {"kind", Chosen() == Kind::Fsr3 ? "fsr3" : Chosen() == Kind::Dlaa ? "dlaa" : Chosen() == Kind::Fsr4 ? "fsr4" : "off"},
             {"asked", asked},
+            {"choice", {{"switch", ChoiceSwitch()}, {"faults", c_choice_faults.load()}, {"fault", [] { std::scoped_lock lock{choice_fault_mutex}; return choice_fault; }()}}},
             {"fsr4", {{"switch", Fsr4Switch()}, {"device_supported", instance != nullptr && instance->IsFsr4Int8Supported()},
                       {"rdna4", instance != nullptr && IsRdna4(*instance)}, {"model_missing", fsr4_model_missing.load()}, {"runs", c_fsr4_runs.load()},
                       {"faults", c_fsr4_faults.load()}, {"fault", [] { std::scoped_lock lock{fsr4_fault_mutex}; return fsr4_fault; }()}}},
