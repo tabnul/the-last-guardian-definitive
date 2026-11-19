@@ -617,9 +617,217 @@ static ssize_t bounce_write(int h,const unsigned char *at,uint64_t size,int64_t 
     return (ssize_t)done;
 }
 #endif
+/* MD5 (RFC 1321): the game's archives index their files by the MD5 of the upper-case name. */
+typedef struct { uint32_t a,b,c,d; } Md5;
+static uint32_t md5_rotl(uint32_t x,int c) { return (x<<c)|(x>>(32-c)); }
+static void md5_block(Md5 *h,const unsigned char *p) {
+    static const uint32_t k[64]={
+        0xd76aa478,0xe8c7b756,0x242070db,0xc1bdceee,0xf57c0faf,0x4787c62a,0xa8304613,0xfd469501,0x698098d8,0x8b44f7af,
+        0xffff5bb1,0x895cd7be,0x6b901122,0xfd987193,0xa679438e,0x49b40821,0xf61e2562,0xc040b340,0x265e5a51,0xe9b6c7aa,
+        0xd62f105d,0x02441453,0xd8a1e681,0xe7d3fbc8,0x21e1cde6,0xc33707d6,0xf4d50d87,0x455a14ed,0xa9e3e905,0xfcefa3f8,
+        0x676f02d9,0x8d2a4c8a,0xfffa3942,0x8771f681,0x6d9d6122,0xfde5380c,0xa4beea44,0x4bdecfa9,0xf6bb4b60,0xbebfbc70,
+        0x289b7ec6,0xeaa127fa,0xd4ef3085,0x04881d05,0xd9d4d039,0xe6db99e5,0x1fa27cf8,0xc4ac5665,0xf4292244,0x432aff97,
+        0xab9423a7,0xfc93a039,0x655b59c3,0x8f0ccc92,0xffeff47d,0x85845dd1,0x6fa87e4f,0xfe2ce6e0,0xa3014314,0x4e0811a1,
+        0xf7537e82,0xbd3af235,0x2ad7d2bb,0xeb86d391};
+    static const int r[64]={7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,
+                            4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21};
+    uint32_t w[16];
+    for (int i=0;i<16;++i) w[i]=(uint32_t)p[i*4]|(uint32_t)p[i*4+1]<<8|(uint32_t)p[i*4+2]<<16|(uint32_t)p[i*4+3]<<24;
+    uint32_t a=h->a,b=h->b,c=h->c,d=h->d;
+    for (int i=0;i<64;++i) {
+        uint32_t f; int g;
+        if (i<16) { f=(b&c)|(~b&d); g=i; }
+        else if (i<32) { f=(d&b)|(~d&c); g=(5*i+1)&15; }
+        else if (i<48) { f=b^c^d; g=(3*i+5)&15; }
+        else { f=c^(b|~d); g=(7*i)&15; }
+        const uint32_t t=d; d=c; c=b;
+        b=b+md5_rotl(a+f+k[i]+w[g],r[i]); a=t;
+    }
+    h->a+=a; h->b+=b; h->c+=c; h->d+=d;
+}
+/* MD5 of lead (may be empty) followed by text[0..n), upper-cased when upper is set (an archive that ignores case
+ * keys its names that way). */
+static void md5_name(const char *lead,const char *text,size_t n,int upper,unsigned char out[16]) { /* upper: 1 upper, -1 lower, 0 as written */
+    Md5 h={0x67452301,0xefcdab89,0x98badcfe,0x10325476};
+    unsigned char block[64];
+    size_t used=0;
+    const size_t l=strlen(lead);
+    n+=l;
+    for (size_t i=0;i<n;++i) {
+        const unsigned char c=(unsigned char)(i<l ? lead[i] : text[i-l]);
+        block[used++]=(unsigned char)(upper>0 ? toupper(c) : upper<0 ? tolower(c) : c);
+        if (used==64) { md5_block(&h,block); used=0; }
+    }
+    const uint64_t bits=(uint64_t)n*8;
+    block[used++]=0x80;
+    if (used>56) { memset(block+used,0,64-used); md5_block(&h,block); used=0; }
+    memset(block+used,0,56-used);
+    for (int i=0;i<8;++i) block[56+i]=(unsigned char)(bits>>(8*i));
+    md5_block(&h,block);
+    const uint32_t v[4]={h.a,h.b,h.c,h.d};
+    for (int i=0;i<16;++i) out[i]=(unsigned char)(v[i/4]>>(8*(i%4)));
+}
+
+/* The game's own console messages reach the port as writes to descriptor 1 or 2 (its printf). Some of them report a
+ * state the shipped game always has and no fault; they are written here at their true level, once per name, and
+ * counted for the report. A message gets an entry only with the proof that it reports no fault.
+ * TLG_GAME_NOTES=0 writes the game's text unchanged (the old behaviour).
+ *
+ * Shader cache variants that were never shipped: the game's blob loader prints
+ * "CreateBlob: Error. Cannot open file <name>." when its own archive index has no such file. For material shaders
+ * the game builds the name from the material's variant keys and, when the file is missing, puts its stock
+ * fallback shader in place (game code, no port code on that path). Such a line becomes a note only when the name is
+ * checked to be in none of the archives the game can open (every .psarc of the game folder and every mounted
+ * .psarc, read through this file layer, so a packed game works the same): then the game never shipped it. When the
+ * name is in an archive, the game failed to load a file that exists (a broken install or mount): its error line
+ * stays. When the archives cannot be read, the error line stays too. */
+typedef struct { const char *prefix; size_t name_at; const char *tail; const char *note; } GameNote; /* name_at: where the name starts in the line */
+static const GameNote game_notes[]={
+    {"CreateBlob: Error. Cannot open file data_trico/ps4_shader_cache/material/",sizeof("CreateBlob: Error. Cannot open file ")-1,".sb.\n",
+     "Game note (info): shader cache variant %.*s is not shipped with the game (in none of its archives); the game uses its fallback shader\n"},
+};
+enum { GameNoteNames=1024 };
+static uint64_t game_note_seen[GameNoteNames]; /* hashes of the names already written (0 = free slot) */
+static size_t game_note_lines, game_note_names, game_note_present;
+static pthread_mutex_t game_note_lock=PTHREAD_MUTEX_INITIALIZER;
+static unsigned char *archive_index; /* 16-byte name hashes of every entry of the game's archives, sorted */
+static size_t archive_index_count, archive_index_files;
+static int archive_index_state; /* 0 = not read yet, 1 = read, -1 = could not be read */
+static size_t archive_index_mounts; /* mount count when it was read: a later mount reads it again */
+static int game_notes_on(void) {
+    static int v=-1;
+    if (v<0) { const char *e=getenv("TLG_GAME_NOTES"); v=!(e && e[0]=='0'); }
+    return v;
+}
+static int hash_compare(const void *a,const void *b) { return memcmp(a,b,16); }
+static uint32_t be32(const unsigned char *p) { return (uint32_t)p[0]<<24|(uint32_t)p[1]<<16|(uint32_t)p[2]<<8|p[3]; }
+/* Adds the entry hashes of one archive (PSARC: 32-byte header, then the entries, each starting with its name hash). */
+static int index_archive(const char *guest) {
+    const int64_t fd=do_open(guest,0,0);
+    if (fd<0) return 0;
+    unsigned char head[32];
+    int ok=do_pread((int)fd,head,32,0)==32 && !memcmp(head,"PSAR",4);
+    const uint32_t entry_size=ok ? be32(head+16) : 0, count=ok ? be32(head+20) : 0;
+    ok=ok && entry_size>=16 && entry_size<=64 && count && count<=(1u<<20); /* 64 MB at most for a damaged header */
+    unsigned char *entries=ok ? malloc((size_t)entry_size*count) : NULL;
+    unsigned char *grown=entries ? realloc(archive_index,(archive_index_count+count)*16) : NULL;
+    if (grown) archive_index=grown;
+    ok=grown && do_pread((int)fd,entries,(uint64_t)entry_size*count,32)==(int64_t)entry_size*count;
+    if (ok) {
+        for (uint32_t i=0;i<count;++i) memcpy(archive_index+(archive_index_count+i)*16,entries+(size_t)i*entry_size,16);
+        archive_index_count+=count; ++archive_index_files;
+    }
+    free(entries);
+    do_close((int)fd);
+    return ok;
+}
+static int psarc_name(const char *name) {
+    const size_t n=strlen(name);
+    if (n<=6) return 0;
+    for (size_t i=0;i<6;++i) if (tolower((unsigned char)name[n-6+i])!=".psarc"[i]) return 0;
+    return 1;
+}
+/* Reads the index of every archive the game can open, once (again when the mount table has changed). Called with
+ * game_note_lock held. */
+static void read_archive_index(void) {
+    pthread_mutex_lock(&lock);
+    const size_t mounted=mount_count;
+    pthread_mutex_unlock(&lock);
+    if (archive_index_state && mounted==archive_index_mounts) return;
+    free(archive_index); archive_index=NULL; archive_index_count=archive_index_files=0;
+    archive_index_mounts=mounted;
+    /* Any step that fails (no game folder, no listing, a name too long, an archive that cannot be read) means the
+     * index may be incomplete: then nothing is relabelled. Buffers on the heap: this runs on a game thread. */
+    int failed=0;
+    char *host=malloc(1024), *guest=malloc(600);
+    Mount *copy=malloc(sizeof(mounts));
+    ArchiveTarget target;
+    if (!host || !guest || !copy || resolve("/app0",host,1024,&target)) failed=1;
+    else {
+        Listing *l=target.archive ? list_archive(target.archive,target.node,"/app0") : list_directory(host,"/app0");
+        if (!l) failed=1;
+        for (size_t i=0;l && i<l->count;++i) {
+            const char *name=l->names+l->offsets[i];
+            if (!psarc_name(name)) continue;
+            if (l->types[i]!=8 || (size_t)snprintf(guest,600,"/app0/%s",name)>=600) failed=1;
+            else failed|=!index_archive(guest);
+        }
+        free_listing(l);
+        pthread_mutex_lock(&lock);
+        const size_t n=mount_count;
+        memcpy(copy,mounts,n*sizeof(Mount));
+        pthread_mutex_unlock(&lock);
+        for (size_t i=0;i<n;++i) if (psarc_name(copy[i].guest)) failed|=!index_archive(copy[i].guest);
+    }
+    free(host); free(guest); free(copy);
+    if (failed || !archive_index_count) { archive_index_state=-1; return; }
+    qsort(archive_index,archive_index_count,16,hash_compare);
+    archive_index_state=1;
+}
+/* 1 = in an archive, 0 = in none, -1 = cannot tell. The game names files from data_trico/; an archive keeps names
+ * from its own root. Every tail of the name that starts after a '/' is tried, in every form the archive format
+ * allows (upper case for an archive that ignores case, as written or lower case for one that does not; with and without a
+ * leading '/' for absolute names). A hit on any of them keeps the error line, the safe side.
+ * Called with game_note_lock held. */
+static int in_archives(const char *name,size_t length) {
+    read_archive_index();
+    if (archive_index_state<0) return -1;
+    for (size_t at=0;at<length;++at) {
+        if (at && name[at-1]!='/') continue;
+        for (int form=0;form<6;++form) {
+            unsigned char key[16];
+            md5_name(form&1 ? "/" : "",name+at,length-at,1-form/2,key);
+            if (bsearch(key,archive_index,archive_index_count,16,hash_compare)) return 1;
+        }
+    }
+    return 0;
+}
+/* 1 = the write was a listed game message and has been handled (written once per name, or counted). */
+static int game_note(int h,const char *text,uint64_t size) {
+    for (size_t i=0;i<sizeof(game_notes)/sizeof(game_notes[0]);++i) {
+        const GameNote *n=&game_notes[i];
+        const size_t p=strlen(n->prefix), t=strlen(n->tail);
+        if (size<=p+t || size>1024 || memcmp(text,n->prefix,p) || memcmp(text+size-t,n->tail,t)) continue;
+        if (memchr(text,'\n',size-1)) continue; /* one whole line only */
+        const char *name=text+n->name_at;
+        const int length=(int)(text+size-t-name)+3; /* the name keeps its ".sb" */
+        uint64_t hash=1469598103934665603ull;
+        for (int k=0;k<length;++k) hash=(hash^(unsigned char)name[k])*1099511628211ull;
+        if (!hash) hash=1;
+        int fresh=1;
+        pthread_mutex_lock(&game_note_lock);
+        size_t slot=hash%GameNoteNames, tries=0;
+        while (game_note_seen[slot] && game_note_seen[slot]!=hash && ++tries<GameNoteNames) slot=(slot+1)%GameNoteNames;
+        if (game_note_seen[slot]==hash) fresh=0;
+        else {
+            const int found=in_archives(name,(size_t)length);
+            if (found) { /* in an archive, or cannot tell: the game's own error line is written */
+                if (found>0) ++game_note_present;
+                pthread_mutex_unlock(&game_note_lock);
+                return 0;
+            }
+            if (tries<GameNoteNames) { game_note_seen[slot]=hash; ++game_note_names; }
+        }
+        ++game_note_lines;
+        pthread_mutex_unlock(&game_note_lock);
+        if (fresh) {
+            char line[1200];
+            const int m=snprintf(line,sizeof(line),n->note,length,name);
+            /* A failed write is left to the normal path, which writes the game's text and reports the problem. */
+            if (m<=0 || host_write(h,line,(uint64_t)(m<(int)sizeof(line) ? m : (int)sizeof(line)-1))<0) return 0;
+        }
+        return 1;
+    }
+    return 0;
+}
+
 static int64_t do_write(int fd,const void *buffer,uint64_t size) {
     int h=host_fd(fd);
     if (h<0) return -EBADF;
+    if ((fd==1 || fd==2) && game_notes_on() && game_note(h,(const char *)buffer,size)) {
+        __atomic_add_fetch(&writes,1,__ATOMIC_RELAXED);
+        return (int64_t)size;
+    }
 #ifdef _WIN32
     /* The CRT writes at its own file pointer: put it at the descriptor's position first. */
     File *f=fd>=3 ? get(fd) : NULL;
@@ -906,5 +1114,10 @@ int runtime_file_translate(const char *guest,char *out,size_t size) { return tra
 void runtime_file_report(void) {
     printf("Runtime: files opened=%zu, reads=%zu (%llu bytes; %zu chunks via the bounce buffer, %zu direct), writes=%zu, not found=%zu\n",
            opens,reads,(unsigned long long)bytes_read,bounce_reads,direct_reads,writes,missing);
+    if (game_note_lines || game_note_present || archive_index_state<0)
+        printf("Runtime: game notes (info): %zu lines of shader cache variants in none of the game's archives, %zu different names, each "
+               "written once; %zu asked-for files that ARE in the archives kept their error line; archive index %s (%zu archives)\n",
+               game_note_lines,game_note_names,game_note_present,archive_index_state>0 ? "read" : archive_index_state<0 ? "NOT readable" : "not needed",
+               archive_index_files);
 }
 
