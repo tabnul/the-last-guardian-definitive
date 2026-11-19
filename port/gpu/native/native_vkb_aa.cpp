@@ -145,7 +145,7 @@ u64 frame_id = 0;
 std::chrono::steady_clock::time_point last_run{};
 bool failed = false;
 bool fsr4_made = false;                     ///< the FSR 4 provider exists (Fsr4::Create returned Ok)
-bool fsr4_model_missing = false;            ///< a chosen FSR 4 found no model files: FSR 3.1 instead, quietly (owner, pull request 51)
+std::atomic<bool> fsr4_model_missing{false}; ///< a chosen FSR 4 found no model files: FSR 3.1 instead, quietly (owner, pull request 51)
 std::mutex fsr4_fault_mutex;
 std::string fsr4_fault;                     ///< why a chosen FSR 4 could not run (empty: no fault; under fsr4_fault_mutex, the report reads it)
 std::atomic<u64> c_fsr4_faults{0}, c_fsr4_runs{0};
@@ -457,7 +457,7 @@ bool EnsureContext(u32 w, u32 h) {
             fsr4_made = true;
         } else if (start == Core::Vkb::Fsr4::Start::NoModel) {
             // the owner's one exception: the FSR 4 files are not installed, FSR 3.1 instead with an info line, nothing on screen
-            fsr4_model_missing = true;
+            fsr4_model_missing.store(true, std::memory_order_relaxed);
             LOG_INFO(Render_Vulkan, "vkb aa: FSR 4 model files are not installed ({}): FSR 3.1 native AA instead", Core::Vkb::Fsr4::Problem());
             active.store(Kind::Fsr3, std::memory_order_relaxed);
         } else {
@@ -1010,7 +1010,7 @@ nlohmann::json Report() {
             {"kind", Chosen() == Kind::Fsr3 ? "fsr3" : Chosen() == Kind::Dlaa ? "dlaa" : Chosen() == Kind::Fsr4 ? "fsr4" : "off"},
             {"asked", asked},
             {"fsr4", {{"switch", Fsr4Switch()}, {"device_supported", instance != nullptr && instance->IsFsr4Int8Supported()},
-                      {"rdna4", instance != nullptr && IsRdna4(*instance)}, {"model_missing", fsr4_model_missing}, {"runs", c_fsr4_runs.load()},
+                      {"rdna4", instance != nullptr && IsRdna4(*instance)}, {"model_missing", fsr4_model_missing.load()}, {"runs", c_fsr4_runs.load()},
                       {"faults", c_fsr4_faults.load()}, {"fault", [] { std::scoped_lock lock{fsr4_fault_mutex}; return fsr4_fault; }()}}},
             {"size", fmt::format("{}x{}", ctx_w, ctx_h)},
             {"motion_passes", c_motion_passes.load()},
