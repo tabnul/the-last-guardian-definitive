@@ -7,6 +7,7 @@
 #include <nlohmann/json_fwd.hpp>
 #include "common/types.h"
 #include "native/native_device.h"
+#include "native/shadps4/video_core/amdgpu/resource.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
 
 namespace VkbVulkan {
@@ -37,6 +38,10 @@ void ObjectsTick();
 /// once, when Vulkan allows it: a cube as a 2D array, a 2D view as a one-layer array, and back); its image is moved to the general layout (the barrier recorded into `cmd`) when
 /// it is not there yet. False: no such view, or the type cannot be had (counted).
 bool ViewForCompute(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, vk::ImageView& out, vk::Image* image = nullptr);
+/// The view type an image binding of a recompiled module declares, for its T#'s host view type (`GetHostViewType`): the type `ViewForCompute` is asked for. Draws and
+/// dispatches both use it. A 1D image is declared as 2D (note 41); a cube as a 2D array of all its faces (spirv_emit_context.cpp ImageType: the module computes the layer,
+/// slice x 6 + face, itself). `TLG_VKB_CUBE_AS_ARRAY=0` (issue 34; the old way) asks for a cube view instead, which `ViewForCompute` cuts to the first cube of the range.
+[[nodiscard]] vk::ImageViewType ModuleViewType(VkbAmdGpu::ImageType type);
 /// R5 TLG_VKB_DRAW_DUMP: what a view and a sampler object are (image size, formats, mips; the sampler's engine description)
 std::string DescribeView(u64 view_id);
 std::string DescribeSampler(u64 object);

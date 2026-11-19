@@ -1,0 +1,50 @@
+# Copies the merged new-engine branch `vkb` to the public branch `vkb-amd` of
+# tabnul/the-last-guardian-definitive after every merge. No AI. The files listed in PRIVATE_ONLY
+# never go along. If anything is off (conflict, a private-looking line), it stops and pushes nothing.
+name: Publish vkb-amd
+on:
+  push:
+    branches: [vkb]
+  workflow_dispatch:
+concurrency: publish-vkb-amd
+permissions:
+  contents: read
+jobs:
+  publish:
+    if: github.repository == 'tabnul/tlg-vkb-work'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: vkb
+          fetch-depth: 0
+      - name: Merge vkb into vkb-amd and push
+        env:
+          KEY: ${{ secrets.VKB_AMD_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          PRIVATE_ONLY="docs/vkb-decisions.md docs/vkb-author-findings.md .github/workflows/publish-vkb-amd.yml"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/pub
+          chmod 600 ~/.ssh/pub
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/pub -o IdentitiesOnly=yes"
+          git config user.name tabnul
+          git config user.email tabnul@users.noreply.github.com
+          git remote add pub git@github.com:tabnul/the-last-guardian-definitive.git
+          git fetch -q pub vkb-amd
+          git checkout -q -B vkb-amd pub/vkb-amd
+          git merge --no-ff --no-commit origin/vkb || true
+          git rm -q -f --ignore-unmatch $PRIVATE_ONLY
+          left=$(git diff --name-only --diff-filter=U)
+          if [ -n "$left" ]; then echo "merge conflict, nothing pushed:"; echo "$left"; exit 1; fi
+          if [ ! -f .git/MERGE_HEAD ] && git diff --cached --quiet; then echo "nothing new"; exit 0; fi
+          git commit -q -m "vkb-amd: merge vkb $(git rev-parse --short origin/vkb)"
+          for f in $PRIVATE_ONLY; do
+            if [ -e "$f" ]; then echo "private file still present: $f"; exit 1; fi
+          done
+          bad='10\.100\.[0-9]+\.[0-9]+|BEGIN [A-Z ]*PRIVATE KEY|[0-9]{8,10}:[A-Za-z0-9_-]{35}|ghp_[A-Za-z0-9]{30,}|github_pat_|sk-ant-|tlg-telegram'
+          if git diff pub/vkb-amd HEAD | grep -E '^\+' | grep -nE "$bad"; then
+            echo "private-looking line found, nothing pushed"; exit 1
+          fi
+          git push pub vkb-amd

@@ -34,6 +34,73 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-19 - Moving-things mask for all 69 masked scenes; no scene is log only for noise (not yet merged)
+
+- **Problem:** the solid-blob mask still hid still surfaces (pots, mirror frame, buildings) in several scenes, where a real
+  new-engine fault could sit (issue 27, issue 34, rule 20).
+- **Considered:** (A) the solid-blob mask (open the difference before growing); (B) count only differences above 48, then
+  open, then grow: the shine of a still surface differs by little, the boy, grass and loose objects by a lot; (C) detect
+  surfaces by kind (per-scene special cases, rejected before).
+- **Choice:** B, one rule for every scene, and the scenes judged with the scene's own noise limit (issue 9) because the
+  normal renderer still differs from itself a little on still surfaces. Mask share 0.9% on average. The 15 scenes the rule
+  A had sent to log only are back in the picture check. Owner, 2026-11-19: "take the still surfaces out of the mask
+  (pots, pillars, walls, buildings, the mirror frame). Grass, the boy and things that really move stay masked ... judge
+  it with its own noise limit (issue 9) ... instead of the fixed limit."
+- **Who:** owner decided the aim; box chose the threshold rule.
+- **Links:** issue 27, issue 9, issue 34; pull request 33.
+
+---
+
+## 2026-11-19 - The new engine's developer dumps become one test tool, off by default (not yet merged)
+
+- **Problem:** Under the new engine every take writes about 120 to 210 lines at warning or error level that only print
+  state for the developer: a one-time note on where the three scene slot groups' memory sits (sent through the
+  rare-event channel, so it shows as 3 error lines), the bindings of each new compute shader, values of staging reads,
+  copies into staging textures, BeginRecording's device fields and the first AABB read check (issue 36, log cause C).
+  None of them reports a skipped, failed or missing step, so they hide the lines that do. The owner asked for a clean log.
+- **Considered:** (1) one switch for all of them (`TLG_VKB_DEV_LOG=1` writes them again, at info level, rule 24), off by
+  default, and one counter per kind in the stats that counts what each dump is about whether the switch is on or off;
+  (2) lower each line to the debug level: no switch (principle 7), the work to build each line still runs (13), and
+  whether it shows depends on the log filter, not on one named switch; (3) delete the dumps: the developer loses tools
+  that are still used for open questions, and the stats would lose what they show.
+- **Choice:** 1. Principle 13 (a test tool costs nothing when off: with the switch off the dumps do not build their
+  text, read their extra memory or keep their own maps), principle 5 kept (none of the lines counts a skip; what
+  they are about is counted in `vkb.dev_log`, including whether the AABB guard is on), principle 7 (the switch is the
+  old behaviour). With the new engine off the dumps are written as before. The `staging read` lines with `-nan` and
+  `inf` were checked first: in the full run of 2026-11-18 (20,162 such lines) they are only seen on 32x32 to 256x256
+  textures, always on a copy that had finished, never on the 16x16 float textures. The dump reads every 4-byte texel as
+  one float; a run with the switch on, which now also prints the format, shows these textures are two 16-bit signed
+  numbers per texel (`R16G16Snorm`), and such a texel read as one float gives exactly these huge, `-nan` and `inf`
+  values. So they are a dump that misreads the format, not wrong data, and were not split off.
+- **Who:** box (rule 14).
+- **Links:** issue 36 (https://github.com/tabnul/tlg-vkb-work/issues/36), list
+  https://github.com/tabnul/tlg-vkb-work/issues/36#issuecomment-6997220598 ; pull request for branch `fix/vkb-dev-log`.
+
+---
+
+## 2026-11-19 - Cube images are bound as the 2D arrays the recompiled shaders declare
+
+- **Problem:** The pots in s10_03_Escape_Pitfall_001 lost their teal reflection (issue 34). The recompiled shaders
+  declare every cube image as a 2D array and pick the layer themselves (probe slot x 6 + face). The new engine bound
+  a Vulkan cube view instead, and its bind code cut that view to the first cube (6 layers). The deferred lighting pass
+  reads a cube array of 64 probe slots, so every probe read slot 0's cube. Found by comparing RenderDoc captures of
+  both renderers (the normal renderer binds all 384 layers as a 2D array).
+- **Considered:** (A) ask for a 2D array view of the whole view range for every cube binding, one shared mapping for
+  draws and dispatches (the two identical copies become one); nothing recompiled. (B) let the shader translator declare
+  real cube and cube-array images: every shader with a cube is compiled again, and the shaders compute the layer
+  themselves, so the cube type does not fit them. (C) only for cube arrays (more than 6 layers): a special case, and
+  single cubes would keep a view type that does not match the declaration (undefined in Vulkan, works on AMD by luck).
+- **Choice:** A. It fixes the cause for every cube in every shader (principle 10), the view type now matches the
+  declaration on every driver (6), no measurable cost (11), fewer paths (one mapping instead of two). Switch
+  `TLG_VKB_CUBE_AS_ARRAY` (default on; `=0` the old way). Counter `cube_bindings_as_array` in the objects report.
+  Left for a separate change: the view's level count (the probe array's own descriptor says 7 levels, the Direct3D
+  description 8).
+- **Who:** box (rule 14).
+- **Links:** issue 34 (https://github.com/tabnul/tlg-vkb-work/issues/34); pull request for branch
+  `fix/vkb-cube-as-array`.
+
+---
+
 ## 2026-11-18 - First vertex of a direct draw: Vulkan adds it only when the shader does not (not yet merged)
 
 - **Problem:** s02_05_Tritrigger_Get_001 gave "photo setup failed" in both takes (scoreboard issue 36). The scene was
@@ -80,6 +147,27 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 - **Links:** issue 12 (https://github.com/tabnul/tlg-vkb-work/issues/12), design note
   https://github.com/tabnul/tlg-vkb-work/issues/12#issuecomment-6978580374 ; pull request for branch
   `fix/vkb-object-memo-key`.
+
+---
+
+## 2026-11-18 - Noise mask from three photos (not yet merged)
+
+- **Problem:** for 38 scenes the 2-photo mask did not hold on a fresh retake (issue 27). The owner's words
+  (12:46): "The 14 'above' scenes ... yes, do it" (mask from 3 photos) and "The 19 'cannot judge' scenes proposed as
+  log only: not log only yet. Try the wider mask (3 photos) there too first. Only what still fails after that is
+  proposed for log only again." At 12:49: `AT_BarrelBox_001` and `ST_040_FallingFromSentinelTower` log only;
+  `AT_Outdoor_001` wider mask. The camera-shift check (comment 13:38) found no shift, so no recipe change.
+- **Considered:** (A) mask = every pixel where any two of the three photos differ by more than 16, same grow rule.
+  (B) per cause detectors (rejected before, see the entry below). (C) a looser limit for these scenes (changes the
+  yardstick: the owner's call, not done).
+- **Choice:** A, one rule, no special case. Measured on a fourth photo (retake 2) that was not used for the mask. 13 of
+  36 scenes come within the limit; 23 still fail or need more than 25% left out and go to the log-only list as
+  `proposed`. `sweep.py` now builds the mask from every good reference take, so the reference run of these scenes
+  needs 3 takes.
+- **Who:** owner (the 3-photo mask, the two log-only scenes), box (the measurement and the split).
+- **Links:** issue 27; pull request of branch `fix/vkb-mask3`.
+
+---
 
 ## 2026-11-18 - Ignore list: what the owner confirmed (not yet merged)
 
