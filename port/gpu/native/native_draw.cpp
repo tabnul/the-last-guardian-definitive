@@ -8074,7 +8074,12 @@ u32 ActiveGroups(u64 frame) {
 }
 std::atomic<u32> g_last_recordings{0}, g_last_readbacks{0}; ///< at the reader's start: BeginRecordings / AABB CounterReadbacks since its previous start
 /// The reader's start (01c4c5de, after its label wait): what happened since its previous start
+bool K2CheckOn();
 u64 PS4_SYSV_ABI AabbReadStart(Core::GuestHooks::MidContext* c) {
+    (void)c;
+    if (!K2CheckOn()) {
+        return 0;
+    }
     const u32 recordings = g_recordings_since_read.exchange(0, std::memory_order_relaxed);
     g_last_recordings.store(recordings, std::memory_order_relaxed);
     g_last_readbacks.store(g_aabb_readbacks_since_read.exchange(0, std::memory_order_relaxed), std::memory_order_relaxed);
@@ -8083,17 +8088,18 @@ u64 PS4_SYSV_ABI AabbReadStart(Core::GuestHooks::MidContext* c) {
     }
     return 0;
 }
-/// api-contract.md K2 guard (the class of tabnul's cloth_null_guard: an engine race the high frame rate exposes). The reader's record block at 01c4cd08, right after its
-/// AsyncMaps of the count (+ 0x27a8, pointer at [rbp - 0x4a0]) and the records (+ 0x27a0, pointer at [rbp - 0x4b0]) and before its own "no records" test
-/// (r12 = the frame data, r14 = the render device). The records are the last AABB pass's; a BeginRecording that found no active group ran none, and the game's jobs
-/// may fill the group table before this read, so the records can belong to another table (after the flashback: a 7-group pass read against a 4-group table, a group
-/// past its end, the crash). A read whose records name a group not in the table is not this table's: its count is set to 0 and the engine's own test skips it.
-/// LEGACY(aabb_guard): TLG_LEGACY_AABB_GUARD=1 lets the read run (only counted and logged).
+/// K1/K2 check (debug, TLG_K2_CENSUS=1): the reader's record block at 01c4cd08, after its AsyncMaps of the count (+ 0x27a8, pointer at [rbp - 0x4a0]) and the records
+/// (+ 0x27a0, [rbp - 0x4b0]) (r12 = the frame data, r14 = the render device). Counts reads whose records name a group not in the table: the crash after the shield
+/// flashback (a 7-group pass read against a 4-group table) came from the soldiers' late queries; K2 fix A (AnimQueryOrder) removed them and the guard that skipped
+/// those reads was deleted 2026-11-19 (0 hits in two owner plays with A). The engine's read runs as it is.
+bool K2CheckOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_K2_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
 u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
-    // The workaround, ON by default: a read whose records name a group not in the table is skipped (an older pass's records naming groups that still exist pass,
-    // as on PS4, where a pass that did not run leaves the buffers as they were). Its cause, the soldiers' queries landing after the recording, is fix A
-    // (AnimQueryOrder); once A passes play this guard goes. LEGACY(aabb_guard): TLG_LEGACY_AABB_GUARD=1 = off (counted and logged only).
-    static const bool guard = [] { const char* e = std::getenv("TLG_LEGACY_AABB_GUARD"); return e == nullptr || e[0] != '1'; }();
+    if (!K2CheckOn()) {
+        return 0;
+    }
     const u64 device = c->r14, frame = c->r12;
     const u32 recordings = g_last_recordings.load(std::memory_order_relaxed), readbacks = g_last_readbacks.load(std::memory_order_relaxed);
     if (!IsHeapPointer(device) || !IsHeapPointer(frame) || c->rbp < 0x4b0) {
@@ -8107,7 +8113,7 @@ u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
     const u32 reads_since_dispatch = g_reads_since_dispatch.fetch_add(1, std::memory_order_relaxed);
     const u32 count = std::min(Rd<u32>(count_memory, 0), 0x2000u), groups = Rd<u32>(frame, 0x31e68);
     static std::once_flag announced;
-    std::call_once(announced, [&] { TLG_LOG(CP, Warn, "K2 AABB guard active (first read: {} records, {} groups, guard {})", count, groups, guard ? "on" : "off"); });
+    std::call_once(announced, [&] { TLG_LOG(CP, Warn, "K2 AABB check active (first read: {} records, {} groups)", count, groups); });
     u32 bad = 0, first_bad = 0, bad_group = 0;
     for (u32 i = 0; i < count; ++i) {
         const u32 group = Rd<u32>(records + i * 0x90ull, 0x80) >> 16;
@@ -8139,12 +8145,8 @@ u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
                     reads_since_dispatch, g_dispatch_groups.load(), frame, g_rec_frame.load(), g_rec_groups.load(), g_rec_active.load(), c_aabb_unpaired.load());
         }
         c_aabb_guarded.fetch_add(1, std::memory_order_relaxed);
-        if (guard) {
-            Wr<u32>(count_memory, 0, 0); // not this table's records: the engine's own test (count 0) skips the read
-            TLG_LOG(CP, Warn, "K2 AABB guard: read of {} records skipped ({} so far)", count, c_aabb_guarded.load());
-        }
     }
-    return 0; // the engine's read runs (with count 0 after the guard)
+    return 0;
 }
 u64 PS4_SYSV_ABI RenderFrameFenceA(Core::GuestHooks::MidContext* c) {
     NoteRenderFrameFence(c->rbx, c->r12);
@@ -9287,7 +9289,7 @@ u64 PS4_SYSV_ABI K2TricoChain(Core::GuestHooks::MidContext* c) {
 }
 
 /// Mid hook at the entry of 015a0160 (the task execute above Trico's producer): its object, to match against the task list (debug, K2 census)
-/// api-contract.md "K2 root, step 4" (fix A, TLG_ANIM_QUERY_ORDER=1 while tested). Each cycle: DelayPrepareTick resets the query frame data (then unlocks),
+/// api-contract.md "K2 root, step 4" (fix A, default since 2026-11-19). Each cycle: DelayPrepareTick resets the query frame data (then unlocks),
 /// DelayPostPhysicsComputeGather locks the extensions on its lock list (+ 0x8c; only the boy's), DelayPostPhysicsComputeFrame (01255570, NoSync) records. The
 /// next Task:AnimationTick runs one job per CharacterAnimationExt (slot 9, 015a0160); the soldiers' jobs register readback queries (0x17d57e1) and are not locked.
 /// On PS4 at 30 fps the recording waits on the render long enough that those jobs run first (91 % in time); above that the recording runs first, the next reset
@@ -9295,8 +9297,7 @@ u64 PS4_SYSV_ABI K2TricoChain(Core::GuestHooks::MidContext* c) {
 /// AnimationTick generation has run in the next one; locked ones run after the reset by the engine's own rule and are never waited for. 50 ms bound.
 namespace AnimQueryOrder {
 bool On() {
-    static const bool on = [] { const char* e = std::getenv("TLG_ANIM_QUERY_ORDER"); return e != nullptr && e[0] == '1'; }();
-    return on;
+    return true; // default since 2026-11-19 (owner plays: late 22,989 -> ~29, no crash, AABB guard deleted); the old order (no wait) is gone
 }
 std::mutex mutex;
 std::condition_variable cv;
