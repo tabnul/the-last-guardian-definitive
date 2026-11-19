@@ -25,7 +25,7 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   stops changing: cannot see an entry that is counted but not yet written, and can read freed memory.
 - **Choice:** A. The cause and not the case (10): every read of that table in our code goes through the lock, not just
   this scene. Every machine (6): plain CPU code, no driver feature. Right picture first (11): the cost is one
-  compare-and-swap per read (a few reads per second); it can only wait while another thread is adding a group.
+  compare-and-swap per read (rate: see "Cost" below); it can only wait while another thread is adding a group.
   The author's K2 guard stays as it is and still catches a real mismatch. Switch `TLG_AABB_TABLE_LOCK` (default on;
   `=0` the old unlocked read).
 - **Checked in the game code (second read, remark 2):** the lock word is a 32 bit int (the game's lock function
@@ -34,9 +34,10 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   before the record loop. BeginRecording takes the lock inside itself, after our hook at its entry. So neither thread
   holds the lock at our hook points. The wait still has a time limit (100 ms, a push holds the lock for microseconds):
   past it the check reads without the lock as before, counted and logged as an error (it should never happen).
-- **Cost (remark 3):** the check runs at most a few dozen times a second (in the full run of 219 scenes no take reached
+- **Cost (remark 3):** the check runs fewer than 1800 times in every take of the full run (438 takes of under a minute each; no take reached
   the 1800 reads after which the summary line prints; AL_a01_firstRoom_01 has 3 reads per take). One wait for the lock
-  was seen in 8 takes.
+  was seen in 8 takes. Waits and time-outs are in every take's engine report (`native.json`, `aabb_table_lock`).
+  The time-out path was never reached in any run, so it is not tested.
 - **Who:** box (rule 14).
 - **Links:** issue 36 (https://github.com/tabnul/tlg-vkb-work/issues/36); pull request for branch
   `fix/vkb-aabb-table-lock`.
