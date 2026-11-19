@@ -617,7 +617,8 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
     const auto& settings = TlgSettings::Get();
     const float wanted = !setting_sharpen ? std::min(std::max(sharpness, 0.0f), 1.0f) : settings.sharpen ? std::clamp(settings.sharpness.load(), 0.0f, 4.0f) : 0.0f;
     const float own = std::min(wanted, 1.0f); ///< the AA's own share
-    if (setting_sharpen && std::getenv("TLG_VKB_AA_SHARPNESS") != nullptr && !sharpness_env_noted.exchange(true, std::memory_order_relaxed)) {
+    static const bool sharpness_env_set = std::getenv("TLG_VKB_AA_SHARPNESS") != nullptr;
+    if (setting_sharpen && sharpness_env_set && !sharpness_env_noted.exchange(true, std::memory_order_relaxed)) {
         // rule 5: the old value is not swapped silently (also in the report: picture_settings.sharpness_env_ignored)
         LOG_INFO(Render_Vulkan, "vkb aa: TLG_VKB_AA_SHARPNESS is not used: the player's Sharpening setting applies (TLG_VKB_PICTURE_SETTINGS part s)");
     }
