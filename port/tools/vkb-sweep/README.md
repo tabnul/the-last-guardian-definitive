@@ -150,9 +150,12 @@ with the count per group. Nothing in the game or the engine changes.
 
 Some scenes differ between two takes of the NORMAL renderer (boy in another place or frame, drifting mist, grass in
 the wind, flames, particles): the photo is not the same moment. `noise-ignore.txt` lists, per scene, the part of
-the picture that the picture check leaves out. One rule for every cause: a pixel counts only where take 1 and
-take 2 of the normal renderer agree (difference not above 16), the left-out area grown by 4 pixels
-(`noisemask.py make A.png B.png MASK.png`; the mask is made again from the answer-key takes, it is not stored).
+the picture that the picture check leaves out. One rule for every cause: a pixel counts only where the takes of
+the normal renderer agree with each other (no two differ by more than 16), the left-out area grown by 4 pixels
+(`noisemask.py make A.png B.png [C.png ...] MASK.png`; the mask is made again from the good takes of the reference
+run, it is not stored). Two takes catch only what moves between those two. An entry whose CAUSES field holds `takes=3` (issue 27) is
+made from the first three good reference takes (the reference run needs `TAKES=3` for that scene; fewer takes give
+`masked_error` in the result, not a silent skip). All other entries keep the first two takes, as measured.
 `python3 compare.py A.png B.png --mask MASK.png` measures without the masked pixels and prints the share left out.
 
 Same status rule as the log-only list: `proposed` or `confirmed`, only the owner confirms, the tools honour only
@@ -163,7 +166,31 @@ changes.
 
 ### Confirmed entries (2026-11-18, owner, issue 27)
 
-`log-only.txt`: 35 scenes `confirmed` (8 cutscenes, 6 endings, 15 too much moves or alive with action, 6 "need a look").
+`log-only.txt`: 35 scenes `confirmed` on 2026-11-18 (later additions are listed in the file itself; 8 cutscenes, 6 endings, 15 too much moves or alive with action, 6 "need a look").
 `noise-ignore.txt`: 56 scenes `confirmed`: the owner's list, and only where the retake (noise-126, two new normal takes
 against the answer-key take, outside the mask) stays within the limit. 39 entries stay `proposed` (full picture check),
-among them `s02_01_Care_Step1_001`. Scenes still judged by the whole picture: everything not on a confirmed line.
+(not `s02_01_Care_Step1_001`: the owner put it on the log-only list, event-driven scene, picture not comparable between takes; issue 27). Scenes still judged by the whole picture: everything not on a confirmed line.
+
+### 3-photo masks (issue 27, owner decision 12:46)
+
+For the 38 scenes whose retake did not agree with the 2-photo mask: mask from answer key 1+2 and retake 1,
+measured on retake 2 against each of the three, outside the mask (no game run: the four existing normal photos).
+13 scenes come within the limit (`noise-ignore.txt`, still `proposed`, new share in the line). 23 still fail or
+would need more than 25% left out: `log-only.txt`, `proposed`. `AT_BarrelBox_001` and
+`ST_040_FallingFromSentinelTower` are `confirmed` log only (owner, comment 6979040549).
+A confirmed entry with fewer good reference takes than it needs now gives `masked_error` (before: for one take the mask was skipped silently).
+
+## Moving-things mask (issue 27, owner decisions 2026-11-18 and 2026-11-19)
+`noisemask.make(pics, mask, moving=True)`: only differences above 48 (of 255) between the normal renderer's own photos count,
+then what is thinner than 5 pixels is dropped (opening), then the usual growing by 4. Things that move (boy, grass, mist,
+flames, hanging or loose objects) change by a lot; the shine of a still pot, wall or building changes by a little, so
+still surfaces stay in the picture check (rule 20). An entry opts in with `moving` in CAUSES (`noisemask.is_moving`).
+`moving-measure.py LIST OUT.tsv` measures old and new mask on the existing photos (no game run).
+
+Applied: all 69 entries use it (`confirmed`, `moving`; 13 also `takes=3`). Average share left out 0.9% (was 3.6% with the
+solid-blob rule, which the owner rejected on 2026-11-19 because it still hid pots, mirror frames and buildings).
+Outside the mask the normal renderer still differs from itself a little (median 2.1% above 16, worst 7.9%), so 66 entries carry
+`own-limit`: the picture limit is twice the scene's own noise (issue 9), not the fixed 1% / 0.5%; 3 are within the fixed
+limit. No code in the sweep judges a picture against a limit yet, so `own-limit` is data for the report step.
+No scene needs log only because of noise any more: the 15 scenes that the solid-blob rule had moved to `log-only.txt` are
+back in the picture check. Switch: remove `moving` from an entry's CAUSES (2-photo mask) or the whole line.

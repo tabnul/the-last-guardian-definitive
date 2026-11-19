@@ -9,6 +9,23 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-19 - Moving-things mask for all 69 masked scenes; no scene is log only for noise (not yet merged)
+
+- **Problem:** the solid-blob mask still hid still surfaces (pots, mirror frame, buildings) in several scenes, where a real
+  new-engine fault could sit (issue 27, issue 34, rule 20).
+- **Considered:** (A) the solid-blob mask (open the difference before growing); (B) count only differences above 48, then
+  open, then grow: the shine of a still surface differs by little, the boy, grass and loose objects by a lot; (C) detect
+  surfaces by kind (per-scene special cases, rejected before).
+- **Choice:** B, one rule for every scene, and the scenes judged with the scene's own noise limit (issue 9) because the
+  normal renderer still differs from itself a little on still surfaces. Mask share 0.9% on average. The 15 scenes the rule
+  A had sent to log only are back in the picture check. Owner, 2026-11-19: "take the still surfaces out of the mask
+  (pots, pillars, walls, buildings, the mirror frame). Grass, the boy and things that really move stay masked ... judge
+  it with its own noise limit (issue 9) ... instead of the fixed limit."
+- **Who:** owner decided the aim; box chose the threshold rule.
+- **Links:** issue 27, issue 9, issue 34; pull request 33.
+
+---
+
 ## 2026-11-19 - The new engine's developer dumps become one test tool, off by default (not yet merged)
 
 - **Problem:** Under the new engine every take writes about 120 to 210 lines at warning or error level that only print
@@ -105,6 +122,27 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 - **Links:** issue 12 (https://github.com/tabnul/tlg-vkb-work/issues/12), design note
   https://github.com/tabnul/tlg-vkb-work/issues/12#issuecomment-6978580374 ; pull request for branch
   `fix/vkb-object-memo-key`.
+
+---
+
+## 2026-11-18 - Noise mask from three photos (not yet merged)
+
+- **Problem:** for 38 scenes the 2-photo mask did not hold on a fresh retake (issue 27). The owner's words
+  (12:46): "The 14 'above' scenes ... yes, do it" (mask from 3 photos) and "The 19 'cannot judge' scenes proposed as
+  log only: not log only yet. Try the wider mask (3 photos) there too first. Only what still fails after that is
+  proposed for log only again." At 12:49: `AT_BarrelBox_001` and `ST_040_FallingFromSentinelTower` log only;
+  `AT_Outdoor_001` wider mask. The camera-shift check (comment 13:38) found no shift, so no recipe change.
+- **Considered:** (A) mask = every pixel where any two of the three photos differ by more than 16, same grow rule.
+  (B) per cause detectors (rejected before, see the entry below). (C) a looser limit for these scenes (changes the
+  yardstick: the owner's call, not done).
+- **Choice:** A, one rule, no special case. Measured on a fourth photo (retake 2) that was not used for the mask. 13 of
+  36 scenes come within the limit; 23 still fail or need more than 25% left out and go to the log-only list as
+  `proposed`. `sweep.py` now builds the mask from every good reference take, so the reference run of these scenes
+  needs 3 takes.
+- **Who:** owner (the 3-photo mask, the two log-only scenes), box (the measurement and the split).
+- **Links:** issue 27; pull request of branch `fix/vkb-mask3`.
+
+---
 
 ## 2026-11-18 - Ignore list: what the owner confirmed (not yet merged)
 
