@@ -81,7 +81,7 @@ def main():
     spec = importlib.util.spec_from_file_location("verdict", os.path.join(os.path.dirname(os.path.abspath(__file__)), "verdict.py"))
     verdict = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(verdict)
-    listed = verdict.load_list()
+    listed = {} if os.environ.get("COMPARE_LOG_ONLY") == "0" else verdict.load_list()  # switch: COMPARE_LOG_ONLY=0 compares them anyway
     for p in sys.argv[1:3]:
         for part in os.path.abspath(p).split(os.sep):
             if "__" in part and tuple(part.split("__", 1)) in listed and listed[tuple(part.split("__", 1))][0] == "confirmed":
