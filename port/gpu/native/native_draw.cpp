@@ -82,6 +82,9 @@
 #include "core/memory.h"
 #include "core/address_space.h"
 
+/// pointer trace census (debug, 2026-11-19): the call site of this thread's in-place dynamic-buffer Map whose writes are not taken yet (0: none)
+thread_local unsigned long long tlg_ptrtrace_pending_caller = 0;
+
 namespace L6Timers {
 /// Track L step L6 cost check (`TLG_L6_TIMERS=1`, counters only): wall time of the hook's parts on the thread that runs them
 inline bool On() noexcept {
@@ -6697,6 +6700,28 @@ struct PhaseClock {
 /// V1 of the engine-to-Vulkan backend (documents/tlg/native plan/engine-vulkan-backend.md), `TLG_VKB=1`: the engine's draw and dispatch calls
 /// end here. What the engine's own functions leave in its objects (last-use stamps, draw / dispatch counters) is kept; the PS4 backend below them
 /// (PrepareDraw, the resource tracking, the command writer), our record, plan and tag never run. Nothing is drawn yet (V2 to V4 add the Vulkan work).
+/// R3b: this thread's in-place Map of a dynamic buffer, until its writes are taken (its Unmap, or the first GPU work after it)
+struct DynMap {
+    u64 resource{}, memory{}, bytes{};
+    u64 caller{}; ///< pointer trace census (debug): the Map's call site
+};
+thread_local DynMap t_dyn_map{};
+std::atomic<u64> c_dyn_taken_at_work{0};
+/// Pointer trace 2026-11-19: the engine's Unmap is empty (0x2480f80) and its devirtualized callers (RenderFrame 0x1c55885 / 0x1c57852, RenderScene 0x1c5a23c /
+/// 0x1c5a273 / 0x1c5baab / 0x1c5bba8 / ...) never call it: they fill the mapped memory and go on to draw. On PS4 the GPU reads that memory when it runs, so every write
+/// made before the draw is seen. Our dynamic buffer lives in device memory and gets the writes by a copy in the frame stream, so the copy must come before the first
+/// draw, dispatch or copy this thread records after the Map (it came at the thread's next Map: thousands of draws a run read the old contents).
+inline void TakePendingDynamicMap() {
+    if (t_dyn_map.resource == 0) [[likely]] {
+        return;
+    }
+    Core::Vkb::DynamicCheck(t_dyn_map.memory, t_dyn_map.bytes, true); // TLG_VKB_DYN_CHECK=1 (debug): written again before its next Map?
+    Core::Vkb::DynamicUnmapped(t_dyn_map.memory, t_dyn_map.bytes);
+    t_dyn_map = {};
+    ::tlg_ptrtrace_pending_caller = 0;
+    c_dyn_taken_at_work.fetch_add(1, std::memory_order_relaxed);
+}
+
 namespace Vkb {
 std::atomic<u64> fills_kept{0}, fills_of_cleared_targets_dropped{0}, fills_of_cleared_depth_dropped{0};
 std::atomic<u64> fetch_builds{0}; ///< draws the engine's own path ran to make a fetch shader ///< fills with a pattern of more than one value (the engine's path, packets unread)
@@ -6795,7 +6820,7 @@ void Publish() {
                                                               {"take_dispatch_us_mean", take_dispatch_n.load() ? static_cast<double>(take_dispatch_ns.load()) / 1e3 / static_cast<double>(take_dispatch_n.load()) : 0.0},
                                                               {"compute_dispatch_us_mean", take_dispatch_n.load() ? static_cast<double>(compute_dispatch_ns.load()) / 1e3 / static_cast<double>(take_dispatch_n.load()) : 0.0},
                                                               {"take_draw_ms_total", take_draw_ns.load() / 1000000}, {"take_dispatch_ms_total", take_dispatch_ns.load() / 1000000},
-                                                              {"takes_draw_dispatch", {take_draw_n.load(), take_dispatch_n.load()}}}}, {"fills_kept_on_the_engine_path", fills_kept.load()}, {"fills_of_cleared_targets_dropped", fills_of_cleared_targets_dropped.load()}, {"fills_of_cleared_depth_dropped", fills_of_cleared_depth_dropped.load()}, {"engine_draws_for_a_fetch_shader", fetch_builds.load()}, {"compute", Core::Vkb::Compute::Report()}, {"graphics", Core::Vkb::Graphics::Report()},
+                                                              {"takes_draw_dispatch", {take_draw_n.load(), take_dispatch_n.load()}}}}, {"fills_kept_on_the_engine_path", fills_kept.load()}, {"dynamic_maps_taken_at_work", c_dyn_taken_at_work.load()}, {"fills_of_cleared_targets_dropped", fills_of_cleared_targets_dropped.load()}, {"fills_of_cleared_depth_dropped", fills_of_cleared_depth_dropped.load()}, {"engine_draws_for_a_fetch_shader", fetch_builds.load()}, {"compute", Core::Vkb::Compute::Report()}, {"graphics", Core::Vkb::Graphics::Report()},
                                            {"work_census", Core::Vkb::WorkCensus::Report()}, {"side_census", Core::Vkb::SideCensus::Report()}, {"engine_calls_skipped", Core::Vkb::EngineCallsSkipped()}});
     }
 }
@@ -6825,6 +6850,7 @@ u64 TakeDrawImpl(u64 ctx, u64 a1, u64 a2, u64 a3, u32 kind, bool inline_draw) {
     }
     if (inline_draw) {
         inline_draws.fetch_add(1, std::memory_order_relaxed);
+        TakePendingDynamicMap(); // pointer trace: as for every draw
         // note 58: the decal loop's inlined auto draw (0x1c727a7) was taken over and never drawn. It is drawn now, like any auto draw (its instance count is the loop's,
         // in ctx + 0x4724). TLG_VKB_TEST_DROP_INLINE=1 drops it again (A/B only).
         static const bool drop_inline = [] { const char* e = std::getenv("TLG_VKB_TEST_DROP_INLINE"); return e != nullptr && e[0] == '1'; }();
@@ -6851,6 +6877,7 @@ u64 TakeDrawImpl(u64 ctx, u64 a1, u64 a2, u64 a3, u32 kind, bool inline_draw) {
         instance_resets.fetch_add(1, std::memory_order_relaxed);
     }
     draws.fetch_add(1, std::memory_order_relaxed);
+    TakePendingDynamicMap(); // pointer trace: this thread's in-place Map's writes before the draw that may read them
     const u64 g0 = TimesOn() ? TakeNs() : 0;
     Core::Vkb::Graphics::Draw(ctx, kind, a1, a2, a3); // V4: our pipeline for the bound shaders and state
     if (TimesOn()) {
@@ -6875,6 +6902,7 @@ u64 TakeDispatchImpl(u64 ctx, u64 x, u64 y, u64 z, bool indirect, u64 args_addre
     (indirect ? indirect_dispatches : dispatches).fetch_add(1, std::memory_order_relaxed);
     Publish();
     NoteShader(2, Rd<u64>(ctx, 0x4670), 0x28);
+    TakePendingDynamicMap(); // pointer trace: this thread's in-place Map's writes before the dispatch that may read them
     const u64 c0 = TimesOn() ? TakeNs() : 0;
     Core::Vkb::Compute::Dispatch(ctx, static_cast<u32>(x), static_cast<u32>(y), static_cast<u32>(z), args_address); // V3: our pipeline, bound and recorded
     if (TimesOn()) {
@@ -7564,6 +7592,7 @@ u64 TagCsCopy(u64 writer, u64 destination, u64 source, u64 bytes, u64 ret) {
         return 0;
     }
     if (Vkb::On()) [[unlikely]] {
+        TakePendingDynamicMap(); // pointer trace: before a buffer copy that may read this thread's mapped buffer
         Core::Vkb::WorkCensus::Note("cs_copy", ret, bytes); // D2 census (debug)
         (void)Core::Vkb::CopyBuffer(destination, source, bytes); // V3c for buffers: our copy in the frame stream (the engine's copy shader and its packets are skipped)
         return 1;
@@ -8649,6 +8678,7 @@ u64 PS4_SYSV_ABI TagCopyResource(u64 ctx, u64 destination, u64 destination_sub, 
         return 0;
     }
     if (Vkb::On()) [[unlikely]] {
+        TakePendingDynamicMap(); // pointer trace: this thread's in-place Map's writes before a copy that may read them
         // V3c for textures: our copy of the subresource in the frame stream; the engine's function then runs for its tracking and state (its copy shader's packets go unread).
         // A buffer's copy is the engine's CsCopyBufferDwords, our copy at its own hook.
         const u32 kind = Rd<u32>(destination, 0x124);
@@ -9264,11 +9294,6 @@ u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64
 /// N5c: `JsDeviceContext::Unmap(context, resource, subresource)` is an empty function in the engine (one `ret`, `0x2480f80`) that cannot be displaced by a hook. Its slot
 /// in the device context's table (`0x26fe200`) is replaced by this function (installed once, when the first Map is seen, after the image is relocated): it tells the
 /// update audit that the writes into the memory the thread's Map of this resource handed out are finished.
-/// R3b: this thread's in-place Map of a dynamic buffer, until its Unmap
-struct DynMap {
-    u64 resource{}, memory{}, bytes{};
-};
-thread_local DynMap t_dyn_map{};
 
 u64 PS4_SYSV_ABI UnmapSlot(u64 ctx, u64 resource, u64 subresource) {
     (void)ctx, (void)subresource;
@@ -9276,6 +9301,7 @@ u64 PS4_SYSV_ABI UnmapSlot(u64 ctx, u64 resource, u64 subresource) {
         Core::Vkb::DynamicCheck(t_dyn_map.memory, t_dyn_map.bytes, true);
         Core::Vkb::DynamicUnmapped(t_dyn_map.memory, t_dyn_map.bytes); // R3b: the in-place Map's writes into our device buffer
         t_dyn_map = {};
+        ::tlg_ptrtrace_pending_caller = 0;
     }
     if (Core::NativeUpdates::enabled.load(std::memory_order_relaxed) && IsHeapPointer(resource) && (resource & 7) == 0) {
         Guarded([&]() -> u64 {
@@ -9319,6 +9345,12 @@ void InstallUnmapSlot() {
 
 u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4, u64 size, u64 ret, u64 caller_rsp) {
     static const bool map_census = [] { const char* e = std::getenv("TLG_VKB_MAP_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    if (Core::Vkb::On() && Core::Vkb::ContractCensusOn() && ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0) {
+        // pointer trace (debug, 2026-11-19): every Map call site by kind, usage and type, so each caller's use of the pointer can be read (does it escape the Unmap?)
+        const u32 kind = Rd<u32>(resource, 0x124);
+        Core::Vkb::ContractNote(fmt::format("P Map caller {:#x} kind {} usage {} type {}", ret - ImageBase() + 0x1000000, kind,
+                                            Core::NativeResources::ResourceUsage(resource), type));
+    }
     if (Core::Vkb::On() && Core::Vkb::ContractCensusOn() && type == 1 && ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0) {
         // tier-2 gap pass (debug): a Map(READ) whose data the GPU wrote only into our Vulkan object (not into the engine memory the CPU reads): a texture that is not
         // a staging one (Map READ of a texture hands out its memory, line pass 0247f990), or a buffer that lives in our device memory (UAV / dynamic)
@@ -9335,8 +9367,12 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
     if ((map_census || Core::Vkb::DynamicDeviceOn()) && Core::Vkb::On() && ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0 && Rd<u32>(resource, 0x124) == 1) {
         InstallUnmapSlot(); // R3b: the Unmap is where an in-place Map's writes are finished
         if (t_dyn_map.resource != 0) {
+            if (Core::Vkb::ContractCensusOn()) { // pointer trace (debug): an in-place Map that never reached an Unmap (a devirtualized caller: the engine's Unmap is empty)
+                Core::Vkb::ContractNote(fmt::format("P in-place Map taken at the next Map, no Unmap (caller {:#x})", t_dyn_map.caller));
+            }
             Core::Vkb::DynamicUnmapped(t_dyn_map.memory, t_dyn_map.bytes); // the Map before had no Unmap on this thread: its writes are taken now
             t_dyn_map = {};
+            ::tlg_ptrtrace_pending_caller = 0;
         }
         // R3b census: the engine's Map runs here; the pointer it hands out is the buffer's own memory (in place) or another block (the frame ring)
         const u64 original_map = Core::GuestHooks::OriginalEntry("Map");
@@ -9350,7 +9386,11 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
             const bool in_place = pointer >= memory && pointer < memory + std::max<u64>(bytes, 1);
             Core::Vkb::NoteBufferMap(Rd<u32>(resource, 0x184), static_cast<u32>(type), in_place, bytes);
             if (in_place && type != 1 && Core::Vkb::DynamicDeviceOn() && Rd<u32>(resource, 0x184) == 2) {
-                t_dyn_map = {resource, memory, bytes};
+                t_dyn_map = {resource, memory, bytes, ret - ImageBase() + 0x1000000};
+                if (Core::Vkb::ContractCensusOn()) {
+                    Core::Vkb::ContractNote(fmt::format("P in-place Map (caller {:#x})", ret - ImageBase() + 0x1000000));
+                    ::tlg_ptrtrace_pending_caller = ret - ImageBase() + 0x1000000;
+                }
             }
             return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
         }
