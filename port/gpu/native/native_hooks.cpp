@@ -119,10 +119,33 @@ u64 ParseHex(const nlohmann::json& value) {
     return std::stoull(value.get<std::string>(), nullptr, 16);
 }
 
+/// TLG_HOOK_RIP_RELATIVE (default on; =0: the old rule, such an entry is refused): a displaced instruction that addresses memory relative to
+/// itself (`lea rcx,[rip+N]`, `mov eax,[rip+N]`) is taken; its 32 bit displacement is corrected for the address the copy runs at.
+bool RipRelativeOn() {
+    static const bool on = [] {
+        const char* e = std::getenv("TLG_HOOK_RIP_RELATIVE");
+        return e == nullptr || *e != '0';
+    }();
+    return on;
+}
+
+/// The displaced instructions whose rip-relative displacement must be corrected when they are copied.
+struct RipFixes {
+    struct Fix {
+        u8 at;        ///< start of the instruction in the displaced bytes
+        u8 length;    ///< its length (rip points past it)
+        u8 disp_at;   ///< start of its 32 bit displacement in the instruction
+    };
+    Fix fix[MaxDisplacedBytes]{};
+    size_t count{};
+};
+
 /// Decodes whole instructions from `code` until at least MinDisplacedBytes are covered. Returns 0 if
-/// an instruction cannot be copied to another address unchanged.
-size_t DisplacedLength(const u8* code, std::string& why) {
+/// an instruction cannot be copied to another address. A memory operand relative to rip can be copied
+/// (its displacement is noted in `fixes` and corrected by EmitDisplaced); relative branches and calls cannot.
+size_t DisplacedLength(const u8* code, std::string& why, RipFixes& fixes) {
     size_t length = 0;
+    fixes.count = 0;
     while (length < MinDisplacedBytes) {
         ZydisDecodedInstruction inst;
         ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT];
@@ -130,10 +153,6 @@ size_t DisplacedLength(const u8* code, std::string& why) {
             inst, operands, const_cast<u8*>(code) + length, MaxDisplacedBytes);
         if (!ZYAN_SUCCESS(status)) {
             why = "cannot decode instruction at +" + std::to_string(length);
-            return 0;
-        }
-        if ((inst.attributes & ZYDIS_ATTRIB_IS_RELATIVE) != 0) {
-            why = "relative operand at +" + std::to_string(length);
             return 0;
         }
         switch (inst.meta.category) {
@@ -148,6 +167,17 @@ size_t DisplacedLength(const u8* code, std::string& why) {
         default:
             break;
         }
+        if ((inst.attributes & ZYDIS_ATTRIB_IS_RELATIVE) != 0) {
+            bool rip_memory = false;
+            for (u32 i = 0; i < inst.operand_count; ++i) {
+                rip_memory |= operands[i].type == ZYDIS_OPERAND_TYPE_MEMORY && operands[i].mem.base == ZYDIS_REGISTER_RIP;
+            }
+            if (!RipRelativeOn() || !rip_memory || inst.raw.disp.size != 32 || inst.raw.imm[0].is_relative || inst.raw.imm[1].is_relative) {
+                why = "relative operand at +" + std::to_string(length);
+                return 0;
+            }
+            fixes.fix[fixes.count++] = {static_cast<u8>(length), inst.length, inst.raw.disp.offset};
+        }
         length += inst.length;
         if (length > MaxDisplacedBytes) {
             why = "displaced bytes exceed the limit";
@@ -155,6 +185,28 @@ size_t DisplacedLength(const u8* code, std::string& why) {
         }
     }
     return length;
+}
+
+/// Writes the displaced instructions at the generator's current address. A rip-relative displacement is set so it names the same
+/// address as at `entry`; false if that address is out of the 32 bit reach of the copy (the hook is then refused).
+bool EmitDisplaced(Xbyak::CodeGenerator& c, const u8* entry, const u8* original, size_t displaced, const RipFixes& fixes) {
+    u8 bytes[MaxDisplacedBytes];
+    std::memcpy(bytes, original, displaced);
+    const auto copy = c.getCurr<const u8*>();
+    for (size_t i = 0; i < fixes.count; ++i) {
+        const auto& f = fixes.fix[i];
+        s32 disp;
+        std::memcpy(&disp, &bytes[f.at + f.disp_at], sizeof(disp));
+        const s64 target = reinterpret_cast<s64>(entry + f.at + f.length) + disp;
+        const s64 moved = target - reinterpret_cast<s64>(copy + f.at + f.length);
+        if (moved < INT32_MIN || moved > INT32_MAX) {
+            return false;
+        }
+        const auto moved32 = static_cast<s32>(moved);
+        std::memcpy(&bytes[f.at + f.disp_at], &moved32, sizeof(moved32));
+    }
+    c.db(bytes, displaced);
+    return true;
 }
 
 /// Stub for a counter-only hook: lock inc [header].
@@ -242,8 +294,9 @@ u64 PS4_SYSV_ABI ProfiledMid(Core::GuestHooks::MidContext* context, Hook* hook) 
 /// Stub for a hook that calls a host function: saves the caller-saved registers and the argument registers, calls
 /// handler(rdi, rsi, rdx, rcx, r8, r9, return address, rsp of the caller). A non-zero result skips the hooked function (the stub
 /// returns to its caller; with bit 63 set the rest of the result is returned as its value); zero runs the displaced instructions and continues in the function.
-void EmitCallStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_t displaced,
-                  const u8* resume) {
+bool EmitCallStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_t displaced,
+                  const RipFixes& fixes, const u8* resume) {
+    bool fits = true;
     Xbyak::Label handled;
     // TLG_HOOK_PROF: 16 more bytes for a ninth argument (the hook) at [rsp + 16]; the xmm registers move up by 16 (rsp stays 16-byte aligned at the call)
     const bool prof = HookProfOn() && hook.prof_site != nullptr;
@@ -299,7 +352,7 @@ void EmitCallStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_
     c.test(rax, rax);
     c.jnz(handled, Xbyak::CodeGenerator::T_NEAR);
     restore();
-    c.db(original, displaced);
+    fits &= EmitDisplaced(c, resume - displaced, original, displaced, fixes);
     c.jmp(resume, Xbyak::CodeGenerator::T_NEAR);
     c.L(handled);
     // a result with bit 63 set is also the return value of the skipped function (the saved rax is replaced)
@@ -313,13 +366,14 @@ void EmitCallStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_
     restore();
     c.ret();
     hook.original_call = c.getCurr<u64>();
-    c.db(original, displaced);
+    fits &= EmitDisplaced(c, resume - displaced, original, displaced, fixes);
     c.jmp(resume, Xbyak::CodeGenerator::T_NEAR);
+    return fits;
 }
 
 /// Mode Mid (see MidContext). The stub keeps the interrupted code's registers in a MidContext on its stack: 128 bytes of red zone are skipped, a slot for the continue address,
 /// flags and the fifteen registers, rip and rsp, the sixteen ymm registers; the handler is called with the stack aligned and a pointer to the context in rdi.
-void EmitMidStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_t displaced, const u8* resume) {
+bool EmitMidStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_t displaced, const RipFixes& fixes, const u8* resume) {
     constexpr int YmmBytes = 16 * 32;
     constexpr int Fields = 16;       // rip, rsp
     constexpr int RegsAndFlags = 128; // fifteen registers and the flags
@@ -392,12 +446,13 @@ void EmitMidStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_t
     c.jnz(take, Xbyak::CodeGenerator::T_NEAR);
     restore();
     c.add(rsp, RedZone + Slot);
-    c.db(original, displaced);
+    const bool fits = EmitDisplaced(c, resume - displaced, original, displaced, fixes);
     c.jmp(resume, Xbyak::CodeGenerator::T_NEAR);
     c.L(take);
     c.mov(ptr[rsp + ContinueSlotInContext], rax);
     restore();
     c.ret(RedZone);
+    return fits;
 }
 
 bool InstallHook(Hook& hook, u8* image_base, u64 image_size) {
@@ -407,7 +462,8 @@ bool InstallHook(Hook& hook, u8* image_base, u64 image_size) {
     }
     u8* entry = image_base + hook.offset;
     std::string why;
-    const size_t displaced = DisplacedLength(entry, why);
+    RipFixes fixes;
+    const size_t displaced = DisplacedLength(entry, why, fixes);
     if (displaced == 0) {
         TLG_LOG(HOOK, Error, "guest hook '{}' at {:#x} refused: {}", hook.name, hook.offset, why);
         return false;
@@ -425,26 +481,31 @@ bool InstallHook(Hook& hook, u8* image_base, u64 image_size) {
     hook.header = reinterpret_cast<u8*>((raw + 63) & ~u64{63});
 
     const u8* stub = nullptr;
+    bool fits = true;
     const bool emitted = EmitInTrampolineArea(entry, [&](Xbyak::CodeGenerator& c) {
         stub = c.getCurr<const u8*>();
         if (hook.mode == Mode::Call) {
-            EmitCallStub(c, hook, original, displaced, entry + displaced);
-            return true;
+            fits = EmitCallStub(c, hook, original, displaced, fixes, entry + displaced);
+            return fits;
         }
         if (hook.mode == Mode::Mid) {
             hook.entry = entry;
-            EmitMidStub(c, hook, original, displaced, entry + displaced);
-            return true;
+            fits = EmitMidStub(c, hook, original, displaced, fixes, entry + displaced);
+            return fits;
         }
         if (hook.mode != Mode::Count) {
             EmitArgsStub(c, hook);
         } else {
             EmitCountStub(c, hook);
         }
-        c.db(original, displaced);
+        fits = EmitDisplaced(c, entry, original, displaced, fixes);
         c.jmp(entry + displaced, Xbyak::CodeGenerator::T_NEAR);
-        return true;
+        return fits;
     });
+    if (!fits) {
+        TLG_LOG(HOOK, Error, "guest hook '{}': a rip-relative address of the displaced code is out of reach of the trampoline", hook.name);
+        return false;
+    }
     if (!emitted) {
         TLG_LOG(HOOK, Error, "guest hook '{}': no room in the trampoline area", hook.name);
         return false;
