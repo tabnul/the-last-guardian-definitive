@@ -9,6 +9,20 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-19 - Solid-blob mask for all 69 masked scenes; 15 scenes log only (not yet merged)
+
+- **Problem:** the 2-photo and 3-photo masks also hid still surfaces (walls, ceilings, pots), where a real new-engine
+  fault could sit (issue 27, issue 34).
+- **Considered:** keep the wide masks; the solid-blob mask (open the difference before growing) for all scenes; per-scene
+  detectors (rejected before).
+- **Choice:** solid-blob mask as one rule. Owner, 2026-11-19: "The 31 scenes within the limit: use the solid mask
+  (confirmed as a group)"; the 23 a bit above get the solid mask plus the per-scene limit of issue 9 (twice the scene's
+  own noise); "The 15 scenes far above (cannot judge): log only". Entries in `noise-ignore.txt` / `log-only.txt`.
+- **Who:** owner. Box: the measurement and the list edit.
+- **Links:** issue 27, issue 9, issue 34; pull request 33.
+
+---
+
 ## 2026-11-19 - Cube images are bound as the 2D arrays the recompiled shaders declare (not yet merged)
 
 - **Problem:** The pots in s10_03_Escape_Pitfall_001 lost their teal reflection (issue 34). The recompiled shaders
