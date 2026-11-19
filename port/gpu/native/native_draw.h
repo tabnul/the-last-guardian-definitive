@@ -102,6 +102,8 @@ struct LiveCounters {
     std::atomic<u64> map_tried{}, map_patched{}, map_refused{}, map_exec{};
     std::atomic<u64> fetch_rebuild_tried{}, fetch_rebuilt{}, fetch_rebuild_refused{}, fetch_rebuild_exec{};
     std::atomic<u64> sync_units_stripped{}, sync_acquires_stripped{}, sync_events_stripped{}, barrier_calls_skipped{};
+    /// AABB checks (issue 36, cause E): reads of the game's group table that waited for its lock, and waits past the time limit (read without the lock; should stay 0)
+    std::atomic<u64> aabb_table_lock_waits{}, aabb_table_lock_timeouts{};
     /// sync records (`native_sdk_strip` bit 2097152): packets turned into tags, by kind (1 graphics end-of-pipe, 2 release memory, 3 wait, 4 write data)
     /// and by place (the hook of FUN_02480d60, the sweep when the next tag is written, the submit of a command buffer); packets the
     /// hook left as written; tags the command processor executed, by kind

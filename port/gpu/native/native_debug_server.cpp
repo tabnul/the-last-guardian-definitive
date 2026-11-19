@@ -175,6 +175,7 @@ nlohmann::json Native(const Params&) {
     j["sync_acquires_stripped"] = live.sync_acquires_stripped.load();
     j["sync_events_stripped"] = live.sync_events_stripped.load();
     j["barrier_calls_skipped"] = live.barrier_calls_skipped.load();
+    j["aabb_table_lock"] = {{"waits", live.aabb_table_lock_waits.load()}, {"timeouts", live.aabb_table_lock_timeouts.load()}};
     {
         nlohmann::json audit;
         audit["dispatches"] = live.cs_audit_dispatches.load();
