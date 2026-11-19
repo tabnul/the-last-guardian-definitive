@@ -647,7 +647,7 @@ static void md5_block(Md5 *h,const unsigned char *p) {
 }
 /* MD5 of lead (may be empty) followed by text[0..n), upper-cased when upper is set (an archive that ignores case
  * keys its names that way). */
-static void md5_name(const char *lead,const char *text,size_t n,int upper,unsigned char out[16]) {
+static void md5_name(const char *lead,const char *text,size_t n,int upper,unsigned char out[16]) { /* upper: 1 upper, -1 lower, 0 as written */
     Md5 h={0x67452301,0xefcdab89,0x98badcfe,0x10325476};
     unsigned char block[64];
     size_t used=0;
@@ -655,7 +655,7 @@ static void md5_name(const char *lead,const char *text,size_t n,int upper,unsign
     n+=l;
     for (size_t i=0;i<n;++i) {
         const unsigned char c=(unsigned char)(i<l ? lead[i] : text[i-l]);
-        block[used++]=(unsigned char)(upper ? toupper(c) : c);
+        block[used++]=(unsigned char)(upper>0 ? toupper(c) : upper<0 ? tolower(c) : c);
         if (used==64) { md5_block(&h,block); used=0; }
     }
     const uint64_t bits=(uint64_t)n*8;
@@ -693,6 +693,7 @@ static pthread_mutex_t game_note_lock=PTHREAD_MUTEX_INITIALIZER;
 static unsigned char *archive_index; /* 16-byte name hashes of every entry of the game's archives, sorted */
 static size_t archive_index_count, archive_index_files;
 static int archive_index_state; /* 0 = not read yet, 1 = read, -1 = could not be read */
+static size_t archive_index_mounts; /* mount count when it was read: a later mount reads it again */
 static int game_notes_on(void) {
     static int v=-1;
     if (v<0) { const char *e=getenv("TLG_GAME_NOTES"); v=!(e && e[0]=='0'); }
@@ -726,9 +727,15 @@ static int psarc_name(const char *name) {
     for (size_t i=0;i<6;++i) if (tolower((unsigned char)name[n-6+i])!=".psarc"[i]) return 0;
     return 1;
 }
-/* Reads the index of every archive the game can open, once. Called with game_note_lock held. */
+/* Reads the index of every archive the game can open, once (again when the mount table has changed). Called with
+ * game_note_lock held. */
 static void read_archive_index(void) {
-    if (archive_index_state) return;
+    pthread_mutex_lock(&lock);
+    const size_t mounted=mount_count;
+    pthread_mutex_unlock(&lock);
+    if (archive_index_state && mounted==archive_index_mounts) return;
+    free(archive_index); archive_index=NULL; archive_index_count=archive_index_files=0;
+    archive_index_mounts=mounted;
     /* Any step that fails (no game folder, no listing, a name too long, an archive that cannot be read) means the
      * index may be incomplete: then nothing is relabelled. Buffers on the heap: this runs on a game thread. */
     int failed=0;
@@ -759,7 +766,7 @@ static void read_archive_index(void) {
 }
 /* 1 = in an archive, 0 = in none, -1 = cannot tell. The game names files from data_trico/; an archive keeps names
  * from its own root. Every tail of the name that starts after a '/' is tried, in every form the archive format
- * allows (upper case for an archive that ignores case, as written for one that does not; with and without a
+ * allows (upper case for an archive that ignores case, as written or lower case for one that does not; with and without a
  * leading '/' for absolute names). A hit on any of them keeps the error line, the safe side.
  * Called with game_note_lock held. */
 static int in_archives(const char *name,size_t length) {
@@ -767,9 +774,9 @@ static int in_archives(const char *name,size_t length) {
     if (archive_index_state<0) return -1;
     for (size_t at=0;at<length;++at) {
         if (at && name[at-1]!='/') continue;
-        for (int form=0;form<4;++form) {
+        for (int form=0;form<6;++form) {
             unsigned char key[16];
-            md5_name(form&2 ? "/" : "",name+at,length-at,!(form&1),key);
+            md5_name(form&1 ? "/" : "",name+at,length-at,1-form/2,key);
             if (bsearch(key,archive_index,archive_index_count,16,hash_compare)) return 1;
         }
     }
