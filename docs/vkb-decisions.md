@@ -9,6 +9,24 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-19 - The AA's shift: a second pass of a mesh is known by its index data, as in the normal renderer (not yet merged)
+
+- **Problem:** with an anti-aliasing on (FSR 3.1 by default since pull request 51), the stained-glass window of the first room
+  lost most of its lit glass, so the metal frames behind it showed as extra dark lines (issue 54). The cause is the small
+  per-frame picture shift (jitter) the AA needs: a surface that is drawn a second time over its own depth must get the same
+  shift as its first draw, or its depth test fails on part of it. The new engine had that rule, but it knew a mesh by its
+  draw counts and its vertex shader, so a second pass with another vertex shader never matched (0 matches in every take).
+- **Considered:** (A) know a mesh by its index data (address of the first index and the index count), as the normal
+  renderer does; (B) shift every draw that tests a shifted depth (the normal renderer's debug mode "follow"): also shifts
+  lights and fog volumes, which the normal renderer does not do; (C) no shift after the scene geometry, or a mesh table
+  kept across frames: other behaviour than the normal renderer, more special paths. Two quick tries before the note did
+  not help and were dropped: FSR 3.1 reading the cleaned motion vectors, and keeping the frame's shift after the AA's step.
+- **Choice:** A. The same rule as the normal renderer, no card feature, it replaces the old key. Switch
+  `TLG_VKB_AA_MESH_KEY` (`=0` the old key). Proof: window 0.0% / 3.1% off (old key 20.2% / 19.2%), garden unchanged.
+- **Who:** box (rule 14).
+- **Links:** issue 54 (https://github.com/tabnul/tlg-vkb-work/issues/54), design note
+  https://github.com/tabnul/tlg-vkb-work/issues/54#issuecomment-7024036618 ; pull request for branch `fix/vkb-aa-mesh-key`.
+
 ## 2026-11-19 - TAA in the new engine: the normal renderer's own TAA shader (not yet merged)
 
 - **Problem:** a player who chose TAA (in-game menu or launcher) got, in the new engine, an error line "the new engine has no
