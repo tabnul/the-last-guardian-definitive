@@ -157,7 +157,7 @@ struct Values {
     /// 2 = as the developers planned (only while he wants a smell pot or the boy's smell bottle).
     std::atomic<int> trico_drool{0};
     /// Trico's coat (Fun tab, live; tlg.ini trico_fur): percent of the game's own fur and feather
-    /// length, 50..250, written into his FurTypes through Lua (tlg_lua.cpp Fur). 100 = as shipped.
+    /// length, 0..500, written into his FurTypes through Lua (tlg_lua.cpp Fur). 100 = as shipped.
     std::atomic<int> trico_fur{100};
     /// Button icons in the game's hints (issue #61; tlg.ini button_icons, env TLG_BUTTON_ICONS wins):
     /// 0 = automatic (follows the controller used last), 1 = PlayStation (the game's own), 2 = Xbox.

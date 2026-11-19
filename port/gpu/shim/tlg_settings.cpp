@@ -249,7 +249,7 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     } else if (key == "slow_motion") {
         v.slow_motion = i == 1 ? 1 : 0;
     } else if (key == "trico_fur") {
-        v.trico_fur = std::clamp(i, 50, 250);
+        v.trico_fur = std::clamp(i, 0, 500);
     } else if (key == "trico_drool") {
         v.trico_drool = i == 1 || i == 2 ? i : 0;
     } else if (key == "button_icons") {

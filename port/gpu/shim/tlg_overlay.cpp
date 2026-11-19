@@ -1629,7 +1629,7 @@ void FunTab() {
 
     ImGui::SeparatorText("Trico's coat");
     if (BeginRows("##coat")) {
-        SliderRow(TR("Trico fur and feather density"), TlgSettings::Get().trico_fur, 50, 250, "%d%%",
+        SliderRow(TR("Trico fur and feather density"), TlgSettings::Get().trico_fur, 0, 500, "%d%%",
                   TR("How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun."), 100);
         ImGui::EndTable();
     }

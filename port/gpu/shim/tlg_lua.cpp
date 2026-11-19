@@ -745,7 +745,7 @@ std::string SetChunk() {
                   s.fog_distance.load(), s.haze_fringe.load(),
                   std::clamp(s.shadow_distance.load(), 10, 100),
                   s.shadow_lite.load() ? "{-1}" : "nil", s.trico_feathers.load(),
-                  std::clamp(s.trico_fur.load(), 50, 250), s.fov.load(),
+                  std::clamp(s.trico_fur.load(), 0, 500), s.fov.load(),
                   s.grass_smooth.load() ? "true" : "false", s.boy_wind.load(), s.tree_wind.load());
     code += line;
     code += "Drool(" + std::to_string(std::clamp(s.trico_drool.load(), 0, 2)) + ")\n";
