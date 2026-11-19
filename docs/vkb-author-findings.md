@@ -67,3 +67,12 @@ and the principles page).
 | 1068fdf, c423d17 | proof | "Owner play: pass skipped twice, 0 bad reads" has no check-loop run behind it; two commits mixed, the second reverses the first's default. |
 
 Passed in round 2: principles 4, 8, 9.
+
+## Found while fixing log cause D (issue 36), 2026-11-19
+
+Source: diagnostic takes and the second read of the pull request for branch `fix/vkb-sync-untyped`. No wrong
+picture, crash or log line comes from it after that fix, so it stays advice (rule 19).
+
+| Commit / area | Principle | What |
+|---|---|---|
+| `native_draw.cpp`, `TagMap` (texture Map, the `MapNative` path) and other old tag paths (`compute_exec` counts 711 in one take of s02_01) | 1, 2 | With the new engine on, these still write old-style tags and records into the game's command buffers, which the new engine never runs (V1b). They are read by nothing. Whether the work behind them reaches the new engine another way was not checked. |

@@ -379,6 +379,7 @@ NativeDesc::SamplerDesc SamplerDescFromWords(const u32* words) noexcept {
     d.min_filter = static_cast<u32>((min & 1) ? vk::Filter::eLinear : vk::Filter::eNearest);
     d.aniso_filter = (mag >= 2 || min >= 2) ? 1 : 0;
     d.mip_mode = static_cast<u32>(mip == 2 ? vk::SamplerMipmapMode::eLinear : vk::SamplerMipmapMode::eNearest);
+    d.mipped = mip != 0 ? 1 : 0; // issue 42: 0 is "no mip filter"
     d.border_index = bits(raw1, 32, 12);
     switch (bits(raw1, 62, 2)) {
     case 0: d.border = static_cast<u32>(vk::BorderColor::eFloatTransparentBlack); break;

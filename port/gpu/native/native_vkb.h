@@ -28,6 +28,17 @@ enum class EngineCall : u32 { ClearRtv, ClearDsv, CopyTexture, TargetEliminate, 
 void NoteEngineCallSkipped(EngineCall call);
 [[nodiscard]] nlohmann::json EngineCallsSkipped();
 
+/// Developer dumps (issue 36, log cause C): one-time notes and value dumps that print state for the developer at warning or error level (the scene slot groups'
+/// memory, the bindings of each new compute shader, staging read values, copies into staging textures, BeginRecording's device fields, the first AABB read check).
+/// None of them reports a skipped, failed or missing step. Under the new engine they are a test tool, off by default: `TLG_VKB_DEV_LOG=1` writes them again, at info level (to see info lines: `TLG_GPU_LOG=info` for the engine log, `TLG_LOG=CP:info` for the BeginRecording and AABB lines).
+/// With the new engine off they are written, at info level and only when those filters allow it. Read once. What each dump is about is counted always (one counter per kind, `vkb.dev_log` in the stats).
+namespace DevLog {
+[[nodiscard]] bool On();
+enum class Kind : u32 { SceneSlotGroupMemory, ComputeShaderBindings, StagingRead, CopyIntoStagingTexture, BeginRecordingDevice, AabbReadCheckGuardOn, AabbReadCheckGuardOff, Count };
+void Count(Kind kind);
+[[nodiscard]] nlohmann::json Report();
+} // namespace DevLog
+
 /// Queue numbers: 0 the graphics queue, otherwise the Gnm virtual queue id of a compute queue (1..64, the value sceGnmMapComputeQueue returned)
 constexpr u32 GraphicsQueue = 0;
 

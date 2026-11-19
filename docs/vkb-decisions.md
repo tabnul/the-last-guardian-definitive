@@ -29,6 +29,198 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   https://github.com/tabnul/tlg-vkb-work/issues/36#issuecomment-6999062612 ; pull request for branch
   `fix/vkb-ring-placed-map`.
 
+## 2026-11-19 - Every anti-aliasing choice in tlg.ini reaches the new engine, read as the game reads it (not yet merged)
+
+- **Problem:** with the new engine, some tlg.ini choices gave no anti-aliasing at all, without a line: FSR 4.1.1
+  (`upscaler=fsr411`), TAA, an unknown name. The launcher had its own small table of choices; the third fix of that
+  kind (after pull requests 51 and 56), so treated as recurring (rule 14f).
+- **Considered:** (A) run FSR 4.1.1 in the new engine: cannot run on the test box, a second FSR 4 path, and the game's own
+  settings code reads `fsr411` in tlg.ini as DLSS anyway (no menu offers 4.1.1; only the test override
+  `TLG_UPSCALER=fsr411` runs it). (B) map `fsr411` to the new engine's FSR 4: one more table entry, differs from what the
+  game loads, TAA still without AA. (C) the launcher reads the choice with the game's own loading rule for every value
+  and passes it on; the engine names every value; a choice it has no AA for (TAA, an unknown name) is a fault (error
+  line, on-screen message, counter) and FSR 3.1 runs.
+- **Choice:** C. One rule instead of a table, checked by a test against the game's real loader; the new engine gets
+  the AA the normal renderer runs for the same file; nothing depends on the card. TAA in the new engine is a separate
+  job. Making `fsr411` mean FSR 4 would change settings code the normal renderer shares (principle 8): owner's call.
+  Switch `TLG_VKB_AA_CHOICE` (`=0` the old table).
+- **Who:** box (rule 14).
+- **Links:** issue 57 (https://github.com/tabnul/tlg-vkb-work/issues/57); pull request for branch `fix/vkb-aa-choice`.
+
+## 2026-11-19 - The new engine runs FSR 4 itself; the owner's FSR rules for a choice, a fresh launch and a failure (not yet merged)
+
+- **Problem:** in the new engine a player's FSR 4 choice ran as FSR 3.1 (the launcher mapped it, the engine had no FSR 4).
+  The owner's rules (pull request 51, 2026-11-19): "Default on a fresh launch (player chose nothing): DLSS if available;
+  else FSR 4 on an RDNA 4 card (RX 9000); else FSR 3.1." "A player who CHOOSES FSR 4 gets FSR 4 on any card that can run
+  it." "No card-based fallback. If a chosen FSR 4 fails to start, that is a fault: error line, visible to the player, no
+  quiet switch to FSR 3.1." "If the FSR 4 library (DLL) is missing, fall back to FSR 3.1 quietly with an info line in the
+  log." "The game is never left without AA."
+- **Considered:** (A) make the normal renderer's FSR 4 wrapper usable by both engines: edits the normal renderer
+  (principle 8). (B) a new-engine copy of the wrapper's FSR 4 path, same library, model files and inputs, frames on the
+  new engine's own timeline. (C) build the normal renderer's wrapper a second time under other names: fragile. For the
+  inputs: copy the scene colour and depth into images the AA owns each frame, or keep one view per game image (an earlier
+  cache like that lost the device, and the FSR 4 library keeps at most 8 views and never forgets one).
+- **Choice:** B, with the copies. The fresh-launch default is decided by the engine (it sees the GPU): RDNA 4 = an AMD
+  chip with a PCI device ID 0x75xx (from public ID lists; not proven on a card). A failure of a chosen FSR 4 is reported
+  (error line, on-screen message, counter) and FSR 3.1 then runs, so the game keeps its anti-aliasing: the box's reading
+  of "no quiet switch" together with "never left without AA"; the owner can overrule in issue 55. Missing FSR 4 files: an
+  info line and FSR 3.1. Switch `TLG_VKB_FSR4` (`=0` the old way).
+- **Who:** owner set the rules; box chose the way (rule 14).
+- **Links:** issue 55 (https://github.com/tabnul/tlg-vkb-work/issues/55); pull request 51 (the owner's rules); pull request
+  for branch `fix/vkb-fsr4`.
+
+## 2026-11-19 - The new engine applies the player's picture settings the way the normal renderer does (not yet merged)
+
+- **Problem:** the new engine's picture is about half as sharp as the normal renderer's in 195 of 197 scenes (issue 42).
+  The logs of the pot scene show why: the normal renderer reads the player's settings and, on a machine without DLSS,
+  runs FSR 3.1 as its anti-aliasing, sharpens at the Sharpening setting (175%), draws the scene's materials with a
+  texture detail bias of -1 while that anti-aliasing runs, and filters textures at 16x anisotropy. The new engine did
+  none of the four: without DLSS it switched its anti-aliasing off (one warning line), it sharpened at its own value of
+  50% only when its anti-aliasing ran, and it used the game's own texture bias and filtering.
+- **Considered:** (A) the new engine applies the same four settings with the normal renderer's rules, in its own code:
+  the DLSS fallback to FSR 3.1, the sharpening scale (0 to 100% the anti-aliasing's own sharpening, every 100% above one
+  more pass of the same sharpening shader), the texture bias for draws with five or more colour outputs while the
+  anti-aliasing runs, and the anisotropy rule. One switch for all four. (B) only the fallback, and leave sharpening,
+  bias and filtering for later: the picture would still differ wherever the normal renderer's settings act, so it
+  fixes the case, not the cause. (C) a sharpening filter on the final picture tuned until the number matches: hides the
+  cause (rule 24), and texture detail that the bias brings cannot be made back by sharpening.
+- **Choice:** A. Cause and not case (10): the settings are applied, not one scene tuned. Every machine (6): the fallback
+  removes the "AA off" state on any machine without DLSS; the sharpening is a plain compute shader; bias and anisotropy
+  are plain sampler fields that every Vulkan driver has (anisotropy only where the driver reports it, as before). Right
+  picture first (11): the cost is one to three extra passes of a small shader per frame and the anti-aliasing step
+  itself on machines without DLSS. Switch `TLG_VKB_PICTURE_SETTINGS` (default on; `=0` the old way; letters `f`, `s`,
+  `b`, `a` choose parts, for measurement only).
+  After the second read: the anisotropy rule lives in one function that all three ways a sampler is made ask (the
+  game's sampler objects, the samplers written in the shader, the sampler words), instead of three copies that had
+  drifted apart; and the texture bias is left off depth comparisons, as the normal renderer does.
+  Not covered: with the anti-aliasing switched off by the player, the normal renderer sharpens the final picture in its
+  presenter instead (CAS); the new engine's presenter does not yet. Separate job.
+- **Who:** box (rule 14).
+- **Links:** issue 42 (https://github.com/tabnul/tlg-vkb-work/issues/42); pull request for branch `fix/vkb-picture-settings`.
+
+## 2026-11-19 - AABB read check: read the game's group table under the game's own lock (not yet merged)
+
+- **Problem:** In AL_a01_firstRoom_01 the new engine sometimes wrote the error `K1 AABB readback: N of N records name
+  a group not in the table`, and the author's crash guard (K2) then skipped that read (issue 36, log cause E). The
+  records were not from another pass: they were this frame's, made from the same table. The game adds groups to that
+  table from other threads while the reader is on its way. Adding one raises the count before it writes the new
+  entry, and can move the whole table to new memory; the game does this under the table's own small lock, and the
+  game's reader takes the same lock before it uses the records. Our check read the table without that lock, so it
+  could see the old, moved-away table or an entry not written yet, and then wrongly called good records foreign.
+- **Considered:** (A) our check takes the game's own lock (the same lock word, the same way) for the moment it reads
+  the table, and so do our other two reads of that table (both only for log lines). (B) move the check to a new hook
+  point inside the game's locked part and skip the read there by changing the loop count: needs a new hook with new
+  expected bytes and a register change, more risk for the same result. (C) read the table twice and retry until it
+  stops changing: cannot see an entry that is counted but not yet written, and can read freed memory.
+- **Choice:** A. The cause and not the case (10): every read of that table in our code goes through the lock, not just
+  this scene. Every machine (6): plain CPU code, no driver feature. Right picture first (11): the cost is one
+  compare-and-swap per read (rate: see "Cost" below); it can only wait while another thread is adding a group.
+  The author's K2 guard stays as it is and still catches a real mismatch. Switch `TLG_AABB_TABLE_LOCK` (default on;
+  `=0` the old unlocked read).
+- **Checked in the game code (second read, remark 2):** the lock word is a 32 bit int (the game's lock function
+  compares and swaps a dword; its release stores 0). The reader has one path to our hook point: it takes the lock for
+  its "any active group" loop, releases it, maps the count and the records (our hook point), and takes the lock again
+  before the record loop. BeginRecording takes the lock inside itself, after our hook at its entry. So neither thread
+  holds the lock at our hook points. The wait still has a time limit (100 ms, a push holds the lock for microseconds):
+  past it the check reads without the lock as before, counted and logged as an error (it should never happen).
+- **Cost (remark 3):** the check runs fewer than 1800 times in every take of the full run (438 takes of under a minute each; no take reached
+  the 1800 reads after which the summary line prints; AL_a01_firstRoom_01 has 3 reads per take). One wait for the lock
+  was seen in 8 takes. Waits and time-outs are in every take's engine report (`native.json`, `aabb_table_lock`).
+  The time-out path was never reached in any run, so it is not tested.
+- **Who:** box (rule 14).
+- **Links:** issue 36 (https://github.com/tabnul/tlg-vkb-work/issues/36); pull request for branch
+  `fix/vkb-aabb-table-lock`.
+
+## 2026-11-19 - Sync packets in the game's command buffers: the new engine does not walk them (not yet merged)
+
+- **Problem:** 58 scenes wrote 1 to 5 error lines "sync_untyped_eop / _wait / _dma": a sync packet without its typed
+  record. With the new engine the game's command buffers are never run. Every hook that makes a fence, a wait or a
+  copy sends it straight to the new engine and makes no record, on purpose. Yet an older tag path (the texture Map)
+  still writes into those buffers, and every such write walked the game's packets before it (the old command
+  processor's stream sweep). The walk found sync packets that nothing reads and reported each one as missing its record.
+  A diagnostic take showed that every flagged fence and wait had already reached the new engine through its hook. The
+  rest were a barrier on a label inside the buffer (only the GPU's own work order, which the new engine keeps) and a
+  cache warm-up copy into a register, which the normal renderer skips too.
+- **Considered:** (A) with the new engine the stream sweep does not run. It is the only way into the converter in
+  that mode. This removes reading the game's command list (principle 1) and needs no new hook. (B) let every
+  producer leave its record with the new engine too, so the packet "has its record". The walk would then rewrite
+  game memory into tags that nothing reads. The barrier and the warm-up copy have no producer, so the count could
+  never reach 0. (C) stop the texture Map path writing old tags. That removes this trigger only, not the rule, and
+  changes how a texture Map behaves (a separate question).
+- **Choice:** A. Cause and not case (10): no sync packet of any kind is walked or converted with the new engine. Every
+  machine (6): only our own CPU code changes, no driver feature. Fewest special paths: it takes a path out. Switch
+  `TLG_VKB_STREAM_SWEEP=1` brings the old walk back. The question why the texture Map path still writes old tags with
+  the new engine is a separate job.
+- **Who:** box (rule 14).
+- **Links:** issue 36 (https://github.com/tabnul/tlg-vkb-work/issues/36); pull request for branch `fix/vkb-sync-untyped`.
+
+---
+
+## 2026-11-19 - Moving-things mask for all 69 masked scenes; no scene is log only for noise (not yet merged)
+
+- **Problem:** the solid-blob mask still hid still surfaces (pots, mirror frame, buildings) in several scenes, where a real
+  new-engine fault could sit (issue 27, issue 34, rule 20).
+- **Considered:** (A) the solid-blob mask (open the difference before growing); (B) count only differences above 48, then
+  open, then grow: the shine of a still surface differs by little, the boy, grass and loose objects by a lot; (C) detect
+  surfaces by kind (per-scene special cases, rejected before).
+- **Choice:** B, one rule for every scene, and the scenes judged with the scene's own noise limit (issue 9) because the
+  normal renderer still differs from itself a little on still surfaces. Mask share 0.9% on average. The 15 scenes the rule
+  A had sent to log only are back in the picture check. Owner, 2026-11-19: "take the still surfaces out of the mask
+  (pots, pillars, walls, buildings, the mirror frame). Grass, the boy and things that really move stay masked ... judge
+  it with its own noise limit (issue 9) ... instead of the fixed limit."
+- **Who:** owner decided the aim; box chose the threshold rule.
+- **Links:** issue 27, issue 9, issue 34; pull request 33.
+
+---
+
+## 2026-11-19 - The new engine's developer dumps become one test tool, off by default (not yet merged)
+
+- **Problem:** Under the new engine every take writes about 120 to 210 lines at warning or error level that only print
+  state for the developer: a one-time note on where the three scene slot groups' memory sits (sent through the
+  rare-event channel, so it shows as 3 error lines), the bindings of each new compute shader, values of staging reads,
+  copies into staging textures, BeginRecording's device fields and the first AABB read check (issue 36, log cause C).
+  None of them reports a skipped, failed or missing step, so they hide the lines that do. The owner asked for a clean log.
+- **Considered:** (1) one switch for all of them (`TLG_VKB_DEV_LOG=1` writes them again, at info level, rule 24), off by
+  default, and one counter per kind in the stats that counts what each dump is about whether the switch is on or off;
+  (2) lower each line to the debug level: no switch (principle 7), the work to build each line still runs (13), and
+  whether it shows depends on the log filter, not on one named switch; (3) delete the dumps: the developer loses tools
+  that are still used for open questions, and the stats would lose what they show.
+- **Choice:** 1. Principle 13 (a test tool costs nothing when off: with the switch off the dumps do not build their
+  text, read their extra memory or keep their own maps), principle 5 kept (none of the lines counts a skip; what
+  they are about is counted in `vkb.dev_log`, including whether the AABB guard is on), principle 7 (the switch is the
+  old behaviour). With the new engine off the dumps are written as before. The `staging read` lines with `-nan` and
+  `inf` were checked first: in the full run of 2026-11-18 (20,162 such lines) they are only seen on 32x32 to 256x256
+  textures, always on a copy that had finished, never on the 16x16 float textures. The dump reads every 4-byte texel as
+  one float; a run with the switch on, which now also prints the format, shows these textures are two 16-bit signed
+  numbers per texel (`R16G16Snorm`), and such a texel read as one float gives exactly these huge, `-nan` and `inf`
+  values. So they are a dump that misreads the format, not wrong data, and were not split off.
+- **Who:** box (rule 14).
+- **Links:** issue 36 (https://github.com/tabnul/tlg-vkb-work/issues/36), list
+  https://github.com/tabnul/tlg-vkb-work/issues/36#issuecomment-6997220598 ; pull request for branch `fix/vkb-dev-log`.
+
+---
+
+## 2026-11-19 - Cube images are bound as the 2D arrays the recompiled shaders declare
+
+- **Problem:** The pots in s10_03_Escape_Pitfall_001 lost their teal reflection (issue 34). The recompiled shaders
+  declare every cube image as a 2D array and pick the layer themselves (probe slot x 6 + face). The new engine bound
+  a Vulkan cube view instead, and its bind code cut that view to the first cube (6 layers). The deferred lighting pass
+  reads a cube array of 64 probe slots, so every probe read slot 0's cube. Found by comparing RenderDoc captures of
+  both renderers (the normal renderer binds all 384 layers as a 2D array).
+- **Considered:** (A) ask for a 2D array view of the whole view range for every cube binding, one shared mapping for
+  draws and dispatches (the two identical copies become one); nothing recompiled. (B) let the shader translator declare
+  real cube and cube-array images: every shader with a cube is compiled again, and the shaders compute the layer
+  themselves, so the cube type does not fit them. (C) only for cube arrays (more than 6 layers): a special case, and
+  single cubes would keep a view type that does not match the declaration (undefined in Vulkan, works on AMD by luck).
+- **Choice:** A. It fixes the cause for every cube in every shader (principle 10), the view type now matches the
+  declaration on every driver (6), no measurable cost (11), fewer paths (one mapping instead of two). Switch
+  `TLG_VKB_CUBE_AS_ARRAY` (default on; `=0` the old way). Counter `cube_bindings_as_array` in the objects report.
+  Left for a separate change: the view's level count (the probe array's own descriptor says 7 levels, the Direct3D
+  description 8).
+- **Who:** box (rule 14).
+- **Links:** issue 34 (https://github.com/tabnul/tlg-vkb-work/issues/34); pull request for branch
+  `fix/vkb-cube-as-array`.
+
 ---
 
 ## 2026-11-18 - First vertex of a direct draw: Vulkan adds it only when the shader does not (not yet merged)
@@ -77,6 +269,27 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 - **Links:** issue 12 (https://github.com/tabnul/tlg-vkb-work/issues/12), design note
   https://github.com/tabnul/tlg-vkb-work/issues/12#issuecomment-6978580374 ; pull request for branch
   `fix/vkb-object-memo-key`.
+
+---
+
+## 2026-11-18 - Noise mask from three photos (not yet merged)
+
+- **Problem:** for 38 scenes the 2-photo mask did not hold on a fresh retake (issue 27). The owner's words
+  (12:46): "The 14 'above' scenes ... yes, do it" (mask from 3 photos) and "The 19 'cannot judge' scenes proposed as
+  log only: not log only yet. Try the wider mask (3 photos) there too first. Only what still fails after that is
+  proposed for log only again." At 12:49: `AT_BarrelBox_001` and `ST_040_FallingFromSentinelTower` log only;
+  `AT_Outdoor_001` wider mask. The camera-shift check (comment 13:38) found no shift, so no recipe change.
+- **Considered:** (A) mask = every pixel where any two of the three photos differ by more than 16, same grow rule.
+  (B) per cause detectors (rejected before, see the entry below). (C) a looser limit for these scenes (changes the
+  yardstick: the owner's call, not done).
+- **Choice:** A, one rule, no special case. Measured on a fourth photo (retake 2) that was not used for the mask. 13 of
+  36 scenes come within the limit; 23 still fail or need more than 25% left out and go to the log-only list as
+  `proposed`. `sweep.py` now builds the mask from every good reference take, so the reference run of these scenes
+  needs 3 takes.
+- **Who:** owner (the 3-photo mask, the two log-only scenes), box (the measurement and the split).
+- **Links:** issue 27; pull request of branch `fix/vkb-mask3`.
+
+---
 
 ## 2026-11-18 - Ignore list: what the owner confirmed (not yet merged)
 

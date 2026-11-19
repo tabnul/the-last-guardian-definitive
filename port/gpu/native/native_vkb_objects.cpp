@@ -3,6 +3,7 @@
 
 #include "native/vkb_core/vkb_device.h"
 #include "native/native_vkb_objects.h"
+#include "native/native_desc.h"
 #include "native/native_tsharp_watch.h"
 #include "native/native_vkb_util.h"
 
@@ -2061,6 +2062,26 @@ bool ViewForCompute(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, 
     m = {view_id, epoch, static_cast<u32>(want), out, found}; // the epoch read before the lookup: a change during it leaves the entry stale-marked
     return true;
 }
+std::atomic<u64> c_cube_as_array{0};
+
+vk::ImageViewType ModuleViewType(VkbAmdGpu::ImageType type) {
+    static const bool cube_as_array = [] { const char* e = std::getenv("TLG_VKB_CUBE_AS_ARRAY"); return e == nullptr || e[0] != '0'; }();
+    switch (type) {
+    case VkbAmdGpu::ImageType::Color1D: return vk::ImageViewType::e2D; // note 41: the module declares 1D images as 2D
+    case VkbAmdGpu::ImageType::Color1DArray: return vk::ImageViewType::e2DArray;
+    case VkbAmdGpu::ImageType::Color2DArray:
+    case VkbAmdGpu::ImageType::Color2DMsaaArray: return vk::ImageViewType::e2DArray;
+    case VkbAmdGpu::ImageType::Color3D: return vk::ImageViewType::e3D;
+    case VkbAmdGpu::ImageType::Cube:
+        if (cube_as_array) {
+            c_cube_as_array.fetch_add(1, std::memory_order_relaxed); // (per module image binding, at the variant's build)
+            return vk::ImageViewType::e2DArray;
+        }
+        return vk::ImageViewType::eCube;
+    default: return vk::ImageViewType::e2D;
+    }
+}
+
 bool ViewForComputeLookup(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, vk::ImageView& out, vk::Image* image) {
     std::scoped_lock lock{mutex};
     const auto v = views.find(view_id);
@@ -2604,6 +2625,7 @@ struct StagingCopy {
 struct StagingRing {
     std::array<StagingCopy, 3> copies{};
     u32 width{}, height{}, texel{};
+    vk::Format format{}; ///< the image format of the newest copy (for the developer dump)
     u64 serial{};
 };
 std::mutex staging_mutex;
@@ -2649,6 +2671,7 @@ void StagingCopied(u64 texture_id, u32 sub) {
             }
             ring.width = width, ring.height = height, ring.texel = texel;
         }
+        ring.format = format;
         serial = ++ring.serial;
         index = u32(serial % ring.copies.size());
         auto& slot = ring.copies[index];
@@ -2689,6 +2712,7 @@ void StagingCopied(u64 texture_id, u32 sub) {
 bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch) {
     StagingCopy copy;
     u32 width = 0, height = 0, texel = 0;
+    vk::Format format{};
     bool newest = true;
     {
         std::scoped_lock lock{staging_mutex};
@@ -2709,7 +2733,7 @@ bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch) {
             return false;
         }
         newest = best->serial == ring.serial;
-        copy = *best, width = ring.width, height = ring.height, texel = ring.texel;
+        copy = *best, width = ring.width, height = ring.height, texel = ring.texel, format = ring.format;
     }
     if (!newest) {
         c_staging_older.fetch_add(1, std::memory_order_relaxed);
@@ -2719,10 +2743,12 @@ bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch) {
     for (u32 y = 0; y < height; ++y) {
         std::memcpy(out + u64{y} * std::max(row_pitch, row), static_cast<const u8*>(copy.mapped) + u64{y} * row, row);
     }
+    DevLog::Count(DevLog::Kind::StagingRead);
+    // a developer dump (Vkb::DevLog): every 50th read's values, each 4 byte texel read as a float whatever the format (a two-channel 16 bit texture shows huge, -nan and inf values)
     static std::mutex log_mutex;
     static std::map<u32, u32> logged_by_size;
     bool log_it = false;
-    {
+    if (DevLog::On()) {
         std::scoped_lock lock{log_mutex};
         u32& k = logged_by_size[static_cast<u32>(texture_id)];
         log_it = (k++ % 50) == 0 && k < 1000; // every 50th read of each staging texture
@@ -2737,7 +2763,7 @@ bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch) {
         for (u32 i = 0; i < width * height; ++i) {
             zeros += f[i] == 0.0f ? 1 : 0;
         }
-        LOG_WARNING(Render_Vulkan, "staging read {}: tex {} {}x{} {} min {} max {} mean {} zeros {} (as floats)", n, texture_id, width, height, newest ? "newest" : "older", lo, hi,
+        LOG_INFO(Render_Vulkan, "staging read {}: tex {} {}x{} {} {} min {} max {} mean {} zeros {} (as floats)", n, texture_id, width, height, vk::to_string(format), newest ? "newest" : "older", lo, hi,
                     sum / float(width * height), zeros);
     }
     return true;
@@ -2752,14 +2778,15 @@ std::string DescribeSampler(u64 object) {
                        RdObj<float>(d, 16), RdObj<u32>(d, 20), RdObj<u32>(d, 24), RdObj<float>(d, 44), RdObj<float>(d, 48));
 }
 
-vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare);
-vk::Sampler SamplerFor(u64 object, bool compare) {
+vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare, s32 bias_q, u32 aniso);
+vk::Sampler SamplerFor(u64 object, bool compare, s32 bias_q, u32 aniso) {
     const LookupTimer lookup_timer{2};
     if (!device_ready || object == 0) {
         return {};
     }
     const u64 id = RdObj<u64>(object, 0x10);
-    const u64 key = id * 2 + (compare ? 1 : 0); // note 40: a compare sampler only for the shaders that sample with a compare
+    // note 40: a compare sampler only for the shaders that sample with a compare; issue 42: one per bias and anisotropy setting (bias -32..31, aniso 0..31)
+    const u64 key = ((id * 2 + (compare ? 1 : 0)) << 11) | (static_cast<u64>(std::clamp(bias_q, -32, 31) + 32) << 5) | std::min(aniso, 31u);
     SamplerMemo* memo = nullptr;
     if (MemoOn()) {
         if (!t_sampler_memo) {
@@ -2772,13 +2799,13 @@ vk::Sampler SamplerFor(u64 object, bool compare) {
         }
         c_memo_misses[2].fetch_add(1, std::memory_order_relaxed);
     }
-    const vk::Sampler found = SamplerForLookup(object, id, key, compare);
+    const vk::Sampler found = SamplerForLookup(object, id, key, compare, bias_q, aniso);
     if (memo != nullptr && found) {
         *memo = {key, found}; // samplers are never destroyed: one per engine sampler id
     }
     return found;
 }
-vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
+vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare, s32 bias_q, u32 aniso_setting) {
     std::scoped_lock lock{mutex};
     if (const auto it = samplers.find(key); it != samplers.end()) {
         return it->second;
@@ -2805,8 +2832,12 @@ vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
     static constexpr u8 MipTable[9] = {1, 2, 1, 2, 1, 2, 1, 2, 2}; // 1 point, 2 linear
     const u32 f = filter % 9;
     const bool mag_linear = MagTable[f] != 0, min_linear = MinTable[f] != 0, mip_linear = MipTable[f] == 2;
-    const bool anisotropic = MagTable[f] == 3 && instance->IsAnisotropicFilteringSupported();
-    const float aniso_level = aniso <= 1 ? 1.0f : aniso == 2 ? 2.0f : aniso <= 4 ? 4.0f : aniso <= 8 ? 8.0f : 16.0f;
+    // issue 42 (part a): the anisotropic filtering setting, with the normal renderer's rule (Core::NativeDesc::ForcedAnisotropy); the engine's mip table
+    // (api-contract.md S1) holds only point and linear, never "no mip filter"
+    const u32 forced = Core::NativeDesc::ForcedAnisotropy(aniso_setting, min_linear, MipTable[f] != 0, max_lod, compare);
+    const bool anisotropic = (MagTable[f] == 3 || forced != 0) && instance->IsAnisotropicFilteringSupported();
+    const float game_level = MagTable[f] != 3 ? 1.0f : aniso <= 1 ? 1.0f : aniso == 2 ? 2.0f : aniso <= 4 ? 4.0f : aniso <= 8 ? 8.0f : 16.0f;
+    const float aniso_level = forced != 0 ? std::max(game_level, static_cast<float>(forced)) : game_level;
     const auto address_mode = [](u32 mode) {
         switch (mode) {
         case 0: return vk::SamplerAddressMode::eRepeat;
@@ -2827,7 +2858,8 @@ vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
         .addressModeU = address_mode(address[0]),
         .addressModeV = address_mode(address[1]),
         .addressModeW = address_mode(address[2]),
-        .mipLodBias = 0.0f, // api-contract.md S3: the engine never writes the S#'s bias field (MipLODBias is ignored)
+        // api-contract.md S3: the engine never writes the S#'s bias field (MipLODBias is ignored); issue 42 (part b): the scene texture bias while the AA runs
+        .mipLodBias = std::clamp(static_cast<float>(bias_q) * 0.25f, -instance->MaxSamplerLodBias(), instance->MaxSamplerLodBias()),
         .anisotropyEnable = anisotropic,
         .maxAnisotropy = anisotropic ? std::min(aniso_level, instance->MaxSamplerAnisotropy()) : 1.0f,
         .compareEnable = compare,
@@ -3771,6 +3803,7 @@ nlohmann::json ObjectsReport() {
                                               {"no_initial_data", c_dev_no_initial.load()}, {"cpu_writes_copied", c_cpu_writes.load()},
                                               {"cpu_write_kb", c_cpu_write_bytes.load() >> 10}}},
                           {"other_view_types", {{"made", c_other_views.load()}, {"refused", c_other_view_refused.load()}, {"refused_pairs", refused}}},
+                          {"cube_bindings_as_array", c_cube_as_array.load()},
                           {"display", {{"presented_from_our_image", c_display_found.load()}, {"no_image_at_the_display_buffer", c_display_missed.load()},
                                        {"never_drawn_into", c_display_not_general.load()}}},
                           {"attachments", {{"format_views_made", c_attach_views.load()}, {"refused", c_attach_refused.load()}}},

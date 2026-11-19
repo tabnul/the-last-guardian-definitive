@@ -188,6 +188,7 @@ function(add_vkb_host_shader FILENAME SHADER_NAME)
 endfunction()
 add_vkb_host_shader(fill_pattern.comp fill_pattern_comp)
 add_vkb_host_shader(vkb_aa_motion.comp vkb_aa_motion_comp)
+add_vkb_host_shader(vkb_rcas.comp vkb_rcas_comp)
 add_vkb_host_shader(fs_tri.vert fs_tri_vert)
 add_vkb_host_shader(post_process.frag post_process_frag)
 foreach(BPP IN ITEMS 8 16 32 64 96 128)
@@ -495,6 +496,10 @@ add_executable(upscaler-support-test EXCLUDE_FROM_ALL ../tests/test_upscaler_sup
     shim/tlg_settings.cpp)
 target_include_directories(upscaler-support-test PRIVATE shim)
 target_compile_options(upscaler-support-test PRIVATE -UNDEBUG)
+# tlg: the game's tlg.ini upscaler rule, for tests/test_backend_aa_env.py: ninja -C out/gpu tlg-ini-upscaler.
+add_executable(tlg-ini-upscaler EXCLUDE_FROM_ALL ../tests/tlg_ini_upscaler.cpp
+    shim/tlg_settings.cpp)
+target_include_directories(tlg-ini-upscaler PRIVATE shim)
 add_executable(perf-overlay-test EXCLUDE_FROM_ALL ../tests/test_perf_overlay.cpp
     shim/tlg_settings.cpp)
 target_include_directories(perf-overlay-test PRIVATE shim)
