@@ -10,6 +10,7 @@
 
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
 
+#include <fstream>
 #include <algorithm>
 #include <cstdlib>
 #include <array>
@@ -954,6 +955,9 @@ struct DrawJob final : Stream::Job {
 
 /// Binds one stage (stream recording held, outside a pass: images may be moved to the general layout). False: the draw cannot run (counted).
 /// R5 TLG_VKB_DRAW_DUMP: one line into log/vkb_draw_dump.txt (its own file: the game log drops lines when it is busy)
+std::mutex g_live_dump_mutex;
+std::string g_live_dump_label; ///< debug: the label of the armed live image dump (TLG_VKB_DRAW_CENSUS_TRIGGER "... ps=<hash>")
+std::atomic<u64> g_live_dump_ps{0};
 void DrawDumpLine(const std::string& line) {
     static std::mutex m;
     std::scoped_lock lock{m};
@@ -1567,8 +1571,33 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     // one line each into log/vkb_draw_dump.txt: shaders, counts, pass, and what each pixel shader image slot holds
     {
         static const bool census = [] { const char* e = std::getenv("TLG_VKB_DRAW_CENSUS"); return e != nullptr && e[0] == '1'; }();
-        static const u64 census_at = [] { const char* e = std::getenv("TLG_VKB_IMAGE_DUMP_AT"); return e != nullptr ? std::strtoull(e, nullptr, 10) : 2600ull; }();
-        if (census && Core::Vkb::GraphicsSubmits() >= census_at && Core::Vkb::GraphicsSubmits() < census_at + 8) {
+        static std::atomic<u64> census_at = [] { const char* e = std::getenv("TLG_VKB_IMAGE_DUMP_AT"); return e != nullptr ? std::strtoull(e, nullptr, 10) : 2600ull; }();
+        // TLG_VKB_DRAW_CENSUS_TRIGGER=<file> (debug): when the file appears, the census runs again from the next submission (its first line is the label), and the file is removed
+        if (static const char* trigger = std::getenv("TLG_VKB_DRAW_CENSUS_TRIGGER"); census && trigger != nullptr) {
+            static std::atomic<u64> checked{0};
+            const u64 now = Core::Vkb::GraphicsSubmits();
+            if (checked.exchange(now, std::memory_order_relaxed) != now && std::filesystem::exists(trigger)) {
+                std::string label;
+                {
+                    std::ifstream f(trigger);
+                    std::getline(f, label);
+                }
+                std::error_code ec;
+                std::filesystem::remove(trigger, ec);
+                census_at.store(now + 1, std::memory_order_relaxed);
+                DrawDumpLine(fmt::format("=== census {} from submit {}", label, now + 1));
+                // "<label> ps=<hash>": the first draw of that pixel shader from now on dumps its images into vkb_image_dump/<label>/
+                if (const auto at = label.find("ps="); at != std::string::npos) {
+                    std::scoped_lock lock{g_live_dump_mutex};
+                    g_live_dump_label = label.substr(0, at);
+                    while (!g_live_dump_label.empty() && g_live_dump_label.back() == ' ') {
+                        g_live_dump_label.pop_back();
+                    }
+                    g_live_dump_ps.store(std::strtoull(label.c_str() + at + 3, nullptr, 16), std::memory_order_relaxed);
+                }
+            }
+        }
+        if (census && Core::Vkb::GraphicsSubmits() >= census_at.load(std::memory_order_relaxed) && Core::Vkb::GraphicsSubmits() < census_at.load(std::memory_order_relaxed) + 8) {
             std::string text = fmt::format("submit {} vs {:#x} ps {:#x} kind {} a1 {} a2 {} instances {} pass {}x{} colors {} depth {}", Core::Vkb::GraphicsSubmits(),
                                            v.vs.info ? v.vs.info->pgm_hash : 0ull, v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0ull, kind, a1, a2, instances, pass.extent.width, pass.extent.height, pass.color_count,
                                            pass.depth ? 1 : 0);
@@ -1629,9 +1658,15 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         // note 90: in debugger mode a slow pass's pixel shader is armed (Stream::TakeSlowPsArm); its next draw is dumped the same way into vkb_image_dump/debugger/,
         // which the freeze moves into its folder (slow_draws/)
         const bool debugger_dump = Core::FrameWalk::DebuggerMode() && v.has_ps && v.ps.info && Stream::TakeSlowPsArm(v.ps.info->pgm_hash);
-        const std::string prefix = debugger_dump ? fmt::format("debugger/ps_{:016x}/", v.ps.info->pgm_hash) : std::string{};
+        std::string live_prefix;
+        if (u64 live = g_live_dump_ps.load(std::memory_order_relaxed); live != 0 && v.has_ps && v.ps.info &&
+            (v.ps.info->pgm_hash == live || (v.ps.info->pgm_hash & 0xffffffffull) == live) && g_live_dump_ps.compare_exchange_strong(live, 0)) {
+            std::scoped_lock lock{g_live_dump_mutex};
+            live_prefix = g_live_dump_label + "/";
+        }
+        const std::string prefix = debugger_dump ? fmt::format("debugger/ps_{:016x}/", v.ps.info->pgm_hash) : live_prefix;
         job->dump_prefix = prefix;
-        if (debugger_dump || (dump_ps != 0 && v.has_ps && v.ps.info && v.ps.info->pgm_hash == dump_ps && Core::Vkb::GraphicsSubmits() >= dump_at && seen.fetch_add(1) == dump_nth)) {
+        if (debugger_dump || !live_prefix.empty() || (dump_ps != 0 && v.has_ps && v.ps.info && v.ps.info->pgm_hash == dump_ps && Core::Vkb::GraphicsSubmits() >= dump_at && seen.fetch_add(1) == dump_nth)) {
             for (const Stage* st : {&v.vs, &v.ps}) {
                 for (u32 i = 0; i < st->images.size(); ++i) {
                     const Source& src = st->images[i];
