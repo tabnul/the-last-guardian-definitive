@@ -1,6 +1,8 @@
 // RenderDoc frame captures for GPU work inspection (R5). Off unless TLG_RENDERDOC=1.
-//   TLG_RENDERDOC=1          load renderdoc.dll from TLG_RENDERDOC_DIR (the portable RenderDoc folder) before the Vulkan instance is made,
-//                            and enable its layer for this process only (VK_ADD_LAYER_PATH + VK_INSTANCE_LAYERS; nothing is registered)
+//   TLG_RENDERDOC=1          load renderdoc.dll (Linux: lib/librenderdoc.so) from TLG_RENDERDOC_DIR (the portable RenderDoc folder) before the
+//                            Vulkan instance is made, and enable its layer for this process only (VK_ADD_LAYER_PATH + VK_INSTANCE_LAYERS;
+//                            nothing is registered). Linux: the folder's etc/vulkan/implicit_layer.d/renderdoc_capture.json must have a
+//                            library_path that works from there (the tarball's "/io/dist/lib/..." has to be changed to "../../../lib/librenderdoc.so").
 //   TLG_RENDERDOC_AT=N       capture the frame after present N (several: N,M,...)
 //   TLG_RENDERDOC_TAG=name   capture files user/log/rdc/<name>_frameX.rdc (default "tlg")
 // Debug server: /renderdoc (state), /renderdoc?capture=1 (capture the next frame).
@@ -16,6 +18,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <dlfcn.h>
 #endif
 
 namespace VideoCore {
@@ -27,7 +31,6 @@ std::string out_template;
 } // namespace
 
 void LoadRenderDoc() {
-#ifdef _WIN32
     static bool done = false;
     if (done) {
         return;
@@ -37,6 +40,8 @@ void LoadRenderDoc() {
     if (on == nullptr || on[0] != '1') {
         return;
     }
+    pRENDERDOC_GetAPI get_api{};
+#ifdef _WIN32
     HMODULE mod = GetModuleHandleA("renderdoc.dll");
     if (mod == nullptr) {
         const char* dir = std::getenv("TLG_RENDERDOC_DIR");
@@ -53,7 +58,27 @@ void LoadRenderDoc() {
             return;
         }
     }
-    const auto get_api = reinterpret_cast<pRENDERDOC_GetAPI>(GetProcAddress(mod, "RENDERDOC_GetAPI"));
+    get_api = reinterpret_cast<pRENDERDOC_GetAPI>(GetProcAddress(mod, "RENDERDOC_GetAPI"));
+#else
+    void* mod = dlopen("librenderdoc.so", RTLD_NOW | RTLD_NOLOAD);
+    if (mod == nullptr) {
+        const char* dir = std::getenv("TLG_RENDERDOC_DIR");
+        if (dir == nullptr || dir[0] == 0) {
+            LOG_ERROR(Render, "TLG_RENDERDOC=1 but TLG_RENDERDOC_DIR is not set");
+            return;
+        }
+        const std::string d{dir};
+        // The layer manifest is searched in the same folder tree; the layer is switched on for this process only.
+        setenv("VK_ADD_LAYER_PATH", (d + "/etc/vulkan/implicit_layer.d").c_str(), 1);
+        setenv("VK_INSTANCE_LAYERS", "VK_LAYER_RENDERDOC_Capture", 1);
+        mod = dlopen((d + "/lib/librenderdoc.so").c_str(), RTLD_NOW | RTLD_GLOBAL);
+        if (mod == nullptr) {
+            LOG_ERROR(Render, "RenderDoc: cannot load {}/lib/librenderdoc.so: {}", d, dlerror());
+            return;
+        }
+    }
+    get_api = reinterpret_cast<pRENDERDOC_GetAPI>(dlsym(mod, "RENDERDOC_GetAPI"));
+#endif
     if (get_api == nullptr || get_api(eRENDERDOC_API_Version_1_6_0, reinterpret_cast<void**>(&rdoc)) != 1) {
         rdoc = nullptr;
         LOG_ERROR(Render, "RenderDoc: no API 1.6.0");
@@ -81,7 +106,6 @@ void LoadRenderDoc() {
     int major = 0, minor = 0, patch = 0;
     rdoc->GetAPIVersion(&major, &minor, &patch);
     LOG_WARNING(Render, "RenderDoc {}.{}.{} loaded, captures to {}_frameX.rdc, {} planned", major, minor, patch, out_template, capture_at.size());
-#endif
 }
 
 void NoteRenderDocPresent(u64 index) {
