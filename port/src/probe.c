@@ -975,13 +975,24 @@ mismatch:
  * ended), the table holds null and the spinlock take at 0x271980 / 0x2819c0 writes to
  * null + 0x24 / 0x44 (faults at 0x2719aa and 0x2819ea). The two lookups seen crashing get the
  * missing null test: such a record is skipped, as the game does for a stale entry.
- * TLG_ASYNC_GUARD=2 (test only) skips every record, to exercise the skip path. */
-static int64_t async_guard_skips[2];
+ * TLG_ASYNC_GUARD=2 (test only) skips every record, to exercise the skip path.
+ * #93: a scan of every pool-table lookup that feeds these two spinlocks found three more without
+ * the null test: 0xc4d8a9 (same reader, fault at 0x2819ea from 0xc4d8c0) and 0xc4a3b5 / 0xc4afc5
+ * in the twin reader 0xc49540. They are guarded the same way (see install_async_guard_more).
+ * Root cause (results arriving long after their pool is freed) is tracked in #94. */
+static const char *const async_guard_sites[5] = {"0xc4cdc4", "0xc4d62f", "0xc4d8a9", "0xc4a3b5", "0xc4afc5"};
+static int64_t async_guard_skips[5];
 static ABI void async_guard_note(uint64_t site) {
-    const int64_t n = __atomic_add_fetch(&async_guard_skips[site & 1], 1, __ATOMIC_RELAXED);
-    if (n <= 5 || !(n & (n - 1)))
-        printf("Async guard: skipped a result for a missing pool (site %s, %" PRId64 " so far)\n",
-               (site & 1) ? "0xc4d62f" : "0xc4cdc4", n);
+    if (site >= 5) return;
+    const int64_t n = __atomic_add_fetch(&async_guard_skips[site], 1, __ATOMIC_RELAXED);
+    if (n <= 5 || !(n & (n - 1))) {
+        /* t = same steady clock as the GPU "Compute timing" lines (QPC on Windows). */
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        printf("Async guard: skipped a result for a missing pool (site %s, %" PRId64
+               " so far, t=%.3f s)\n",
+               async_guard_sites[site], n, ts.tv_sec + ts.tv_nsec / 1e9);
+    }
 }
 static unsigned char *async_guard_abs(unsigned char *p, unsigned char reg_op, uint64_t value, unsigned char modrm) {
     *p++ = 0x48; *p++ = reg_op; memcpy(p, &value, 8); p += 8;   /* movabs rax|rdi, value */
@@ -1039,6 +1050,106 @@ static void install_async_guard(Segment *segments, uint64_t count) {
         memset(image + at[i] + 5, 0x90, length - 5);
     }
     printf("Async guard: ready (2 pool lookups%s)\n", guard_mode == 2 ? ", TEST: skipping every record" : "");
+}
+
+/* #93: three more pool lookups, each copied into a stub as: the original load, test reg,reg,
+ * jz skip, the rest of the displaced bytes, jmp back. The skip path lands where the game itself
+ * skips the record (a stale or empty entry), so nothing is locked or half-done. Unlike the first
+ * two sites, a register the game still needs can be live there (eax = loop count at 0xc4aa50),
+ * so the skip path keeps every register: integer ones pushed, vector state via xsave, flags dead. */
+static unsigned char *async_guard_emit(unsigned char *p, const void *bytes, size_t n) {
+    memcpy(p, bytes, n);
+    return p + n;
+}
+static unsigned char *async_guard_jmp_abs(unsigned char *p, uint64_t target) {   /* jmp [rip+0]; .quad */
+    static const unsigned char op[] = {0xff, 0x25, 0, 0, 0, 0};
+    p = async_guard_emit(p, op, sizeof(op));
+    memcpy(p, &target, 8);
+    return p + 8;
+}
+static void install_async_guard_more(Segment *segments, uint64_t count) {
+    const char *mode = getenv("TLG_ASYNC_GUARD");
+    const unsigned long guard_mode = mode ? strtoul(mode, NULL, 0) : 1;
+    if (!guard_mode) return;
+    unsigned regs[4];
+    if (!__get_cpuid(1, &regs[0], &regs[1], &regs[2], &regs[3]) || !(regs[2] & (1u << 27))) {
+        printf("Async guard: extra lookups unavailable (no OS xsave)\n");
+        return;
+    }
+    __cpuid_count(0xd, 0, regs[0], regs[1], regs[2], regs[3]);
+    if (regs[1] == 0 || regs[1] > 0xc00) {   /* ebx: xsave size for the enabled state */
+        printf("Async guard: extra lookups unavailable (xsave area %u bytes)\n", regs[1]);
+        return;
+    }
+    static const struct {
+        uint64_t at, back, skip;
+        unsigned char reg_test[3];   /* test reg,reg on the loaded register */
+        unsigned char length;        /* displaced bytes: the load first (4 bytes), then the rest */
+        unsigned char expect[11];
+    } site[3] = {
+        /* mov r13,[rdx+rax*8]; mov [rbp-0x500],rcx -> skip to 0xc4d9e5 (reload r13, next record) */
+        {0xc4d8a9, 0xc4d8b4, 0xc4d9e5, {0x4d,0x85,0xed}, 11, {0x4c,0x8b,0x2c,0xc2, 0x48,0x89,0x8d,0x00,0xfb,0xff,0xff}},
+        /* mov rcx,[rdx+rcx*8]; cmp dword [rcx+0x18],0 -> skip to 0xc4aa50 (the game's own skip) */
+        {0xc4a3b5, 0xc4a3bd, 0xc4aa50, {0x48,0x85,0xc9}, 8, {0x48,0x8b,0x0c,0xca, 0x83,0x79,0x18,0x00}},
+        /* mov r12,[rcx+rax*8]; lea r14,[r12+0x30] -> skip to 0xc4b0e0 (the game's own skip) */
+        {0xc4afc5, 0xc4afce, 0xc4b0e0, {0x4d,0x85,0xe4}, 9, {0x4c,0x8b,0x24,0xc1, 0x4d,0x8d,0x74,0x24,0x30}},
+    };
+    for (unsigned i = 0; i < 3; ++i)
+        if (!mapped(segments, count, site[i].at, site[i].length) ||
+            memcmp(image + site[i].at, site[i].expect, site[i].length) ||
+            !mapped(segments, count, site[i].skip, 1)) {
+            printf("Async guard: extra lookups unavailable (code signature mismatch at 0x%" PRIx64 ")\n", site[i].at);
+            return;
+        }
+    /* skip path: push rbp; mov rbp,rsp; push rax,rcx,rdx,rsi,rdi,r8-r11; and rsp,-64; sub rsp,0xc00;
+     * zero the xsave header; eax=edx=-1; xsave64 [rsp]; rdi=site; rax=note; call rax; eax=edx=-1; xrstor64 [rsp];
+     * lea rsp,[rbp-72]; pop r11-r8,rdi,rsi,rdx,rcx,rax; pop rbp; jmp skip */
+    static const unsigned char save[] = {
+        0x55, 0x48,0x89,0xe5, 0x50, 0x51, 0x52, 0x56, 0x57, 0x41,0x50, 0x41,0x51, 0x41,0x52, 0x41,0x53,
+        0x48,0x83,0xe4,0xc0, 0x48,0x81,0xec,0x00,0x0c,0x00,0x00,
+        /* xor eax,eax; mov [rsp+0x200+8k],rax (k 0..7): the xsave header must start zeroed */
+        0x31,0xc0,
+        0x48,0x89,0x84,0x24,0x00,0x02,0,0, 0x48,0x89,0x84,0x24,0x08,0x02,0,0,
+        0x48,0x89,0x84,0x24,0x10,0x02,0,0, 0x48,0x89,0x84,0x24,0x18,0x02,0,0,
+        0x48,0x89,0x84,0x24,0x20,0x02,0,0, 0x48,0x89,0x84,0x24,0x28,0x02,0,0,
+        0x48,0x89,0x84,0x24,0x30,0x02,0,0, 0x48,0x89,0x84,0x24,0x38,0x02,0,0,
+        0xb8,0xff,0xff,0xff,0xff, 0xba,0xff,0xff,0xff,0xff, 0x48,0x0f,0xae,0x24,0x24};
+    static const unsigned char restore[] = {
+        0xb8,0xff,0xff,0xff,0xff, 0xba,0xff,0xff,0xff,0xff, 0x48,0x0f,0xae,0x2c,0x24,
+        0x48,0x8d,0x65,0xb8, 0x41,0x5b, 0x41,0x5a, 0x41,0x59, 0x41,0x58, 0x5f, 0x5e, 0x5a, 0x59, 0x58, 0x5d};
+    unsigned char *stub = allocate(page_size), *p = stub, *entry[3];
+    for (unsigned i = 0; i < 3; ++i) {
+        entry[i] = p;
+        p = async_guard_emit(p, site[i].expect, 4);                      /* the load */
+        p = async_guard_emit(p, site[i].reg_test, 3);
+        *p++ = guard_mode == 2 ? 0xeb : 0x74;                            /* jz skip (2: jmp, test only) */
+        unsigned char *jz = p++;
+        p = async_guard_emit(p, site[i].expect + 4, site[i].length - 4u);
+        p = async_guard_jmp_abs(p, (uintptr_t)image + site[i].back);
+        *jz = (unsigned char)(p - (jz + 1));
+        p = async_guard_emit(p, save, sizeof(save));
+        p = async_guard_abs(p, 0xbf, 2 + i, 0);                          /* rdi = site */
+        p = async_guard_abs(p, 0xb8, (uintptr_t)async_guard_note, 0xd0);
+        p = async_guard_emit(p, restore, sizeof(restore));
+        p = async_guard_jmp_abs(p, (uintptr_t)image + site[i].skip);
+    }
+    if ((size_t)(p - stub) > page_size) fail("async guard: stub too large");
+    int32_t relative[3];
+    for (unsigned i = 0; i < 3; ++i) {
+        const int64_t delta = (int64_t)(uintptr_t)entry[i] - (int64_t)(uintptr_t)(image + site[i].at + 5);
+        if (delta < INT32_MIN || delta > INT32_MAX) {
+            printf("Async guard: extra lookups unavailable (outside relative-jump range)\n");
+            return;
+        }
+        relative[i] = (int32_t)delta;
+    }
+    protect(stub, page_size, 5);
+    for (unsigned i = 0; i < 3; ++i) {
+        image[site[i].at] = 0xe9;
+        memcpy(image + site[i].at + 1, &relative[i], 4);
+        memset(image + site[i].at + 5, 0x90, site[i].length - 5u);
+    }
+    printf("Async guard: ready (3 more pool lookups, #93%s)\n", guard_mode == 2 ? ", TEST: skipping every record" : "");
 }
 
 /* Re-init lock (load crash #19, divide by zero at 0x149a1a0; TLG_REINIT_LOCK: 1 fix, the default;
@@ -1650,6 +1761,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_input_timing(segments, ns);
     if (gpu_enabled) install_bind_guard(segments, ns);
     install_async_guard(segments, ns);
+    install_async_guard_more(segments, ns);
     if (gpu_enabled) install_reinit_lock(segments, ns);
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
