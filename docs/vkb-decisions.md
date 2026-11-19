@@ -9,6 +9,46 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-19 - Every anti-aliasing choice in tlg.ini reaches the new engine, read as the game reads it (not yet merged)
+
+- **Problem:** with the new engine, some tlg.ini choices gave no anti-aliasing at all, without a line: FSR 4.1.1
+  (`upscaler=fsr411`), TAA, an unknown name. The launcher had its own small table of choices; the third fix of that
+  kind (after pull requests 51 and 56), so treated as recurring (rule 14f).
+- **Considered:** (A) run FSR 4.1.1 in the new engine: cannot run on the test box, a second FSR 4 path, and the game's own
+  settings code reads `fsr411` in tlg.ini as DLSS anyway (no menu offers 4.1.1; only the test override
+  `TLG_UPSCALER=fsr411` runs it). (B) map `fsr411` to the new engine's FSR 4: one more table entry, differs from what the
+  game loads, TAA still without AA. (C) the launcher reads the choice with the game's own loading rule for every value
+  and passes it on; the engine names every value; a choice it has no AA for (TAA, an unknown name) is a fault (error
+  line, on-screen message, counter) and FSR 3.1 runs.
+- **Choice:** C. One rule instead of a table, checked by a test against the game's real loader; the new engine gets
+  the AA the normal renderer runs for the same file; nothing depends on the card. TAA in the new engine is a separate
+  job. Making `fsr411` mean FSR 4 would change settings code the normal renderer shares (principle 8): owner's call.
+  Switch `TLG_VKB_AA_CHOICE` (`=0` the old table).
+- **Who:** box (rule 14).
+- **Links:** issue 57 (https://github.com/tabnul/tlg-vkb-work/issues/57); pull request for branch `fix/vkb-aa-choice`.
+
+## 2026-11-19 - The new engine runs FSR 4 itself; the owner's FSR rules for a choice, a fresh launch and a failure (not yet merged)
+
+- **Problem:** in the new engine a player's FSR 4 choice ran as FSR 3.1 (the launcher mapped it, the engine had no FSR 4).
+  The owner's rules (pull request 51, 2026-11-19): "Default on a fresh launch (player chose nothing): DLSS if available;
+  else FSR 4 on an RDNA 4 card (RX 9000); else FSR 3.1." "A player who CHOOSES FSR 4 gets FSR 4 on any card that can run
+  it." "No card-based fallback. If a chosen FSR 4 fails to start, that is a fault: error line, visible to the player, no
+  quiet switch to FSR 3.1." "If the FSR 4 library (DLL) is missing, fall back to FSR 3.1 quietly with an info line in the
+  log." "The game is never left without AA."
+- **Considered:** (A) make the normal renderer's FSR 4 wrapper usable by both engines: edits the normal renderer
+  (principle 8). (B) a new-engine copy of the wrapper's FSR 4 path, same library, model files and inputs, frames on the
+  new engine's own timeline. (C) build the normal renderer's wrapper a second time under other names: fragile. For the
+  inputs: copy the scene colour and depth into images the AA owns each frame, or keep one view per game image (an earlier
+  cache like that lost the device, and the FSR 4 library keeps at most 8 views and never forgets one).
+- **Choice:** B, with the copies. The fresh-launch default is decided by the engine (it sees the GPU): RDNA 4 = an AMD
+  chip with a PCI device ID 0x75xx (from public ID lists; not proven on a card). A failure of a chosen FSR 4 is reported
+  (error line, on-screen message, counter) and FSR 3.1 then runs, so the game keeps its anti-aliasing: the box's reading
+  of "no quiet switch" together with "never left without AA"; the owner can overrule in issue 55. Missing FSR 4 files: an
+  info line and FSR 3.1. Switch `TLG_VKB_FSR4` (`=0` the old way).
+- **Who:** owner set the rules; box chose the way (rule 14).
+- **Links:** issue 55 (https://github.com/tabnul/tlg-vkb-work/issues/55); pull request 51 (the owner's rules); pull request
+  for branch `fix/vkb-fsr4`.
+
 ## 2026-11-19 - The new engine applies the player's picture settings the way the normal renderer does (not yet merged)
 
 - **Problem:** the new engine's picture is about half as sharp as the normal renderer's in 195 of 197 scenes (issue 42).

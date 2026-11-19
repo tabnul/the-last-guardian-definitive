@@ -955,25 +955,64 @@ def texture_packs(folder):
     return sorted(entry.name for entry in folder.iterdir() if (entry / 'index.txt').is_file())
 
 
+# tlg.ini upscaler names, as TlgSettings::UpscalerName (gpu/shim/tlg_settings.cpp)
+INI_UPSCALERS = ('off', 'fsr3', 'fsr4', 'fsr411', 'taa', 'dlss')
+
+
+def ini_int(ini, key, default):
+    """A tlg.ini number as the game reads it (TlgSettings::Set: C atoi; a key that is not there keeps the default)."""
+    if key not in ini:
+        return default
+    match = re.match(r'[ \t\n\v\f\r]*([+-]?[0-9]+)', ini[key])
+    return int(match.group(1)) if match else 0
+
+
+def loaded_upscaler(ini):
+    """The upscaler the game itself loads from tlg.ini (TlgSettings::Load, before the card checks): a name it does not
+    know keeps its default (fsr3); a file from before the AA row (no aa_row), and every upscaler but off, fsr3, fsr4 and
+    taa (dlss, fsr411), load as dlss; anti-aliasing off (dlaa=0) loads as off. Not mirrored: the environment overrides
+    TLG_UPSCALER / TLG_DLAA (test runs), and spaces before a key (read_ini strips them, the game does not)."""
+    upscaler = ini.get('upscaler', 'fsr3')
+    if upscaler not in INI_UPSCALERS:
+        upscaler = 'fsr3'
+    if ini_int(ini, 'aa_row', 0) == 0 or upscaler not in ('off', 'fsr3', 'fsr4', 'taa'):
+        upscaler = 'dlss'
+    if ini_int(ini, 'dlaa', 1) == 0 and upscaler != 'off':
+        upscaler = 'off'
+    return upscaler
+
+
 def backend_aa_env(settings, ini):
     """The Video page's Anti-aliasing and Frame generation rows for the engine-to-Vulkan backend
     (TLG_VKB_AA / TLG_VKB_FG, gpu/native/native_vkb_aa.cpp). The backend draws at the output size
-    (no upscaler), so the row's choice is its anti-aliasing: DLAA (an upscaler choice of DLSS counts
-    as DLAA), FSR 3.1 (FSR 4 runs as FSR 3.1 here), or none (Off, TAA). Frame generation: DLSS only,
-    on top of an anti-aliasing (it takes the AA's depth and motion), off at a 30 FPS game rate."""
+    (no upscaler), so the row's choice is its anti-aliasing. The choice is what the game itself loads
+    from tlg.ini (loaded_upscaler), so every value the file can hold reaches the backend: dlss as DLAA,
+    fsr3, fsr4, taa and off as they are (the backend says it when it has no AA for one, and runs
+    FSR 3.1: owner, pull request 51, "The game is never left without AA"). With nothing chosen yet (no
+    aa_row in tlg.ini: a fresh launch) the backend decides (TLG_VKB_AA=auto: DLAA if DLSS is
+    installed, else FSR 4 on an RDNA 4 card, else FSR 3.1; owner, pull request 51). Frame generation:
+    DLSS only, on top of an anti-aliasing (it takes the AA's depth and motion), off at a 30 FPS game
+    rate. TLG_VKB_AA_CHOICE=0: the old table (only dlss, fsr3, fsr4 reached the backend)."""
     env = {}
     # tlg.ini dlss_supported / dlss_fg_supported are the default renderer's own DLSS checks: they never run with the
     # backend (which loads DLSS through its own glue, tlg_dlss.dll), so they say nothing here
-    if ini.get('aa_row', '0') in ('0', ''):
-        choice = 'dlss'                     # a tlg.ini from before the row: DLSS (launcher upscaler_of)
-    elif ini.get('dlaa', '1') in ('0', ''):
-        choice = 'off'
+    if os.environ.get('TLG_VKB_AA_CHOICE', '1') == '0':
+        if ini.get('aa_row', '0') in ('0', ''):
+            choice = 'auto'
+        elif ini.get('dlaa', '1') in ('0', ''):
+            choice = 'off'
+        else:
+            choice = ini.get('upscaler', 'dlss')
+        aa = {'auto': 'auto', 'dlss': 'dlaa', 'fsr3': 'fsr3', 'fsr4': 'fsr4'}.get(choice)
     else:
-        choice = ini.get('upscaler', 'dlss')
-    aa = {'dlss': 'dlaa', 'fsr3': 'fsr3', 'fsr4': 'fsr3'}.get(choice)
+        loaded = loaded_upscaler(ini)
+        if ini_int(ini, 'aa_row', 0) == 0 and loaded != 'off':
+            aa = 'auto'                     # nothing chosen yet (fresh launch, or a tlg.ini from before the row)
+        else:
+            aa = 'dlaa' if loaded == 'dlss' else loaded
     blocked = settings.get('frame_rate') == '30' or ini.get('fps_limit') == '30'
     fg = ini.get('frame_generation', '0') == '1' and not blocked
-    if fg and aa is None:
+    if fg and aa in (None, 'off'):
         aa = 'dlaa'                         # frame generation needs an anti-aliasing's inputs
     if aa:
         env['TLG_VKB_AA'] = aa
