@@ -1349,6 +1349,10 @@ namespace {
 /// R3a placed ring (TLG_VKB_RING_PLACED, default on; =0: only the driver's own address, the way before): with VK_EXT_map_memory_placed the ring's memory is mapped at an
 /// address the runtime reserves for us below 40 bits (`runtime_low_map`, where the runtime keeps its own memory the game sees), so the engine's 40 bit buffer
 /// descriptions can hold it on every driver that has the feature. Without the feature (Windows, older drivers) the driver's own address is used, as before.
+bool RingVramOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RING_VRAM"); return e == nullptr || e[0] != '0'; }(); // default on since 2026-11-14 (note 29); =0: in place
+    return on;
+}
 bool RingPlacedOn() {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_RING_PLACED"); return e == nullptr || e[0] != '0'; }();
     return on;
@@ -1397,7 +1401,7 @@ void* MapRingPlaced(VmaAllocation allocation) {
 } // namespace
 
 bool PlaceFrameRing(u64 allocator) {
-    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RING_VRAM"); return e == nullptr || e[0] != '0'; }(); // default on since 2026-11-14 (note 29); =0: in place
+    const bool on = RingVramOn();
     static std::once_flag once;
     static std::atomic<bool> placed{false};
     if (!on || allocator == 0 || !device_ready) {
@@ -1446,7 +1450,8 @@ bool PlaceFrameRing(u64 allocator) {
         }
         const u64 mapped = reinterpret_cast<u64>(host);
         if (mapped + size + VramRingSlack > (1ull << 40)) {
-            // the engine's buffer descriptions hold 40 bit addresses (only the driver's own address can be up there; a placed one is below by construction)
+            // the engine's buffer descriptions hold 40 bit addresses (only the driver's own address can be up there; a placed one is below by construction, as
+            // runtime_low_map stays below 0x1000000000)
             RingDecided("in place: the driver's address is above 40 bits");
             LOG_ERROR(Render_Vulkan, "vkb R3a: the frame ring's mapping {:#x} is above 40 bits: it stays in place ({})", mapped,
                       !RingPlacedOn()                                  ? "TLG_VKB_RING_PLACED=0"
@@ -3807,7 +3812,7 @@ nlohmann::json ObjectsReport() {
                                return out;
                            }()},
                           {"layout_at_creation_jobs_images_by_upload_in_batch", {true, c_layout_jobs.load(), c_layout_images.load(), c_layout_by_upload.load(), c_layout_in_batch.load()}},
-                          {"frame_ring_in_device_memory", {{"on", vram_ring_base.load() != 0}, {"route", ring_decided.load(std::memory_order_acquire) ? ring_route : "not placed yet"},
+                          {"frame_ring_in_device_memory", {{"on", vram_ring_base.load() != 0}, {"route", ring_decided.load(std::memory_order_acquire) ? ring_route : RingVramOn() ? "not placed yet" : "off (TLG_VKB_RING_VRAM=0)"},
                                                            {"placed_failure", ring_decided.load(std::memory_order_acquire) ? ring_placed_failure : std::string{}}, {"base", vram_ring_base.load()}, {"binds", c_ring_vram_binds.load()},
                                                            {"ranges_leaving_it", c_ring_vram_straddle.load()}}},
                           {"in_place_sources", {{"note", "binds read in place (TLG_VKB_SOURCE_CENSUS=1): engine buffer static / dynamic / staging, frame ring, other"},

@@ -361,7 +361,9 @@ bool Instance::CreateDevice() {
     external_memory_dma_buf = add_extension(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME) && add_extension(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME);
     // R3a placed ring (TLG_VKB_RING_PLACED): memory mapped at an address we choose (below 40 bits, for the frame ring); asked once here, only on Linux (the address is
     // reserved by the runtime with mmap, which a placed mapping replaces; Windows would need a placeholder reservation, not built)
-    if (feature_chain.get<vk::PhysicalDeviceMapMemoryPlacedFeaturesEXT>().memoryMapPlaced && placed_map_alignment != 0) {
+    const char* ring_placed_env = std::getenv("TLG_VKB_RING_PLACED"); // =0: not asked for at all (the device as before)
+    if ((ring_placed_env == nullptr || ring_placed_env[0] != '0') && feature_chain.get<vk::PhysicalDeviceMapMemoryPlacedFeaturesEXT>().memoryMapPlaced &&
+        placed_map_alignment != 0) {
         map_memory_placed = add_extension(VK_KHR_MAP_MEMORY_2_EXTENSION_NAME) && add_extension(VK_EXT_MAP_MEMORY_PLACED_EXTENSION_NAME);
     }
 #endif
