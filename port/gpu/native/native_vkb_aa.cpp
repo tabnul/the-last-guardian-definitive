@@ -3,7 +3,9 @@
 
 #include "native/native_vkb_aa.h"
 
+#include <algorithm>
 #include <array>
+#include <bit>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -25,7 +27,9 @@
 #include "native/native_vkb_stream.h"
 #include "native/native_vkb_objects.h"
 #include "native/shadps4/video_core/host_shaders/vkb_aa_motion_comp.h"
+#include "native/shadps4/video_core/host_shaders/vkb_rcas_comp.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_instance.h"
+#include "tlg_settings.h"
 
 namespace {
 /// a device-wide wait: every queue must be left alone meanwhile (Vulkan), so the backend's recording and upload threads wait at the queue lock, as the
@@ -41,6 +45,19 @@ namespace {
 
 enum class Kind : u32 { Off, Fsr3, Dlaa };
 
+} // namespace
+
+bool PicturePart(char part) {
+    static const std::string parts = [] {
+        const char* e = std::getenv("TLG_VKB_PICTURE_SETTINGS");
+        const std::string v = e != nullptr ? e : "";
+        return v.empty() || v == "1" ? std::string("fsba") : v == "0" ? std::string() : v;
+    }();
+    return parts.find(part) != std::string::npos;
+}
+
+namespace {
+
 Kind Chosen() {
     static const Kind k = [] {
         const char* e = std::getenv("TLG_VKB_AA");
@@ -50,6 +67,11 @@ Kind Chosen() {
         if (e != nullptr && std::strcmp(e, "dlaa") == 0) {
             if (Core::Vkb::DlssGlue::Wanted()) {
                 return Kind::Dlaa;
+            }
+            if (PicturePart('f')) {
+                // the normal renderer's rule (TlgSettings::ConfigureDlssSupport): DLAA without DLSS is FSR 3.1 native AA, on every machine
+                LOG_INFO(Render_Vulkan, "vkb aa: DLAA asked for, but tlg_dlss.dll / nvngx_dlss.dll are not next to the executable: FSR 3.1 native AA instead");
+                return Kind::Fsr3;
             }
             LOG_WARNING(Render_Vulkan, "vkb aa: DLAA asked for, but tlg_dlss.dll / nvngx_dlss.dll are not next to the executable: AA off");
         }
@@ -72,6 +94,7 @@ Input scene, motion, depth;
 u64 inputs_serial = 0, used_serial = 0;
 
 FfxVkPortableUpscaleContext* context = nullptr;
+std::atomic<bool> sharpness_env_noted{}; ///< issue 42: TLG_VKB_AA_SHARPNESS was set while the Sharpening setting applies (noted once)
 u32 ctx_w = 0, ctx_h = 0;
 VkImage output = VK_NULL_HANDLE;
 VmaAllocation output_alloc = nullptr;
@@ -80,6 +103,16 @@ std::chrono::steady_clock::time_point last_run{};
 bool failed = false;
 
 std::atomic<u64> c_motion_passes{0}, c_runs{0}, c_no_inputs{0}, c_unusable{0}, c_failed{0}, c_resets{0};
+std::atomic<u64> c_rcas_passes{0}, c_scene_bias_draws{0};
+
+// Issue 42 (part s): RCAS passes after the AA, as the normal renderer's ExtraSharpen / DlssSharpen; the result ping-pongs between `output` and this image
+VkImage sharpen_img = VK_NULL_HANDLE;
+VmaAllocation sharpen_alloc = nullptr;
+vk::ImageView sharpen_view{};
+vk::DescriptorSetLayout rcas_set_layout{};
+vk::PipelineLayout rcas_layout{};
+vk::Pipeline rcas_pipeline{};
+bool rcas_broken = false; ///< the pipeline could not be made (logged once, in the report): the AA's own sharpening only
 
 bool Facts(vk::Image image, Input& out) {
     out.image = image;
@@ -269,6 +302,12 @@ void DestroyContext() {
         vmaDestroyImage(instance->GetAllocator(), output, output_alloc);
         output = VK_NULL_HANDLE, output_alloc = nullptr;
     }
+    if (sharpen_img != VK_NULL_HANDLE) {
+        instance->GetDevice().destroyImageView(sharpen_view);
+        sharpen_view = vk::ImageView{};
+        vmaDestroyImage(instance->GetAllocator(), sharpen_img, sharpen_alloc);
+        sharpen_img = VK_NULL_HANDLE, sharpen_alloc = nullptr;
+    }
 }
 
 bool EnsureContext(u32 w, u32 h) {
@@ -330,6 +369,17 @@ make_output:
     }
     output_view = instance->GetDevice().createImageView({.image = vk::Image{output}, .viewType = vk::ImageViewType::e2D, .format = vk::Format::eR16G16B16A16Sfloat,
                                                          .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}}).value;
+    if (PicturePart('s')) { // issue 42: the second image of the RCAS passes (same format and use as the output)
+        if (vmaCreateImage(instance->GetAllocator(), &ci, &alloc, &sharpen_img, &sharpen_alloc, nullptr) != VK_SUCCESS) {
+            LOG_ERROR(Render_Vulkan, "vkb aa: sharpening image failed");
+            sharpen_img = VK_NULL_HANDLE, sharpen_alloc = nullptr;
+            DestroyContext();
+            return false;
+        }
+        sharpen_view = instance->GetDevice().createImageView({.image = vk::Image{sharpen_img}, .viewType = vk::ImageViewType::e2D,
+                                                              .format = vk::Format::eR16G16B16A16Sfloat,
+                                                              .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}}).value;
+    }
     ctx_w = w, ctx_h = h;
     frame_id = 0;
     if (Chosen() == Kind::Fsr3) {
@@ -342,6 +392,50 @@ void Barrier(vk::CommandBuffer cmd) {
     const vk::MemoryBarrier2 b{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands, .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
                                .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands, .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite};
     cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &b});
+}
+
+bool EnsureRcas() {
+    if (rcas_pipeline || rcas_broken) {
+        return !rcas_broken;
+    }
+    rcas_broken = true; // until made
+    const vk::Device device = instance->GetDevice();
+    const std::array<vk::DescriptorSetLayoutBinding, 2> bindings{{
+        {.binding = 0, .descriptorType = vk::DescriptorType::eStorageImage, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute},
+        {.binding = 1, .descriptorType = vk::DescriptorType::eStorageImage, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute},
+    }};
+    rcas_set_layout = device.createDescriptorSetLayout({.flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+                                                        .bindingCount = static_cast<u32>(bindings.size()), .pBindings = bindings.data()}).value;
+    const vk::PushConstantRange range{.stageFlags = vk::ShaderStageFlagBits::eCompute, .offset = 0, .size = 8};
+    rcas_layout = device.createPipelineLayout({.setLayoutCount = 1, .pSetLayouts = &rcas_set_layout, .pushConstantRangeCount = 1, .pPushConstantRanges = &range}).value;
+    const std::span<const u32> code{VKB_RCAS_COMP};
+    const vk::ShaderModule module = device.createShaderModule({.codeSize = code.size_bytes(), .pCode = code.data()}).value;
+    const auto [r, pipeline] = device.createComputePipeline({}, {.stage = {.stage = vk::ShaderStageFlagBits::eCompute, .module = module, .pName = "main"}, .layout = rcas_layout});
+    device.destroyShaderModule(module);
+    if (r != vk::Result::eSuccess) {
+        LOG_ERROR(Render_Vulkan, "vkb aa: sharpening pipeline failed");
+        return false;
+    }
+    rcas_pipeline = pipeline;
+    rcas_broken = false;
+    return true;
+}
+
+/// One RCAS pass (vkb_rcas.comp) from `src` into `dst`, both RGBA16F in GENERAL
+void RcasPass(vk::CommandBuffer cmd, vk::ImageView src, vk::ImageView dst, u32 w, u32 h, float strength) {
+    const vk::DescriptorImageInfo src_info{.imageView = src, .imageLayout = vk::ImageLayout::eGeneral};
+    const vk::DescriptorImageInfo dst_info{.imageView = dst, .imageLayout = vk::ImageLayout::eGeneral};
+    const std::array<vk::WriteDescriptorSet, 2> writes{{
+        {.dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &src_info},
+        {.dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &dst_info},
+    }};
+    cmd.bindPipeline(vk::PipelineBindPoint::eCompute, rcas_pipeline);
+    cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, rcas_layout, 0, writes);
+    const std::array<float, 2> params{strength, 1.0f};
+    cmd.pushConstants(rcas_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(params), params.data());
+    cmd.dispatch((w + 7) / 8, (h + 7) / 8, 1);
+    Barrier(cmd);
+    c_rcas_passes.fetch_add(1, std::memory_order_relaxed);
 }
 
 } // namespace
@@ -517,6 +611,17 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
     cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &out_barrier});
 
     static const float sharpness = [] { const char* e = std::getenv("TLG_VKB_AA_SHARPNESS"); return e != nullptr ? static_cast<float>(std::atof(e)) : 0.5f; }();
+    // issue 42 (part s): the player's Sharpening setting, read each frame (the menu changes it live), as the normal renderer: 0..100% is the AA's own
+    // RCAS (FSR 3.1's; DLAA has none, so one RCAS pass stands in), every 100% above adds one RCAS pass, the last one partial (their ExtraSharpen)
+    const bool setting_sharpen = PicturePart('s') && sharpen_img != VK_NULL_HANDLE && EnsureRcas();
+    const auto& settings = TlgSettings::Get();
+    const float wanted = !setting_sharpen ? std::min(std::max(sharpness, 0.0f), 1.0f) : settings.sharpen ? std::clamp(settings.sharpness.load(), 0.0f, 4.0f) : 0.0f;
+    const float own = std::min(wanted, 1.0f); ///< the AA's own share
+    static const bool sharpness_env_set = std::getenv("TLG_VKB_AA_SHARPNESS") != nullptr;
+    if (setting_sharpen && sharpness_env_set && !sharpness_env_noted.exchange(true, std::memory_order_relaxed)) {
+        // rule 5: the old value is not swapped silently (also in the report: picture_settings.sharpness_env_ignored)
+        LOG_INFO(Render_Vulkan, "vkb aa: TLG_VKB_AA_SHARPNESS is not used: the player's Sharpening setting applies (TLG_VKB_PICTURE_SETTINGS part s)");
+    }
     if (want_px) {
         // the game's motion as DLSS reads it: render pixels, previous - current (vkb_aa_motion.comp)
         const vk::DescriptorImageInfo game_info{.imageView = ViewOf(m.image, m.format, vk::ImageAspectFlagBits::eColor), .imageLayout = vk::ImageLayout::eGeneral};
@@ -561,7 +666,7 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
         const Image mimg{vk::Image{motion_px}, motion_px_view, vk::Format::eR16G16Sfloat, vk::ImageAspectFlagBits::eColor, w, h};
         const Image oimg{vk::Image{output}, output_view, vk::Format::eR16G16B16A16Sfloat, vk::ImageAspectFlagBits::eColor, w, h};
         ++frame_id; // the history counter both paths share (a reset only after a gap)
-        if (!Core::Vkb::DlssGlue::Run(instance->GetDevice(), cmd, color, dimg, mimg, oimg, jitter[0], jitter[1], reset, frame_ms, std::min(std::max(sharpness, 0.0f), 1.0f))) {
+        if (!Core::Vkb::DlssGlue::Run(instance->GetDevice(), cmd, color, dimg, mimg, oimg, jitter[0], jitter[1], reset, frame_ms, setting_sharpen ? 0.0f : own)) {
             LOG_ERROR(Render_Vulkan, "vkb aa: DLAA failed; AA off");
             failed = true;
             c_failed.fetch_add(1, std::memory_order_relaxed);
@@ -596,8 +701,8 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
     info.cameraFar = 3000.0f;
     info.cameraVerticalFovRadians = 1.0f;
     info.viewSpaceToMeters = 1.0f;
-    info.sharpness = std::min(std::max(sharpness, 0.0f), 1.0f);
-    info.enableSharpening = sharpness > 0.0f ? VK_TRUE : VK_FALSE;
+    info.sharpness = own;
+    info.enableSharpening = own > 0.0f ? VK_TRUE : VK_FALSE;
     info.reset = reset ? VK_TRUE : VK_FALSE;
     info.frameId = frame_id++;
     FfxVkPortableUpscaleCreateInfo create_info{};
@@ -620,12 +725,38 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
     }
 copy_back:
     Barrier(cmd);
+    VkImage result = output;
+    if (setting_sharpen) {
+        // the passes: DLAA's own share first (it has no RCAS of its own), then one per 100% above
+        std::array<float, 5> passes{};
+        u32 count = 0;
+        if (Chosen() == Kind::Dlaa && own > 0.0f) {
+            passes[count++] = own;
+        }
+        for (float extra = wanted - 1.0f; extra > 0.0f && count < passes.size(); extra -= 1.0f) {
+            passes[count++] = std::min(extra, 1.0f);
+        }
+        if (count != 0) {
+            const vk::ImageMemoryBarrier2 to_general{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands, .srcAccessMask = vk::AccessFlagBits2::eNone,
+                                                     .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                                                     .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+                                                     .oldLayout = vk::ImageLayout::eUndefined, .newLayout = vk::ImageLayout::eGeneral, .image = vk::Image{sharpen_img},
+                                                     .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}};
+            cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &to_general});
+        }
+        vk::ImageView from = output_view, to = sharpen_view;
+        for (u32 i = 0; i < count; ++i) {
+            RcasPass(cmd, from, to, w, h, passes[i]);
+            std::swap(from, to);
+            result = result == output ? sharpen_img : output;
+        }
+    }
     // the result replaces the scene colour (B10G11R11: no alpha to keep); both images stay in GENERAL (note 66)
     const vk::ImageBlit region{.srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
                                .srcOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{static_cast<s32>(w), static_cast<s32>(h), 1}},
                                .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
                                .dstOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{static_cast<s32>(w), static_cast<s32>(h), 1}}};
-    cmd.blitImage(vk::Image{output}, vk::ImageLayout::eGeneral, s.image, vk::ImageLayout::eGeneral, region, vk::Filter::eNearest);
+    cmd.blitImage(vk::Image{result}, vk::ImageLayout::eGeneral, s.image, vk::ImageLayout::eGeneral, region, vk::Filter::eNearest);
     Barrier(cmd);
     c_runs.fetch_add(1, std::memory_order_relaxed);
 }
@@ -653,6 +784,25 @@ bool TakeFgInputs(FgInputs& out) {
     return true;
 }
 
+SamplerLook LookFor(u32 mrt_mask) {
+    SamplerLook look{};
+    const auto& settings = TlgSettings::Get();
+    if (PicturePart('a')) {
+        look.aniso = static_cast<u32>(std::max(0, settings.aniso.load())); // 0, 2, 4, 8 or 16 (tlg_settings.cpp)
+    }
+    // their Rasterizer::BindResources + TemporalUpscaler::SceneMipBias: a graphics pipeline with 5 or more colour outputs (the scene's material pass)
+    // samples with the Lab tab's bias in quarter steps while DLAA or FSR native AA runs. Their bias also has a log2(render / output) term, which is 0
+    // here by construction: the new engine's AA is native AA only (its context is made at one size for input and output, EnsureContext), it has no
+    // upscaling mode (their TLG_RENDER_RESOLUTION engine upscale and scaled sessions are not part of the new engine)
+    if (PicturePart('b') && std::popcount(mrt_mask & 0xffu) >= 5 && Running()) {
+        look.bias_q = settings.lod_bias.load();
+        if (look.bias_q != 0) {
+            c_scene_bias_draws.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    return look;
+}
+
 nlohmann::json Report() {
     return {{"on", On()},
             {"kind", Chosen() == Kind::Fsr3 ? "fsr3" : Chosen() == Kind::Dlaa ? "dlaa" : "off"},
@@ -666,6 +816,9 @@ nlohmann::json Report() {
             {"jitter", JitterWanted()},
             {"jittered_draws", c_jittered.load()},
             {"jittered_mesh_redraws", c_jittered_meshes.load()},
+            {"picture_settings", {{"fallback_fsr3", PicturePart('f')}, {"sharpening", PicturePart('s')}, {"scene_bias", PicturePart('b')}, {"aniso", PicturePart('a')},
+                                  {"rcas_passes", c_rcas_passes.load()}, {"rcas_broken", rcas_broken}, {"sharpness_env_ignored", sharpness_env_noted.load()},
+                                  {"scene_bias_draws", c_scene_bias_draws.load()}}},
             {"frame_generation", {{"made", c_fg_made.load()}, {"presented", c_fg_presented.load()}, {"failed", c_fg_failed.load()}}}};
 }
 

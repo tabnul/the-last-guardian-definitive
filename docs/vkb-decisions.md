@@ -9,6 +9,35 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-19 - The new engine applies the player's picture settings the way the normal renderer does (not yet merged)
+
+- **Problem:** the new engine's picture is about half as sharp as the normal renderer's in 195 of 197 scenes (issue 42).
+  The logs of the pot scene show why: the normal renderer reads the player's settings and, on a machine without DLSS,
+  runs FSR 3.1 as its anti-aliasing, sharpens at the Sharpening setting (175%), draws the scene's materials with a
+  texture detail bias of -1 while that anti-aliasing runs, and filters textures at 16x anisotropy. The new engine did
+  none of the four: without DLSS it switched its anti-aliasing off (one warning line), it sharpened at its own value of
+  50% only when its anti-aliasing ran, and it used the game's own texture bias and filtering.
+- **Considered:** (A) the new engine applies the same four settings with the normal renderer's rules, in its own code:
+  the DLSS fallback to FSR 3.1, the sharpening scale (0 to 100% the anti-aliasing's own sharpening, every 100% above one
+  more pass of the same sharpening shader), the texture bias for draws with five or more colour outputs while the
+  anti-aliasing runs, and the anisotropy rule. One switch for all four. (B) only the fallback, and leave sharpening,
+  bias and filtering for later: the picture would still differ wherever the normal renderer's settings act, so it
+  fixes the case, not the cause. (C) a sharpening filter on the final picture tuned until the number matches: hides the
+  cause (rule 24), and texture detail that the bias brings cannot be made back by sharpening.
+- **Choice:** A. Cause and not case (10): the settings are applied, not one scene tuned. Every machine (6): the fallback
+  removes the "AA off" state on any machine without DLSS; the sharpening is a plain compute shader; bias and anisotropy
+  are plain sampler fields that every Vulkan driver has (anisotropy only where the driver reports it, as before). Right
+  picture first (11): the cost is one to three extra passes of a small shader per frame and the anti-aliasing step
+  itself on machines without DLSS. Switch `TLG_VKB_PICTURE_SETTINGS` (default on; `=0` the old way; letters `f`, `s`,
+  `b`, `a` choose parts, for measurement only).
+  After the second read: the anisotropy rule lives in one function that all three ways a sampler is made ask (the
+  game's sampler objects, the samplers written in the shader, the sampler words), instead of three copies that had
+  drifted apart; and the texture bias is left off depth comparisons, as the normal renderer does.
+  Not covered: with the anti-aliasing switched off by the player, the normal renderer sharpens the final picture in its
+  presenter instead (CAS); the new engine's presenter does not yet. Separate job.
+- **Who:** box (rule 14).
+- **Links:** issue 42 (https://github.com/tabnul/tlg-vkb-work/issues/42); pull request for branch `fix/vkb-picture-settings`.
+
 ## 2026-11-19 - AABB read check: read the game's group table under the game's own lock (not yet merged)
 
 - **Problem:** In AL_a01_firstRoom_01 the new engine sometimes wrote the error `K1 AABB readback: N of N records name

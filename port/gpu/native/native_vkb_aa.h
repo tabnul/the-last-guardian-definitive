@@ -55,4 +55,26 @@ bool TakeFgInputs(FgInputs& out);
 /// F2: the presenter's counts (stats aa.frame_generation): generated frames made, presented, failures
 void NoteFg(bool made, bool presented, bool failed);
 
+/// Issue 42: the player's picture settings (tlg.ini) that the normal renderer applies around its AA, applied here the same way. Switch
+/// TLG_VKB_PICTURE_SETTINGS: unset or 1 = all parts, 0 = the old behaviour (none), or a list of letters = only those parts (measurement):
+/// f = FSR 3.1 native AA when DLAA is asked for and DLSS is not installed (their DlssFallback), s = the Sharpening setting (0..100% the AA's own RCAS,
+/// every 100% above one more RCAS pass: their ExtraSharpen), b = the scene texture bias while the AA runs (their SceneMipBias), a = the anisotropic
+/// filtering setting (their forced anisotropy in texture_cache/sampler.cpp).
+[[nodiscard]] bool PicturePart(char part);
+/// How a draw's samplers are made: the extra mip bias in quarter steps and the anisotropy setting (0: the game's own filter)
+struct SamplerLook {
+    s32 bias_q = 0;
+    u32 aniso = 0;
+};
+/// `mrt_mask`: the pixel shader's colour outputs of a graphics draw (their rule: 5 or more = a scene material pass, which gets the bias); 0 for compute
+[[nodiscard]] SamplerLook LookFor(u32 mrt_mask);
+/// The look of one sampler of the draw: a depth compare read gets no extra bias (their Rasterizer::BindSamplers: `is_depth ? 0 : bias`); the anisotropy
+/// setting goes on, the one rule (Core::NativeDesc::ForcedAnisotropy) already leaves depth reads out
+[[nodiscard]] constexpr SamplerLook ForSampler(SamplerLook look, bool is_depth) noexcept {
+    if (is_depth) {
+        look.bias_q = 0;
+    }
+    return look;
+}
+
 } // namespace Core::Vkb::Aa
