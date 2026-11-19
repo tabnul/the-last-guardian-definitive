@@ -87,6 +87,11 @@ public:
         return profiler_context;
     }
 
+    /// D4-15: the sampler address mode eMirrorClampToEdge may be used (the feature was reported and enabled)
+    bool IsMirrorClampToEdgeSupported() const {
+        return vk12_features.samplerMirrorClampToEdge;
+    }
+
     /// Returns true if anisotropic filtering is supported
     bool IsAnisotropicFilteringSupported() const {
         return features.samplerAnisotropy;

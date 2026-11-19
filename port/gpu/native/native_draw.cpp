@@ -8660,7 +8660,18 @@ u64 PS4_SYSV_ABI TagCopyResource(u64 ctx, u64 destination, u64 destination_sub, 
                             Rd<u32>(source, 0x180), Rd<u32>(source, 0x184), source_sub);
             }
         }
-        if (kind >= 2 && kind <= 4 && kind == Rd<u32>(source, 0x124)) {
+        // D4-12 (JsDeviceContext_CopyResource 0247eb00): the engine copies nothing when the two textures' formats differ ("Format is not same"): the format word
+        // sits at + 0x18c for a 1D texture, + 0x190 for 2D and 3D
+        const u64 format_field = kind == 2 ? 0x18c : 0x190;
+        const bool same_format = Rd<u32>(destination, format_field) == Rd<u32>(source, format_field);
+        if (kind >= 2 && kind <= 4 && kind == Rd<u32>(source, 0x124) && !same_format) {
+            static std::atomic<u32> logged{0};
+            if (logged.fetch_add(1) < 8) {
+                LOG_WARNING(Core, "api map: CopyResource between formats {} and {} (caller {:#x}): no copy, as the engine", Rd<u32>(source, format_field),
+                            Rd<u32>(destination, format_field), ret - ImageBase() + 0x1000000);
+            }
+        }
+        if (kind >= 2 && kind <= 4 && kind == Rd<u32>(source, 0x124) && same_format) {
             if (Core::Vkb::CopyTexture(Rd<u64>(destination, 0x10), static_cast<u32>(destination_sub), Rd<u64>(source, 0x10), static_cast<u32>(source_sub)) &&
                 TextureUsage(destination) == 3) {
                 Core::Vkb::StagingCopied(Rd<u64>(destination, 0x10), static_cast<u32>(destination_sub)); // note 42: the CPU reads it back through Map(READ)

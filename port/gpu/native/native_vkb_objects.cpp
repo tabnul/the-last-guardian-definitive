@@ -223,6 +223,7 @@ struct View {
     vk::ImageSubresourceRange range{};
     std::array<vk::ImageView, 7> other{}; ///< the same range in another view type, by vk::ImageViewType (made at the first need)
     std::vector<std::pair<vk::Format, vk::ImageView>> formatted; ///< V4: the same range in another format (attachments in the pipeline's format)
+    vk::ComponentMapping components{}; ///< R8: the channels the engine's T# selects (sampled views); the `other` view types read the same channels (D4-07)
 };
 struct Doomed {
     u32 due_submit;
@@ -264,7 +265,7 @@ std::atomic<u64> c_attach_views{0}, c_attach_refused{0}, c_clears_color{0}, c_cl
 std::atomic<u64> c_samplers_made{0}, c_samplers_invalid{0}, c_sampler_minmax{0}, c_sampler_border_rounded{0}, c_sampler_mirror_once{0};
 std::unordered_map<u64, vk::Sampler> samplers; ///< by engine sampler id (mutex)
 std::atomic<u64> c_reupload_wanted{0}, c_reupload_done{0}, c_reupload_no_image{0}, c_reupload_in_stream{0}, c_moved_textures{0}, c_moved_no_image{0},
-    c_moved_mismatch{0};
+    c_moved_mismatch{0}, c_moved_cut_to_blocks{0};
 std::atomic<u64> c_cpu_writes{0}, c_cpu_write_bytes{0}, c_copies{0}, c_copy_bytes{0}, c_copies_device{0}, c_copy_unresolved{0}, c_copy_overlap{0}, c_fills{0}, c_fill_unresolved{0};
 std::atomic<u64> c_buffers{0}, c_buffers_in_place{0}, c_buffers_not_in_place{0}, c_buffer_bytes{0}, c_too_early{0}, c_deleted_unknown{0};
 
@@ -489,7 +490,9 @@ bool ViewRange(Kind kind, const Object& view, const Image& img, Range& r) {
     const u32 all_mips = img.mips, all_layers = img.layers;
     r = {img.type == vk::ImageType::e1D ? (all_layers > 1 ? vk::ImageViewType::e1DArray : vk::ImageViewType::e1D)
          : img.type == vk::ImageType::e3D ? vk::ImageViewType::e3D
-         : img.cube ? vk::ImageViewType::eCube
+         // D4-08 (JsDevice_CreateShaderResourceView 02493620): a null description of a cube texture with more than six faces is the engine's dimension 10 (a cube
+         // array of faces / 6 cubes; a single-cube view must have exactly six layers); a render target or UAV of it is a 2D array, as in D3D11
+         : img.cube ? (all_layers <= 6 ? vk::ImageViewType::eCube : kind == Kind::ShaderResourceView ? vk::ImageViewType::eCubeArray : vk::ImageViewType::e2DArray)
          : (all_layers > 1 ? vk::ImageViewType::e2DArray : vk::ImageViewType::e2D),
          0, all_mips, 0, all_layers};
     if (!view.has_desc) {
@@ -1123,7 +1126,7 @@ void ViewCreated(const Object& view, const Object& resource) {
         }
         return;
     }
-    views.emplace(view.id, View{handle, resource.id, r.type, format, ci.subresourceRange, {}});
+    views.emplace(view.id, View{handle, resource.id, r.type, format, ci.subresourceRange, {}, {}, components});
     c_views_created.fetch_add(1, std::memory_order_relaxed);
     if (view.has_tsharp && !img->is_depth) {
         NoteViewChannels(view, resource, format);
@@ -1272,6 +1275,8 @@ namespace {
 void ObjectDeletedNow(u64 id);
 std::atomic<u64> c_deletes_in_order{0};
 } // namespace
+/// tier-1-readback-findings.md D4-05: a deleted texture's staging rings go with it (called with `mutex` held; takes `staging_mutex`)
+void RetireStaging(u64 texture_id, u32 due);
 /// R2a (note 63): an engine object's deletion reaches our tables in stream order: an unlocked job (it ends no pass) erases our entry after every draw and dispatch
 /// captured before the delete, on the recording thread. Today the lookups still run at the draw, so nothing reads a deleted id later; R2b moves them to the
 /// recording thread, which needs exactly this order. TLG_VKB_DELETE_NOW=1: erased at the call, as before.
@@ -1347,6 +1352,7 @@ void ObjectDeletedNow(u64 id) {
             }
         }
         doomed.push_back({due, i->second.image, i->second.allocation, {}});
+        RetireStaging(id, due); // D4-05: its read-back buffers end with the texture (the engine's next staging texture has a new id)
         c_image_bytes.fetch_sub(i->second.bytes, std::memory_order_relaxed);
         if (ContractCensusOn()) { // review A2: copy-destination history ends with the texture
             std::scoped_lock census_lock{contract_mutex};
@@ -2033,7 +2039,8 @@ bool ViewForComputeLookup(u64 view_id, vk::ImageViewType want, vk::CommandBuffer
             } else if (want == T::e2D || want == T::e1D) {
                 range.layerCount = 1;
             }
-            const auto [result, handle] = instance->GetDevice().createImageView({.image = i->second.image, .viewType = want, .format = view.format, .subresourceRange = range});
+            const auto [result, handle] = instance->GetDevice().createImageView(
+                {.image = i->second.image, .viewType = want, .format = view.format, .components = view.components, .subresourceRange = range}); // D4-07: the engine's channels
             if (result != vk::Result::eSuccess) {
                 c_other_view_refused.fetch_add(1, std::memory_order_relaxed);
                 return false;
@@ -2555,7 +2562,20 @@ struct StagingRing {
 };
 std::mutex staging_mutex;
 std::map<std::pair<u64, u32>, StagingRing> staging_copies;
-std::atomic<u64> c_staging_copies{0}, c_staging_reads{0}, c_staging_unhandled{0}, c_staging_unready{0}, c_staging_older{0};
+std::atomic<u64> c_staging_copies{0}, c_staging_reads{0}, c_staging_unhandled{0}, c_staging_unready{0}, c_staging_older{0}, c_staging_retired{0};
+
+void RetireStaging(u64 texture_id, u32 due) {
+    std::scoped_lock lock{staging_mutex};
+    for (auto it = staging_copies.lower_bound({texture_id, 0u}); it != staging_copies.end() && it->first.first == texture_id;) {
+        for (auto& c : it->second.copies) {
+            if (c.buffer != VK_NULL_HANDLE) {
+                doomed.push_back({due, {}, {}, {}, c.buffer, c.allocation}); // freed once the GPU is past `due`, like the image
+            }
+        }
+        it = staging_copies.erase(it);
+        c_staging_retired.fetch_add(1, std::memory_order_relaxed);
+    }
+}
 
 void StagingCopied(u64 texture_id, u32 sub) {
     vk::Image image{};
@@ -2751,6 +2771,9 @@ vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
     const u32 aniso = RdObj<u32>(d, 20);
     const u32 compare_func = RdObj<u32>(d, 24);
     float min_lod = RdObj<float>(d, 44), max_lod = RdObj<float>(d, 48);
+    // D4-14 (02492e40 setLodRange): the engine's S# holds each limit as unsigned 4.8 fixed point: negative (or NaN) -> 0, truncated to 1/256, at most 0xfff
+    const auto lod_4_8 = [](float v) { return v >= 0.0f ? static_cast<float>(std::min(static_cast<u32>(std::min(v, 16.0f) * 256.0f), 0xfffu)) / 256.0f : 0.0f; };
+    min_lod = lod_4_8(min_lod), max_lod = lod_4_8(max_lod);
     if (ContractCensusOn()) {
         ContractNote(fmt::format("S sampler filter {} address {} {} {} bias {} aniso {} compare {} cmp_used {} lod {} {}", filter, address[0], address[1], address[2], bias, aniso,
                                  compare_func, compare ? 1 : 0, min_lod, max_lod));
@@ -2771,7 +2794,9 @@ vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
         case 1: return vk::SamplerAddressMode::eMirroredRepeat;
         case 2: return vk::SamplerAddressMode::eClampToEdge;
         case 3: return vk::SamplerAddressMode::eClampToBorder; // the border colour: type 0, transparent black
-        case 4: c_sampler_mirror_once.fetch_add(1, std::memory_order_relaxed); return vk::SamplerAddressMode::eMirrorClampToEdge;
+        case 4: // D4-15: mirror once needs the device feature; without it the nearest valid mode (one mirror lost past the first repeat)
+            c_sampler_mirror_once.fetch_add(1, std::memory_order_relaxed);
+            return instance->IsMirrorClampToEdgeSupported() ? vk::SamplerAddressMode::eMirrorClampToEdge : vk::SamplerAddressMode::eMirroredRepeat;
         default: c_samplers_invalid.fetch_add(1, std::memory_order_relaxed); return vk::SamplerAddressMode::eRepeat; // the engine asserts above 4
         }
     };
@@ -3262,9 +3287,21 @@ void TextureMoved(u64 new_id, u64 old_id, u32 first_mip) {
     for (u32 m = 0; m < to.mips && m + first_mip < from.mips; ++m) {
         const vk::Extent3D a = extent(to, m), b = extent(from, m + first_mip);
         // the engine copies raw memory: a padded new texture (R9) holds the old one's texels at the same place, so the common part is copied
-        const vk::Extent3D e{std::min(a.width, b.width), std::min(a.height, b.height), std::min(a.depth, b.depth)};
+        vk::Extent3D e{std::min(a.width, b.width), std::min(a.height, b.height), std::min(a.depth, b.depth)};
         if (a != b) {
             c_moved_mismatch.fetch_add(1, std::memory_order_relaxed);
+            // D4-16: for a block-compressed format a copy side must be whole blocks unless it reaches that image's mip edge (VUID-vkCmdCopyImage-srcImage-01728..);
+            // a side that ends inside a block of the other image is cut to whole blocks
+            const auto block = vk::blockExtent(to.format);
+            const auto fit = [](u32 n, u32 dst_edge, u32 src_edge, u32 bw) { return bw <= 1 || n % bw == 0 || (n == dst_edge && n == src_edge) ? n : n / bw * bw; };
+            const vk::Extent3D cut{fit(e.width, a.width, b.width, block[0]), fit(e.height, a.height, b.height, block[1]), fit(e.depth, a.depth, b.depth, block[2])};
+            if (cut != e) {
+                c_moved_cut_to_blocks.fetch_add(1, std::memory_order_relaxed);
+                e = cut;
+            }
+            if (e.width == 0 || e.height == 0 || e.depth == 0) {
+                continue; // a mip smaller than one block of the other image: nothing whole to copy
+            }
         }
         regions.push_back({.srcSubresource = {aspect, m + first_mip, 0, layers}, .dstSubresource = {aspect, m, 0, layers}, .extent = e});
         bytes += static_cast<u64>(e.width) * e.height * e.depth * layers * TexelBytes(to.format);
@@ -3736,7 +3773,7 @@ nlohmann::json ObjectsReport() {
                                             {"border_rounded", c_sampler_border_rounded.load()}, {"mirror_once", c_sampler_mirror_once.load()}}},
                           {"texture_updates", {{"wanted", c_reupload_wanted.load()}, {"uploaded", c_reupload_done.load()}, {"no_image", c_reupload_no_image.load()},
                                                {"in_stream", c_reupload_in_stream.load()}, {"moved_textures", c_moved_textures.load()}, {"moved_no_image", c_moved_no_image.load()},
-                                               {"moved_mismatch", c_moved_mismatch.load()}}},
+                                               {"moved_mismatch", c_moved_mismatch.load()}, {"moved_cut_to_blocks", c_moved_cut_to_blocks.load()}}},
                           {"buffer_moves", {{"copied_at_the_move", c_moves_now.load()}, {"in_the_stream", c_moves_in_stream.load()}}},
                           {"probe_layer_copies", {{"copied", c_layer_copies.load()}, {"refused", c_layer_copy_refused.load()}}},
                           {"buffer_views", {{"whole", c_view_whole.load()}, {"range", c_view_part.load()}, {"outside", c_view_outside.load()}}},
@@ -3749,7 +3786,7 @@ nlohmann::json ObjectsReport() {
                           {"targets_fixed_test", {{"on", TargetsFixed()}, {"targets", c_fixed_targets.load()}, {"views_forced_to_the_image_format", c_fixed_view_format_forced.load()},
                                                   {"attachments_refused", c_fixed_attachment_refused.load()}}},
                           {"staging_textures", {{"note", "note 42: copies into staging textures written back for the CPU's Map(READ)"}, {"copies", c_staging_copies.load()},
-                                                {"reads", c_staging_reads.load()}, {"not_ready", c_staging_unready.load()}, {"older", c_staging_older.load()}, {"unhandled", c_staging_unhandled.load()}}},
+                                                {"reads", c_staging_reads.load()}, {"not_ready", c_staging_unready.load()}, {"older", c_staging_older.load()}, {"unhandled", c_staging_unhandled.load()}, {"retired_with_texture", c_staging_retired.load()}}},
                           {"static_at_first_bind", {{"on", StaticAtBindOn()}, {"made", c_static_at_bind.load()}, {"mb", c_static_at_bind_mb.load() >> 20},
                                                     {"failed", c_static_at_bind_failed.load()}}},
                           {"dynamic_device_buffers", {{"on", DynamicDeviceOn()}, {"made", c_dyn_device.load()}, {"unmap_uploads", c_dyn_unmaps.load()},
