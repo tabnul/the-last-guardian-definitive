@@ -7960,13 +7960,16 @@ std::atomic<u64> c_aabb_reads{0}, c_aabb_records{0}, c_aabb_bad{0}, c_aabb_bad_r
 std::atomic<u32> g_recordings_since_read{0};
 std::atomic<u64> g_rec_frame{0};               ///< the last recording BeginRecording's frame data
 std::atomic<u32> g_rec_groups{0}, g_rec_active{0}; ///< its group count / active groups (+0x18 != 0 and +0x30 != 0) at its entry
-std::atomic<u64> c_aabb_table_busy{0}; ///< reads of the group table that waited for the engine's lock (another thread was adding a group)
+std::atomic<u64> c_aabb_table_busy{0};          ///< reads of the group table that waited for the engine's lock (another thread was adding a group)
+std::atomic<u64> c_aabb_table_lock_timeout{0};  ///< reads that found the lock still taken after the time limit and read without it (should stay 0)
 /// The group table (frame data + 0x31e60, count + 0x31e68) is one of the engine's locked arrays. Adding a group (FUN_01ce5da0, the push FUN_01ce5ea0) raises the count
 /// before it writes the new entry and may move the whole table to new memory, all under the array's spin lock (+ 0x31e74: FUN_01ce58e0 sets it from 0 to 1, the
 /// release stores 0). The engine's own reads of the table (BeginRecording, the reader 01c4c570) hold that lock. Read without it, the table can be an old copy that was
 /// just moved away or end in an entry not written yet: valid records then seem to name a group not in the table (issue 36, log cause E: K1 error, K2 skipped a good read).
 /// Our reads take the same lock the same way. Safe from self deadlock: at each of our hook points the engine takes this lock itself right after, so its thread
-/// cannot hold it there. LEGACY(aabb_table_unlocked): TLG_AABB_TABLE_LOCK=0 reads the table without the lock (the old way).
+/// cannot hold it there. The lock word is the engine's 32 bit int (FUN_01ce58e0 compares and swaps a dword). The wait has a time limit (100 ms; a push holds the lock for
+/// microseconds): past it the read goes on without the lock, as before this change, counted and logged (it should never happen).
+/// LEGACY(aabb_table_unlocked): TLG_AABB_TABLE_LOCK=0 reads the table without the lock (the old way).
 class GroupTableLock {
 public:
     explicit GroupTableLock(u64 frame) {
@@ -7974,19 +7977,32 @@ public:
         if (!on || !IsHeapPointer(frame)) {
             return;
         }
-        word_ = reinterpret_cast<std::atomic<u32>*>(frame + 0x31e74);
+        auto* const word = reinterpret_cast<std::atomic<u32>*>(frame + 0x31e74);
+        std::chrono::steady_clock::time_point limit{};
         bool waited = false;
         for (u32 tries = 0;; ++tries) {
             u32 expected = 0;
-            if (word_->compare_exchange_weak(expected, 1, std::memory_order_acquire, std::memory_order_relaxed)) {
+            if (word->compare_exchange_strong(expected, 1, std::memory_order_acquire, std::memory_order_relaxed)) {
+                word_ = word;
                 break;
             }
             waited = true;
             if (tries < 64) {
                 _mm_pause();
-            } else {
-                std::this_thread::yield();
+                continue;
             }
+            const auto now = std::chrono::steady_clock::now();
+            if (tries == 64) {
+                limit = now + std::chrono::milliseconds(100);
+            } else if (now > limit) {
+                const u64 n = c_aabb_table_lock_timeout.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (n <= 16) {
+                    TLG_LOG(CP, Error, "K1 AABB group table: the engine's lock at {:#x} is still taken after 100 ms (value {:#x}): read without it ({} so far)", frame + 0x31e74,
+                            word->load(std::memory_order_relaxed), n);
+                }
+                break;
+            }
+            std::this_thread::yield();
         }
         if (waited) {
             c_aabb_table_busy.fetch_add(1, std::memory_order_relaxed);
@@ -8108,9 +8124,9 @@ u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
     if (const u64 reads = c_aabb_reads.fetch_add(1, std::memory_order_relaxed) + 1; reads % 1800 == 0) {
         TLG_LOG(CP, Warn, "K1 AABB readback: {} reads, {} records, {} with a group not in the table, {} reads after more than one BeginRecording, {} reads with records but no "
                 "readback since the last; K2 reads with a group past the table {}, AABB pass not run (counts set to 0) {}, third pass not run {}; table reads that "
-                "waited for the engine's lock {}",
+                "waited for the engine's lock {}, lock waits past the time limit {}",
                 reads, c_aabb_records.load() + count, c_aabb_bad.load(), c_aabb_unpaired.load(), c_aabb_reads_no_readback.load(), c_aabb_guarded.load(),
-                c_aabb_pass_skipped.load(), c_third_pass_skipped.load(), c_aabb_table_busy.load());
+                c_aabb_pass_skipped.load(), c_third_pass_skipped.load(), c_aabb_table_busy.load(), c_aabb_table_lock_timeout.load());
     }
     c_aabb_records.fetch_add(count, std::memory_order_relaxed);
     if (bad != 0) {

@@ -28,6 +28,15 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   compare-and-swap per read (a few reads per second); it can only wait while another thread is adding a group.
   The author's K2 guard stays as it is and still catches a real mismatch. Switch `TLG_AABB_TABLE_LOCK` (default on;
   `=0` the old unlocked read).
+- **Checked in the game code (second read, remark 2):** the lock word is a 32 bit int (the game's lock function
+  compares and swaps a dword; its release stores 0). The reader has one path to our hook point: it takes the lock for
+  its "any active group" loop, releases it, maps the count and the records (our hook point), and takes the lock again
+  before the record loop. BeginRecording takes the lock inside itself, after our hook at its entry. So neither thread
+  holds the lock at our hook points. The wait still has a time limit (100 ms, a push holds the lock for microseconds):
+  past it the check reads without the lock as before, counted and logged as an error (it should never happen).
+- **Cost (remark 3):** the check runs at most a few dozen times a second (in the full run of 219 scenes no take reached
+  the 1800 reads after which the summary line prints; AL_a01_firstRoom_01 has 3 reads per take). One wait for the lock
+  was seen in 8 takes.
 - **Who:** box (rule 14).
 - **Links:** issue 36 (https://github.com/tabnul/tlg-vkb-work/issues/36); pull request for branch
   `fix/vkb-aabb-table-lock`.
