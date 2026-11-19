@@ -1065,32 +1065,48 @@ u32 SweepSyncPackets(u64 begin, u64 end) {
     return removed;
 }
 
+/// `TLG_VKB_STREAM_SWEEP=1` brings back the stream sweep with the new engine on (the behaviour before 2026-11-19). Off by default: with the new engine the game's command buffers
+/// are not parsed or run (V1b, gnmdriver PerformSubmit) and every sync producer hands its fence, wait or copy to the new engine itself and leaves no typed record, so the sweep
+/// read the game's command list (principle 1) only to find sync packets nothing reads and to report each one as untyped (issue 36, log cause D).
+bool StreamSweepOn() {
+    static const bool on = [] {
+        if (!Core::Vkb::On()) {
+            return true;
+        }
+        const char* e = std::getenv("TLG_VKB_STREAM_SWEEP");
+        return e != nullptr && e[0] == '1';
+    }();
+    return on;
+}
+
 bool WriteDwordsAt(u64 writer, const u32* words, u32 count) {
     // the game's own synchronization between the last tag written to this command buffer and this one
-    struct Sweep {
-        u64 writer{};
-        u64 base{};
-        u64 last{};
-    };
-    static thread_local std::array<Sweep, 6> sweeps;
-    {
-        const u64 cursor = Rd<u64>(writer, 0x10);
-        const u64 base = Rd<u64>(writer, 0x0);
-        Sweep* entry = nullptr;
-        for (auto& s : sweeps) {
-            if (s.writer == writer) {
-                entry = &s;
+    if (StreamSweepOn()) {
+        struct Sweep {
+            u64 writer{};
+            u64 base{};
+            u64 last{};
+        };
+        static thread_local std::array<Sweep, 6> sweeps;
+        {
+            const u64 cursor = Rd<u64>(writer, 0x10);
+            const u64 base = Rd<u64>(writer, 0x0);
+            Sweep* entry = nullptr;
+            for (auto& s : sweeps) {
+                if (s.writer == writer) {
+                    entry = &s;
+                }
             }
+            if (entry == nullptr) {
+                entry = &sweeps[(writer >> 4) % sweeps.size()];
+                *entry = {writer, base, 0};
+            }
+            if (entry->base == base && entry->last != 0 && entry->last < cursor && cursor - entry->last < (1u << 16)) {
+                SweepSyncPackets(entry->last, cursor);
+            }
+            entry->base = base;
+            entry->last = cursor + count * sizeof(u32);
         }
-        if (entry == nullptr) {
-            entry = &sweeps[(writer >> 4) % sweeps.size()];
-            *entry = {writer, base, 0};
-        }
-        if (entry->base == base && entry->last != 0 && entry->last < cursor && cursor - entry->last < (1u << 16)) {
-            SweepSyncPackets(entry->last, cursor);
-        }
-        entry->base = base;
-        entry->last = cursor + count * sizeof(u32);
     }
     u64 cur = Rd<u64>(writer, 0x10);
     const u64 end = Rd<u64>(writer, 0x08);
@@ -6775,7 +6791,8 @@ void Publish() {
                                                               {"compute_dispatch_us_mean", take_dispatch_n.load() ? static_cast<double>(compute_dispatch_ns.load()) / 1e3 / static_cast<double>(take_dispatch_n.load()) : 0.0},
                                                               {"take_draw_ms_total", take_draw_ns.load() / 1000000}, {"take_dispatch_ms_total", take_dispatch_ns.load() / 1000000},
                                                               {"takes_draw_dispatch", {take_draw_n.load(), take_dispatch_n.load()}}}}, {"fills_kept_on_the_engine_path", fills_kept.load()}, {"fills_of_cleared_targets_dropped", fills_of_cleared_targets_dropped.load()}, {"fills_of_cleared_depth_dropped", fills_of_cleared_depth_dropped.load()}, {"engine_draws_for_a_fetch_shader", fetch_builds.load()}, {"compute", Core::Vkb::Compute::Report()}, {"graphics", Core::Vkb::Graphics::Report()},
-                                           {"work_census", Core::Vkb::WorkCensus::Report()}, {"side_census", Core::Vkb::SideCensus::Report()}, {"engine_calls_skipped", Core::Vkb::EngineCallsSkipped()}});
+                                           {"work_census", Core::Vkb::WorkCensus::Report()}, {"side_census", Core::Vkb::SideCensus::Report()}, {"engine_calls_skipped", Core::Vkb::EngineCallsSkipped()},
+                                           {"dev_log", Core::Vkb::DevLog::Report()}});
     }
 }
 /// A draw (kind 0 indexed, 1 auto, 2 indirect; `inline_draw`: the decal loop's inlined auto draw, where the hook sits on PrepareDraw).
@@ -8114,8 +8131,11 @@ u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
         active_now = bad != 0 ? ActiveGroups(frame) : 0;
     }
     const u32 reads_since_dispatch = g_reads_since_dispatch.fetch_add(1, std::memory_order_relaxed);
-    static std::once_flag announced;
-    std::call_once(announced, [&] { TLG_LOG(CP, Warn, "K2 AABB guard active (first read: {} records, {} groups, guard {})", count, groups, guard ? "on" : "off"); });
+    Core::Vkb::DevLog::Count(guard ? Core::Vkb::DevLog::Kind::AabbReadCheckGuardOn : Core::Vkb::DevLog::Kind::AabbReadCheckGuardOff); // the guard's state, also with the dump off
+    if (Core::Vkb::DevLog::On()) { // a developer dump (Vkb::DevLog)
+        static std::once_flag announced;
+        std::call_once(announced, [&] { TLG_LOG(CP, Info, "K2 AABB guard active (first read: {} records, {} groups, guard {})", count, groups, guard ? "on" : "off"); });
+    }
     if (readbacks == 0 && count != 0) {
         c_aabb_reads_no_readback.fetch_add(1, std::memory_order_relaxed); // the records of an earlier dispatch (no CounterReadback since the last read)
     }
@@ -8594,9 +8614,10 @@ u64 PS4_SYSV_ABI TagCopyResource(u64 ctx, u64 destination, u64 destination_sub, 
         // A buffer's copy is the engine's CsCopyBufferDwords, our copy at its own hook.
         const u32 kind = Rd<u32>(destination, 0x124);
         if (kind >= 2 && kind <= 4 && Rd<u32>(destination, 0x19c) == 3) { // engine API map, data paths: a copy into a staging texture (a CPU read-back of a texture)
+            Core::Vkb::DevLog::Count(Core::Vkb::DevLog::Kind::CopyIntoStagingTexture);
             static std::atomic<u32> logged{0};
-            if (logged.fetch_add(1) < 24) {
-                LOG_WARNING(Core, "api map: CopyResource into a staging texture: caller {:#x} {}x{} format {} mips {} sub {} from texture {}x{} sub {}", ret - ImageBase() + 0x1000000,
+            if (Core::Vkb::DevLog::On() && logged.fetch_add(1) < 24) { // a developer dump (Vkb::DevLog)
+                LOG_INFO(Core, "api map: CopyResource into a staging texture: caller {:#x} {}x{} format {} mips {} sub {} from texture {}x{} sub {}", ret - ImageBase() + 0x1000000,
                             Rd<u32>(destination, 0x180), Rd<u32>(destination, 0x184), Rd<u32>(destination, 0x190), Rd<u32>(destination, 0x188), destination_sub,
                             Rd<u32>(source, 0x180), Rd<u32>(source, 0x184), source_sub);
             }
@@ -9044,16 +9065,17 @@ u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64
     Core::NativeUpdates::NoteRenderThread();
     InstallUnmapSlot();
     Guarded([&]() -> u64 {
-        // W1 diagnostic (2026-11-04): which resources hold the staging buffers and the async copy pairs of BeginRecording (writers doc section 19)
+        // W1 diagnostic (2026-11-04): which resources hold the staging buffers and the async copy pairs of BeginRecording (writers doc section 19); a developer dump (Vkb::DevLog)
+        Core::Vkb::DevLog::Count(Core::Vkb::DevLog::Kind::BeginRecordingDevice);
         static std::atomic<int> logged{0};
-        if (logged.load(std::memory_order_relaxed) < 3 && (logged.fetch_add(1) < 3)) {
+        if (Core::Vkb::DevLog::On() && logged.load(std::memory_order_relaxed) < 3 && (logged.fetch_add(1) < 3)) {
             for (const u64 field : {u64{0x2820}, u64{0x2830}, u64{0x2838}, u64{0x2840}, u64{0x2860}, u64{0x2868}, u64{0x2880}, u64{0x2888}, u64{0x28a0}, u64{0x28a8}, u64{0x26e0}, u64{0x26e8}, u64{0x26f0}}) {
                 const u64 res = Rd<u64>(device, field);
                 if (!IsHeapPointer(res)) {
-                    TLG_LOG(CP, Warn, "BeginRecording diag: dev {:#x} +{:#x} = {:#x} (not a heap pointer)", device, field, res);
+                    TLG_LOG(CP, Info, "BeginRecording diag: dev {:#x} +{:#x} = {:#x} (not a heap pointer)", device, field, res);
                     continue;
                 }
-                TLG_LOG(CP, Warn,
+                TLG_LOG(CP, Info,
                         "BeginRecording diag: dev {:#x} +{:#x} = {:#x} mem[+0x30] {:#x} kind[+0x124] {} width[+0x180] {} V#[+0x60,+0x64,+0x68,+0x6c] {:#x} {:#x} {:#x} {:#x} stamp[+0x2c] {}",
                         device, field, res, Rd<u64>(res, 0x30), Rd<u32>(res, 0x124), Rd<u32>(res, 0x180), Rd<u32>(res, 0x60), Rd<u32>(res, 0x64), Rd<u32>(res, 0x68),
                         Rd<u32>(res, 0x6c), Rd<u32>(res, 0x2c));
@@ -10764,11 +10786,14 @@ void AnnounceSceneSlotRange(u64 frame, u32 upto, bool remember_group) {
             return 0;
         }
         {
-            // diagnostic: where the three groups' slot memory sits (are they three separate blocks?)
+            // diagnostic: where the three groups' slot memory sits (are they three separate blocks?); a developer dump (Vkb::DevLog), counted always, written only when on
             static std::atomic<u32> noted_mask{0};
             const u32 bit = 1u << group;
             if ((noted_mask.fetch_or(bit) & bit) == 0) {
-                Core::RareEvents::Note(fmt::format("scene_slot_group_{}_memory", group), fmt::format("group {}: slot {} memory {:#x}, slot {} memory {:#x}, slot 0 memory {:#x}, slot 8191 memory {:#x}", group, first, first_memory, upto - 1, last_memory, memory_of(0), memory_of(8191)));
+                Core::Vkb::DevLog::Count(Core::Vkb::DevLog::Kind::SceneSlotGroupMemory);
+                if (Core::Vkb::DevLog::On()) {
+                    LOG_INFO(Core, "scene slot group {}: slot {} memory {:#x}, slot {} memory {:#x}, slot 0 memory {:#x}, slot 8191 memory {:#x}", group, first, first_memory, upto - 1, last_memory, memory_of(0), memory_of(8191));
+                }
             }
         }
         if (Core::NativeUpdates::IdMarksMode() != 0) {

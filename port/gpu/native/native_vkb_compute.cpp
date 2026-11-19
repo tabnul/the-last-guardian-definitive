@@ -227,18 +227,6 @@ bool Ready() {
     return true;
 }
 
-vk::ImageViewType ViewTypeOf(VkbAmdGpu::ImageType type) {
-    switch (type) {
-    case VkbAmdGpu::ImageType::Color1D: return vk::ImageViewType::e2D; // note 41: the module declares 1D images as 2D
-    case VkbAmdGpu::ImageType::Color1DArray: return vk::ImageViewType::e2DArray;
-    case VkbAmdGpu::ImageType::Color2DArray:
-    case VkbAmdGpu::ImageType::Color2DMsaaArray: return vk::ImageViewType::e2DArray;
-    case VkbAmdGpu::ImageType::Color3D: return vk::ImageViewType::e3D;
-    case VkbAmdGpu::ImageType::Cube: return vk::ImageViewType::eCube;
-    default: return vk::ImageViewType::e2D;
-    }
-}
-
 /// Compiles the variant of the shader bound at `ctx` (mutex held)
 void BuildLayout(u64 ctx, u64 shader, bool async, bool tags, Core::NativeDraw::UserLayout& out) {
     async ? Core::NativeDraw::BuildAsyncLayout(ctx, tags, out) : Core::NativeDraw::BuildUserLayout(ctx, 5, shader, 0x28, tags, out);
@@ -404,7 +392,7 @@ void Compile(u64 ctx, u64 shader, Variant& v) {
     for (const auto& image : v.info->images) {
         const Source s = SourceOf(image.sharp_fetch, flat, false, false);
         v.images.push_back(s);
-        v.image_types.push_back(ViewTypeOf(image.GetSharp(*v.info).GetHostViewType(image.is_array)));
+        v.image_types.push_back(Core::Vkb::ModuleViewType(image.GetSharp(*v.info).GetHostViewType(image.is_array)));
         (s.cls == Source::Class::Slot ? c_img_slot : c_img_unmapped).fetch_add(1, std::memory_order_relaxed);
     }
     for (const auto& sampler : v.info->samplers) {
@@ -743,8 +731,8 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
             }
         }
     }
-    static std::unordered_map<u64, bool> logged_shaders;
-    if (const u64 sid = Rd<u64>(shader, 0x10); !logged_shaders[sid]) {
+    static std::unordered_map<u64, bool> logged_shaders; // a developer dump (Vkb::DevLog): what each new shader binds; the shaders are counted at their first variant
+    if (const u64 sid = Rd<u64>(shader, 0x10); DevLog::On() && !logged_shaders[sid]) {
         logged_shaders[sid] = true;
         std::string text;
         for (u32 i = 0; i < v.buffers.size(); ++i) {
@@ -761,7 +749,7 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
             const u64 object = v.samplers[i].cls == Source::Class::Slot ? SlotObject(ctx, v.samplers[i].kind, v.samplers[i].slot, v.async) : 0;
             text += fmt::format(" s{}[s{} {}{}]", i, v.samplers[i].slot, Core::Vkb::DescribeSampler(object), v.info->samplers[i].is_depth ? " cmp" : ""); // note 41
         }
-        LOG_WARNING(Render_Vulkan, "vkb bindings: shader {} hash {:#x} groups {}x{}x{} lds {} B:{}", sid, v.info->pgm_hash, x, y, z, v.program.SharedMemSize(), text);
+        LOG_INFO(Render_Vulkan, "vkb bindings: shader {} hash {:#x} groups {}x{}x{} lds {} B:{}", sid, v.info->pgm_hash, x, y, z, v.program.SharedMemSize(), text);
     }
     // V4g: the commands, on the recording thread (in the order of the engine's calls)
     static const bool no_barrier = [] { const char* e = std::getenv("TLG_VKB_NO_DISPATCH_BARRIER"); return e != nullptr && e[0] == '1'; }(); // kill-experiment
@@ -905,7 +893,9 @@ void Dispatch(u64 ctx, u32 x, u32 y, u32 z, u64 indirect_address) {
         c_found.fetch_add(1, std::memory_order_relaxed);
     } else {
         it->second = std::make_unique<Variant>();
-        ++variants_per_shader[Rd<u64>(shader, 0x10)];
+        if (++variants_per_shader[Rd<u64>(shader, 0x10)] == 1) {
+            DevLog::Count(DevLog::Kind::ComputeShaderBindings); // the shaders the developer dump "vkb bindings" describes
+        }
         Compile(ctx, shader, *it->second);
     }
     if (!it->second->ok) {
@@ -962,7 +952,9 @@ void DispatchAsync(u64 jcc, u32 x, u32 y, u32 z) {
     } else {
         it->second = std::make_unique<Variant>();
         it->second->async = true;
-        ++variants_per_shader[Rd<u64>(shader, 0x10)];
+        if (++variants_per_shader[Rd<u64>(shader, 0x10)] == 1) {
+            DevLog::Count(DevLog::Kind::ComputeShaderBindings); // the shaders the developer dump "vkb bindings" describes
+        }
         Compile(jcc, shader, *it->second);
         if (!it->second->ok && (it->second->layout.unsupported_types >> 31) != 0) {
             c_async_unsupported.fetch_add(1, std::memory_order_relaxed);

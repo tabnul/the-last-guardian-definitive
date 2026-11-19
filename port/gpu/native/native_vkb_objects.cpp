@@ -1966,6 +1966,26 @@ bool ViewForCompute(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, 
     m = {view_id, epoch, static_cast<u32>(want), out, found}; // the epoch read before the lookup: a change during it leaves the entry stale-marked
     return true;
 }
+std::atomic<u64> c_cube_as_array{0};
+
+vk::ImageViewType ModuleViewType(VkbAmdGpu::ImageType type) {
+    static const bool cube_as_array = [] { const char* e = std::getenv("TLG_VKB_CUBE_AS_ARRAY"); return e == nullptr || e[0] != '0'; }();
+    switch (type) {
+    case VkbAmdGpu::ImageType::Color1D: return vk::ImageViewType::e2D; // note 41: the module declares 1D images as 2D
+    case VkbAmdGpu::ImageType::Color1DArray: return vk::ImageViewType::e2DArray;
+    case VkbAmdGpu::ImageType::Color2DArray:
+    case VkbAmdGpu::ImageType::Color2DMsaaArray: return vk::ImageViewType::e2DArray;
+    case VkbAmdGpu::ImageType::Color3D: return vk::ImageViewType::e3D;
+    case VkbAmdGpu::ImageType::Cube:
+        if (cube_as_array) {
+            c_cube_as_array.fetch_add(1, std::memory_order_relaxed); // (per module image binding, at the variant's build)
+            return vk::ImageViewType::e2DArray;
+        }
+        return vk::ImageViewType::eCube;
+    default: return vk::ImageViewType::e2D;
+    }
+}
+
 bool ViewForComputeLookup(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, vk::ImageView& out, vk::Image* image) {
     std::scoped_lock lock{mutex};
     const auto v = views.find(view_id);
@@ -2509,6 +2529,7 @@ struct StagingCopy {
 struct StagingRing {
     std::array<StagingCopy, 3> copies{};
     u32 width{}, height{}, texel{};
+    vk::Format format{}; ///< the image format of the newest copy (for the developer dump)
     u64 serial{};
 };
 std::mutex staging_mutex;
@@ -2554,6 +2575,7 @@ void StagingCopied(u64 texture_id, u32 sub) {
             }
             ring.width = width, ring.height = height, ring.texel = texel;
         }
+        ring.format = format;
         serial = ++ring.serial;
         index = u32(serial % ring.copies.size());
         auto& slot = ring.copies[index];
@@ -2594,6 +2616,7 @@ void StagingCopied(u64 texture_id, u32 sub) {
 bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch) {
     StagingCopy copy;
     u32 width = 0, height = 0, texel = 0;
+    vk::Format format{};
     bool newest = true;
     {
         std::scoped_lock lock{staging_mutex};
@@ -2614,7 +2637,7 @@ bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch) {
             return false;
         }
         newest = best->serial == ring.serial;
-        copy = *best, width = ring.width, height = ring.height, texel = ring.texel;
+        copy = *best, width = ring.width, height = ring.height, texel = ring.texel, format = ring.format;
     }
     if (!newest) {
         c_staging_older.fetch_add(1, std::memory_order_relaxed);
@@ -2624,10 +2647,12 @@ bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch) {
     for (u32 y = 0; y < height; ++y) {
         std::memcpy(out + u64{y} * std::max(row_pitch, row), static_cast<const u8*>(copy.mapped) + u64{y} * row, row);
     }
+    DevLog::Count(DevLog::Kind::StagingRead);
+    // a developer dump (Vkb::DevLog): every 50th read's values, each 4 byte texel read as a float whatever the format (a two-channel 16 bit texture shows huge, -nan and inf values)
     static std::mutex log_mutex;
     static std::map<u32, u32> logged_by_size;
     bool log_it = false;
-    {
+    if (DevLog::On()) {
         std::scoped_lock lock{log_mutex};
         u32& k = logged_by_size[static_cast<u32>(texture_id)];
         log_it = (k++ % 50) == 0 && k < 1000; // every 50th read of each staging texture
@@ -2642,7 +2667,7 @@ bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch) {
         for (u32 i = 0; i < width * height; ++i) {
             zeros += f[i] == 0.0f ? 1 : 0;
         }
-        LOG_WARNING(Render_Vulkan, "staging read {}: tex {} {}x{} {} min {} max {} mean {} zeros {} (as floats)", n, texture_id, width, height, newest ? "newest" : "older", lo, hi,
+        LOG_INFO(Render_Vulkan, "staging read {}: tex {} {}x{} {} {} min {} max {} mean {} zeros {} (as floats)", n, texture_id, width, height, vk::to_string(format), newest ? "newest" : "older", lo, hi,
                     sum / float(width * height), zeros);
     }
     return true;
@@ -3676,6 +3701,7 @@ nlohmann::json ObjectsReport() {
                                               {"no_initial_data", c_dev_no_initial.load()}, {"cpu_writes_copied", c_cpu_writes.load()},
                                               {"cpu_write_kb", c_cpu_write_bytes.load() >> 10}}},
                           {"other_view_types", {{"made", c_other_views.load()}, {"refused", c_other_view_refused.load()}, {"refused_pairs", refused}}},
+                          {"cube_bindings_as_array", c_cube_as_array.load()},
                           {"display", {{"presented_from_our_image", c_display_found.load()}, {"no_image_at_the_display_buffer", c_display_missed.load()},
                                        {"never_drawn_into", c_display_not_general.load()}}},
                           {"attachments", {{"format_views_made", c_attach_views.load()}, {"refused", c_attach_refused.load()}}},
