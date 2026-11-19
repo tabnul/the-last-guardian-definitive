@@ -38,6 +38,39 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 - **Who:** box (rule 14).
 - **Links:** issue 42 (https://github.com/tabnul/tlg-vkb-work/issues/42); pull request for branch `fix/vkb-picture-settings`.
 
+## 2026-11-19 - AABB read check: read the game's group table under the game's own lock (not yet merged)
+
+- **Problem:** In AL_a01_firstRoom_01 the new engine sometimes wrote the error `K1 AABB readback: N of N records name
+  a group not in the table`, and the author's crash guard (K2) then skipped that read (issue 36, log cause E). The
+  records were not from another pass: they were this frame's, made from the same table. The game adds groups to that
+  table from other threads while the reader is on its way. Adding one raises the count before it writes the new
+  entry, and can move the whole table to new memory; the game does this under the table's own small lock, and the
+  game's reader takes the same lock before it uses the records. Our check read the table without that lock, so it
+  could see the old, moved-away table or an entry not written yet, and then wrongly called good records foreign.
+- **Considered:** (A) our check takes the game's own lock (the same lock word, the same way) for the moment it reads
+  the table, and so do our other two reads of that table (both only for log lines). (B) move the check to a new hook
+  point inside the game's locked part and skip the read there by changing the loop count: needs a new hook with new
+  expected bytes and a register change, more risk for the same result. (C) read the table twice and retry until it
+  stops changing: cannot see an entry that is counted but not yet written, and can read freed memory.
+- **Choice:** A. The cause and not the case (10): every read of that table in our code goes through the lock, not just
+  this scene. Every machine (6): plain CPU code, no driver feature. Right picture first (11): the cost is one
+  compare-and-swap per read (rate: see "Cost" below); it can only wait while another thread is adding a group.
+  The author's K2 guard stays as it is and still catches a real mismatch. Switch `TLG_AABB_TABLE_LOCK` (default on;
+  `=0` the old unlocked read).
+- **Checked in the game code (second read, remark 2):** the lock word is a 32 bit int (the game's lock function
+  compares and swaps a dword; its release stores 0). The reader has one path to our hook point: it takes the lock for
+  its "any active group" loop, releases it, maps the count and the records (our hook point), and takes the lock again
+  before the record loop. BeginRecording takes the lock inside itself, after our hook at its entry. So neither thread
+  holds the lock at our hook points. The wait still has a time limit (100 ms, a push holds the lock for microseconds):
+  past it the check reads without the lock as before, counted and logged as an error (it should never happen).
+- **Cost (remark 3):** the check runs fewer than 1800 times in every take of the full run (438 takes of under a minute each; no take reached
+  the 1800 reads after which the summary line prints; AL_a01_firstRoom_01 has 3 reads per take). One wait for the lock
+  was seen in 8 takes. Waits and time-outs are in every take's engine report (`native.json`, `aabb_table_lock`).
+  The time-out path was never reached in any run, so it is not tested.
+- **Who:** box (rule 14).
+- **Links:** issue 36 (https://github.com/tabnul/tlg-vkb-work/issues/36); pull request for branch
+  `fix/vkb-aabb-table-lock`.
+
 ## 2026-11-19 - Sync packets in the game's command buffers: the new engine does not walk them (not yet merged)
 
 - **Problem:** 58 scenes wrote 1 to 5 error lines "sync_untyped_eop / _wait / _dma": a sync packet without its typed

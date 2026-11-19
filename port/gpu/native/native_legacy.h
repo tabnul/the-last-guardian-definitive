@@ -21,6 +21,8 @@
 /// Open backend switch (2026-11-18, api-contract.md K1): TLG_LEGACY_LABEL_UNITS=1 lets an older compute submit unit's end records write a shared label after a newer submit.
 /// Open engine switch (2026-11-18, api-contract.md K2): TLG_LEGACY_AABB_GUARD=1 turns off the AABB reader guard (01c4c570 skips a read whose records name a group not in
 /// its table: the crash after the shield flashback). Its proper fix (the pass flags, TLG_READBACK_PASS_FLAGS=1) is OFF until api-contract-plan C21 (Trico's feathers).
+/// Open engine switch (2026-11-19, issue 36 log cause E): TLG_AABB_TABLE_LOCK=0 lets the AABB checks read the engine's group table without the engine's own lock (a group
+/// being added could make valid records look foreign: K1 error and a good read skipped by the K2 guard).
 /// (`TLG_LEGACY_GEOMETRY_ROWS`, note 122) were deleted for good in note 141: they had rotted once the writers left the batch (note 140).
 ///
 /// Steps whose old path is the switch's `=0` (each default on; listed so the whole set is in one place):
