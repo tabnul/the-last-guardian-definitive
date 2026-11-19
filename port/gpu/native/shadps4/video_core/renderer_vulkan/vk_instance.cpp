@@ -9,6 +9,7 @@
 #include "common/debug.h"
 #include "common/types.h"
 #include "sdl_window.h"
+#include "native/native_vkb_aa.h"
 #include "native/native_vkb_dlss_glue.h"
 #include "native/vkb_core/liverpool_to_vk.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_instance.h"
@@ -209,7 +210,8 @@ bool Instance::CreateDevice() {
         vk::PhysicalDevicePrimitiveTopologyListRestartFeaturesEXT,
         vk::PhysicalDeviceShaderAtomicFloat2FeaturesEXT,
         vk::PhysicalDeviceWorkgroupMemoryExplicitLayoutFeaturesKHR,
-        vk::PhysicalDeviceImage2DViewOf3DFeaturesEXT, vk::PhysicalDeviceShaderClockFeaturesKHR>();
+        vk::PhysicalDeviceImage2DViewOf3DFeaturesEXT, vk::PhysicalDeviceShaderClockFeaturesKHR,
+        vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR>();
     features = feature_chain.get().features;
 
     const vk::StructureChain properties_chain = physical_device.getProperties2<
@@ -353,6 +355,15 @@ bool Instance::CreateDevice() {
         LOG_INFO(Render_Vulkan, "- shaderSubgroupClock: {}",
                  shader_clock_features.shaderSubgroupClock);
     }
+    // FSR 4 native AA (native_vkb_fsr4.cpp, TLG_VKB_FSR4): its INT8 model passes take derivatives in compute shaders and packed integer dot
+    // products, as in the normal renderer (their vk_instance.cpp); asked for only with the FSR 4 switch on (=0: the device as before)
+    if (Core::Vkb::Aa::Fsr4Switch()) {
+        compute_shader_derivatives = add_extension(VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
+        if (compute_shader_derivatives) {
+            compute_shader_derivatives_features = feature_chain.get<vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR>();
+            LOG_INFO(Render_Vulkan, "- computeDerivativeGroupLinear: {}", compute_shader_derivatives_features.computeDerivativeGroupLinear);
+        }
+    }
     external_memory_host = add_extension(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
 #ifndef _WIN32
     // GPU pool (TLG_VKB_GPU_POOL): the guest pool as our memory, exported as a dma-buf file the runtime maps; only asked for on Linux
@@ -398,6 +409,9 @@ bool Instance::CreateDevice() {
     const auto vk11_features = feature_chain.get<vk::PhysicalDeviceVulkan11Features>();
     vk12_features = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
     vk13_features = feature_chain.get<vk::PhysicalDeviceVulkan13Features>();
+    if (!Core::Vkb::Aa::Fsr4Switch()) {
+        vk13_features.shaderIntegerDotProduct = false; // TLG_VKB_FSR4=0: not asked for, as before
+    }
     { // F1d: DLAA (TLG_VKB_AA=dlaa): the device extensions NGX needs
         std::vector<const char*> dlss_extensions;
         Core::Vkb::DlssGlue::AppendDeviceExtensions(*instance, physical_device, dlss_extensions);
@@ -489,6 +503,7 @@ bool Instance::CreateDevice() {
             .subgroupSizeControl = vk13_features.subgroupSizeControl,
             .synchronization2 = vk13_features.synchronization2,
             .dynamicRendering = vk13_features.dynamicRendering,
+            .shaderIntegerDotProduct = vk13_features.shaderIntegerDotProduct, // FSR 4 native AA
             .maintenance4 = vk13_features.maintenance4,
         },
         // Extensions
@@ -568,6 +583,10 @@ bool Instance::CreateDevice() {
         vk::PhysicalDeviceShaderClockFeaturesKHR{
             .shaderSubgroupClock = shader_clock_features.shaderSubgroupClock,
         },
+        vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR{ // FSR 4 native AA
+            .computeDerivativeGroupQuads = compute_shader_derivatives_features.computeDerivativeGroupQuads,
+            .computeDerivativeGroupLinear = compute_shader_derivatives_features.computeDerivativeGroupLinear,
+        },
     };
 
     if (!custom_border_color) {
@@ -621,6 +640,9 @@ bool Instance::CreateDevice() {
     }
     if (!shader_clock) {
         device_chain.unlink<vk::PhysicalDeviceShaderClockFeaturesKHR>();
+    }
+    if (!compute_shader_derivatives) {
+        device_chain.unlink<vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR>();
     }
 
     auto [device_result, dev] = physical_device.createDeviceUnique(device_chain.get());

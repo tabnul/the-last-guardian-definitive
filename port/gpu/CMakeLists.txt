@@ -496,6 +496,10 @@ add_executable(upscaler-support-test EXCLUDE_FROM_ALL ../tests/test_upscaler_sup
     shim/tlg_settings.cpp)
 target_include_directories(upscaler-support-test PRIVATE shim)
 target_compile_options(upscaler-support-test PRIVATE -UNDEBUG)
+# tlg: the game's tlg.ini upscaler rule, for tests/test_backend_aa_env.py: ninja -C out/gpu tlg-ini-upscaler.
+add_executable(tlg-ini-upscaler EXCLUDE_FROM_ALL ../tests/tlg_ini_upscaler.cpp
+    shim/tlg_settings.cpp)
+target_include_directories(tlg-ini-upscaler PRIVATE shim)
 add_executable(perf-overlay-test EXCLUDE_FROM_ALL ../tests/test_perf_overlay.cpp
     shim/tlg_settings.cpp)
 target_include_directories(perf-overlay-test PRIVATE shim)
