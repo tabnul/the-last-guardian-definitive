@@ -16,7 +16,7 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   rare-event channel, so it shows as 3 error lines), the bindings of each new compute shader, values of staging reads,
   copies into staging textures, BeginRecording's device fields and the first AABB read check (issue 36, log cause C).
   None of them reports a skipped, failed or missing step, so they hide the lines that do. The owner asked for a clean log.
-- **Considered:** (1) one switch for all of them (`TLG_VKB_DEV_LOG=1` writes them again, at their old level), off by
+- **Considered:** (1) one switch for all of them (`TLG_VKB_DEV_LOG=1` writes them again, at info level, rule 24), off by
   default, and one counter per kind in the stats that counts what each dump is about whether the switch is on or off;
   (2) lower each line to the debug level: no switch (principle 7), the work to build each line still runs (13), and
   whether it shows depends on the log filter, not on one named switch; (3) delete the dumps: the developer loses tools

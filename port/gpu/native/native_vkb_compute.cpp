@@ -749,7 +749,7 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
             const u64 object = v.samplers[i].cls == Source::Class::Slot ? SlotObject(ctx, v.samplers[i].kind, v.samplers[i].slot, v.async) : 0;
             text += fmt::format(" s{}[s{} {}{}]", i, v.samplers[i].slot, Core::Vkb::DescribeSampler(object), v.info->samplers[i].is_depth ? " cmp" : ""); // note 41
         }
-        LOG_WARNING(Render_Vulkan, "vkb bindings: shader {} hash {:#x} groups {}x{}x{} lds {} B:{}", sid, v.info->pgm_hash, x, y, z, v.program.SharedMemSize(), text);
+        LOG_INFO(Render_Vulkan, "vkb bindings: shader {} hash {:#x} groups {}x{}x{} lds {} B:{}", sid, v.info->pgm_hash, x, y, z, v.program.SharedMemSize(), text);
     }
     // V4g: the commands, on the recording thread (in the order of the engine's calls)
     static const bool no_barrier = [] { const char* e = std::getenv("TLG_VKB_NO_DISPATCH_BARRIER"); return e != nullptr && e[0] == '1'; }(); // kill-experiment

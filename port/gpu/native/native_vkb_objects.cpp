@@ -2667,7 +2667,7 @@ bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch) {
         for (u32 i = 0; i < width * height; ++i) {
             zeros += f[i] == 0.0f ? 1 : 0;
         }
-        LOG_WARNING(Render_Vulkan, "staging read {}: tex {} {}x{} {} {} min {} max {} mean {} zeros {} (as floats)", n, texture_id, width, height, vk::to_string(format), newest ? "newest" : "older", lo, hi,
+        LOG_INFO(Render_Vulkan, "staging read {}: tex {} {}x{} {} {} min {} max {} mean {} zeros {} (as floats)", n, texture_id, width, height, vk::to_string(format), newest ? "newest" : "older", lo, hi,
                     sum / float(width * height), zeros);
     }
     return true;

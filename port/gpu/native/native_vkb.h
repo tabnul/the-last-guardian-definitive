@@ -30,8 +30,8 @@ void NoteEngineCallSkipped(EngineCall call);
 
 /// Developer dumps (issue 36, log cause C): one-time notes and value dumps that print state for the developer at warning or error level (the scene slot groups'
 /// memory, the bindings of each new compute shader, staging read values, copies into staging textures, BeginRecording's device fields, the first AABB read check).
-/// None of them reports a skipped, failed or missing step. Under the new engine they are a test tool, off by default: `TLG_VKB_DEV_LOG=1` writes them again, at their old
-/// level. With the new engine off they are written as before. Read once. What each dump is about is counted always (one counter per kind, `vkb.dev_log` in the stats).
+/// None of them reports a skipped, failed or missing step. Under the new engine they are a test tool, off by default: `TLG_VKB_DEV_LOG=1` writes them again, at info level.
+/// With the new engine off they are written as before, also at info level. Read once. What each dump is about is counted always (one counter per kind, `vkb.dev_log` in the stats).
 namespace DevLog {
 [[nodiscard]] bool On();
 enum class Kind : u32 { SceneSlotGroupMemory, ComputeShaderBindings, StagingRead, CopyIntoStagingTexture, BeginRecordingDevice, AabbReadCheckGuardOn, AabbReadCheckGuardOff, Count };

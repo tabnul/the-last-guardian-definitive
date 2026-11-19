@@ -8043,7 +8043,7 @@ u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
     Core::Vkb::DevLog::Count(guard ? Core::Vkb::DevLog::Kind::AabbReadCheckGuardOn : Core::Vkb::DevLog::Kind::AabbReadCheckGuardOff); // the guard's state, also with the dump off
     if (Core::Vkb::DevLog::On()) { // a developer dump (Vkb::DevLog)
         static std::once_flag announced;
-        std::call_once(announced, [&] { TLG_LOG(CP, Warn, "K2 AABB guard active (first read: {} records, {} groups, guard {})", count, groups, guard ? "on" : "off"); });
+        std::call_once(announced, [&] { TLG_LOG(CP, Info, "K2 AABB guard active (first read: {} records, {} groups, guard {})", count, groups, guard ? "on" : "off"); });
     }
     u32 bad = 0, first_bad = 0, bad_group = 0;
     for (u32 i = 0; i < count; ++i) {
@@ -8534,7 +8534,7 @@ u64 PS4_SYSV_ABI TagCopyResource(u64 ctx, u64 destination, u64 destination_sub, 
             Core::Vkb::DevLog::Count(Core::Vkb::DevLog::Kind::CopyIntoStagingTexture);
             static std::atomic<u32> logged{0};
             if (Core::Vkb::DevLog::On() && logged.fetch_add(1) < 24) { // a developer dump (Vkb::DevLog)
-                LOG_WARNING(Core, "api map: CopyResource into a staging texture: caller {:#x} {}x{} format {} mips {} sub {} from texture {}x{} sub {}", ret - ImageBase() + 0x1000000,
+                LOG_INFO(Core, "api map: CopyResource into a staging texture: caller {:#x} {}x{} format {} mips {} sub {} from texture {}x{} sub {}", ret - ImageBase() + 0x1000000,
                             Rd<u32>(destination, 0x180), Rd<u32>(destination, 0x184), Rd<u32>(destination, 0x190), Rd<u32>(destination, 0x188), destination_sub,
                             Rd<u32>(source, 0x180), Rd<u32>(source, 0x184), source_sub);
             }
@@ -8988,10 +8988,10 @@ u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64
             for (const u64 field : {u64{0x2820}, u64{0x2830}, u64{0x2838}, u64{0x2840}, u64{0x2860}, u64{0x2868}, u64{0x2880}, u64{0x2888}, u64{0x28a0}, u64{0x28a8}, u64{0x26e0}, u64{0x26e8}, u64{0x26f0}}) {
                 const u64 res = Rd<u64>(device, field);
                 if (!IsHeapPointer(res)) {
-                    TLG_LOG(CP, Warn, "BeginRecording diag: dev {:#x} +{:#x} = {:#x} (not a heap pointer)", device, field, res);
+                    TLG_LOG(CP, Info, "BeginRecording diag: dev {:#x} +{:#x} = {:#x} (not a heap pointer)", device, field, res);
                     continue;
                 }
-                TLG_LOG(CP, Warn,
+                TLG_LOG(CP, Info,
                         "BeginRecording diag: dev {:#x} +{:#x} = {:#x} mem[+0x30] {:#x} kind[+0x124] {} width[+0x180] {} V#[+0x60,+0x64,+0x68,+0x6c] {:#x} {:#x} {:#x} {:#x} stamp[+0x2c] {}",
                         device, field, res, Rd<u64>(res, 0x30), Rd<u32>(res, 0x124), Rd<u32>(res, 0x180), Rd<u32>(res, 0x60), Rd<u32>(res, 0x64), Rd<u32>(res, 0x68),
                         Rd<u32>(res, 0x6c), Rd<u32>(res, 0x2c));
@@ -10708,7 +10708,7 @@ void AnnounceSceneSlotRange(u64 frame, u32 upto, bool remember_group) {
             if ((noted_mask.fetch_or(bit) & bit) == 0) {
                 Core::Vkb::DevLog::Count(Core::Vkb::DevLog::Kind::SceneSlotGroupMemory);
                 if (Core::Vkb::DevLog::On()) {
-                    Core::RareEvents::Note(fmt::format("scene_slot_group_{}_memory", group), fmt::format("group {}: slot {} memory {:#x}, slot {} memory {:#x}, slot 0 memory {:#x}, slot 8191 memory {:#x}", group, first, first_memory, upto - 1, last_memory, memory_of(0), memory_of(8191)));
+                    LOG_INFO(Core, "scene slot group {}: slot {} memory {:#x}, slot {} memory {:#x}, slot 0 memory {:#x}, slot 8191 memory {:#x}", group, first, first_memory, upto - 1, last_memory, memory_of(0), memory_of(8191));
                 }
             }
         }
