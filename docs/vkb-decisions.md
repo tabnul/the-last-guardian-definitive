@@ -9,6 +9,78 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-19 - Cube images are bound as the 2D arrays the recompiled shaders declare (not yet merged)
+
+- **Problem:** The pots in s10_03_Escape_Pitfall_001 lost their teal reflection (issue 34). The recompiled shaders
+  declare every cube image as a 2D array and pick the layer themselves (probe slot x 6 + face). The new engine bound
+  a Vulkan cube view instead, and its bind code cut that view to the first cube (6 layers). The deferred lighting pass
+  reads a cube array of 64 probe slots, so every probe read slot 0's cube. Found by comparing RenderDoc captures of
+  both renderers (the normal renderer binds all 384 layers as a 2D array).
+- **Considered:** (A) ask for a 2D array view of the whole view range for every cube binding, one shared mapping for
+  draws and dispatches (the two identical copies become one); nothing recompiled. (B) let the shader translator declare
+  real cube and cube-array images: every shader with a cube is compiled again, and the shaders compute the layer
+  themselves, so the cube type does not fit them. (C) only for cube arrays (more than 6 layers): a special case, and
+  single cubes would keep a view type that does not match the declaration (undefined in Vulkan, works on AMD by luck).
+- **Choice:** A. It fixes the cause for every cube in every shader (principle 10), the view type now matches the
+  declaration on every driver (6), no measurable cost (11), fewer paths (one mapping instead of two). Switch
+  `TLG_VKB_CUBE_AS_ARRAY` (default on; `=0` the old way). Counter `cube_bindings_as_array` in the objects report.
+  Left for a separate change: the view's level count (the probe array's own descriptor says 7 levels, the Direct3D
+  description 8).
+- **Who:** box (rule 14).
+- **Links:** issue 34 (https://github.com/tabnul/tlg-vkb-work/issues/34); pull request for branch
+  `fix/vkb-cube-as-array`.
+
+---
+
+## 2026-11-18 - First vertex of a direct draw: Vulkan adds it only when the shader does not (not yet merged)
+
+- **Problem:** s02_05_Tritrigger_Get_001 gave "photo setup failed" in both takes (scoreboard issue 36). The scene was
+  not stalled: after the load the new engine drew about one frame every 0.65 s, with the GPU fully busy. Two cave
+  wall draws turned into huge spikes (250 million pixels shaded from 33,000 triangles in one pass). Cause: the game
+  hands a draw's first vertex to the vertex shader, and the shader adds it itself. These cave shaders read their
+  vertices from buffers and add it in their own code, and the new engine also gave it to Vulkan, so every vertex
+  number was moved twice. The normal renderer gives it to Vulkan only when the game's fetch shader uses it (that part
+  of the shader becomes Vulkan's vertex input).
+- **Considered:** (A) at the draw: Vulkan gets the first vertex only when the shader names no register for it, or
+  when its fetch shader reads that register; otherwise 0. This is the normal renderer's rule, one place, nothing
+  recompiled. (B) handle direct draws like indirect ones already are: always give it to Vulkan and let the
+  recompiled shader take it back off where its own code adds it. Also one rule, but every such shader is compiled
+  again, with new pipeline keys. Higher risk for the same result. (C) a fix for the cave shaders only: against
+  principle 10.
+- **Choice:** A. Cause and not case (10): every direct draw, indexed or not. Same on every machine (6): only the
+  numbers handed to Vulkan change, so no driver feature is involved. Right picture first (11): no measurable cost
+  (one read and two compares per draw). Fewest special paths: no new compile path. Switch `TLG_VKB_BASE_VERTEX`
+  (default on; `=0` the old way). Counter `first_vertex_by_vulkan_by_shader` in the graphics report.
+- **Who:** box (rule 14).
+- **Links:** issue 36 (https://github.com/tabnul/tlg-vkb-work/issues/36); pull request for branch `fix/vkb-base-vertex`.
+
+---
+
+## 2026-11-18 - Buffer lookup memo: an entry answers only for the memory it was resolved for (not yet merged)
+
+- **Problem:** Some takes of the same scene draw the boy wrong (issue 12). In every bad take the boy's skinning
+  output equals the output of two frames before. Code read: the per-thread memo of `BufferOfObjectFields` reuses an
+  entry when object, id and buffer epoch match, but not the memory pointer it resolved. Several paths move a
+  buffer's memory without a new object (the skin ring rename every skin pass, the recording ring rename, the
+  engine's buffer move), so a memo hit can hand out the window of the old memory. On this box the frame ring stays
+  in place (R3a refused), so ring memory reaches this memo; where R3a works it does not.
+- **Considered:** (A) the memo entry also holds memory pointer and byte width; a hit needs them equal, else it
+  resolves again: one rule for every reader and every mover. (B) no memo: every bind resolves under the lock; the
+  memo was added for speed, unmeasured loss. (C) every path that moves the memory bumps the epoch: covers only the
+  movers someone remembers, and each bump flushes every entry. (D) make R3a work on AMD (frame ring in device
+  memory below 40 bits): covers only ring memory, high cost and risk, per OS.
+- **Choice:** A. It fixes the key once for every reader and every mover (principle 10), is CPU side and the same on
+  every machine (6), costs two compares per bind and a few extra lookups per frame (11), and adds no special path.
+  B is the fallback if A still leaves bad takes (the second structural way, rule 14e). Switch
+  `TLG_VKB_MEMO_BY_MEMORY` (default on, `=0` the old key); counter `memo_memory_moved` in the bind-by-object report.
+  Proof (script job 20261118-1600a, s10 Escape_Pitfall, 8 takes per arm): switch on 0 bad of 8, switch off (old key) 6 bad of 8; garden with the switch on 0 bad of 4; no device lost and the same error-line count in every arm. `memo_memory_moved` and skipped draws were not recorded (no end.stats.json), so they are not part of the proof.
+- **Who:** box (rule 14).
+- **Links:** issue 12 (https://github.com/tabnul/tlg-vkb-work/issues/12), design note
+  https://github.com/tabnul/tlg-vkb-work/issues/12#issuecomment-6978580374 ; pull request for branch
+  `fix/vkb-object-memo-key`.
+
+---
+
 ## 2026-11-18 - Noise mask from three photos (not yet merged)
 
 - **Problem:** for 38 scenes the 2-photo mask did not hold on a fresh retake (issue 27). The owner's words
