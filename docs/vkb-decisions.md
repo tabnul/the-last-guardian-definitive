@@ -9,16 +9,19 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
-## 2026-11-19 - Solid-blob mask for all 69 masked scenes; 15 scenes log only (not yet merged)
+## 2026-11-19 - Moving-things mask for all 69 masked scenes; no scene is log only for noise (not yet merged)
 
-- **Problem:** the 2-photo and 3-photo masks also hid still surfaces (walls, ceilings, pots), where a real new-engine
-  fault could sit (issue 27, issue 34).
-- **Considered:** keep the wide masks; the solid-blob mask (open the difference before growing) for all scenes; per-scene
-  detectors (rejected before).
-- **Choice:** solid-blob mask as one rule. Owner, 2026-11-19: "The 31 scenes within the limit: use the solid mask
-  (confirmed as a group)"; the 23 a bit above get the solid mask plus the per-scene limit of issue 9 (twice the scene's
-  own noise); "The 15 scenes far above (cannot judge): log only". Entries in `noise-ignore.txt` / `log-only.txt`.
-- **Who:** owner. Box: the measurement and the list edit.
+- **Problem:** the solid-blob mask still hid still surfaces (pots, mirror frame, buildings) in several scenes, where a real
+  new-engine fault could sit (issue 27, issue 34, rule 20).
+- **Considered:** (A) the solid-blob mask (open the difference before growing); (B) count only differences above 48, then
+  open, then grow: the shine of a still surface differs by little, the boy, grass and loose objects by a lot; (C) detect
+  surfaces by kind (per-scene special cases, rejected before).
+- **Choice:** B, one rule for every scene, and the scenes judged with the scene's own noise limit (issue 9) because the
+  normal renderer still differs from itself a little on still surfaces. Mask share 0.9% on average. The 15 scenes the rule
+  A had sent to log only are back in the picture check. Owner, 2026-11-19: "take the still surfaces out of the mask
+  (pots, pillars, walls, buildings, the mirror frame). Grass, the boy and things that really move stay masked ... judge
+  it with its own noise limit (issue 9) ... instead of the fixed limit."
+- **Who:** owner decided the aim; box chose the threshold rule.
 - **Links:** issue 27, issue 9, issue 34; pull request 33.
 
 ---

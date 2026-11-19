@@ -180,16 +180,17 @@ would need more than 25% left out: `log-only.txt`, `proposed`. `AT_BarrelBox_001
 `ST_040_FallingFromSentinelTower` are `confirmed` log only (owner, comment 6979040549).
 A confirmed entry with fewer good reference takes than it needs now gives `masked_error` (before: for one take the mask was skipped silently).
 
-## Solid-blob mask (issue 27, owner decision 2026-11-18)
-`noisemask.make(pics, mask, solid=True)` opens the raw difference (erode then dilate, 5 pixels) before the usual growing, so sparse
-speckle and thin rims on still surfaces drop out and only solid blobs stay. An entry would opt in with `solid` in its CAUSES field
-(`noisemask.is_solid`); no entry has it yet, nothing is confirmed or un-confirmed. `solid-measure.py LIST OUT.tsv` measures old and
-solid mask on the existing normal-renderer photos (no game run). Result on 69 scenes: 31 within the limit, 23 above, 15 cannot.
+## Moving-things mask (issue 27, owner decisions 2026-11-18 and 2026-11-19)
+`noisemask.make(pics, mask, moving=True)`: only differences above 48 (of 255) between the normal renderer's own photos count,
+then what is thinner than 5 pixels is dropped (opening), then the usual growing by 4. Things that move (boy, grass, mist,
+flames, hanging or loose objects) change by a lot; the shine of a still pot, wall or building changes by a little, so
+still surfaces stay in the picture check (rule 20). An entry opts in with `moving` in CAUSES (`noisemask.is_moving`).
+`moving-measure.py LIST OUT.tsv` measures old and new mask on the existing photos (no game run).
 
-### Applied (owner decision 2026-11-19, PR 33)
-All 69 entries now use the solid-blob mask: `confirmed` in `noise-ignore.txt` with `solid` in CAUSES (31 scenes within the limit).
-23 scenes a bit above the limit also carry `own-limit`: the picture limit for them is twice the scene's own noise (issue 9)
-instead of the fixed 1% / 0.5%. `sweep.py` now builds the mask with `solid` when the entry has it. Note: no code in the sweep
-judges a picture against a limit yet, so `own-limit` is data for the report step. The 15 scenes that stay far above the limit moved to
-`log-only.txt` (`confirmed`); they still run every sweep and are judged by the log. Switch: remove `solid` from an entry's CAUSES
-to go back to the 2-photo mask, or remove the line from `log-only.txt`.
+Applied: all 69 entries use it (`confirmed`, `moving`; 13 also `takes=3`). Average share left out 0.9% (was 3.6% with the
+solid-blob rule, which the owner rejected on 2026-11-19 because it still hid pots, mirror frames and buildings).
+Outside the mask the normal renderer still differs from itself a little (median 2.1% above 16, worst 7.9%), so 66 entries carry
+`own-limit`: the picture limit is twice the scene's own noise (issue 9), not the fixed 1% / 0.5%; 3 are within the fixed
+limit. No code in the sweep judges a picture against a limit yet, so `own-limit` is data for the report step.
+No scene needs log only because of noise any more: the 15 scenes that the solid-blob rule had moved to `log-only.txt` are
+back in the picture check. Switch: remove `moving` from an entry's CAUSES (2-photo mask) or the whole line.

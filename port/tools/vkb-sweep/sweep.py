@@ -154,7 +154,7 @@ def picture_check(row, ref_row, noise_list):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             m = os.path.join(tmp, "mask.png")
-            noisemask.make([ref] + second, m, solid=noisemask.is_solid(entry[2]))
+            noisemask.make([ref] + second, m, moving=noisemask.is_moving(entry[2]))
             try:
                 out["masked"] = compare.measure(a[2], b[2], compare.mask_bits(m))
             except ValueError as e:

@@ -20,11 +20,12 @@ import os, subprocess, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 LIST = os.path.join(HERE, "noise-ignore.txt")
 THRESHOLD = "6.3%"  # 16 of 255
+MOVING_THRESHOLD = "18.8%"  # 48 of 255: moving-things rule (issue 27, owner 2026-11-19)
 GROW = "Disk:4"
-OPEN = "Disk:2"  # solid-blob rule (issue 27): before the growing, what is thinner than 5 pixels is dropped
+OPEN = "Disk:2"  # moving-things rule: before the growing, what is thinner than 5 pixels is dropped
 
 
-def make(pics, mask, solid=False):
+def make(pics, mask, moving=False):
     """Write MASK (white = left out) from two or more pictures of the normal renderer; return the share left out (%).
     Per channel, largest minus smallest value over the pictures is the largest difference of any two of them."""
     if len(pics) < 2:
@@ -34,7 +35,7 @@ def make(pics, mask, solid=False):
         subprocess.run(["convert", *pics, "-evaluate-sequence", "min", lo], check=True)
         subprocess.run(["convert", *pics, "-evaluate-sequence", "max", hi], check=True)
         subprocess.run(["convert", hi, lo, "-compose", "difference", "-composite", "-separate", "-evaluate-sequence", "max",
-                        "-threshold", THRESHOLD, *solid_steps(solid), "-morphology", "Dilate", GROW, mask], check=True)
+                        "-threshold", MOVING_THRESHOLD if moving else THRESHOLD, *moving_steps(moving), "-morphology", "Dilate", GROW, mask], check=True)
     finally:
         for f in (lo, hi):
             if os.path.exists(f):
@@ -42,12 +43,13 @@ def make(pics, mask, solid=False):
     return share(mask)
 
 
-def solid_steps(solid):
-    """Solid-blob rule (owner 2026-11-18, issue 27): open the raw difference (erode, then dilate) BEFORE the growing, so
-    that sparse speckle and thin rims on still walls, floors and ceilings drop out; only solid blobs (boy, mist, foliage,
-    flames, hanging or loose objects) stay and are then grown as always. (Opening after the growing was tried first: the
-    growing joins the speckle into blobs, 58 of 69 masks stayed as they were.)"""
-    return ["-morphology", "Open", OPEN] if solid else []
+def moving_steps(moving):
+    """Moving-things rule (owner 2026-11-19, issue 27, rule 20): a mask may only cover things that move (the boy, grass,
+    mist, flames, hanging or loose objects). Those change by a lot between two photos of the normal renderer (more than 48);
+    the shine and reflection of a still pot, wall or building changes by a little. So only differences above 48 count, then
+    what is thinner than 5 pixels is dropped (opening) before the usual growing. Still surfaces stay in the picture check and
+    are judged with the scene's own noise limit (`own-limit`)."""
+    return ["-morphology", "Open", OPEN] if moving else []
 
 
 def share(mask):
@@ -69,9 +71,9 @@ def load_list(path=LIST):
     return out
 
 
-def is_solid(causes):
-    """True when the CAUSES field holds `solid` (the solid-blob rule applies to this entry's mask)."""
-    return "solid" in causes
+def is_moving(causes):
+    """True when the CAUSES field holds `moving` (the moving-things rule applies to this entry's mask)."""
+    return "moving" in causes
 
 
 def takes_needed(causes):

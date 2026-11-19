@@ -70,19 +70,3 @@ proposed s08_LargeTower s08_06_Climb_Tower_Again_001 mask from 3 photos would le
 proposed s12_TheNest s12_12_Escape_from_The_Nest_001 mask from 3 photos would leave out 29.01% (limit 25%)
 # --- event-driven scene (owner 2026-11-18, PR 35 / issue 27): a lot happens, the picture is not comparable between takes
 confirmed s02_TricosCave s02_01_Care_Step1_001 owner: event-driven scene, picture not comparable between takes (PR 35, issue 27)
-# --- solid-blob mask still too noisy (owner 2026-11-19, PR 33 / issue 27): 15 scenes, judged by the log only
-confirmed s05_Attacked AT_CondorRise_001 solid-blob mask: held-out photos of the normal renderer still differ by 4.414% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only
-confirmed s06_FallingBridge FB_e01_Outdoor_001 solid-blob mask: held-out photos of the normal renderer still differ by 2.492% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only
-confirmed s07_Alone AL_a01_SkyAthletics_01 solid-blob mask: held-out photos of the normal renderer still differ by 2.558% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only
-confirmed s07_Alone AL_b01_Seesaw_01 solid-blob mask: held-out photos of the normal renderer still differ by 3.772% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only
-confirmed s07_Alone AL_d01_DarkPlace_01 solid-blob mask: held-out photos of the normal renderer still differ by 2.006% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only
-confirmed s08_LargeTower s08_07_Top_001 solid-blob mask: held-out photos of the normal renderer still differ by 2.711% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only
-confirmed s09_FallingBridge2 FB2_After_Try_Touch_Under solid-blob mask: held-out photos of the normal renderer still differ by 2.332% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only
-confirmed s09_FallingBridge2 FB2_TopLayer_001 solid-blob mask: held-out photos of the normal renderer still differ by 2.361% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only
-confirmed s10_Pit s10_02_Pitfall_002 solid-blob mask: held-out photos of the normal renderer still differ by 2.269% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only
-confirmed s10_Pit s10_03_Escape_Pitfall_001 solid-blob mask: held-out photos of the normal renderer still differ by 2.438% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only
-confirmed s13_FirstFlight FF_i01_Celling3 solid-blob mask: held-out photos of the normal renderer still differ by 4.455% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only
-confirmed s14_CondorClash CH_a01_BeforeDropMirror_001 solid-blob mask: held-out photos of the normal renderer still differ by 3.227% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only
-confirmed s15_SecondFlight SF_a01_CH_Roof solid-blob mask: held-out photos of the normal renderer still differ by 2.565% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only
-confirmed s15_SecondFlight SF_c01_Before_1st_Jump solid-blob mask: held-out photos of the normal renderer still differ by 3.445% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only
-confirmed s15_SecondFlight SF_b02_Before_Longjump solid-blob mask: held-out photos of the normal renderer still differ by 3.026% above 16 outside the blobs; owner 2026-11-19 (PR 33): log only

@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-"""solid-measure.py LIST.tsv OUT.tsv : old mask against solid-blob mask (noisemask.make(..., solid=True)) on the existing
+"""moving-measure.py LIST.tsv OUT.tsv : old mask against moving-things mask (noisemask.make(..., moving=True)) on the existing
 normal-renderer photos, no game run (issue 27). LIST.tsv lines: `SOURCE STAGE__SCENE` with SOURCE 56 (mask from answer-key
 takes 1+2) or 13 (mask from answer-key 1+2 and retake 1, held out: retake 2). Held-out photos are compared with each
 mask photo outside the mask; worst of them is kept. Class: cannot >2% above 16, above >1% above 16 or >0.5% above 32,
-else within. Folders: MASK3_AK (answer-key), MASK3_RT (retake), MASK3_OUT (solid masks written there as PNG)."""
+else within (nothing is "cannot" any more: a scene above the limit gets its own noise limit; only a mask over 25% sends it to log only). Folders: MASK3_AK (answer-key), MASK3_RT (retake), MASK3_OUT (moving masks written there as PNG)."""
 import os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import compare, noisemask
-AK = os.environ.get("MASK3_AK", "answer-key"); RT = os.environ.get("MASK3_RT", "retake"); OUT = os.environ.get("MASK3_OUT", "solid")
+AK = os.environ.get("MASK3_AK", "answer-key"); RT = os.environ.get("MASK3_RT", "retake"); OUT = os.environ.get("MASK3_OUT", "moving")
 def cls(m):
-    if m["gt16"] > 2.0: return "cannot"
     if m["gt16"] > 1.0 or m["gt32"] > 0.5: return "above"
     return "within"
 os.makedirs(OUT, exist_ok=True)
-out = open(sys.argv[2], "w"); out.write("source\tscene\told_ignored\told_gt16\told_class\tsolid_ignored\tsolid_gt16\tsolid_gt32\tsolid_class\n")
+out = open(sys.argv[2], "w"); out.write("source\tscene\told_ignored\told_gt16\told_class\tmoving_ignored\tmoving_gt16\tmoving_gt32\tmoving_class\n")
 for line in open(sys.argv[1]):
     if not line.strip(): continue
     src, key = line.split()
@@ -28,10 +27,10 @@ for line in open(sys.argv[1]):
         out.write(f"{src}\t{key}\t-\t-\t-\t-\t-\t-\tsizes differ\n"); continue
     row = [src, key]
     with tempfile.TemporaryDirectory() as t:
-        for name, solid in (("old", False), ("solid", True)):
-            m = f"{t}/{name}.png"; ig = noisemask.make(refs, m, solid=solid); bits = compare.mask_bits(m)
+        for name, mv in (("old", False), ("moving", True)):
+            m = f"{t}/{name}.png"; ig = noisemask.make(refs, m, moving=mv); bits = compare.mask_bits(m)
             ms = [compare.measure(img[r][2], img[h][2], bits) for r in refs for h in held]
             w = max(ms, key=lambda x: (x["gt16"], x["gt32"]))
-            row += [ig, w["gt16"]] + ([w["gt32"]] if solid else []) + [cls(w)]
-            if solid: os.replace(m, f"{OUT}/{key}.png")
+            row += [ig, w["gt16"]] + ([w["gt32"]] if mv else []) + [cls(w)]
+            if mv: os.replace(m, f"{OUT}/{key}.png")
     out.write("\t".join(map(str, row)) + "\n"); out.flush()
