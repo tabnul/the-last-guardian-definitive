@@ -206,16 +206,6 @@ vk::DescriptorSetLayout rcas_set_layout{};
 vk::PipelineLayout rcas_layout{};
 vk::Pipeline rcas_pipeline{};
 bool rcas_broken = false; ///< the pipeline could not be made (logged once, in the report): the AA's own sharpening only
-std::atomic<u64> c_rcas_passes{0}, c_scene_bias_draws{0};
-
-// Issue 42 (part s): RCAS passes after the AA, as the normal renderer's ExtraSharpen / DlssSharpen; the result ping-pongs between `output` and this image
-VkImage sharpen_img = VK_NULL_HANDLE;
-VmaAllocation sharpen_alloc = nullptr;
-vk::ImageView sharpen_view{};
-vk::DescriptorSetLayout rcas_set_layout{};
-vk::PipelineLayout rcas_layout{};
-vk::Pipeline rcas_pipeline{};
-bool rcas_broken = false; ///< the pipeline could not be made (logged once, in the report): the AA's own sharpening only
 std::atomic<bool> frame_cut{false}; ///< K4: the engine's camera-cut flag of the frame being recorded (render thread)
 
 bool Facts(vk::Image image, Input& out) {
