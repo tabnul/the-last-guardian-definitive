@@ -9119,8 +9119,170 @@ u64 PS4_SYSV_ABI LightWrites(u64 object, u64 source, u64 a2, u64 a3, u64 a4, u64
 /// (the buffers are small); the size is the buffer's ByteWidth (description at +0x180).
 void InstallUnmapSlot();
 
+/// K2 root census (debug, TLG_K2_CENSUS=1, api-contract.md "K2 root, step 1"): the engine assumes every readback group of frame N is registered into frame data N after
+/// its reset (SceneDraw) and before BeginRecording(N). Logged: each registration into table B (AABB) or C (third pass) made after that frame data's BeginRecording
+/// (late: the pass already decided), with the producer, the path (current or alternate frame data) and the switch; every change of the alternate frame data or its
+/// switch (DAT_06832568 slot 19: + 0x28, + 0x134 bit 0); per 1,800 registrations a summary by producer and path.
+namespace K2Census {
+bool On() {
+    static const bool on = [] { const char* e = std::getenv("TLG_K2_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+struct FrameEntry {
+    u64 frame{};
+    u64 resets{}, begins_since_reset{};
+    u64 begins{}, regs{}; ///< totals
+    u64 begin_caller{}, reset_caller{}; ///< the last BeginRecording / reset call sites (ghidra addresses)
+};
+std::mutex mutex;
+std::array<FrameEntry, 8> frames{};
+std::map<std::string, u64> by_path;
+u64 registrations = 0, late = 0, last_alt = ~0ull, begins = 0, begins_alt = 0, begins_current = 0, last_begin_frame = 0, begin_frame_changes = 0;
+std::map<u64, u32> late_logged; ///< per producer, the late registrations logged in full (20 each)
+u32 last_switch = ~0u;
+FrameEntry& Entry(u64 frame) { // (mutex held)
+    for (auto& e : frames) {
+        if (e.frame == frame) {
+            return e;
+        }
+    }
+    for (auto& e : frames) {
+        if (e.frame == 0) {
+            e.frame = frame;
+            return e;
+        }
+    }
+    frames[0] = {frame};
+    return frames[0];
+}
+u64 Global(u64 ghidra) {
+    return ImageBase() + ghidra - 0x1000000;
+}
+void Switch(u64& alt, u32& bit) {
+    const u64 registry = Rd<u64>(Global(0x6832568), 0);
+    const u64 slot = IsHeapPointer(registry) ? Rd<u64>(registry, 0x98) : 0;
+    alt = IsHeapPointer(slot) ? Rd<u64>(slot, 0x28) : 0;
+    bit = IsHeapPointer(slot) ? (Rd<u8>(slot, 0x134) & 1u) : 0xffu;
+}
+u64 Current() {
+    const u64 manager = Rd<u64>(Global(0x69a1b40), 0);
+    return IsHeapPointer(manager) ? Rd<u64>(manager, 0x58 + u64{Rd<u32>(manager, 0x88)} * 8) : 0;
+}
+void NoteSwitch(const char* where) { // (mutex held)
+    u64 alt = 0;
+    u32 bit = 0;
+    Switch(alt, bit);
+    if (alt != last_alt || bit != last_switch) {
+        TLG_LOG(CP, Warn, "K2 census: switch at {}: alternate frame data {:#x} -> {:#x}, bit {} -> {} (current {:#x})", where, last_alt, alt, last_switch, bit, Current());
+        last_alt = alt, last_switch = bit;
+    }
+}
+void Registered(char table, u64 table_base, u64 group, u64 ret) {
+    const u64 frame = table_base - 0x31e30;
+    if (!IsHeapPointer(frame)) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    NoteSwitch("registration");
+    u64 alt = 0;
+    u32 bit = 0;
+    Switch(alt, bit);
+    const u64 current = Current();
+    const char* path = frame == current ? "current" : frame == alt ? "alternate" : "other";
+    FrameEntry& e = Entry(frame);
+    const u64 producer = ret - ImageBase() + 0x1000000;
+    ++registrations;
+    ++e.regs;
+    ++by_path[fmt::format("{} {:#x} {}{}", table, producer, path, e.begins_since_reset != 0 ? " LATE" : "")];
+    if (e.begins_since_reset != 0 && late_logged[producer]++ < 20) {
+        TLG_LOG(CP, Warn, "K2 census: LATE registration table {} producer {:#x} into {} frame data {:#x} (state {}, begins since its reset {}, group active {}), switch bit {}",
+                table, producer, path, frame, Rd<u32>(frame, 0x31ef8), e.begins_since_reset,
+                IsHeapPointer(group) && Rd<u32>(group, 0x18) != 0 && Rd<u32>(group, 0x30) != 0 ? 1 : 0, bit);
+    }
+    if (e.begins_since_reset != 0) {
+        ++late;
+    }
+    if (registrations % 1800 == 0) {
+        std::string summary;
+        for (const auto& [k, v] : by_path) {
+            summary += fmt::format("[{} x{}] ", k, v);
+        }
+        TLG_LOG(CP, Warn, "K2 census: {} registrations, {} late: {}", registrations, late, summary);
+    }
+}
+void Reset(u64 frame, u64 ret) {
+    if (!IsHeapPointer(frame)) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    FrameEntry& e = Entry(frame);
+    ++e.resets;
+    e.reset_caller = ret - ImageBase() + 0x1000000;
+    e.begins_since_reset = 0;
+}
+void Began(u64 frame, u64 recording, u64 ret) {
+    if (!IsHeapPointer(frame)) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    NoteSwitch("BeginRecording");
+    FrameEntry& e = Entry(frame);
+    ++e.begins_since_reset;
+    ++e.begins;
+    e.begin_caller = ret - ImageBase() + 0x1000000;
+    u64 alt = 0;
+    u32 bit = 0;
+    Switch(alt, bit);
+    ++begins;
+    begins_alt += frame == alt ? 1 : 0;
+    begins_current += frame == Current() ? 1 : 0;
+    begin_frame_changes += frame != last_begin_frame ? 1 : 0;
+    last_begin_frame = frame;
+    if (begins % 1800 == 0) {
+        std::string per;
+        for (const auto& f : frames) {
+            if (f.frame != 0) {
+                per += fmt::format("[{:#x}: begins {} (by {:#x}), resets {} (by {:#x}), registrations {}, state {}] ", f.frame, f.begins, f.begin_caller, f.resets,
+                                   f.reset_caller, f.regs, Rd<u32>(f.frame, 0x31ef8));
+            }
+        }
+        TLG_LOG(CP, Warn, "K2 census: {} BeginRecordings: frame data = alternate {}, = current {}, frame data changed {} times; {} registrations, {} late; {}", begins,
+                begins_alt, begins_current, begin_frame_changes, registrations, late, per);
+    }
+    if (e.begins_since_reset > 1) {
+        TLG_LOG(CP, Warn, "K2 census: BeginRecording {} on frame data {:#x} without a reset since the last one (arg {})", e.begins_since_reset, frame, recording);
+    }
+}
+} // namespace K2Census
+
+u64 PS4_SYSV_ABI K2RegisterB(u64 table_base, u64 group, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a2, (void)a3, (void)a4, (void)a5;
+    if (K2Census::On()) {
+        Guarded([&]() -> u64 { K2Census::Registered('B', table_base, group, ret); return 0; });
+    }
+    return 0;
+}
+u64 PS4_SYSV_ABI K2RegisterC(u64 table_base, u64 group, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a2, (void)a3, (void)a4, (void)a5;
+    if (K2Census::On()) {
+        // table C is at + 0x31e48: its base passed here is frame data + 0x31e30 like B's (FrameData_AddReadbackGroupC takes the same block); checked by the path
+        Guarded([&]() -> u64 { K2Census::Registered('C', table_base, group, ret); return 0; });
+    }
+    return 0;
+}
+u64 PS4_SYSV_ABI K2FrameReset(u64 frame, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a1, (void)a2, (void)a3, (void)a4, (void)a5;
+    if (K2Census::On()) {
+        Guarded([&]() -> u64 { K2Census::Reset(frame, ret); return 0; });
+    }
+    return 0;
+}
+
 u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret, u64 caller_rsp) {
     (void)a1, (void)a2, (void)a3, (void)a4, (void)a5, (void)ret, (void)caller_rsp;
+    if (K2Census::On()) {
+        Guarded([&]() -> u64 { K2Census::Began(a1, a2 & 0xff, ret); return 0; });
+    }
     if (Core::Vkb::On() && Core::Vkb::Aa::On() && IsHeapPointer(a1)) {
         // api-contract.md K4: the engine's camera cut for the frame this BeginRecording starts. FrameData + 0x31ea8 is 1 when Scene_CullViews saw a cut request
         // (render manager + 0xf80) **or a zero game step** (+ 0x31eac, the step, is 0.0 then), 2 when RenderFrame re-made the targets. RenderScene clears its history
@@ -11930,6 +12092,15 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "note_c_gbuf_variant") {
         return reinterpret_cast<u64>(&NoteCGbufVariant);
+    }
+    if (name == "k2_register_b") {
+        return reinterpret_cast<u64>(&K2RegisterB);
+    }
+    if (name == "k2_register_c") {
+        return reinterpret_cast<u64>(&K2RegisterC);
+    }
+    if (name == "k2_frame_reset") {
+        return reinterpret_cast<u64>(&K2FrameReset);
     }
     if (name == "tag_copy_structure_count") {
         return reinterpret_cast<u64>(&TagCopyStructureCount);

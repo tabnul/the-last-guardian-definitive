@@ -256,6 +256,27 @@
       "expect": "554889e541574156"
     },
     {
+      "name": "K2_RegisterGroupB",
+      "ghidra": "0x1ce5da0",
+      "mode": "call",
+      "handler": "k2_register_b",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "K2_RegisterGroupC",
+      "ghidra": "0x1ce5bd0",
+      "mode": "call",
+      "handler": "k2_register_c",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "K2_FrameDataReset",
+      "ghidra": "0x1dfdea0",
+      "mode": "call",
+      "handler": "k2_frame_reset",
+      "expect": "554889e541574156"
+    },
+    {
       "name": "T2_CGbufVariant",
       "ghidra": "0x18b4090",
       "mode": "call",
