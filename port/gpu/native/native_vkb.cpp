@@ -207,6 +207,33 @@ bool On() {
     return on;
 }
 
+namespace DevLog {
+namespace {
+std::array<std::atomic<u64>, static_cast<size_t>(Kind::Count)> counts{};
+} // namespace
+bool On() {
+    static const bool on = [] {
+        const char* e = std::getenv("TLG_VKB_DEV_LOG");
+        return (e != nullptr && e[0] == '1') || !Core::Vkb::On();
+    }();
+    return on;
+}
+void Count(Kind kind) {
+    counts[static_cast<size_t>(kind)].fetch_add(1, std::memory_order_relaxed);
+}
+nlohmann::json Report() {
+    static constexpr const char* names[] = {"scene_slot_groups_seen", "compute_shaders", "staging_reads", "copies_into_staging_textures",
+                                            "begin_recordings", "aabb_read_checks_guard_on", "aabb_read_checks_guard_off"};
+    static_assert(std::size(names) == static_cast<size_t>(Kind::Count));
+    nlohmann::json j = nlohmann::json::object();
+    j["on"] = On();
+    j["switch"] = "TLG_VKB_DEV_LOG=1 writes the developer dumps";
+    for (size_t i = 0; i < counts.size(); ++i) {
+        j[names[i]] = counts[i].load(std::memory_order_relaxed);
+    }
+    return j;
+}
+} // namespace DevLog
 
 namespace Census {
 namespace {

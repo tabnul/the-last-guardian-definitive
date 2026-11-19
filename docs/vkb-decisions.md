@@ -9,7 +9,34 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
-## 2026-11-19 - Cube images are bound as the 2D arrays the recompiled shaders declare (not yet merged)
+## 2026-11-19 - The new engine's developer dumps become one test tool, off by default (not yet merged)
+
+- **Problem:** Under the new engine every take writes about 120 to 210 lines at warning or error level that only print
+  state for the developer: a one-time note on where the three scene slot groups' memory sits (sent through the
+  rare-event channel, so it shows as 3 error lines), the bindings of each new compute shader, values of staging reads,
+  copies into staging textures, BeginRecording's device fields and the first AABB read check (issue 36, log cause C).
+  None of them reports a skipped, failed or missing step, so they hide the lines that do. The owner asked for a clean log.
+- **Considered:** (1) one switch for all of them (`TLG_VKB_DEV_LOG=1` writes them again, at info level, rule 24), off by
+  default, and one counter per kind in the stats that counts what each dump is about whether the switch is on or off;
+  (2) lower each line to the debug level: no switch (principle 7), the work to build each line still runs (13), and
+  whether it shows depends on the log filter, not on one named switch; (3) delete the dumps: the developer loses tools
+  that are still used for open questions, and the stats would lose what they show.
+- **Choice:** 1. Principle 13 (a test tool costs nothing when off: with the switch off the dumps do not build their
+  text, read their extra memory or keep their own maps), principle 5 kept (none of the lines counts a skip; what
+  they are about is counted in `vkb.dev_log`, including whether the AABB guard is on), principle 7 (the switch is the
+  old behaviour). With the new engine off the dumps are written as before. The `staging read` lines with `-nan` and
+  `inf` were checked first: in the full run of 2026-11-18 (20,162 such lines) they are only seen on 32x32 to 256x256
+  textures, always on a copy that had finished, never on the 16x16 float textures. The dump reads every 4-byte texel as
+  one float; a run with the switch on, which now also prints the format, shows these textures are two 16-bit signed
+  numbers per texel (`R16G16Snorm`), and such a texel read as one float gives exactly these huge, `-nan` and `inf`
+  values. So they are a dump that misreads the format, not wrong data, and were not split off.
+- **Who:** box (rule 14).
+- **Links:** issue 36 (https://github.com/tabnul/tlg-vkb-work/issues/36), list
+  https://github.com/tabnul/tlg-vkb-work/issues/36#issuecomment-6997220598 ; pull request for branch `fix/vkb-dev-log`.
+
+---
+
+## 2026-11-19 - Cube images are bound as the 2D arrays the recompiled shaders declare
 
 - **Problem:** The pots in s10_03_Escape_Pitfall_001 lost their teal reflection (issue 34). The recompiled shaders
   declare every cube image as a 2D array and pick the layer themselves (probe slot x 6 + face). The new engine bound
