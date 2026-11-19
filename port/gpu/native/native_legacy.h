@@ -19,10 +19,12 @@
 /// Open backend switch (2026-11-17, api-contract.md W5b): TLG_LEGACY_MOVE_IN_STREAM=1 copies a buffer the engine's heap mover moves only in the frame stream (a frame or
 /// more after the engine already reads the new memory; the crash after the shield cutscene, FUN_01d7a890).
 /// Open backend switch (2026-11-18, api-contract.md K1): TLG_LEGACY_LABEL_UNITS=1 lets an older compute submit unit's end records write a shared label after a newer submit.
-/// Open engine switch (2026-11-18, api-contract.md K2): TLG_LEGACY_AABB_GUARD=1 turns off the AABB reader guard (01c4c570 skips a read whose records name a group not in
-/// its table: the crash after the shield flashback). Its proper fix (the pass flags, TLG_READBACK_PASS_FLAGS=1) is OFF until api-contract-plan C21 (Trico's feathers).
+/// Deleted 2026-11-19 (api-contract.md K2): the AABB reader guard (TLG_LEGACY_AABB_GUARD) and the pass flags (TLG_READBACK_PASS_FLAGS): fix A (AnimQueryOrder, default)
+/// removed the soldiers' late readback queries behind the crash after the shield flashback.
+/// Open backend switch (2026-11-18, api-contract.md S10): TLG_LEGACY_DEPTH_BIAS=1 applies the rasterizer description's depth bias (the engine never enables polygon offset).
+/// Open backend switch (2026-11-18, api-contract.md R8): TLG_LEGACY_VIEW_IDENTITY=1 creates every view with the identity channel mapping instead of the T#'s selects.
 /// Open engine switch (2026-11-19, issue 36 log cause E): TLG_AABB_TABLE_LOCK=0 lets the AABB checks read the engine's group table without the engine's own lock (a group
-/// being added could make valid records look foreign: K1 error and a good read skipped by the K2 guard).
+/// being added could make valid records look foreign in the K2 census (the guard itself was deleted 2026-11-19, see above)).
 /// (`TLG_LEGACY_GEOMETRY_ROWS`, note 122) were deleted for good in note 141: they had rotted once the writers left the batch (note 140).
 ///
 /// Steps whose old path is the switch's `=0` (each default on; listed so the whole set is in one place):

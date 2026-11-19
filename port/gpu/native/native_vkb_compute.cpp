@@ -704,26 +704,28 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
     for (u32 i = 0; i < image_infos.size(); ++i) {
         image_types.push_back(v.info->images[i].is_written ? vk::DescriptorType::eStorageImage : vk::DescriptorType::eSampledImage);
     }
-    // the async context's append / consume counters that start at a value: our GDS gets it in front of the dispatch (the engine's DMA packet on the console)
-    if (v.async) {
+    // append / consume counters that start at a value: our GDS gets it in front of the dispatch (the engine's DMA packet on the console). Both contexts do it:
+    // the async one (PrepareDispatch 0246f8e0: GDS base ctx + 0x22f8, UAVs + 0x2118, initial counts + 0x2158, cleared to -1 once written) and the device context
+    // (api-contract.md W7, FUN_0247dad0: GDS base ctx + 0x130b8, UAVs + 0x2098, initial counts + 0x20d8, written before every dispatch until the UAVs are set again)
+    {
         const u64 shader_obj = shader;
-        const u32 counter_base = Rd<u32>(ctx, 0x22f8);
-        for (u32 mask = Rd<u32>(shader_obj, 0x100), index = 0; mask != 0; mask >>= 1, ++index) {
+        const u32 counter_base = Rd<u32>(ctx, v.async ? 0x22f8 : 0x130b8);
+        const u64 uavs = v.async ? 0x2118 : 0x2098, inits = v.async ? 0x2158 : 0x20d8;
+        for (u32 mask = Rd<u32>(shader_obj, 0x100), index = 0; mask != 0 && index < 8; mask >>= 1, ++index) {
             if ((mask & 1) == 0) {
                 continue;
             }
-            const u64 view = Rd<u64>(ctx, 0x2118 + index * 8);
+            const u64 view = Rd<u64>(ctx, uavs + index * 8);
             if (view == 0 || !IsHeapPointer(view) || Rd<u32>(view, 0x44) != 1 || (Rd<u8>(view, 0x50) & 2) == 0) {
                 continue;
             }
-            if (const u32 init = Rd<u32>(ctx, 0x2158 + index * 4); init != 0xffffffffu && counter_base + index * 4ull + 4 <= (64u << 10)) {
+            if (const u32 init = Rd<u32>(ctx, inits + index * 4); init != 0xffffffffu && counter_base + index * 4ull + 4 <= (64u << 10)) {
                 gds_inits.push_back({counter_base + index * 4ull, init});
                 c_gds_inits.fetch_add(1, std::memory_order_relaxed);
             }
         }
     }
-    // api-contract.md W7 census (debug): the device context's dispatch (FUN_0247dad0) also writes each counter UAV's initial count (ctx + 0x20d8, not -1) into GDS
-    // (ctx + 0x130b8) before the dispatch; ours does it for the async context only
+    // api-contract.md W7 census (debug): device dispatches with a counter UAV
     if (!v.async && Core::Vkb::ContractCensusOn()) {
         for (u32 index = 0; index < 8; ++index) {
             const u64 view = Rd<u64>(ctx, 0x2098 + index * 8);
@@ -789,8 +791,10 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
     }
     const bool dump_buffers = !dump_views.empty(); // the TLG_VKB_IMAGE_DUMP_CS dump only (the frame dump takes images alone)
     FrameDumpDispatch(ctx, v, dump_views);
-    const std::array<float, 2> aa_jitter = v.info->pgm_hash == Core::Vkb::Aa::CombineCs && Core::Vkb::Aa::On() ? Core::Vkb::Aa::OnCombineQueued() : std::array<float, 2>{};
-    Stream::Defer(Stream::Work::Dispatch, [aa_jitter, dump_views = std::move(dump_views), dump_buffers, uses = std::move(uses), gds_inits = std::move(gds_inits), buffer_infos = std::move(buffer_infos), image_infos = std::move(image_infos),
+    const bool aa_combine = v.info->pgm_hash == Core::Vkb::Aa::CombineCs && Core::Vkb::Aa::On();
+    const std::array<float, 2> aa_jitter = aa_combine ? Core::Vkb::Aa::OnCombineQueued() : std::array<float, 2>{};
+    const bool aa_cut = aa_combine && Core::Vkb::Aa::TakeFrameCut(); // K4: the frame's camera cut, taken in game order with its jitter
+    Stream::Defer(Stream::Work::Dispatch, [aa_jitter, aa_cut, dump_views = std::move(dump_views), dump_buffers, uses = std::move(uses), gds_inits = std::move(gds_inits), buffer_infos = std::move(buffer_infos), image_infos = std::move(image_infos),
                                            sampler_infos = std::move(sampler_infos), image_types = std::move(image_types), pipeline = v.pipeline, layout = v.pipeline_layout, push,
                                            args_buffer, args_offset, x, y, z, sid = Rd<u64>(shader, 0x10), hash = v.info->pgm_hash,
                                            stageable = std::move(stageable)](vk::CommandBuffer cmd) mutable {
@@ -800,7 +804,7 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
             cmd.fillBuffer(Stream::GdsBuffer(), offset, 4, init);
         }
         if (hash == Core::Vkb::Aa::CombineCs && Core::Vkb::Aa::On()) [[unlikely]] { // F1: native AA writes the scene colour the combine reads
-            Core::Vkb::Aa::BeforeCombine(cmd, aa_jitter);
+            Core::Vkb::Aa::BeforeCombine(cmd, aa_jitter, aa_cut);
         }
         // V4d: a barrier only when the dispatch touches what earlier work since the last barrier wrote (or writes what it read)
         if (!no_barrier) {

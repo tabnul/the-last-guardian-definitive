@@ -31,7 +31,12 @@ void Init(const VkbVulkan::Instance& instance);
 void NoteMotionPass(std::span<const vk::Image> attachments, u32 color_count, bool has_depth);
 /// Recording thread, recording lock held, outside a pass: right before the combine dispatch. Records the AA when this frame's inputs are known.
 /// `jitter`: the sub-pixel offset this frame's scene geometry was drawn with (OnCombineQueued)
-void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter);
+void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter, bool camera_cut = false);
+/// api-contract.md K4, the game's render thread: BeginRecording of a frame hands its FrameData; `cut` = the engine's camera-cut flag of that frame
+/// (FrameData + 0x31ea8: 1 set by Scene_SnapshotToFrameData on a cut request or a paused step, 2 by RenderFrame; RenderScene clears its own TAA history then)
+void NoteFrameCut(bool cut);
+/// The game's render thread, at the combine's capture: this frame's cut flag (then cleared), carried to BeforeCombine
+[[nodiscard]] bool TakeFrameCut();
 /// F1c, the game's render thread (in game order): the motion pass's depth view (the scene depth), a draw's jitter (scene geometry writing that depth, and
 /// later draws of a mesh drawn so in this frame: water over its own pre-pass), and the combine queued: returns the frame's jitter, then advances it (Halton 2, 3)
 void NoteSceneDepth(u64 depth_view_id);

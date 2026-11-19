@@ -16,6 +16,7 @@
 #include <map>
 #include <tuple>
 #include <memory>
+#include <condition_variable>
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
@@ -67,6 +68,7 @@
 #include "native/native_vkb_work_census.h"
 #include "native/native_vkb_side_census.h"
 #include "native/native_vkb_objects.h"
+#include "native/native_vkb_aa.h"
 #include "native/native_zpass_gen.h"
 #include "native/native_draw.h"
 #include "native/native_draw_tag.h"
@@ -81,6 +83,9 @@
 #include "native/native_hook_ring.h"
 #include "core/memory.h"
 #include "core/address_space.h"
+
+/// pointer trace census (debug, 2026-11-19): the call site of this thread's in-place dynamic-buffer Map whose writes are not taken yet (0: none)
+thread_local unsigned long long tlg_ptrtrace_pending_caller = 0;
 
 namespace L6Timers {
 /// Track L step L6 cost check (`TLG_L6_TIMERS=1`, counters only): wall time of the hook's parts on the thread that runs them
@@ -352,9 +357,10 @@ void ObserveContext(u64 ctx, NativeRegistry::DrawResources* draw) {
         // user shader resource tables (PrepareDraw: vertex shader flag +0xd6, size +0xd8, table ctx + 0x13068, capacity ctx + 0x13088 * 2; pixel shader flag +0x106,
         // size +0x108, table ctx + 0x13040, capacity ctx + 0x13060 * 2): a probe of the first draws with such a shader
         static std::atomic<u32> probes{0};
-        if (vs != 0 && ps != 0 && probes.load(std::memory_order_relaxed) < 6 && (Rd<u8>(vs, 0xd6) != 0 || Rd<u8>(ps, 0x106) != 0) && probes.fetch_add(1) < 6) {
-            std::string text = fmt::format("vs {:#x} srt_flag {} srt_dwords {} cap {} | ps {:#x} srt_flag {} srt_dwords {} cap {} | ctx table 0x13040:", vs, Rd<u8>(vs, 0xd6),
-                                           Rd<u32>(vs, 0xd8), Rd<u32>(ctx, 0x13088) * 2, ps, Rd<u8>(ps, 0x106), Rd<u32>(ps, 0x108), Rd<u32>(ctx, 0x13060) * 2);
+        // (both flags sit in the stage block at shader + 0x30: + 0xd6 / + 0xd8, so the pixel shader's + 0x106 / + 0x108; PrepareDraw 02488580 lines 231, 1464)
+        if (vs != 0 && ps != 0 && probes.load(std::memory_order_relaxed) < 6 && (Rd<u8>(vs, 0x106) != 0 || Rd<u8>(ps, 0x106) != 0) && probes.fetch_add(1) < 6) {
+            std::string text = fmt::format("vs {:#x} srt_flag {} srt_dwords {} cap {} | ps {:#x} srt_flag {} srt_dwords {} cap {} | ctx table 0x13040:", vs, Rd<u8>(vs, 0x106),
+                                           Rd<u32>(vs, 0x108), Rd<u32>(ctx, 0x13088) * 2, ps, Rd<u8>(ps, 0x106), Rd<u32>(ps, 0x108), Rd<u32>(ctx, 0x13060) * 2);
             for (u32 i = 0; i < 48; ++i) {
                 text += fmt::format(" {:x}", Rd<u32>(ctx, 0x13040 + i * 4));
             }
@@ -2251,6 +2257,22 @@ void BuildUserLayoutImpl(u64 ctx, u32 stage, u64 shader, u32 inputs_offset, bool
         return;
     }
     const u64 shader_block = shader + 0x30;
+    if (Rd<u8>(shader_block, 0xd6) != 0) {
+        // api-contract.md K3 census: a shader with the user SRT flag (block + 0xd6, size in words + 0xd8). PrepareDraw (02488580) then skips its slot tables and hands
+        // the CUE (setUserSrtBuffer 024a0a10) the context's SRT words (pixel ctx + 0x13040, vertex + 0x13068: the 0x90-byte table pointer 01c7f020 writes); this
+        // builder does not place them. Logged once per shader (bounded) to learn whether the game has any.
+        static std::mutex srt_mutex;
+        static std::unordered_set<u64> srt_seen;
+        std::scoped_lock lock{srt_mutex};
+        if (srt_seen.size() < 32 && srt_seen.insert(shader).second) {
+            std::string text = fmt::format("K3 SRT shader: stage {} shader {:#x} id {} srt words {} usage:", stage, shader, Rd<u64>(shader, 0x10), Rd<u32>(shader_block, 0xd8));
+            for (u32 k = 0; k < Rd<u8>(gnm, 3) && k < 40; ++k) {
+                const u64 e = gnm + inputs_offset + k * 4;
+                text += fmt::format(" <{} s{} r{} f{}>", Rd<u8>(e, 0), Rd<u8>(e, 1), Rd<u8>(e, 2), Rd<u8>(e, 3));
+            }
+            TLG_LOG(CP, Warn, "{} ({} SRT shaders so far)", text, srt_seen.size());
+        }
+    }
     std::array<u32, 128> eud{};
     u32 eud_dwords = 0;
     s32 eud_ptr = -1;
@@ -3059,8 +3081,12 @@ const VkbVulkan::FixedState* Build(u64 ctx, const DeviceAddresses& dev) {
         s.depth_clip = Rd<u8>(raster, 0x48) != 0;
         // note 41: the depth bias (DepthBias INT, DepthBiasClamp, SlopeScaledDepthBias at +0x3c, +0x40, +0x44): Vulkan's factors have D3D's meaning (a float
         // depth target: the constant in units of 2^(exponent - 23)); without it the shadow maps self-shadow in bands (stripes on the boy and the ground)
-        const s32 bias = Rd<s32>(raster, 0x3c);
-        const float bias_clamp = Rd<float>(raster, 0x40), bias_slope = Rd<float>(raster, 0x44);
+        // api-contract.md S10 (2026-11-18): the engine never enables polygon offset (no POLY_OFFSET_*_ENABLE bit in its PA_SU_SC_MODE_CNTL word, no write of
+        // PA_SU_POLY_OFFSET_* in the binary): the PS4 draws every rasterizer state without bias. The stripes note 41 fixed with it had another cause (the comparison
+        // sampler, S1 / S2, rebuilt from the engine's tables). LEGACY(TLG_LEGACY_DEPTH_BIAS): =1 applies the description's bias fields again.
+        static const bool legacy_bias = [] { const char* e = std::getenv("TLG_LEGACY_DEPTH_BIAS"); return e != nullptr && e[0] == '1'; }();
+        const s32 bias = legacy_bias ? Rd<s32>(raster, 0x3c) : 0;
+        const float bias_clamp = legacy_bias ? Rd<float>(raster, 0x40) : 0.0f, bias_slope = legacy_bias ? Rd<float>(raster, 0x44) : 0.0f;
         s.depth_bias = bias != 0 || bias_slope != 0.0f;
         s.depth_bias_constant = static_cast<float>(bias);
         s.depth_bias_clamp = bias_clamp;
@@ -6692,6 +6718,28 @@ struct PhaseClock {
 /// V1 of the engine-to-Vulkan backend (documents/tlg/native plan/engine-vulkan-backend.md), `TLG_VKB=1`: the engine's draw and dispatch calls
 /// end here. What the engine's own functions leave in its objects (last-use stamps, draw / dispatch counters) is kept; the PS4 backend below them
 /// (PrepareDraw, the resource tracking, the command writer), our record, plan and tag never run. Nothing is drawn yet (V2 to V4 add the Vulkan work).
+/// R3b: this thread's in-place Map of a dynamic buffer, until its writes are taken (its Unmap, or the first GPU work after it)
+struct DynMap {
+    u64 resource{}, memory{}, bytes{};
+    u64 caller{}; ///< pointer trace census (debug): the Map's call site
+};
+thread_local DynMap t_dyn_map{};
+std::atomic<u64> c_dyn_taken_at_work{0};
+/// Pointer trace 2026-11-19: the engine's Unmap is empty (0x2480f80) and its devirtualized callers (RenderFrame 0x1c55885 / 0x1c57852, RenderScene 0x1c5a23c /
+/// 0x1c5a273 / 0x1c5baab / 0x1c5bba8 / ...) never call it: they fill the mapped memory and go on to draw. On PS4 the GPU reads that memory when it runs, so every write
+/// made before the draw is seen. Our dynamic buffer lives in device memory and gets the writes by a copy in the frame stream, so the copy must come before the first
+/// draw, dispatch or copy this thread records after the Map (it came at the thread's next Map: thousands of draws a run read the old contents).
+inline void TakePendingDynamicMap() {
+    if (t_dyn_map.resource == 0) [[likely]] {
+        return;
+    }
+    Core::Vkb::DynamicCheck(t_dyn_map.memory, t_dyn_map.bytes, true); // TLG_VKB_DYN_CHECK=1 (debug): written again before its next Map?
+    Core::Vkb::DynamicUnmapped(t_dyn_map.memory, t_dyn_map.bytes);
+    t_dyn_map = {};
+    ::tlg_ptrtrace_pending_caller = 0;
+    c_dyn_taken_at_work.fetch_add(1, std::memory_order_relaxed);
+}
+
 namespace Vkb {
 std::atomic<u64> fills_kept{0}, fills_of_cleared_targets_dropped{0}, fills_of_cleared_depth_dropped{0};
 std::atomic<u64> fetch_builds{0}; ///< draws the engine's own path ran to make a fetch shader ///< fills with a pattern of more than one value (the engine's path, packets unread)
@@ -6790,7 +6838,7 @@ void Publish() {
                                                               {"take_dispatch_us_mean", take_dispatch_n.load() ? static_cast<double>(take_dispatch_ns.load()) / 1e3 / static_cast<double>(take_dispatch_n.load()) : 0.0},
                                                               {"compute_dispatch_us_mean", take_dispatch_n.load() ? static_cast<double>(compute_dispatch_ns.load()) / 1e3 / static_cast<double>(take_dispatch_n.load()) : 0.0},
                                                               {"take_draw_ms_total", take_draw_ns.load() / 1000000}, {"take_dispatch_ms_total", take_dispatch_ns.load() / 1000000},
-                                                              {"takes_draw_dispatch", {take_draw_n.load(), take_dispatch_n.load()}}}}, {"fills_kept_on_the_engine_path", fills_kept.load()}, {"fills_of_cleared_targets_dropped", fills_of_cleared_targets_dropped.load()}, {"fills_of_cleared_depth_dropped", fills_of_cleared_depth_dropped.load()}, {"engine_draws_for_a_fetch_shader", fetch_builds.load()}, {"compute", Core::Vkb::Compute::Report()}, {"graphics", Core::Vkb::Graphics::Report()},
+                                                              {"takes_draw_dispatch", {take_draw_n.load(), take_dispatch_n.load()}}}}, {"fills_kept_on_the_engine_path", fills_kept.load()}, {"dynamic_maps_taken_at_work", c_dyn_taken_at_work.load()}, {"fills_of_cleared_targets_dropped", fills_of_cleared_targets_dropped.load()}, {"fills_of_cleared_depth_dropped", fills_of_cleared_depth_dropped.load()}, {"engine_draws_for_a_fetch_shader", fetch_builds.load()}, {"compute", Core::Vkb::Compute::Report()}, {"graphics", Core::Vkb::Graphics::Report()},
                                            {"work_census", Core::Vkb::WorkCensus::Report()}, {"side_census", Core::Vkb::SideCensus::Report()}, {"engine_calls_skipped", Core::Vkb::EngineCallsSkipped()},
                                            {"dev_log", Core::Vkb::DevLog::Report()}});
     }
@@ -6821,6 +6869,7 @@ u64 TakeDrawImpl(u64 ctx, u64 a1, u64 a2, u64 a3, u32 kind, bool inline_draw) {
     }
     if (inline_draw) {
         inline_draws.fetch_add(1, std::memory_order_relaxed);
+        TakePendingDynamicMap(); // pointer trace: as for every draw
         // note 58: the decal loop's inlined auto draw (0x1c727a7) was taken over and never drawn. It is drawn now, like any auto draw (its instance count is the loop's,
         // in ctx + 0x4724). TLG_VKB_TEST_DROP_INLINE=1 drops it again (A/B only).
         static const bool drop_inline = [] { const char* e = std::getenv("TLG_VKB_TEST_DROP_INLINE"); return e != nullptr && e[0] == '1'; }();
@@ -6847,6 +6896,7 @@ u64 TakeDrawImpl(u64 ctx, u64 a1, u64 a2, u64 a3, u32 kind, bool inline_draw) {
         instance_resets.fetch_add(1, std::memory_order_relaxed);
     }
     draws.fetch_add(1, std::memory_order_relaxed);
+    TakePendingDynamicMap(); // pointer trace: this thread's in-place Map's writes before the draw that may read them
     const u64 g0 = TimesOn() ? TakeNs() : 0;
     Core::Vkb::Graphics::Draw(ctx, kind, a1, a2, a3); // V4: our pipeline for the bound shaders and state
     if (TimesOn()) {
@@ -6871,6 +6921,7 @@ u64 TakeDispatchImpl(u64 ctx, u64 x, u64 y, u64 z, bool indirect, u64 args_addre
     (indirect ? indirect_dispatches : dispatches).fetch_add(1, std::memory_order_relaxed);
     Publish();
     NoteShader(2, Rd<u64>(ctx, 0x4670), 0x28);
+    TakePendingDynamicMap(); // pointer trace: this thread's in-place Map's writes before the dispatch that may read them
     const u64 c0 = TimesOn() ? TakeNs() : 0;
     Core::Vkb::Compute::Dispatch(ctx, static_cast<u32>(x), static_cast<u32>(y), static_cast<u32>(z), args_address); // V3: our pipeline, bound and recorded
     if (TimesOn()) {
@@ -7279,7 +7330,7 @@ u64 PS4_SYSV_ABI DynTextureFill(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, 
         const u64 before = Rd<u64>(a0, 0x20);
         const u64 result = reinterpret_cast<GuestDraw6>(original)(a0, a1, a2, a3, a4, a5);
         if (const u64 texture = Rd<u64>(a0, 0x40); Rd<u64>(a0, 0x20) != before && IsHeapPointer(texture)) {
-            Core::Vkb::TextureCpuWritten(Rd<u64>(texture, 0x10));
+            Core::Vkb::TextureCpuWritten(Rd<u64>(texture, 0x10), 0); // D4-01: both of the engine's write branches map subresource 0 only (01c98930)
         }
         return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
     }
@@ -7560,6 +7611,7 @@ u64 TagCsCopy(u64 writer, u64 destination, u64 source, u64 bytes, u64 ret) {
         return 0;
     }
     if (Vkb::On()) [[unlikely]] {
+        TakePendingDynamicMap(); // pointer trace: before a buffer copy that may read this thread's mapped buffer
         Core::Vkb::WorkCensus::Note("cs_copy", ret, bytes); // D2 census (debug)
         (void)Core::Vkb::CopyBuffer(destination, source, bytes); // V3c for buffers: our copy in the frame stream (the engine's copy shader and its packets are skipped)
         return 1;
@@ -7660,13 +7712,6 @@ std::atomic<u64> g_aabb_count_buffer{0};         ///< K1 check: the render devic
 std::atomic<u32> g_aabb_readbacks_since_read{0}; ///< K1 check: CounterReadbacks into it since the last AABB read (a BeginRecording that dispatched)
 std::atomic<u32> g_rec_groups_at_dispatch{0};    ///< K1 check: the recording BeginRecording's group count (set at its start)
 std::atomic<u64> c_aabb_guarded{0};              ///< K2 check: AABB reads whose records name groups not in the table (logged; the pass flags should leave none)
-/// api-contract.md K2: the engine's own design for the first readback of BeginRecording (01c49540): a flag (renderDev + 0x2710) cleared by every recording call and
-/// set when the pass ran, checked by the reader (01c4c570). The AABB pass (count + 0x27a8) and the third pass (counts + 0x2870, + 0x2890, + 0x28b0) have none: the
-/// reader decides again from the frame data, which the game's jobs may fill in between. Our flags, the same way: cleared by a recording BeginRecording, set by the
-/// pass's CounterReadback; at the reader's start (AabbReadStart) the counts of a pass that did not run are set to 0 (no results this frame).
-std::atomic<u64> g_rec_device{0};
-std::atomic<bool> g_aabb_pass_ran{false}, g_third_pass_ran{false};
-std::atomic<u64> c_aabb_pass_skipped{0}, c_third_pass_skipped{0};
 std::atomic<u32> g_reads_since_dispatch{0}, g_dispatch_groups{0}; ///< K1 check: reads of the records since the last AABB dispatch; that dispatch's frame group count
 
 /// FUN_02471530(async compute context, counter buffer, unordered access view): hands an append / consume counter back to its
@@ -7677,13 +7722,6 @@ u64 PS4_SYSV_ABI TagAscCounterReadback(u64 jcc, u64 buffer, u64 view, u64 a3, u6
     const auto valid = [](u64 pointer) { return IsHeapPointer(pointer) && (pointer & 7) == 0; };
     if (jcc == 0 || !valid(buffer) || !valid(view)) {
         return 0;
-    }
-    if (const u64 device = g_rec_device.load(std::memory_order_relaxed); device != 0) { // K2: which of BeginRecording's passes ran
-        if (buffer == Rd<u64>(device, 0x27a8)) {
-            g_aabb_pass_ran.store(true, std::memory_order_relaxed);
-        } else if (buffer == Rd<u64>(device, 0x2870) || buffer == Rd<u64>(device, 0x2890) || buffer == Rd<u64>(device, 0x28b0)) {
-            g_third_pass_ran.store(true, std::memory_order_relaxed);
-        }
     }
     if (buffer == g_aabb_count_buffer.load(std::memory_order_relaxed)) {
         g_aabb_readbacks_since_read.fetch_add(1, std::memory_order_relaxed); // K1 check: the AABB count's readback (BeginRecording dispatched)
@@ -7747,6 +7785,71 @@ u64 PS4_SYSV_ABI TagAscCounterReadback(u64 jcc, u64 buffer, u64 view, u64 a3, u6
     }
     Wr<u32>(buffer, 0x2c, Rd<u32>(jcc, 0x22fc));
     Live().counter_readback.fetch_add(1, std::memory_order_relaxed);
+    return 1;
+}
+
+/// JsDeviceContext::CopyStructureCount (ctx slot 16, FUN_0247e770; line-pass-gaps.md LG2), the device context's twin of the counter read-back above:
+/// (ctx, destination buffer, destination offset, unordered access view). The engine ignores the offset: the count always lands at the buffer's byte 0.
+/// The view's counter slot is `view + 0x84`; a count set on the context this frame (`ctx + 0x20d8 + 4 * slot`, not -1) is the engine's own CPU write of that value
+/// into the buffer (it runs, and our copy of the buffer gets the bytes); otherwise the GPU counter (GDS `ctx + 0x130b8 + 4 * slot`) is copied to the buffer in the
+/// frame stream and the engine's DMA packet is not written.
+/// tier-2 gap pass (debug, contract census): FUN_018b4090 copies a mesh's slot-0 buffer B into a new '_c_gbuf' buffer; its source is B's CPU copy (+ 0x50) or, when
+/// B has none, B's GPU memory (holder + 0x38 -> + 0x20 -> + 0x30) read by the CPU. Under our backend that memory is stale when B lives in our device memory.
+/// Counts the source kind; the game's function then runs as it is.
+u64 PS4_SYSV_ABI NoteCGbufVariant(u64 a0, u64 mesh, u64 instance, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a0, (void)instance, (void)a3, (void)a4, (void)a5, (void)ret;
+    const auto valid = [](u64 pointer) { return IsHeapPointer(pointer) && (pointer & 7) == 0; };
+    if (!Vkb::On() || !Core::Vkb::ContractCensusOn() || !valid(mesh)) {
+        return 0;
+    }
+    Guarded([&]() -> u64 {
+        const u64 set = Rd<u64>(mesh, 0x88) != 0 ? Rd<u64>(mesh, 0x88) : Rd<u64>(mesh, 0x80);
+        if (!valid(set) || Rd<u32>(set, 0x68) == 0 || !valid(Rd<u64>(set, 0x60))) {
+            return 0;
+        }
+        const u64 b = Rd<u64>(Rd<u64>(set, 0x60), 0);
+        if (!valid(b)) {
+            return 0;
+        }
+        if (Rd<u64>(b, 0x50) != 0) {
+            Core::Vkb::ContractNote("T2 c_gbuf source: CPU copy");
+            return 0;
+        }
+        const u64 holder = Rd<u64>(b, 0x38);
+        const u64 js = valid(holder) ? Rd<u64>(holder, 0x20) : 0;
+        if (!valid(js)) {
+            Core::Vkb::ContractNote("T2 c_gbuf source: none");
+            return 0;
+        }
+        Core::Vkb::ContractNote(Core::Vkb::BufferOnDevice(Rd<u64>(js, 0x30), Rd<u32>(js, 0x180)) ? "T2 c_gbuf source: GPU memory, lives in our device memory (stale)"
+                                                                                                : "T2 c_gbuf source: GPU memory, in engine memory");
+        return 0;
+    });
+    return 0;
+}
+
+u64 PS4_SYSV_ABI TagCopyStructureCount(u64 ctx, u64 buffer, u64 offset, u64 view, u64 a4, u64 a5, u64 ret) {
+    (void)ret;
+    const auto valid = [](u64 pointer) { return IsHeapPointer(pointer) && (pointer & 7) == 0; };
+    if (!Vkb::On() || !valid(ctx) || !valid(buffer) || !valid(view)) {
+        return 0;
+    }
+    const u64 memory = ((static_cast<u64>(Rd<u32>(buffer, 0x64)) & 0xfff) << 32) + Rd<u32>(buffer, 0x60);
+    const u32 slot = Rd<u32>(view, 0x84);
+    if (memory == 0 || (memory & 3) != 0 || slot >= 8) {
+        return 0; // the game's function as it is
+    }
+    if (Rd<u32>(ctx, 0x20d8 + slot * 4) == 0xffffffffu) {
+        (void)Core::Vkb::CopyFromGds(Rd<u32>(ctx, 0x130b8) + slot * 4ull, memory, sizeof(u32));
+        Wr<u32>(buffer, 0x2c, Rd<u32>(ctx, 0x47ac)); // the engine's use stamp (frame stamp), as its function does
+        return 1;
+    }
+    static const u64 original = Core::GuestHooks::OriginalEntry("CopyStructureCount");
+    if (original == 0) {
+        return 0;
+    }
+    reinterpret_cast<GuestFunction6>(original)(ctx, buffer, offset, view, a4, a5);
+    Core::Vkb::BufferCpuWritten(memory, sizeof(u32));
     return 1;
 }
 
@@ -8045,43 +8148,13 @@ u32 ActiveGroups(u64 frame) {
     }
     return active;
 }
-u64 BufferMemory(u64 buffer) {
-    return IsHeapPointer(buffer) ? (static_cast<u64>(Rd<u32>(buffer, 0x60)) | (static_cast<u64>(Rd<u32>(buffer, 0x64)) & 0xfff) << 32) : 0;
-}
 std::atomic<u32> g_last_recordings{0}, g_last_readbacks{0}; ///< at the reader's start: BeginRecordings / AABB CounterReadbacks since its previous start
 /// The reader's start (01c4c5de, after its label wait): what happened since its previous start
+bool K2CheckOn();
 u64 PS4_SYSV_ABI AabbReadStart(Core::GuestHooks::MidContext* c) {
-    // K2 proper fix (OFF by default, TLG_READBACK_PASS_FLAGS=1): a pass the last recording BeginRecording did not run has no results this frame: its counts go to 0
-    // before the reader decides from the frame data. It fixed the crash after the shield flashback, but in that play Trico's feathers were gone after the wake-up
-    // (the pass was skipped twice: once in the flashback, once at the wake-up; read every frame after). Not known yet whether the skipped read lost a one-time setup
-    // of the feathers or the feathers are a separate bug of that scene. TODO(api-contract-plan C21): find what consumes the reader's per-group output lists
-    // (group + 0x48 / + 0x50, reset by BeginRecording) and whether a skipped frame loses something; then make this the default and drop the guard (AabbReadCheck).
-    static const bool flags_on = [] { const char* e = std::getenv("TLG_READBACK_PASS_FLAGS"); return e != nullptr && e[0] == '1'; }();
-    const u64 device = c->r14;
-    if (flags_on && IsHeapPointer(device) && device == g_rec_device.load(std::memory_order_relaxed)) {
-        const auto clear = [device](std::initializer_list<u64> fields, std::atomic<u64>& counter) {
-            bool any = false;
-            for (const u64 field : fields) {
-                if (const u64 memory = BufferMemory(Rd<u64>(device, field)); memory != 0 && Rd<u32>(memory, 0) != 0) {
-                    Wr<u32>(memory, 0, 0);
-                    any = true;
-                }
-            }
-            if (any) {
-                counter.fetch_add(1, std::memory_order_relaxed);
-            }
-        };
-        if (!g_aabb_pass_ran.load(std::memory_order_relaxed)) {
-            clear({0x27a8}, c_aabb_pass_skipped);
-        }
-        if (!g_third_pass_ran.load(std::memory_order_relaxed)) {
-            clear({0x2870, 0x2890, 0x28b0}, c_third_pass_skipped);
-        }
-    }
-    static std::atomic<u64> starts{0};
-    if (const u64 n = starts.fetch_add(1, std::memory_order_relaxed) + 1; n % 1800 == 0) {
-        TLG_LOG(CP, Warn, "K2 readback passes: {} reader starts, AABB pass not run (counts set to 0) {}, third pass not run {}", n, c_aabb_pass_skipped.load(),
-                c_third_pass_skipped.load());
+    (void)c;
+    if (!K2CheckOn()) {
+        return 0;
     }
     const u32 recordings = g_recordings_since_read.exchange(0, std::memory_order_relaxed);
     g_last_recordings.store(recordings, std::memory_order_relaxed);
@@ -8091,60 +8164,49 @@ u64 PS4_SYSV_ABI AabbReadStart(Core::GuestHooks::MidContext* c) {
     }
     return 0;
 }
-/// api-contract.md K2 guard (the class of tabnul's cloth_null_guard: an engine race the high frame rate exposes). The reader's record block at 01c4cd08, right after its
-/// AsyncMaps of the count (+ 0x27a8, pointer at [rbp - 0x4a0]) and the records (+ 0x27a0, pointer at [rbp - 0x4b0]) and before its own "no records" test
-/// (r12 = the frame data, r14 = the render device). The records are the last AABB pass's; a BeginRecording that found no active group ran none, and the game's jobs
-/// may fill the group table before this read, so the records can belong to another table (after the flashback: a 7-group pass read against a 4-group table, a group
-/// past its end, the crash). A read whose records name a group not in the table is not this table's: its count is set to 0 and the engine's own test skips it.
-/// LEGACY(aabb_guard): TLG_LEGACY_AABB_GUARD=1 lets the read run (only counted and logged).
+/// K1/K2 check (debug, TLG_K2_CENSUS=1): the reader's record block at 01c4cd08, after its AsyncMaps of the count (+ 0x27a8, pointer at [rbp - 0x4a0]) and the records
+/// (+ 0x27a0, [rbp - 0x4b0]) (r12 = the frame data, r14 = the render device). Counts reads whose records name a group not in the table: the crash after the shield
+/// flashback (a 7-group pass read against a 4-group table) came from the soldiers' late queries; K2 fix A (AnimQueryOrder) removed them and the guard that skipped
+/// those reads was deleted 2026-11-19 (0 hits in two owner plays with A). The engine's read runs as it is.
+bool K2CheckOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_K2_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
 u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
-    // The workaround, ON by default (the class of tabnul's cloth_null_guard): a read whose records name a group not in the table is skipped. It catches only that case
-    // (an older pass's records naming groups that still exist still get through); the proper fix is the pass flags in AabbReadStart (TLG_READBACK_PASS_FLAGS=1, off
-    // until C21). LEGACY(aabb_guard): TLG_LEGACY_AABB_GUARD=1 = off (counted and logged only).
-    static const bool guard = [] { const char* e = std::getenv("TLG_LEGACY_AABB_GUARD"); return e == nullptr || e[0] != '1'; }();
+    if (!K2CheckOn()) {
+        return 0;
+    }
     const u64 device = c->r14, frame = c->r12;
     const u32 recordings = g_last_recordings.load(std::memory_order_relaxed), readbacks = g_last_readbacks.load(std::memory_order_relaxed);
     if (!IsHeapPointer(device) || !IsHeapPointer(frame) || c->rbp < 0x4b0) {
         return 0;
     }
     const u64 count_memory = Rd<u64>(c->rbp - 0x4a0, 0), records = Rd<u64>(c->rbp - 0x4b0, 0);
-    if (count_memory == 0 || records == 0 || Rd<u32>(count_memory, 0) == 0) {
+    const GroupTableLock lock(frame); // the table as the engine's reader sees it (it takes this lock right after our hook; issue 36 cause E)
+    const u64 table = Rd<u64>(frame, 0x31e60);
+    if (count_memory == 0 || records == 0 || table == 0 || Rd<u32>(count_memory, 0) == 0) {
         return 0;
     }
-    const u32 count = std::min(Rd<u32>(count_memory, 0), 0x2000u);
-    u32 groups = 0, bad = 0, first_bad = 0, bad_group = 0, active_now = 0;
-    {
-        const GroupTableLock lock(frame); // the table as the engine's reader sees it (it takes this lock right after our hook)
-        const u64 table = Rd<u64>(frame, 0x31e60);
-        if (table == 0) {
-            return 0;
-        }
-        groups = Rd<u32>(frame, 0x31e68);
-        for (u32 i = 0; i < count; ++i) {
-            const u32 group = Rd<u32>(records + i * 0x90ull, 0x80) >> 16;
-            if (group >= groups || Rd<u64>(table, group * 8ull) == 0) {
-                if (bad++ == 0) {
-                    first_bad = i, bad_group = group;
-                }
+    const u32 reads_since_dispatch = g_reads_since_dispatch.fetch_add(1, std::memory_order_relaxed);
+    const u32 count = std::min(Rd<u32>(count_memory, 0), 0x2000u), groups = Rd<u32>(frame, 0x31e68);
+    static std::once_flag announced;
+    std::call_once(announced, [&] { TLG_LOG(CP, Warn, "K2 AABB check active (first read: {} records, {} groups)", count, groups); });
+    u32 bad = 0, first_bad = 0, bad_group = 0;
+    for (u32 i = 0; i < count; ++i) {
+        const u32 group = Rd<u32>(records + i * 0x90ull, 0x80) >> 16;
+        if (group >= groups || Rd<u64>(table, group * 8ull) == 0) {
+            if (bad++ == 0) {
+                first_bad = i, bad_group = group;
             }
         }
-        active_now = bad != 0 ? ActiveGroups(frame) : 0;
-    }
-    const u32 reads_since_dispatch = g_reads_since_dispatch.fetch_add(1, std::memory_order_relaxed);
-    Core::Vkb::DevLog::Count(guard ? Core::Vkb::DevLog::Kind::AabbReadCheckGuardOn : Core::Vkb::DevLog::Kind::AabbReadCheckGuardOff); // the guard's state, also with the dump off
-    if (Core::Vkb::DevLog::On()) { // a developer dump (Vkb::DevLog)
-        static std::once_flag announced;
-        std::call_once(announced, [&] { TLG_LOG(CP, Info, "K2 AABB guard active (first read: {} records, {} groups, guard {})", count, groups, guard ? "on" : "off"); });
     }
     if (readbacks == 0 && count != 0) {
         c_aabb_reads_no_readback.fetch_add(1, std::memory_order_relaxed); // the records of an earlier dispatch (no CounterReadback since the last read)
     }
     if (const u64 reads = c_aabb_reads.fetch_add(1, std::memory_order_relaxed) + 1; reads % 1800 == 0) {
         TLG_LOG(CP, Warn, "K1 AABB readback: {} reads, {} records, {} with a group not in the table, {} reads after more than one BeginRecording, {} reads with records but no "
-                "readback since the last; K2 reads with a group past the table {}, AABB pass not run (counts set to 0) {}, third pass not run {}; table reads that "
-                "waited for the engine's lock {}, lock waits past the time limit {}",
-                reads, c_aabb_records.load() + count, c_aabb_bad.load(), c_aabb_unpaired.load(), c_aabb_reads_no_readback.load(), c_aabb_guarded.load(),
-                c_aabb_pass_skipped.load(), c_third_pass_skipped.load(), Live().aabb_table_lock_waits.load(), Live().aabb_table_lock_timeouts.load());
+                "readback since the last; K2 reads with a group past the table {}",
+                reads, c_aabb_records.load() + count, c_aabb_bad.load(), c_aabb_unpaired.load(), c_aabb_reads_no_readback.load(), c_aabb_guarded.load());
     }
     c_aabb_records.fetch_add(count, std::memory_order_relaxed);
     if (bad != 0) {
@@ -8156,16 +8218,12 @@ u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
                     "K1 AABB readback: {} of {} records name a group not in the table ({} groups, {} active now; first: record {} group {}), label {:#x} = {:#x}, BeginRecordings "
                     "since the last read {}, CounterReadbacks since {}, records read {} times before since their dispatch (its frame had {} groups), reader frame {:#x}, last "
                     "BeginRecording frame {:#x} with {} groups / {} active at its start, unpaired so far {}",
-                    bad, count, groups, active_now, first_bad, bad_group, label, IsHeapPointer(label) ? Rd<u64>(label, 0) : 0, recordings, readbacks,
+                    bad, count, groups, ActiveGroups(frame), first_bad, bad_group, label, IsHeapPointer(label) ? Rd<u64>(label, 0) : 0, recordings, readbacks,
                     reads_since_dispatch, g_dispatch_groups.load(), frame, g_rec_frame.load(), g_rec_groups.load(), g_rec_active.load(), c_aabb_unpaired.load());
         }
         c_aabb_guarded.fetch_add(1, std::memory_order_relaxed);
-        if (guard) {
-            Wr<u32>(count_memory, 0, 0); // not this table's records: the engine's own test (count 0) skips the read
-            TLG_LOG(CP, Warn, "K2 AABB guard: read of {} records skipped ({} so far)", count, c_aabb_guarded.load());
-        }
     }
-    return 0; // the engine's read runs (with count 0 after the guard)
+    return 0;
 }
 u64 PS4_SYSV_ABI RenderFrameFenceA(Core::GuestHooks::MidContext* c) {
     NoteRenderFrameFence(c->rbx, c->r12);
@@ -8599,6 +8657,22 @@ u64 PS4_SYSV_ABI TagAscBegin(u64 jcc, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u6
     return 1;
 }
 
+/// The D3D11 usage of an engine texture (3 = staging). The creators copy the description to +0x180, so the usage word sits where each kind's description has it:
+/// 1D (kind 2) desc +0x10 -> +0x190, 2D (kind 3) +0x1c -> +0x19c, 3D (kind 4) +0x14 -> +0x194 (JsTexture1D / 2D / 3D creators; tier-1-readback-findings.md D4-02).
+/// ~0u for anything else.
+u32 TextureUsage(u64 resource) {
+    switch (Rd<u32>(resource, 0x124)) {
+    case 2:
+        return Rd<u32>(resource, 0x190);
+    case 3:
+        return Rd<u32>(resource, 0x19c);
+    case 4:
+        return Rd<u32>(resource, 0x194);
+    default:
+        return ~0u;
+    }
+}
+
 /// JsDeviceContext::CopyResource(context, destination, destination subresource, source, source subresource) for two
 /// dimensional textures: the tracking of both resources, the switch to compute mode and one dispatch of the copy shader.
 /// While the record of the call site is not yet verified the tag is written in front of the game's own packets (they are
@@ -8610,10 +8684,11 @@ u64 PS4_SYSV_ABI TagCopyResource(u64 ctx, u64 destination, u64 destination_sub, 
         return 0;
     }
     if (Vkb::On()) [[unlikely]] {
+        TakePendingDynamicMap(); // pointer trace: this thread's in-place Map's writes before a copy that may read them
         // V3c for textures: our copy of the subresource in the frame stream; the engine's function then runs for its tracking and state (its copy shader's packets go unread).
         // A buffer's copy is the engine's CsCopyBufferDwords, our copy at its own hook.
         const u32 kind = Rd<u32>(destination, 0x124);
-        if (kind >= 2 && kind <= 4 && Rd<u32>(destination, 0x19c) == 3) { // engine API map, data paths: a copy into a staging texture (a CPU read-back of a texture)
+        if (kind >= 2 && kind <= 4 && TextureUsage(destination) == 3) { // engine API map, data paths: a copy into a staging texture (a CPU read-back of a texture)
             Core::Vkb::DevLog::Count(Core::Vkb::DevLog::Kind::CopyIntoStagingTexture);
             static std::atomic<u32> logged{0};
             if (Core::Vkb::DevLog::On() && logged.fetch_add(1) < 24) { // a developer dump (Vkb::DevLog)
@@ -8622,9 +8697,20 @@ u64 PS4_SYSV_ABI TagCopyResource(u64 ctx, u64 destination, u64 destination_sub, 
                             Rd<u32>(source, 0x180), Rd<u32>(source, 0x184), source_sub);
             }
         }
-        if (kind >= 2 && kind <= 4 && kind == Rd<u32>(source, 0x124)) {
+        // D4-12 (JsDeviceContext_CopyResource 0247eb00): the engine copies nothing when the two textures' formats differ ("Format is not same"): the format word
+        // sits at + 0x18c for a 1D texture, + 0x190 for 2D and 3D
+        const u64 format_field = kind == 2 ? 0x18c : 0x190;
+        const bool same_format = Rd<u32>(destination, format_field) == Rd<u32>(source, format_field);
+        if (kind >= 2 && kind <= 4 && kind == Rd<u32>(source, 0x124) && !same_format) {
+            static std::atomic<u32> logged{0};
+            if (logged.fetch_add(1) < 8) {
+                LOG_WARNING(Core, "api map: CopyResource between formats {} and {} (caller {:#x}): no copy, as the engine", Rd<u32>(source, format_field),
+                            Rd<u32>(destination, format_field), ret - ImageBase() + 0x1000000);
+            }
+        }
+        if (kind >= 2 && kind <= 4 && kind == Rd<u32>(source, 0x124) && same_format) {
             if (Core::Vkb::CopyTexture(Rd<u64>(destination, 0x10), static_cast<u32>(destination_sub), Rd<u64>(source, 0x10), static_cast<u32>(source_sub)) &&
-                Rd<u32>(destination, 0x19c) == 3) {
+                TextureUsage(destination) == 3) {
                 Core::Vkb::StagingCopied(Rd<u64>(destination, 0x10), static_cast<u32>(destination_sub)); // note 42: the CPU reads it back through Map(READ)
             }
             if (Core::Vkb::SkipEnginePs4()) { // note 76: the engine's copy shader packets and its descriptor cache are not written
@@ -9040,14 +9126,550 @@ u64 PS4_SYSV_ABI LightWrites(u64 object, u64 source, u64 a2, u64 a3, u64 a4, u64
 /// (the buffers are small); the size is the buffer's ByteWidth (description at +0x180).
 void InstallUnmapSlot();
 
+/// K2 root census (debug, TLG_K2_CENSUS=1, api-contract.md "K2 root, step 1"): the engine assumes every readback group of frame N is registered into frame data N after
+/// its reset (SceneDraw) and before BeginRecording(N). Logged: each registration into table B (AABB) or C (third pass) made after that frame data's BeginRecording
+/// (late: the pass already decided), with the producer, the path (current or alternate frame data) and the switch; every change of the alternate frame data or its
+/// switch (DAT_06832568 slot 19: + 0x28, + 0x134 bit 0); per 1,800 registrations a summary by producer and path.
+namespace K2Census {
+bool On() {
+    static const bool on = [] { const char* e = std::getenv("TLG_K2_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+struct FrameEntry {
+    u64 frame{};
+    u64 resets{}, begins_since_reset{};
+    u64 begins{}, regs{}; ///< totals
+    u64 begin_caller{}, reset_caller{}; ///< the last BeginRecording / reset call sites (ghidra addresses)
+};
+std::mutex mutex;
+std::array<FrameEntry, 8> frames{};
+std::map<std::string, u64> by_path;
+u64 registrations = 0, late = 0, last_alt = ~0ull, begins = 0, begins_alt = 0, begins_current = 0, last_begin_frame = 0, begin_frame_changes = 0;
+std::map<u64, u32> late_logged; ///< per producer, the late registrations logged in full (20 each)
+std::atomic<u32> last_event{0}; ///< the last of: 1 AnimationTick started, 2 query frame data reset, 3 its BeginRecording
+std::map<std::string, u64> trico_after; ///< Trico registrations by the last event before them
+std::atomic<u64> trico_regs{0};
+std::atomic<u32> trace_left{0}; ///< events still to log in the event trace window (opens at the 3000th Trico registration)
+/// Logs one ordered task event while the trace window is open (debug: the order of AnimationTick jobs, Gather's lock, the reset and the recording)
+std::atomic<u64> trico_ext{0}; ///< the extension whose job registers Trico's query (learned from the first registration)
+thread_local u64 t_job_ext = 0;
+void Trace(const char* what, u64 x = 0) {
+    if (trace_left.load(std::memory_order_relaxed) == 0) {
+        return;
+    }
+    static std::mutex tm;
+    static std::FILE* f = nullptr;
+    std::scoped_lock lock{tm};
+    if (trace_left.load(std::memory_order_relaxed) == 0) {
+        return;
+    }
+    if (f == nullptr) {
+        const char* path = std::getenv("TLG_K2_TRACE_FILE");
+        f = std::fopen(path != nullptr ? path : "k2_trace.txt", "w");
+    }
+    if (f != nullptr) {
+        const auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        std::fprintf(f, "%lld t%lu %s %#llx\n", static_cast<long long>(us), GetCurrentThreadId(), what, static_cast<unsigned long long>(x));
+        if (trace_left.fetch_sub(1, std::memory_order_relaxed) == 1) {
+            std::fclose(f);
+            f = nullptr;
+        }
+    }
+}
+thread_local std::string t_chain; ///< the call chain at the entry of Trico's contact producer (017d3f40), set by the mid hook K2_TricoChain
+std::map<std::string, std::pair<u64, u64>> chains; ///< that chain -> (on time, late) registrations of 0x17d57e1
+u32 last_switch = ~0u;
+FrameEntry& Entry(u64 frame) { // (mutex held)
+    for (auto& e : frames) {
+        if (e.frame == frame) {
+            return e;
+        }
+    }
+    for (auto& e : frames) {
+        if (e.frame == 0) {
+            e.frame = frame;
+            return e;
+        }
+    }
+    frames[0] = {frame};
+    return frames[0];
+}
+u64 Global(u64 ghidra) {
+    return ImageBase() + ghidra - 0x1000000;
+}
+void Switch(u64& alt, u32& bit) {
+    const u64 registry = Rd<u64>(Global(0x6832568), 0);
+    const u64 slot = IsHeapPointer(registry) ? Rd<u64>(registry, 0x98) : 0;
+    alt = IsHeapPointer(slot) ? Rd<u64>(slot, 0x28) : 0;
+    bit = IsHeapPointer(slot) ? (Rd<u8>(slot, 0x134) & 1u) : 0xffu;
+}
+u64 Current() {
+    const u64 manager = Rd<u64>(Global(0x69a1b40), 0);
+    return IsHeapPointer(manager) ? Rd<u64>(manager, 0x58 + u64{Rd<u32>(manager, 0x88)} * 8) : 0;
+}
+void NoteSwitch(const char* where) { // (mutex held)
+    u64 alt = 0;
+    u32 bit = 0;
+    Switch(alt, bit);
+    if (alt != last_alt || bit != last_switch) {
+        TLG_LOG(CP, Warn, "K2 census: switch at {}: alternate frame data {:#x} -> {:#x}, bit {} -> {} (current {:#x})", where, last_alt, alt, last_switch, bit, Current());
+        last_alt = alt, last_switch = bit;
+    }
+}
+void Registered(char table, u64 table_base, u64 group, u64 ret) {
+    const u64 frame = table_base - 0x31e30;
+    if (!IsHeapPointer(frame)) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    NoteSwitch("registration");
+    u64 alt = 0;
+    u32 bit = 0;
+    Switch(alt, bit);
+    const u64 current = Current();
+    const char* path = frame == current ? "current" : frame == alt ? "alternate" : "other";
+    FrameEntry& e = Entry(frame);
+    const u64 producer = ret - ImageBase() + 0x1000000;
+    ++registrations;
+    ++e.regs;
+    ++by_path[fmt::format("{} {:#x} {}{}", table, producer, path, e.begins_since_reset != 0 ? " LATE" : "")];
+    if (e.begins_since_reset != 0 && late_logged[producer]++ < 20) {
+        TLG_LOG(CP, Warn, "K2 census: LATE registration table {} producer {:#x} into {} frame data {:#x} (state {}, begins since its reset {}, group active {}), switch bit {}",
+                table, producer, path, frame, Rd<u32>(frame, 0x31ef8), e.begins_since_reset,
+                IsHeapPointer(group) && Rd<u32>(group, 0x18) != 0 && Rd<u32>(group, 0x30) != 0 ? 1 : 0, bit);
+    }
+    if (e.begins_since_reset != 0) {
+        ++late;
+    }
+    if (producer == 0x17d57e1) {
+        if (trico_ext.load(std::memory_order_relaxed) == 0 && t_job_ext != 0) {
+            trico_ext.store(t_job_ext, std::memory_order_relaxed);
+        }
+        if (trico_regs.fetch_add(1, std::memory_order_relaxed) == 3000) {
+            trace_left.store(400, std::memory_order_relaxed);
+        }
+        Trace(e.begins_since_reset != 0 ? "Trico registration LATE" : "Trico registration", t_job_ext);
+        {
+            static std::map<u64, std::pair<u64, u64>> by_ext; // job extension -> (on time, late)
+            auto& pe = by_ext[t_job_ext];
+            (e.begins_since_reset != 0 ? pe.second : pe.first)++;
+            if ((pe.first + pe.second) % 3000 == 1) {
+                std::string sum;
+                const u64 slot19 = Rd<u64>(Rd<u64>(ImageBase() + 0x6832568 - 0x1000000, 0), 0x98);
+                for (const auto& [x, v] : by_ext) {
+                    bool locked_list = false;
+                    for (u32 i = 0; IsHeapPointer(slot19) && i < Rd<u32>(slot19, 0x60) && i < 64; ++i) {
+                        locked_list |= Rd<u64>(Rd<u64>(slot19, 0x58), i * 8) == x;
+                    }
+                    sum += fmt::format("[ext {:#x}: on time {}, late {}, in Gather's lock list {}] ", x, v.first, v.second, locked_list);
+                }
+                TLG_LOG(CP, Warn, "K2 census: 0x17d57e1 registrations by job extension: {}", sum);
+            }
+        }
+        static const char* names[] = {"none", "AnimationTick start", "reset", "BeginRecording"};
+        const u32 ev = last_event.load(std::memory_order_relaxed);
+        if (++trico_after[names[ev < 4 ? ev : 0]] % 2000 == 1) {
+            std::string sum;
+            for (const auto& [k, v] : trico_after) {
+                sum += fmt::format("[after {}: {}] ", k, v);
+            }
+            TLG_LOG(CP, Warn, "K2 census: Trico registrations by last event: {}", sum);
+        }
+        auto& c = chains[t_chain.empty() ? std::string("?") : t_chain];
+        (e.begins_since_reset != 0 ? c.second : c.first)++;
+        if ((c.first + c.second) % 2000 == 1) {
+            TLG_LOG(CP, Warn, "K2 census: Trico producer chain {}: on time {}, late {}", t_chain, c.first, c.second);
+        }
+    }
+    if (registrations % 1800 == 0) {
+        std::string summary;
+        for (const auto& [k, v] : by_path) {
+            summary += fmt::format("[{} x{}] ", k, v);
+        }
+        TLG_LOG(CP, Warn, "K2 census: {} registrations, {} late: {}", registrations, late, summary);
+    }
+}
+void Reset(u64 frame, u64 ret) {
+    if (!IsHeapPointer(frame)) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    FrameEntry& e = Entry(frame);
+    if (ret - ImageBase() + 0x1000000 == 0x1253293) {
+        last_event.store(2, std::memory_order_relaxed); // the query frame data's reset (DelayPrepareTick)
+        Trace("DelayPrepareTick: reset (then unlock)");
+    }
+    ++e.resets;
+    e.reset_caller = ret - ImageBase() + 0x1000000;
+    e.begins_since_reset = 0;
+}
+void Began(u64 frame, u64 recording, u64 ret) {
+    if (!IsHeapPointer(frame)) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    NoteSwitch("BeginRecording");
+    FrameEntry& e = Entry(frame);
+    ++e.begins_since_reset;
+    ++e.begins;
+    if (recording == 1) {
+        last_event.store(3, std::memory_order_relaxed); // the query frame data's BeginRecording (01255570 passes 1)
+        Trace("Frame: BeginRecording");
+    }
+    e.begin_caller = ret - ImageBase() + 0x1000000;
+    u64 alt = 0;
+    u32 bit = 0;
+    Switch(alt, bit);
+    ++begins;
+    begins_alt += frame == alt ? 1 : 0;
+    begins_current += frame == Current() ? 1 : 0;
+    begin_frame_changes += frame != last_begin_frame ? 1 : 0;
+    last_begin_frame = frame;
+    if (begins % 1800 == 0) {
+        std::string per;
+        for (const auto& f : frames) {
+            if (f.frame != 0) {
+                per += fmt::format("[{:#x}: begins {} (by {:#x}), resets {} (by {:#x}), registrations {}, state {}] ", f.frame, f.begins, f.begin_caller, f.resets,
+                                   f.reset_caller, f.regs, Rd<u32>(f.frame, 0x31ef8));
+            }
+        }
+        TLG_LOG(CP, Warn, "K2 census: {} BeginRecordings: frame data = alternate {}, = current {}, frame data changed {} times; {} registrations, {} late; {}", begins,
+                begins_alt, begins_current, begin_frame_changes, registrations, late, per);
+    }
+    if (e.begins_since_reset > 1) {
+        TLG_LOG(CP, Warn, "K2 census: BeginRecording {} on frame data {:#x} without a reset since the last one (arg {})", e.begins_since_reset, frame, recording);
+    }
+}
+} // namespace K2Census
+
+/// Mid hook at the entry of 017d3f40 (Trico's contact producer): the return addresses up the frame-pointer chain (game functions keep rbp), as ghidra addresses
+u64 PS4_SYSV_ABI K2TricoChain(Core::GuestHooks::MidContext* c) {
+    if (!K2Census::On()) {
+        return 0;
+    }
+    Guarded([&]() -> u64 {
+        const u64 base = ImageBase();
+        auto ghidra = [base](u64 a) { return a - base + 0x1000000; };
+        std::string chain = fmt::format("{:#x}", ghidra(Rd<u64>(c->rsp, 0)));
+        u64 rbp = c->rbp;
+        for (u32 i = 0; i < 10 && rbp >= c->rsp && rbp < c->rsp + (4ull << 20) && (rbp & 7) == 0; ++i) { // a frame of this thread's stack
+            const u64 ra = Rd<u64>(rbp, 8);
+            if (ra < base || ra > base + 0x4000000) {
+                break;
+            }
+            chain += fmt::format(" < {:#x}", ghidra(ra));
+            rbp = Rd<u64>(rbp, 0);
+        }
+        K2Census::t_chain = chain;
+        return 0;
+    });
+    return 0;
+}
+
+/// Mid hook at the entry of 015a0160 (the task execute above Trico's producer): its object, to match against the task list (debug, K2 census)
+/// api-contract.md "K2 root, step 4" (fix A, default since 2026-11-19). Each cycle: DelayPrepareTick resets the query frame data (then unlocks),
+/// DelayPostPhysicsComputeGather locks the extensions on its lock list (+ 0x8c; only the boy's), DelayPostPhysicsComputeFrame (01255570, NoSync) records. The
+/// next Task:AnimationTick runs one job per CharacterAnimationExt (slot 9, 015a0160); the soldiers' jobs register readback queries (0x17d57e1) and are not locked.
+/// On PS4 at 30 fps the recording waits on the render long enough that those jobs run first (91 % in time); above that the recording runs first, the next reset
+/// drops the queries and a pass with pending groups is skipped. The recording now waits until every unlocked extension that registered a query in the last
+/// AnimationTick generation has run in the next one; locked ones run after the reset by the engine's own rule and are never waited for. 50 ms bound.
+namespace AnimQueryOrder {
+bool On() {
+    return true; // default since 2026-11-19 (owner plays: late 22,989 -> ~29, no crash, AABB guard deleted); the old order (no wait) is gone
+}
+std::mutex mutex;
+std::condition_variable cv;
+u64 generation = 0;       ///< AnimationTick executions (mutex)
+u64 reset_generation = 0; ///< the generation at the last query frame data reset (mutex)
+u64 released_generation = 0; ///< debug: the last generation whose AnimationTick released its job groups (mutex)
+struct Ext {
+    u64 producer_generation{}; ///< the last generation in which this extension's job registered a query
+    u64 done_generation{};     ///< the last generation whose job of this extension finished
+    u64 started_generation{};  ///< debug: the last generation whose job started
+    u32 started_thread{};      ///< debug
+};
+std::unordered_map<u64, Ext> exts; ///< by extension object (mutex)
+thread_local u64 t_ext = 0, t_ext_generation = 0;
+std::atomic<u64> c_waits{0}, c_waited_us{0}, c_timeouts{0}, c_no_wait{0};
+void AnimationTickStarted() {
+    std::scoped_lock lock{mutex};
+    ++generation;
+}
+void ExtJobStarted(u64 ext) {
+    std::scoped_lock lock{mutex};
+    t_ext = ext, t_ext_generation = generation;
+    exts[ext].started_generation = generation;
+    exts[ext].started_thread = static_cast<u32>(GetCurrentThreadId());
+}
+void ExtJobDone(u64 ext) {
+    {
+        std::scoped_lock lock{mutex};
+        Ext& e = exts[ext];
+        e.done_generation = std::max(e.done_generation, t_ext == ext ? t_ext_generation : generation);
+    }
+    t_ext = 0;
+    cv.notify_all();
+}
+void QueryRegistered() {
+    if (t_ext == 0) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    exts[t_ext].producer_generation = t_ext_generation;
+}
+void QueryReset() {
+    std::scoped_lock lock{mutex};
+    reset_generation = generation;
+}
+void BeforeRecording() {
+    std::unique_lock lock{mutex};
+    const u64 target = reset_generation + 1; // the AnimationTick that follows this cycle's reset
+    std::erase_if(exts, [&](const auto& kv) { return kv.second.producer_generation + 4 < target && kv.second.done_generation + 4 < target; }); // gone or idle extensions
+    const auto ready = [&] {
+        bool any = false; // an unlocked extension registered a query in the last generation: only then is there a job to wait for
+        for (const auto& [obj, e] : exts) {
+            any |= e.producer_generation + 1 >= target && Rd<u32>(obj, 0x8c) == 0;
+        }
+        if (!any) {
+            return true;
+        }
+        if (generation < target) {
+            return false;
+        }
+        if (generation > target) {
+            return true; // the next AnimationTick already ran past this cycle: a producer that skipped it (suspended, out of range) is not coming
+        }
+        for (const auto& [obj, e] : exts) {
+            // an extension DelayPostPhysicsComputeGather locked (+ 0x8c, its lock list) runs only after DelayPrepareTick's reset: the engine's own order, never waited for
+            if (e.producer_generation + 1 >= target && e.done_generation < target && Rd<u32>(obj, 0x8c) == 0) {
+                return false; // an unlocked producer of the last generation has not run in this one yet
+            }
+        }
+        return true;
+    };
+    if (ready()) {
+        c_no_wait.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    const bool ok = cv.wait_for(lock, std::chrono::milliseconds(50), ready);
+    c_waits.fetch_add(1, std::memory_order_relaxed);
+    c_waited_us.fetch_add(static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count()), std::memory_order_relaxed);
+    if (!ok) {
+        if (c_timeouts.fetch_add(1, std::memory_order_relaxed) < 12) {
+            std::string pending;
+            for (const auto& [obj, e] : exts) {
+                if (e.producer_generation + 1 >= target && e.done_generation < target && Rd<u32>(obj, 0x8c) == 0) {
+                    pending += fmt::format(" {:#x} (produced {}, done {}, started {} on thread {}; +0x4c {:#x} +0x54 {} +0x8c {:#x} +0x90 {:#x})", obj, e.producer_generation, e.done_generation, e.started_generation, e.started_thread,
+                                           Rd<u32>(obj, 0x4c), Rd<u32>(obj, 0x54), Rd<u32>(obj, 0x8c), Rd<u32>(obj, 0x90));
+                }
+            }
+            TLG_LOG(CP, Warn, "anim query order: timeout on thread {}: generation {} (released {}), target {}, pending producers:{}", GetCurrentThreadId(), generation, released_generation, target, pending);
+        }
+    }
+    if (const u64 n = c_waits.load(std::memory_order_relaxed) + c_no_wait.load(std::memory_order_relaxed); n % 1800 == 0) {
+        TLG_LOG(CP, Warn, "anim query order: {} recordings, {} waited ({} us total), {} timed out", n, c_waits.load(), c_waited_us.load(), c_timeouts.load());
+    }
+}
+} // namespace AnimQueryOrder
+
+/// Mid hook right after the scheduler ran a job's callback (01e4bb59, r12 = the job): the end of an AnimationTick module job (callback 01caa310, its object at job + 0x40)
+u64 PS4_SYSV_ABI AnimJobDone(Core::GuestHooks::MidContext* c) {
+    if (!AnimQueryOrder::On() || AnimQueryOrder::t_ext == 0 || !IsHeapPointer(c->r12)) {
+        return 0;
+    }
+    if (Rd<u64>(c->r12, 8) - ImageBase() + 0x1000000 == 0x1caa310) {
+        AnimQueryOrder::ExtJobDone(AnimQueryOrder::t_ext); // the extension whose slot 9 this thread ran in this job
+    } else {
+        AnimQueryOrder::t_ext = 0; // slot 9 ran outside an AnimationTick job on this thread
+    }
+    return 0;
+}
+/// Call hook at the scheduler's group release (01e4bd50): from AnimationTick's end (return 0x1d0efa9) its job groups are released (debug for fix A)
+u64 PS4_SYSV_ABI AnimGroupRelease(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a0, (void)a1, (void)a2, (void)a3, (void)a4, (void)a5;
+    if (AnimQueryOrder::On() && ret - ImageBase() + 0x1000000 == 0x1d0efa9) {
+        std::scoped_lock lock{AnimQueryOrder::mutex};
+        AnimQueryOrder::released_generation = AnimQueryOrder::generation;
+    }
+    return 0;
+}
+/// Call hook at DelayPostPhysicsComputeGather's execute (01254880): it locks each listed extension (+0x8c = 1) until DelayPrepareTick unlocks it (debug trace)
+u64 PS4_SYSV_ABI K2Gather(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a0, (void)a1, (void)a2, (void)a3, (void)a4, (void)a5, (void)ret;
+    if (K2Census::On()) {
+        K2Census::Trace("Gather start (locks extensions)");
+        Guarded([&]() -> u64 {
+            static std::atomic<u64> n{0};
+            const u64 k = n.fetch_add(1, std::memory_order_relaxed);
+            if (k % 600 != 300 && k % 600 != 0) {
+                return 0;
+            }
+            const u64 slot19 = Rd<u64>(Rd<u64>(ImageBase() + 0x6832568 - 0x1000000, 0), 0x98);
+            if (!IsHeapPointer(slot19)) {
+                return 0;
+            }
+            const u32 count = Rd<u32>(slot19, 0x60), unlock_count = Rd<u32>(slot19, 0x108);
+            const u64 trico = K2Census::trico_ext.load(std::memory_order_relaxed);
+            std::string list;
+            bool has = false;
+            for (u32 i = 0; i < count && i < 64; ++i) {
+                const u64 e = Rd<u64>(Rd<u64>(slot19, 0x58), i * 8);
+                has |= e == trico;
+                list += fmt::format(" {:#x}", e);
+            }
+            bool has_unlock = false;
+            for (u32 i = 0; i < unlock_count && i < 256; ++i) {
+                has_unlock |= Rd<u64>(Rd<u64>(slot19, 0x100), i * 8) == trico;
+            }
+            TLG_LOG(CP, Warn, "K2 census: Gather #{}: flags +0x134 {:#x}, lock list {} (Trico {:#x} in it: {}), unlock list {} (Trico in it: {}):{}", k, Rd<u32>(slot19, 0x134), count, trico,
+                    has, unlock_count, has_unlock, list);
+            return 0;
+        });
+    }
+    return 0;
+}
+/// Mid hook at the entry of DelayPostPhysicsComputeFrame's execute (01255570): wait for the next AnimationTick's query producers (fix A)
+u64 PS4_SYSV_ABI AnimQueryRecording(Core::GuestHooks::MidContext* c) {
+    (void)c;
+    if (K2Census::On()) {
+        K2Census::Trace("Frame start");
+    }
+    if (AnimQueryOrder::On()) {
+        AnimQueryOrder::BeforeRecording();
+    }
+    return 0;
+}
+
+u64 PS4_SYSV_ABI K2TaskObject(Core::GuestHooks::MidContext* c) {
+    if (AnimQueryOrder::On() && IsHeapPointer(c->rdi) && Rd<u64>(c->rdi, 0) - ImageBase() + 0x1000000 == 0x26d54b8) {
+        AnimQueryOrder::ExtJobStarted(c->rdi); // a character animation extension's AnimationTick job (slot 9) starts on this thread
+    }
+    if (K2Census::On() && IsHeapPointer(c->rdi) && Rd<u64>(c->rdi, 0) - ImageBase() + 0x1000000 == 0x26d54b8) {
+        K2Census::t_job_ext = c->rdi;
+        if (c->rdi == K2Census::trico_ext.load(std::memory_order_relaxed)) {
+            K2Census::Trace("Trico's AnimationTick job start (lock word)", Rd<u32>(c->rdi, 0x8c));
+        }
+    }
+    if (!K2Census::On()) {
+        return 0;
+    }
+    static std::atomic<u32> logged{0};
+    static std::atomic<u64> last{0};
+    if (c->rdi != last.exchange(c->rdi) && logged.fetch_add(1) < 8) {
+        std::string words;
+        const u64 scheduler = Rd<u64>(ImageBase() + 0x69f2b40 - 0x1000000, 0);
+        if (IsHeapPointer(scheduler)) {
+            const u64 vt = Rd<u64>(scheduler, 0);
+            words += fmt::format(" scheduler {:#x} vtable {:#x} +0x70 -> {:#x}", scheduler, vt - ImageBase() + 0x1000000, Rd<u64>(vt, 0x70) - ImageBase() + 0x1000000);
+        }
+        for (u32 o = 8; o < 0x60 && IsHeapPointer(c->rdi); o += 8) {
+            words += fmt::format(" +{:#x}={:#x}", o, Rd<u64>(c->rdi, o));
+        }
+        const std::pair<const char*, u64> regs[] = {{"rbx", c->rbx}, {"r12", c->r12}, {"r13", c->r13}, {"r14", c->r14}, {"r15", c->r15}};
+        for (const auto& [rn, rv] : regs) {
+            if (IsHeapPointer(rv) && (rv & 7) == 0) {
+                const u64 fn = Rd<u64>(rv, 8);
+                if (fn >= ImageBase() && fn < ImageBase() + 0x4000000) {
+                    words += fmt::format(" | {} job? parent {:#x} callback {:#x} [6] {:#x}", rn, Rd<u64>(rv, 0), fn - ImageBase() + 0x1000000, Rd<u64>(rv, 0x30));
+                }
+            }
+        }
+        TLG_LOG(CP, Warn, "K2 census: 015a0160 runs on object {:#x} (vtable {:#x}), caller args rsi {:#x} rdx {:#x};{}", c->rdi,
+                IsHeapPointer(c->rdi) ? Rd<u64>(c->rdi, 0) - ImageBase() + 0x1000000 : 0, c->rsi, c->rdx, words);
+    }
+    return 0;
+}
+
+/// Mid hook at the entry of the task manager's enqueue (01e4ac30, vtable 026ebcc0 + 0x70): who enqueues a CharacterAnimationExt job (debug, K2 census)
+u64 PS4_SYSV_ABI K2Enqueue(Core::GuestHooks::MidContext* c) {
+    if (!K2Census::On() || !IsHeapPointer(c->rsi) || Rd<u64>(c->rsi, 0) - ImageBase() + 0x1000000 != 0x26d54b8) {
+        return 0;
+    }
+    Guarded([&]() -> u64 {
+        const u64 base = ImageBase();
+        std::string chain = fmt::format("{:#x}", Rd<u64>(c->rsp, 0) - base + 0x1000000);
+        u64 rbp = c->rbp;
+        for (u32 i = 0; i < 10 && rbp >= c->rsp && rbp < c->rsp + (4ull << 20) && (rbp & 7) == 0; ++i) {
+            const u64 ra = Rd<u64>(rbp, 8);
+            if (ra < base || ra > base + 0x4000000) {
+                break;
+            }
+            chain += fmt::format(" < {:#x}", ra - base + 0x1000000);
+            rbp = Rd<u64>(rbp, 0);
+        }
+        static std::mutex m;
+        static std::map<std::string, u64> seen;
+        std::scoped_lock lock{m};
+        if (seen[chain]++ % 1000 == 0) {
+            TLG_LOG(CP, Warn, "K2 census: CharacterAnimationExt {:#x} enqueued by {} (x{})", c->rsi, chain, seen[chain]);
+        }
+        return 0;
+    });
+    return 0;
+}
+
+/// Call hook at AnimationTick's execute (01d0ded0): marks its start for the K2 census (debug)
+u64 PS4_SYSV_ABI K2AnimationTick(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a0, (void)a1, (void)a2, (void)a3, (void)a4, (void)a5, (void)ret;
+    if (AnimQueryOrder::On()) {
+        AnimQueryOrder::AnimationTickStarted();
+    }
+    if (K2Census::On()) {
+        K2Census::last_event.store(1, std::memory_order_relaxed);
+        K2Census::Trace("AnimationTick start");
+    }
+    return 0;
+}
+
+u64 PS4_SYSV_ABI K2RegisterB(u64 table_base, u64 group, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a2, (void)a3, (void)a4, (void)a5;
+    if (AnimQueryOrder::On()) {
+        AnimQueryOrder::QueryRegistered();
+    }
+    if (K2Census::On()) {
+        Guarded([&]() -> u64 { K2Census::Registered('B', table_base, group, ret); return 0; });
+    }
+    return 0;
+}
+u64 PS4_SYSV_ABI K2RegisterC(u64 table_base, u64 group, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a2, (void)a3, (void)a4, (void)a5;
+    if (AnimQueryOrder::On()) {
+        AnimQueryOrder::QueryRegistered();
+    }
+    if (K2Census::On()) {
+        // table C is at + 0x31e48: its base passed here is frame data + 0x31e30 like B's (FrameData_AddReadbackGroupC takes the same block); checked by the path
+        Guarded([&]() -> u64 { K2Census::Registered('C', table_base, group, ret); return 0; });
+    }
+    return 0;
+}
+u64 PS4_SYSV_ABI K2FrameReset(u64 frame, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a1, (void)a2, (void)a3, (void)a4, (void)a5;
+    if (AnimQueryOrder::On() && ret - ImageBase() + 0x1000000 == 0x1253293) {
+        AnimQueryOrder::QueryReset(); // the world step (DelayPostPhysicsComputeGather) resets the query frame data
+    }
+    if (K2Census::On()) {
+        Guarded([&]() -> u64 { K2Census::Reset(frame, ret); return 0; });
+    }
+    return 0;
+}
+
 u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret, u64 caller_rsp) {
     (void)a1, (void)a2, (void)a3, (void)a4, (void)a5, (void)ret, (void)caller_rsp;
+    if (K2Census::On()) {
+        Guarded([&]() -> u64 { K2Census::Began(a1, a2 & 0xff, ret); return 0; });
+    }
+    if (Core::Vkb::On() && Core::Vkb::Aa::On() && IsHeapPointer(a1)) {
+        // api-contract.md K4: the engine's camera cut for the frame this BeginRecording starts. FrameData + 0x31ea8 is 1 when Scene_CullViews saw a cut request
+        // (render manager + 0xf80) **or a zero game step** (+ 0x31eac, the step, is 0.0 then), 2 when RenderFrame re-made the targets. RenderScene clears its history
+        // on any of them; above 30 fps zero-step frames come in normal play (about 1 in 10, run k4_spears2), where the image does not move: our AA resets only on a cut
+        // request (flag with a non-zero step) or new targets (2)
+        const u32 cut_flag = Rd<u32>(a1, 0x31ea8);
+        Core::Vkb::Aa::NoteFrameCut(cut_flag == 2 || (cut_flag == 1 && Rd<float>(a1, 0x31eac) != 0.0f));
+    }
     if ((a2 & 0xff) != 0) {
         g_recordings_since_read.fetch_add(1, std::memory_order_relaxed); // K1 check: a BeginRecording that records (AabbReadCheck)
         if (IsHeapPointer(device) && IsHeapPointer(a1)) {
-            g_rec_device.store(device, std::memory_order_relaxed); // K2: a recording call clears the pass flags (as the engine clears + 0x2710)
-            g_aabb_pass_ran.store(false, std::memory_order_relaxed);
-            g_third_pass_ran.store(false, std::memory_order_relaxed);
             g_aabb_count_buffer.store(Rd<u64>(device, 0x27a8), std::memory_order_relaxed);
             g_rec_frame.store(a1, std::memory_order_relaxed);
             const GroupTableLock lock(a1); // BeginRecording takes this lock itself after its entry (our hook point)
@@ -9209,11 +9831,6 @@ u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64
 /// N5c: `JsDeviceContext::Unmap(context, resource, subresource)` is an empty function in the engine (one `ret`, `0x2480f80`) that cannot be displaced by a hook. Its slot
 /// in the device context's table (`0x26fe200`) is replaced by this function (installed once, when the first Map is seen, after the image is relocated): it tells the
 /// update audit that the writes into the memory the thread's Map of this resource handed out are finished.
-/// R3b: this thread's in-place Map of a dynamic buffer, until its Unmap
-struct DynMap {
-    u64 resource{}, memory{}, bytes{};
-};
-thread_local DynMap t_dyn_map{};
 
 u64 PS4_SYSV_ABI UnmapSlot(u64 ctx, u64 resource, u64 subresource) {
     (void)ctx, (void)subresource;
@@ -9221,6 +9838,7 @@ u64 PS4_SYSV_ABI UnmapSlot(u64 ctx, u64 resource, u64 subresource) {
         Core::Vkb::DynamicCheck(t_dyn_map.memory, t_dyn_map.bytes, true);
         Core::Vkb::DynamicUnmapped(t_dyn_map.memory, t_dyn_map.bytes); // R3b: the in-place Map's writes into our device buffer
         t_dyn_map = {};
+        ::tlg_ptrtrace_pending_caller = 0;
     }
     if (Core::NativeUpdates::enabled.load(std::memory_order_relaxed) && IsHeapPointer(resource) && (resource & 7) == 0) {
         Guarded([&]() -> u64 {
@@ -9267,11 +9885,34 @@ void InstallUnmapSlot() {
 
 u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4, u64 size, u64 ret, u64 caller_rsp) {
     static const bool map_census = [] { const char* e = std::getenv("TLG_VKB_MAP_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    if (Core::Vkb::On() && Core::Vkb::ContractCensusOn() && ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0) {
+        // pointer trace (debug, 2026-11-19): every Map call site by kind, usage and type, so each caller's use of the pointer can be read (does it escape the Unmap?)
+        const u32 kind = Rd<u32>(resource, 0x124);
+        Core::Vkb::ContractNote(fmt::format("P Map caller {:#x} kind {} usage {} type {}", ret - ImageBase() + 0x1000000, kind,
+                                            Core::NativeResources::ResourceUsage(resource), type));
+    }
+    if (Core::Vkb::On() && Core::Vkb::ContractCensusOn() && type == 1 && ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0) {
+        // tier-2 gap pass (debug): a Map(READ) whose data the GPU wrote only into our Vulkan object (not into the engine memory the CPU reads): a texture that is not
+        // a staging one (Map READ of a texture hands out its memory, line pass 0247f990), or a buffer that lives in our device memory (UAV / dynamic)
+        const u32 kind = Rd<u32>(resource, 0x124);
+        const u64 caller = ret - ImageBase() + 0x1000000;
+        if (kind >= 2 && kind <= 4 && TextureUsage(resource) != 3) {
+            Core::Vkb::ContractNote(fmt::format("T2 Map READ of a non-staging texture (kind {}, usage {}, caller {:#x})", kind, TextureUsage(resource), caller));
+        } else if (kind == 1 && Core::Vkb::BufferOnDevice(Rd<u64>(resource, 0x30), Rd<u32>(resource, 0x180))) {
+            Core::Vkb::ContractNote(fmt::format("T2 Map READ of a buffer in our device memory (caller {:#x})", caller));
+        } else if (kind == 1) {
+            Core::Vkb::ContractNote(fmt::format("T2 Map READ of a buffer in engine memory (caller {:#x})", caller));
+        }
+    }
     if ((map_census || Core::Vkb::DynamicDeviceOn()) && Core::Vkb::On() && ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0 && Rd<u32>(resource, 0x124) == 1) {
         InstallUnmapSlot(); // R3b: the Unmap is where an in-place Map's writes are finished
         if (t_dyn_map.resource != 0) {
+            if (Core::Vkb::ContractCensusOn()) { // pointer trace (debug): an in-place Map that never reached an Unmap (a devirtualized caller: the engine's Unmap is empty)
+                Core::Vkb::ContractNote(fmt::format("P in-place Map taken at the next Map, no Unmap (caller {:#x})", t_dyn_map.caller));
+            }
             Core::Vkb::DynamicUnmapped(t_dyn_map.memory, t_dyn_map.bytes); // the Map before had no Unmap on this thread: its writes are taken now
             t_dyn_map = {};
+            ::tlg_ptrtrace_pending_caller = 0;
         }
         // R3b census: the engine's Map runs here; the pointer it hands out is the buffer's own memory (in place) or another block (the frame ring)
         const u64 original_map = Core::GuestHooks::OriginalEntry("Map");
@@ -9285,7 +9926,11 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
             const bool in_place = pointer >= memory && pointer < memory + std::max<u64>(bytes, 1);
             Core::Vkb::NoteBufferMap(Rd<u32>(resource, 0x184), static_cast<u32>(type), in_place, bytes);
             if (in_place && type != 1 && Core::Vkb::DynamicDeviceOn() && Rd<u32>(resource, 0x184) == 2) {
-                t_dyn_map = {resource, memory, bytes};
+                t_dyn_map = {resource, memory, bytes, ret - ImageBase() + 0x1000000};
+                if (Core::Vkb::ContractCensusOn()) {
+                    Core::Vkb::ContractNote(fmt::format("P in-place Map (caller {:#x})", ret - ImageBase() + 0x1000000));
+                    ::tlg_ptrtrace_pending_caller = ret - ImageBase() + 0x1000000;
+                }
             }
             return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
         }
@@ -9327,7 +9972,7 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
         }
     }
     if (Core::Vkb::On() && ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0 && Rd<u32>(resource, 0x124) >= 2 && Rd<u32>(resource, 0x124) <= 4 && (type == 1 || type == 3) &&
-        Rd<u32>(resource, 0x19c) == 3) {
+        TextureUsage(resource) == 3) {
         // note 42: a staging texture mapped for reading (the CPU's auto-exposure reads a 16x16 R32F luminance texture this way every frame). The engine's Map runs and hands
         // out the texture's memory and row pitch; the result of our copy into it is written there before the caller reads it
         const u64 original_map = Core::GuestHooks::OriginalEntry("Map");
@@ -9335,9 +9980,9 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
         if (original_map != 0 && out_map != 0 && (out_map & 7) == 0) {
             const u64 result = reinterpret_cast<GuestMap7>(original_map)(ctx, resource, subresource, type, a4, size, out_map);
             const u64 pointer = Rd<u64>(out_map, 0);
-            const u32 row_pitch = Rd<u32>(out_map, 8);
+            const u32 row_pitch = Rd<u32>(out_map, 8), depth_pitch = Rd<u32>(out_map, 0xc); // the engine's mapped subresource: pointer, row pitch, depth pitch
             if (pointer != 0) {
-                (void)Core::Vkb::StagingRead(Rd<u64>(resource, 0x10), static_cast<u32>(subresource), reinterpret_cast<u8*>(pointer), row_pitch);
+                (void)Core::Vkb::StagingRead(Rd<u64>(resource, 0x10), static_cast<u32>(subresource), reinterpret_cast<u8*>(pointer), row_pitch, depth_pitch);
             }
             return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
         }
@@ -11825,6 +12470,45 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "tag_asc_counter_readback") {
         return reinterpret_cast<u64>(&TagAscCounterReadback);
+    }
+    if (name == "note_c_gbuf_variant") {
+        return reinterpret_cast<u64>(&NoteCGbufVariant);
+    }
+    if (name == "k2_register_b") {
+        return reinterpret_cast<u64>(&K2RegisterB);
+    }
+    if (name == "k2_register_c") {
+        return reinterpret_cast<u64>(&K2RegisterC);
+    }
+    if (name == "anim_job_done") {
+        return reinterpret_cast<u64>(&AnimJobDone);
+    }
+    if (name == "k2_gather") {
+        return reinterpret_cast<u64>(&K2Gather);
+    }
+    if (name == "anim_group_release") {
+        return reinterpret_cast<u64>(&AnimGroupRelease);
+    }
+    if (name == "anim_query_recording") {
+        return reinterpret_cast<u64>(&AnimQueryRecording);
+    }
+    if (name == "k2_animation_tick") {
+        return reinterpret_cast<u64>(&K2AnimationTick);
+    }
+    if (name == "k2_enqueue") {
+        return reinterpret_cast<u64>(&K2Enqueue);
+    }
+    if (name == "k2_task_object") {
+        return reinterpret_cast<u64>(&K2TaskObject);
+    }
+    if (name == "k2_trico_chain") {
+        return reinterpret_cast<u64>(&K2TricoChain);
+    }
+    if (name == "k2_frame_reset") {
+        return reinterpret_cast<u64>(&K2FrameReset);
+    }
+    if (name == "tag_copy_structure_count") {
+        return reinterpret_cast<u64>(&TagCopyStructureCount);
     }
     if (name == "tag_device_begin") {
         return reinterpret_cast<u64>(&TagDeviceBegin);
