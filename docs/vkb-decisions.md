@@ -29,7 +29,9 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   that exists, and the game's error line stays; an archive index that cannot be read keeps the error line too.
   It works the same on Linux and Windows and for a packed game, touches no game code and neither renderer, and
   keeps every other game line as it is. Cost: the archive indexes are read once, at the first such line (0.02 s and
-  about 2 MB on this box). Switch `TLG_GAME_NOTES=0` gives the old output.
+  about 2 MB on this box). Switch `TLG_GAME_NOTES=0` gives the old output. Limit: an archive FILE that is missing
+  from the game folder altogether is not seen by the check (the port has no list of what a full install holds); all
+  material shaders sit in the boot archive and its update, without which the game does not start (assumed).
 - **Who:** box (rule 14c), on the owner's job of 2026-11-19 ("log once per name at info level" if the files do
   not exist and nothing is lost).
 - **Links:** issue 49, issue 47 (owner comment), pull request: see issue 49.

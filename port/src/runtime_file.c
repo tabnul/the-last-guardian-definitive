@@ -645,13 +645,17 @@ static void md5_block(Md5 *h,const unsigned char *p) {
     }
     h->a+=a; h->b+=b; h->c+=c; h->d+=d;
 }
-/* MD5 of the upper-case form of text[0..n), as the archive index keeps it. */
-static void md5_upper(const char *text,size_t n,unsigned char out[16]) {
+/* MD5 of lead (may be empty) followed by text[0..n), upper-cased when upper is set (an archive that ignores case
+ * keys its names that way). */
+static void md5_name(const char *lead,const char *text,size_t n,int upper,unsigned char out[16]) {
     Md5 h={0x67452301,0xefcdab89,0x98badcfe,0x10325476};
     unsigned char block[64];
     size_t used=0;
+    const size_t l=strlen(lead);
+    n+=l;
     for (size_t i=0;i<n;++i) {
-        block[used++]=(unsigned char)toupper((unsigned char)text[i]);
+        const unsigned char c=(unsigned char)(i<l ? lead[i] : text[i-l]);
+        block[used++]=(unsigned char)(upper ? toupper(c) : c);
         if (used==64) { md5_block(&h,block); used=0; }
     }
     const uint64_t bits=(uint64_t)n*8;
@@ -703,7 +707,7 @@ static int index_archive(const char *guest) {
     unsigned char head[32];
     int ok=do_pread((int)fd,head,32,0)==32 && !memcmp(head,"PSAR",4);
     const uint32_t entry_size=ok ? be32(head+16) : 0, count=ok ? be32(head+20) : 0;
-    ok=ok && entry_size>=16 && entry_size<=64 && count && count<=(1u<<24);
+    ok=ok && entry_size>=16 && entry_size<=64 && count && count<=(1u<<20); /* 64 MB at most for a damaged header */
     unsigned char *entries=ok ? malloc((size_t)entry_size*count) : NULL;
     unsigned char *grown=entries ? realloc(archive_index,(archive_index_count+count)*16) : NULL;
     if (grown) archive_index=grown;
@@ -725,38 +729,49 @@ static int psarc_name(const char *name) {
 /* Reads the index of every archive the game can open, once. Called with game_note_lock held. */
 static void read_archive_index(void) {
     if (archive_index_state) return;
+    /* Any step that fails (no game folder, no listing, a name too long, an archive that cannot be read) means the
+     * index may be incomplete: then nothing is relabelled. Buffers on the heap: this runs on a game thread. */
     int failed=0;
-    char host[1024]; ArchiveTarget target;
-    if (!resolve("/app0",host,sizeof(host),&target)) {
+    char *host=malloc(1024), *guest=malloc(600);
+    Mount *copy=malloc(sizeof(mounts));
+    ArchiveTarget target;
+    if (!host || !guest || !copy || resolve("/app0",host,1024,&target)) failed=1;
+    else {
         Listing *l=target.archive ? list_archive(target.archive,target.node,"/app0") : list_directory(host,"/app0");
+        if (!l) failed=1;
         for (size_t i=0;l && i<l->count;++i) {
             const char *name=l->names+l->offsets[i];
-            char guest[600];
-            if (l->types[i]==8 && psarc_name(name) && (size_t)snprintf(guest,sizeof(guest),"/app0/%s",name)<sizeof(guest))
-                failed|=!index_archive(guest);
+            if (!psarc_name(name)) continue;
+            if (l->types[i]!=8 || (size_t)snprintf(guest,600,"/app0/%s",name)>=600) failed=1;
+            else failed|=!index_archive(guest);
         }
         free_listing(l);
+        pthread_mutex_lock(&lock);
+        const size_t n=mount_count;
+        memcpy(copy,mounts,n*sizeof(Mount));
+        pthread_mutex_unlock(&lock);
+        for (size_t i=0;i<n;++i) if (psarc_name(copy[i].guest)) failed|=!index_archive(copy[i].guest);
     }
-    pthread_mutex_lock(&lock);
-    size_t n=mount_count; Mount copy[MAX_MOUNTS];
-    memcpy(copy,mounts,n*sizeof(Mount));
-    pthread_mutex_unlock(&lock);
-    for (size_t i=0;i<n;++i) if (psarc_name(copy[i].guest)) failed|=!index_archive(copy[i].guest);
+    free(host); free(guest); free(copy);
     if (failed || !archive_index_count) { archive_index_state=-1; return; }
     qsort(archive_index,archive_index_count,16,hash_compare);
     archive_index_state=1;
 }
 /* 1 = in an archive, 0 = in none, -1 = cannot tell. The game names files from data_trico/; an archive keeps names
- * from its own root, so every tail of the name that starts after a '/' is tried (a hit on any of them keeps the
- * error line, the safe side). Called with game_note_lock held. */
+ * from its own root. Every tail of the name that starts after a '/' is tried, in every form the archive format
+ * allows (upper case for an archive that ignores case, as written for one that does not; with and without a
+ * leading '/' for absolute names). A hit on any of them keeps the error line, the safe side.
+ * Called with game_note_lock held. */
 static int in_archives(const char *name,size_t length) {
     read_archive_index();
     if (archive_index_state<0) return -1;
     for (size_t at=0;at<length;++at) {
         if (at && name[at-1]!='/') continue;
-        unsigned char key[16];
-        md5_upper(name+at,length-at,key);
-        if (bsearch(key,archive_index,archive_index_count,16,hash_compare)) return 1;
+        for (int form=0;form<4;++form) {
+            unsigned char key[16];
+            md5_name(form&2 ? "/" : "",name+at,length-at,!(form&1),key);
+            if (bsearch(key,archive_index,archive_index_count,16,hash_compare)) return 1;
+        }
     }
     return 0;
 }
