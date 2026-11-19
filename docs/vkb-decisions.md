@@ -30,6 +30,9 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   picture first (11): the cost is one to three extra passes of a small shader per frame and the anti-aliasing step
   itself on machines without DLSS. Switch `TLG_VKB_PICTURE_SETTINGS` (default on; `=0` the old way; letters `f`, `s`,
   `b`, `a` choose parts, for measurement only).
+  After the second read: the anisotropy rule lives in one function that all three ways a sampler is made ask (the
+  game's sampler objects, the samplers written in the shader, the sampler words), instead of three copies that had
+  drifted apart; and the texture bias is left off depth comparisons, as the normal renderer does.
   Not covered: with the anti-aliasing switched off by the player, the normal renderer sharpens the final picture in its
   presenter instead (CAS); the new engine's presenter does not yet. Separate job.
 - **Who:** box (rule 14).
