@@ -497,18 +497,6 @@ u64 VariantKeyFull(u64 ctx, u64 vs, u64 ps, u64 fetch, const VkbVulkan::FixedSta
     return h;
 }
 
-vk::ImageViewType ViewTypeOf(VkbAmdGpu::ImageType type) {
-    switch (type) {
-    case VkbAmdGpu::ImageType::Color1D: return vk::ImageViewType::e2D; // note 41: the module declares 1D images as 2D
-    case VkbAmdGpu::ImageType::Color1DArray: return vk::ImageViewType::e2DArray;
-    case VkbAmdGpu::ImageType::Color2DArray:
-    case VkbAmdGpu::ImageType::Color2DMsaaArray: return vk::ImageViewType::e2DArray;
-    case VkbAmdGpu::ImageType::Color3D: return vk::ImageViewType::e3D;
-    case VkbAmdGpu::ImageType::Cube: return vk::ImageViewType::eCube;
-    default: return vk::ImageViewType::e2D;
-    }
-}
-
 /// Compiles one stage (mutex held): its user data, program, translation, module and slot map
 bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, VkbShader::Backend::Bindings& binding) {
     const HwStage hw = stage == 0 ? HwStage::Vertex : HwStage::Fragment;
@@ -604,7 +592,7 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
     for (const auto& image : out.info->images) {
         out.images.push_back(SourceOf(image.sharp_fetch, flat, false, false));
         count(1, out.images.back());
-        out.image_types.push_back(ViewTypeOf(image.GetSharp(*out.info).GetHostViewType(image.is_array)));
+        out.image_types.push_back(Core::Vkb::ModuleViewType(image.GetSharp(*out.info).GetHostViewType(image.is_array)));
     }
     for (const auto& b : out.info->buffers) {
         out.has_flat |= b.buffer_type == VkbShader::BufferType::Flatbuf;

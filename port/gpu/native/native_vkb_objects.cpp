@@ -1966,6 +1966,26 @@ bool ViewForCompute(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, 
     m = {view_id, epoch, static_cast<u32>(want), out, found}; // the epoch read before the lookup: a change during it leaves the entry stale-marked
     return true;
 }
+std::atomic<u64> c_cube_as_array{0};
+
+vk::ImageViewType ModuleViewType(VkbAmdGpu::ImageType type) {
+    static const bool cube_as_array = [] { const char* e = std::getenv("TLG_VKB_CUBE_AS_ARRAY"); return e == nullptr || e[0] != '0'; }();
+    switch (type) {
+    case VkbAmdGpu::ImageType::Color1D: return vk::ImageViewType::e2D; // note 41: the module declares 1D images as 2D
+    case VkbAmdGpu::ImageType::Color1DArray: return vk::ImageViewType::e2DArray;
+    case VkbAmdGpu::ImageType::Color2DArray:
+    case VkbAmdGpu::ImageType::Color2DMsaaArray: return vk::ImageViewType::e2DArray;
+    case VkbAmdGpu::ImageType::Color3D: return vk::ImageViewType::e3D;
+    case VkbAmdGpu::ImageType::Cube:
+        if (cube_as_array) {
+            c_cube_as_array.fetch_add(1, std::memory_order_relaxed); // (per module image binding, at the variant's build)
+            return vk::ImageViewType::e2DArray;
+        }
+        return vk::ImageViewType::eCube;
+    default: return vk::ImageViewType::e2D;
+    }
+}
+
 bool ViewForComputeLookup(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, vk::ImageView& out, vk::Image* image) {
     std::scoped_lock lock{mutex};
     const auto v = views.find(view_id);
@@ -3676,6 +3696,7 @@ nlohmann::json ObjectsReport() {
                                               {"no_initial_data", c_dev_no_initial.load()}, {"cpu_writes_copied", c_cpu_writes.load()},
                                               {"cpu_write_kb", c_cpu_write_bytes.load() >> 10}}},
                           {"other_view_types", {{"made", c_other_views.load()}, {"refused", c_other_view_refused.load()}, {"refused_pairs", refused}}},
+                          {"cube_bindings_as_array", c_cube_as_array.load()},
                           {"display", {{"presented_from_our_image", c_display_found.load()}, {"no_image_at_the_display_buffer", c_display_missed.load()},
                                        {"never_drawn_into", c_display_not_general.load()}}},
                           {"attachments", {{"format_views_made", c_attach_views.load()}, {"refused", c_attach_refused.load()}}},

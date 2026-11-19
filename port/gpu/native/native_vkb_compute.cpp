@@ -227,18 +227,6 @@ bool Ready() {
     return true;
 }
 
-vk::ImageViewType ViewTypeOf(VkbAmdGpu::ImageType type) {
-    switch (type) {
-    case VkbAmdGpu::ImageType::Color1D: return vk::ImageViewType::e2D; // note 41: the module declares 1D images as 2D
-    case VkbAmdGpu::ImageType::Color1DArray: return vk::ImageViewType::e2DArray;
-    case VkbAmdGpu::ImageType::Color2DArray:
-    case VkbAmdGpu::ImageType::Color2DMsaaArray: return vk::ImageViewType::e2DArray;
-    case VkbAmdGpu::ImageType::Color3D: return vk::ImageViewType::e3D;
-    case VkbAmdGpu::ImageType::Cube: return vk::ImageViewType::eCube;
-    default: return vk::ImageViewType::e2D;
-    }
-}
-
 /// Compiles the variant of the shader bound at `ctx` (mutex held)
 void BuildLayout(u64 ctx, u64 shader, bool async, bool tags, Core::NativeDraw::UserLayout& out) {
     async ? Core::NativeDraw::BuildAsyncLayout(ctx, tags, out) : Core::NativeDraw::BuildUserLayout(ctx, 5, shader, 0x28, tags, out);
@@ -404,7 +392,7 @@ void Compile(u64 ctx, u64 shader, Variant& v) {
     for (const auto& image : v.info->images) {
         const Source s = SourceOf(image.sharp_fetch, flat, false, false);
         v.images.push_back(s);
-        v.image_types.push_back(ViewTypeOf(image.GetSharp(*v.info).GetHostViewType(image.is_array)));
+        v.image_types.push_back(Core::Vkb::ModuleViewType(image.GetSharp(*v.info).GetHostViewType(image.is_array)));
         (s.cls == Source::Class::Slot ? c_img_slot : c_img_unmapped).fetch_add(1, std::memory_order_relaxed);
     }
     for (const auto& sampler : v.info->samplers) {
