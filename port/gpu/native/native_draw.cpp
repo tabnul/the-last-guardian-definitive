@@ -1065,32 +1065,48 @@ u32 SweepSyncPackets(u64 begin, u64 end) {
     return removed;
 }
 
+/// `TLG_VKB_STREAM_SWEEP=1` brings back the stream sweep with the new engine on (the behaviour before 2026-11-19). Off by default: with the new engine the game's command buffers
+/// are not parsed or run (V1b, gnmdriver PerformSubmit) and every sync producer hands its fence, wait or copy to the new engine itself and leaves no typed record, so the sweep
+/// read the game's command list (principle 1) only to find sync packets nothing reads and to report each one as untyped (issue 36, log cause D).
+bool StreamSweepOn() {
+    static const bool on = [] {
+        if (!Core::Vkb::On()) {
+            return true;
+        }
+        const char* e = std::getenv("TLG_VKB_STREAM_SWEEP");
+        return e != nullptr && e[0] == '1';
+    }();
+    return on;
+}
+
 bool WriteDwordsAt(u64 writer, const u32* words, u32 count) {
     // the game's own synchronization between the last tag written to this command buffer and this one
-    struct Sweep {
-        u64 writer{};
-        u64 base{};
-        u64 last{};
-    };
-    static thread_local std::array<Sweep, 6> sweeps;
-    {
-        const u64 cursor = Rd<u64>(writer, 0x10);
-        const u64 base = Rd<u64>(writer, 0x0);
-        Sweep* entry = nullptr;
-        for (auto& s : sweeps) {
-            if (s.writer == writer) {
-                entry = &s;
+    if (StreamSweepOn()) {
+        struct Sweep {
+            u64 writer{};
+            u64 base{};
+            u64 last{};
+        };
+        static thread_local std::array<Sweep, 6> sweeps;
+        {
+            const u64 cursor = Rd<u64>(writer, 0x10);
+            const u64 base = Rd<u64>(writer, 0x0);
+            Sweep* entry = nullptr;
+            for (auto& s : sweeps) {
+                if (s.writer == writer) {
+                    entry = &s;
+                }
             }
+            if (entry == nullptr) {
+                entry = &sweeps[(writer >> 4) % sweeps.size()];
+                *entry = {writer, base, 0};
+            }
+            if (entry->base == base && entry->last != 0 && entry->last < cursor && cursor - entry->last < (1u << 16)) {
+                SweepSyncPackets(entry->last, cursor);
+            }
+            entry->base = base;
+            entry->last = cursor + count * sizeof(u32);
         }
-        if (entry == nullptr) {
-            entry = &sweeps[(writer >> 4) % sweeps.size()];
-            *entry = {writer, base, 0};
-        }
-        if (entry->base == base && entry->last != 0 && entry->last < cursor && cursor - entry->last < (1u << 16)) {
-            SweepSyncPackets(entry->last, cursor);
-        }
-        entry->base = base;
-        entry->last = cursor + count * sizeof(u32);
     }
     u64 cur = Rd<u64>(writer, 0x10);
     const u64 end = Rd<u64>(writer, 0x08);
