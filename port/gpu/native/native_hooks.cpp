@@ -188,7 +188,7 @@ size_t DisplacedLength(const u8* code, std::string& why, RipFixes& fixes) {
 }
 
 /// Writes the displaced instructions at the generator's current address. A rip-relative displacement is set so it names the same
-/// address as at `entry`; false if that address is out of the 32 bit reach of the copy (the hook is then refused).
+/// address as at `entry`; false if that address is out of the 32 bit reach of the copy or lies in the displaced bytes themselves (the hook is then refused).
 bool EmitDisplaced(Xbyak::CodeGenerator& c, const u8* entry, const u8* original, size_t displaced, const RipFixes& fixes) {
     u8 bytes[MaxDisplacedBytes];
     std::memcpy(bytes, original, displaced);
@@ -199,7 +199,8 @@ bool EmitDisplaced(Xbyak::CodeGenerator& c, const u8* entry, const u8* original,
         std::memcpy(&disp, &bytes[f.at + f.disp_at], sizeof(disp));
         const s64 target = reinterpret_cast<s64>(entry + f.at + f.length) + disp;
         const s64 moved = target - reinterpret_cast<s64>(copy + f.at + f.length);
-        if (moved < INT32_MIN || moved > INT32_MAX) {
+        const bool into_patch = target >= reinterpret_cast<s64>(entry) && target < reinterpret_cast<s64>(entry + displaced); // would read the jump, not the code
+        if (into_patch || moved < INT32_MIN || moved > INT32_MAX) {
             return false;
         }
         const auto moved32 = static_cast<s32>(moved);
@@ -503,7 +504,7 @@ bool InstallHook(Hook& hook, u8* image_base, u64 image_size) {
         return fits;
     });
     if (!fits) {
-        TLG_LOG(HOOK, Error, "guest hook '{}': a rip-relative address of the displaced code is out of reach of the trampoline", hook.name);
+        TLG_LOG(HOOK, Error, "guest hook '{}': a rip-relative address of the displaced code is out of reach of the trampoline or points into the displaced bytes", hook.name);
         return false;
     }
     if (!emitted) {
