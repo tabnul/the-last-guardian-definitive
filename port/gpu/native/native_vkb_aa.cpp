@@ -94,6 +94,7 @@ Input scene, motion, depth;
 u64 inputs_serial = 0, used_serial = 0;
 
 FfxVkPortableUpscaleContext* context = nullptr;
+std::atomic<bool> sharpness_env_noted{}; ///< issue 42: TLG_VKB_AA_SHARPNESS was set while the Sharpening setting applies (noted once)
 u32 ctx_w = 0, ctx_h = 0;
 VkImage output = VK_NULL_HANDLE;
 VmaAllocation output_alloc = nullptr;
@@ -616,6 +617,10 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
     const auto& settings = TlgSettings::Get();
     const float wanted = !setting_sharpen ? std::min(std::max(sharpness, 0.0f), 1.0f) : settings.sharpen ? std::clamp(settings.sharpness.load(), 0.0f, 4.0f) : 0.0f;
     const float own = std::min(wanted, 1.0f); ///< the AA's own share
+    if (setting_sharpen && std::getenv("TLG_VKB_AA_SHARPNESS") != nullptr && !sharpness_env_noted.exchange(true, std::memory_order_relaxed)) {
+        // rule 5: the old value is not swapped silently (also in the report: picture_settings.sharpness_env_ignored)
+        LOG_INFO(Render_Vulkan, "vkb aa: TLG_VKB_AA_SHARPNESS is not used: the player's Sharpening setting applies (TLG_VKB_PICTURE_SETTINGS part s)");
+    }
     if (want_px) {
         // the game's motion as DLSS reads it: render pixels, previous - current (vkb_aa_motion.comp)
         const vk::DescriptorImageInfo game_info{.imageView = ViewOf(m.image, m.format, vk::ImageAspectFlagBits::eColor), .imageLayout = vk::ImageLayout::eGeneral};
@@ -785,7 +790,9 @@ SamplerLook LookFor(u32 mrt_mask) {
         look.aniso = static_cast<u32>(std::max(0, settings.aniso.load())); // 0, 2, 4, 8 or 16 (tlg_settings.cpp)
     }
     // their Rasterizer::BindResources + TemporalUpscaler::SceneMipBias: a graphics pipeline with 5 or more colour outputs (the scene's material pass)
-    // samples with the Lab tab's bias in quarter steps while DLAA or FSR native AA runs; at native size the render/output term is 0
+    // samples with the Lab tab's bias in quarter steps while DLAA or FSR native AA runs. Their bias also has a log2(render / output) term, which is 0
+    // here by construction: the new engine's AA is native AA only (its context is made at one size for input and output, EnsureContext), it has no
+    // upscaling mode (their TLG_RENDER_RESOLUTION engine upscale and scaled sessions are not part of the new engine)
     if (PicturePart('b') && std::popcount(mrt_mask & 0xffu) >= 5 && Running()) {
         look.bias_q = settings.lod_bias.load();
         if (look.bias_q != 0) {
@@ -809,7 +816,7 @@ nlohmann::json Report() {
             {"jittered_draws", c_jittered.load()},
             {"jittered_mesh_redraws", c_jittered_meshes.load()},
             {"picture_settings", {{"fallback_fsr3", PicturePart('f')}, {"sharpening", PicturePart('s')}, {"scene_bias", PicturePart('b')}, {"aniso", PicturePart('a')},
-                                  {"rcas_passes", c_rcas_passes.load()}, {"rcas_broken", rcas_broken},
+                                  {"rcas_passes", c_rcas_passes.load()}, {"rcas_broken", rcas_broken}, {"sharpness_env_ignored", sharpness_env_noted.load()},
                                   {"scene_bias_draws", c_scene_bias_draws.load()}}},
             {"frame_generation", {{"made", c_fg_made.load()}, {"presented", c_fg_presented.load()}, {"failed", c_fg_failed.load()}}}};
 }
