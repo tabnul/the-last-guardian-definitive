@@ -35,6 +35,29 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 - **Who:** box (rule 14).
 - **Links:** issue 42 (https://github.com/tabnul/tlg-vkb-work/issues/42); pull request for branch `fix/vkb-picture-settings`.
 
+## 2026-11-19 - Sync packets in the game's command buffers: the new engine does not walk them (not yet merged)
+
+- **Problem:** 58 scenes wrote 1 to 5 error lines "sync_untyped_eop / _wait / _dma": a sync packet without its typed
+  record. With the new engine the game's command buffers are never run. Every hook that makes a fence, a wait or a
+  copy sends it straight to the new engine and makes no record, on purpose. Yet an older tag path (the texture Map)
+  still writes into those buffers, and every such write walked the game's packets before it (the old command
+  processor's stream sweep). The walk found sync packets that nothing reads and reported each one as missing its record.
+  A diagnostic take showed that every flagged fence and wait had already reached the new engine through its hook. The
+  rest were a barrier on a label inside the buffer (only the GPU's own work order, which the new engine keeps) and a
+  cache warm-up copy into a register, which the normal renderer skips too.
+- **Considered:** (A) with the new engine the stream sweep does not run. It is the only way into the converter in
+  that mode. This removes reading the game's command list (principle 1) and needs no new hook. (B) let every
+  producer leave its record with the new engine too, so the packet "has its record". The walk would then rewrite
+  game memory into tags that nothing reads. The barrier and the warm-up copy have no producer, so the count could
+  never reach 0. (C) stop the texture Map path writing old tags. That removes this trigger only, not the rule, and
+  changes how a texture Map behaves (a separate question).
+- **Choice:** A. Cause and not case (10): no sync packet of any kind is walked or converted with the new engine. Every
+  machine (6): only our own CPU code changes, no driver feature. Fewest special paths: it takes a path out. Switch
+  `TLG_VKB_STREAM_SWEEP=1` brings the old walk back. The question why the texture Map path still writes old tags with
+  the new engine is a separate job.
+- **Who:** box (rule 14).
+- **Links:** issue 36 (https://github.com/tabnul/tlg-vkb-work/issues/36); pull request for branch `fix/vkb-sync-untyped`.
+
 ---
 
 ## 2026-11-19 - Moving-things mask for all 69 masked scenes; no scene is log only for noise (not yet merged)
