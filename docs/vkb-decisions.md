@@ -9,6 +9,28 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-19 - The new engine runs FSR 4 itself; the owner's FSR rules for a choice, a fresh launch and a failure (not yet merged)
+
+- **Problem:** in the new engine a player's FSR 4 choice ran as FSR 3.1 (the launcher mapped it, the engine had no FSR 4).
+  The owner's rules (pull request 51, 2026-11-19): "Default on a fresh launch (player chose nothing): DLSS if available;
+  else FSR 4 on an RDNA 4 card (RX 9000); else FSR 3.1." "A player who CHOOSES FSR 4 gets FSR 4 on any card that can run
+  it." "No card-based fallback. If a chosen FSR 4 fails to start, that is a fault: error line, visible to the player, no
+  quiet switch to FSR 3.1." "If the FSR 4 library (DLL) is missing, fall back to FSR 3.1 quietly with an info line in the
+  log." "The game is never left without AA."
+- **Considered:** (A) make the normal renderer's FSR 4 wrapper usable by both engines: edits the normal renderer
+  (principle 8). (B) a new-engine copy of the wrapper's FSR 4 path, same library, model files and inputs, frames on the
+  new engine's own timeline. (C) build the normal renderer's wrapper a second time under other names: fragile. For the
+  inputs: copy the scene colour and depth into images the AA owns each frame, or keep one view per game image (an earlier
+  cache like that lost the device, and the FSR 4 library keeps at most 8 views and never forgets one).
+- **Choice:** B, with the copies. The fresh-launch default is decided by the engine (it sees the GPU): RDNA 4 = an AMD
+  chip with a PCI device ID 0x75xx (from public ID lists; not proven on a card). A failure of a chosen FSR 4 is reported
+  (error line, on-screen message, counter) and FSR 3.1 then runs, so the game keeps its anti-aliasing: the box's reading
+  of "no quiet switch" together with "never left without AA"; the owner can overrule in issue 55. Missing FSR 4 files: an
+  info line and FSR 3.1. Switch `TLG_VKB_FSR4` (`=0` the old way).
+- **Who:** owner set the rules; box chose the way (rule 14).
+- **Links:** issue 55 (https://github.com/tabnul/tlg-vkb-work/issues/55); pull request 51 (the owner's rules); pull request
+  for branch `fix/vkb-fsr4`.
+
 ## 2026-11-19 - The new engine applies the player's picture settings the way the normal renderer does (not yet merged)
 
 - **Problem:** the new engine's picture is about half as sharp as the normal renderer's in 195 of 197 scenes (issue 42).
