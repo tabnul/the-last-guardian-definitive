@@ -680,6 +680,34 @@ static void read_inject(void) {
  * "replay" in TLG_PAD_FILE (scripted tests repeat a route the player ran once). Lines: ms buttons
  * lx ly rx ry l2 r2, written when the state changes. */
 typedef struct { uint32_t ms, buttons; uint8_t axes[4], l2, r2; } PadSample;
+/* Pad timeline (with TLG_PAD_RECORD or TLG_PAD_TIMELINE): TLG_PAD_TIMELINE=<file>, else <TLG_PAD_RECORD>.timeline.txt, lists the game's
+ * scene, cutscene and fade events (tlg_lua.cpp: "mission", "demo", "fade out") and the F9 presses / the replay start, one per line:
+ * <ms since the first event> <ms since F9 or the replay start, "-" before> <event>. A headless replay reads from it when to start after
+ * the scene loads and when the cutscene ends. */
+static pthread_mutex_t timeline_mutex=PTHREAD_MUTEX_INITIALIZER;
+static FILE *timeline_file;
+static uint64_t timeline_t0, timeline_mark; /* timeline_mark: F9 or the replay start (0: none yet) */
+static void timeline_write(const char *event, int mark) {
+    static int checked;
+    pthread_mutex_lock(&timeline_mutex);
+    if (!checked) {
+        checked=1;
+        const char *path=getenv("TLG_PAD_TIMELINE"), *rec=getenv("TLG_PAD_RECORD");
+        char p[1024];
+        if ((!path || !*path) && rec && *rec) { snprintf(p,sizeof p,"%s.timeline.txt",rec); path=p; }
+        if (path && *path) timeline_file=fopen(path,"w");
+        timeline_t0=now_us();
+    }
+    if (timeline_file) {
+        const uint64_t t=now_us();
+        if (mark) timeline_mark=t;
+        if (timeline_mark) fprintf(timeline_file,"%llu %llu %s\n",(unsigned long long)((t-timeline_t0)/1000),(unsigned long long)((t-timeline_mark)/1000),event);
+        else fprintf(timeline_file,"%llu - %s\n",(unsigned long long)((t-timeline_t0)/1000),event);
+        fflush(timeline_file);
+    }
+    pthread_mutex_unlock(&timeline_mutex);
+}
+void tlg_pad_timeline(const char *event) { timeline_write(event,0); }
 static FILE *record_file;
 static uint64_t record_start;
 static PadSample record_last;
@@ -693,10 +721,14 @@ static void record_sample(const PadData *d) {
         if (record_file) {
             fclose(record_file); record_file=NULL;
             printf("Runtime: pad recording stopped (%s)\n",path);
+            tlggpu_overlay_notice("Actions recorded",3.0f);
+            timeline_write("F9 recording stopped",0);
         } else if ((record_file=fopen(path,"w"))) {
             record_start=now_us();
             memset(&record_last,0xff,sizeof(record_last));
             printf("Runtime: pad recording started (%s, F9 stops)\n",path);
+            tlggpu_overlay_notice("Recording now (F9 stops)",3.0f);
+            timeline_write("F9 recording started",1);
         }
     }
     f9_was_down=f9;
@@ -729,6 +761,7 @@ static void replay_sample(PadData *d) {
             printf("Runtime: pad replay of %zu samples from %s\n",replay_count,path ? path : "(unset)");
         }
         replay_start=now_us();
+        timeline_write("replay started",1);
         replay_next=0;
     }
     const uint32_t ms=(uint32_t)((now_us()-replay_start)/1000);
