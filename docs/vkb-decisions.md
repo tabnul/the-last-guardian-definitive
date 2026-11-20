@@ -9,6 +9,22 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-20 - Draw targets: reuse the last draw's answer while the targets stay the same (not yet merged)
+
+- **Problem:** every draw looked up its colour and depth targets twice in the engine's object table (once to check the
+  view is known, once for the attachment), each time under the shared objects lock, although 98% of draws use the same
+  targets as the draw before. Measured on the condor scene: about 1.5 ms per frame on the engine's render thread (issue 82).
+- **Considered:** (1) each thread keeps the targets it found for its last draw and reuses them while the draw's target
+  set (view ids, formats, slots in use) is the same and the existing view change counter (moves when a view or an image
+  goes) has not moved; one place, in the draw recorder; (2) a small per-view answer table inside the attachment lookup,
+  as the existing lookup memo for shader textures does: also helps when two target sets alternate, but needs a second
+  table for the first-use view check and still does one table probe per target per draw; (3) split the shared lock:
+  that is point 1 of the issue, larger and riskier, a design note first (owner).
+- **Choice:** 1. It matches the measured pattern (same targets as the previous draw), keeps the exact answers the
+  lookups give (the same change counter the shader-texture memo trusts), and adds one switch and no new path for any
+  machine. Owner chose to fix point 2 ("yes", issue 82); the box chose the way.
+- **Links:** issue 82; pull request of branch `fix/vkb-target-reuse-issue82`.
+
 ## 2026-11-20 - A second picture measure for faint detail, as a separate tool (not yet merged)
 
 - **Owner review 2026-11-20 (pull request 97), added to this entry:** owner: "some should be ignored (log only), some it is way too harsh". Done: (1) the tool reads the confirmed log-only list (no per-scene rule in the tool); the fight scene and the two ending videos the owner named are on that list already. (2) a flagged tile must also change its detail by at least 0.6 grey levels in absolute terms, so faint dark differences nobody can see are not flagged. This clears the owner's two "no difference by eye" scenes and the mild floor-grain scene without a mask; the Tritrigger wall without the fix and the blurred rock scene stay flagged. The two masks the owner asked for were not needed, since neither scene is flagged any more. Cost: a tile whose detail falls from about 1.0 to 0.3 grey levels is no longer flagged, so very faint losses in dark areas are not seen by this tool. Proof numbers (new verdicts, from stored pictures): FA_f02_End OK, FB2_End OK, FF_c01_TunnelEntrance OK, SF_c02_Before_bridge OK, Care_Step2 LOST (404 tiles), Tritrigger without PR 51 LOST (168 tiles), with PR 51 UNJUDGED. The fight scene is SD_a01_Start (confirmed in log-only.txt). The list is read only with `--scene-dir`. Chosen by: owner asked, box built.

@@ -57,6 +57,8 @@ struct Attachment {
     vk::Image image{}; ///< V4d: for the barriers
 };
 bool AttachmentFor(u64 view_id, vk::Format format, vk::CommandBuffer cmd, Attachment& out);
+/// note 46 / issue 82: moves whenever a view or an image goes or an image's layout is set back; while it stays, an AttachmentFor answer for the same view id and format stays
+[[nodiscard]] u64 ViewEpoch();
 /// The format of our view of engine view `view_id` (eUndefined: none)
 [[nodiscard]] vk::Format ViewFormat(u64 view_id);
 /// Debug: the size of the first subresource of our view of engine view `view_id` (false: none)
