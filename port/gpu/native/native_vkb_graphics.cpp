@@ -2314,6 +2314,14 @@ void Draw(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
     const u64 fetch = Core::NativeDraw::FetchObjectOf(ctx, vs);
     const u64 k0 = TimesOn() ? NowNs() : 0;
     const u64 key = VariantKey(ctx, vs, ps, fetch, fixed, kind == 2);
+    // O2 bound (debug, TLG_VKB_O2_TWICE=1): the fixed state and the variant key computed a second time and thrown away: the fps drop is their cost (L-KEY's ceiling,
+    // note 96), measured without timers and without a wrong pipeline
+    static const bool o2_twice = [] { const char* e = std::getenv("TLG_VKB_O2_TWICE"); return e != nullptr && e[0] == '1'; }();
+    if (o2_twice) {
+        const VkbVulkan::FixedState* again = Core::NativeDraw::FixedStateOf(ctx);
+        volatile u64 sink = again != nullptr ? VariantKey(ctx, vs, ps, Core::NativeDraw::FetchObjectOf(ctx, vs), again, kind == 2) : 0;
+        (void)sink;
+    }
     if (TimesOn()) {
         c_key_ns.fetch_add(NowNs() - k0, std::memory_order_relaxed);
     }
