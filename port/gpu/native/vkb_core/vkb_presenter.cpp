@@ -594,12 +594,13 @@ bool Presenter::PresentImage(Frame* frame, vk::Image source, bool real, bool is_
 
 void Presenter::RecordFrameGeneration(Frame* frame, vk::CommandBuffer cmdbuf) {
     frame->fg_ready = false;
-    if (!Core::Vkb::DlssGlue::FgWanted() || fg_failed) {
+    if (!Core::Vkb::DlssGlue::AnyFgWanted() || fg_failed) {
         return;
     }
+    const bool fsr = Core::Vkb::DlssGlue::FsrFgWanted(); // TLG_VKB_FG has one value: fsr or dlss
     if (fg_state < 0) {
-        fg_state = Core::Vkb::DlssGlue::FgAvailable() ? 1 : 0;
-        LOG_INFO(Render_Vulkan, "vkb frame generation (DLSS): {}", fg_state ? "available" : "not available");
+        fg_state = fsr || Core::Vkb::DlssGlue::FgAvailable() ? 1 : 0; // FSR: the library is linked in, its context is made on first use
+        LOG_INFO(Render_Vulkan, "vkb frame generation ({}): {}", fsr ? "FSR" : "DLSS", fg_state ? "available" : "not available");
     }
     Core::Vkb::Aa::FgInputs inputs{};
     if (!fg_state || !Core::Vkb::Aa::TakeFgInputs(inputs)) {
@@ -632,7 +633,7 @@ void Presenter::RecordFrameGeneration(Frame* frame, vk::CommandBuffer cmdbuf) {
         frame->fg_view = Check(device.createImageView({.image = frame->fg_image, .viewType = vk::ImageViewType::e2D, .format = format,
                                                        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}}));
     }
-    if (fg_width != frame->width || fg_height != frame->height || fg_format != format) {
+    if (!fsr && (fg_width != frame->width || fg_height != frame->height || fg_format != format)) {
         if (!Core::Vkb::DlssGlue::FgCreate(device, cmdbuf, frame->width, frame->height, format)) {
             LOG_ERROR(Render_Vulkan, "vkb frame generation: off, NVIDIA refused to create it ({}x{} {})", frame->width, frame->height, vk::to_string(format));
             fg_failed = true;
@@ -655,7 +656,11 @@ void Presenter::RecordFrameGeneration(Frame* frame, vk::CommandBuffer cmdbuf) {
     cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = static_cast<u32>(barriers.size()), .pImageMemoryBarriers = barriers.data()});
     using Core::Vkb::DlssGlue::Image;
     const auto color = vk::ImageAspectFlagBits::eColor;
-    const bool ok = Core::Vkb::DlssGlue::FgEvaluate(cmdbuf, Image{frame->image, frame->image_view, format, color, frame->width, frame->height},
+    if (fsr && !fsr_fg) {
+        fsr_fg = std::make_unique<FsrFg>(instance, frame_scheduler);
+    }
+    const bool ok = fsr ? fsr_fg->Record(cmdbuf, frame->image, frame->fg_image, frame->width, frame->height, inputs, fg_interval_ms)
+                        : Core::Vkb::DlssGlue::FgEvaluate(cmdbuf, Image{frame->image, frame->image_view, format, color, frame->width, frame->height},
                                                     Image{inputs.depth, inputs.depth_view, inputs.depth_format, vk::ImageAspectFlagBits::eDepth, inputs.width, inputs.height},
                                                     Image{inputs.motion, inputs.motion_view, vk::Format::eR16G16Sfloat, color, inputs.width, inputs.height},
                                                     Image{frame->fg_image, frame->fg_view, format, color, frame->width, frame->height}, inputs.reset);

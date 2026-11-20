@@ -57,6 +57,13 @@ class BackendAaEnvTests(unittest.TestCase):
         # TAA with frame generation: the engine has no TAA, it says so and runs FSR 3.1 (frame generation makes its own inputs)
         env = tlg_run.backend_aa_env({}, {'aa_row': '1', 'upscaler': 'taa', 'frame_generation': '1'})
         self.assertEqual(env, {'TLG_VKB_AA': 'taa', 'TLG_VKB_FG': 'dlss'})
+
+    def test_fsr_frame_generation(self):
+        # the row's 2 = FSR frame generation, on top of the chosen AA
+        env = tlg_run.backend_aa_env({}, {'aa_row': '1', 'upscaler': 'fsr4', 'frame_generation': '2'})
+        self.assertEqual(env, {'TLG_VKB_AA': 'fsr4', 'TLG_VKB_FG': 'fsr'})
+        env = tlg_run.backend_aa_env({'frame_rate': '30'}, {'aa_row': '1', 'upscaler': 'fsr4', 'frame_generation': '2'})
+        self.assertEqual(env, {'TLG_VKB_AA': 'fsr4'})
         env = tlg_run.backend_aa_env({'frame_rate': '30'}, {'aa_row': '1', 'upscaler': 'off', 'frame_generation': '1'})
         self.assertEqual(env, {'TLG_VKB_AA': 'off'})
 
