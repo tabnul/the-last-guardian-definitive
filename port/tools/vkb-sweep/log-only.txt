@@ -70,3 +70,18 @@ proposed s08_LargeTower s08_06_Climb_Tower_Again_001 mask from 3 photos would le
 proposed s12_TheNest s12_12_Escape_from_The_Nest_001 mask from 3 photos would leave out 29.01% (limit 25%)
 # --- event-driven scene (owner 2026-11-18, PR 35 / issue 27): a lot happens, the picture is not comparable between takes
 confirmed s02_TricosCave s02_01_Care_Step1_001 owner: event-driven scene, picture not comparable between takes (PR 35, issue 27)
+# --- photo setup crashes the normal renderer (owner 2026-11-19, issue 20): judged through the log only
+confirmed s11_ColumnCorridor CC_JumpingCart_01 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s11_ColumnCorridor CC_Start_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s12_TheNest s12_11_Hungry_start_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s13_FirstFlight FF_c01_EnterAntenna photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s14_CondorClash CH_e01_AfterPulseBreakDoorDestruction_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s14_CondorClash CH_e01_BeforePulseBreakDoorDestruction_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s04_FirstAntenna FA_a04_TricoAwakeBattle_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s04_FirstAntenna FA_f01_PillarsArea_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s07_Alone AL_a01_MillerFall_01 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s07_Alone AL_d01_AloneEnd_01 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s12_TheNest s12_11_Climbing_with_Trico_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s12_TheNest s12_11_Hungry_end_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s16_SoldiersDen SD_a01_Elevator_01 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s14_CondorClash CH_e01_EndCare_001 cutscene: photo setup crashes the normal renderer, the other take is blank (owner accepted, issue 20)
