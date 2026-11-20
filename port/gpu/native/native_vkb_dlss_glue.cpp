@@ -70,6 +70,13 @@ bool Usable(std::string& why) {
     return true;
 }
 
+void Release(vk::Device device) {
+    if (Vulkan::Dlss* dlss = Vulkan::Dlss::Get()) {
+        IdleDevice(device);
+        dlss->ReleaseFeature();
+    }
+}
+
 bool FgAvailable() {
     Vulkan::Dlss* dlss = Vulkan::Dlss::Get();
     return FgWanted() && dlss != nullptr && dlss->FgAvailable();

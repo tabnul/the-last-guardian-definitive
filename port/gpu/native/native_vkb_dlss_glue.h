@@ -38,6 +38,9 @@ void Initialize(vk::Instance instance, vk::PhysicalDevice physical, vk::Device d
 bool Run(vk::Device device, vk::CommandBuffer cmd, const Image& color, const Image& depth, const Image& motion, const Image& output, float jitter_x, float jitter_y,
          bool reset, float frame_ms, float sharpness);
 
+/// Issue 99: frees the DLAA feature after DLAA handed over to another AA (`device` idles first: submitted work may still use it)
+void Release(vk::Device device);
+
 /// F2: DLSS frame generation: one image between the previous finished frame and `backbuffer` (the finished frame with the interface), from the render depth and the
 /// motion (render pixels, previous - current). FgCreate on the first use and a size or format change (`device` idles first).
 [[nodiscard]] bool FgAvailable();

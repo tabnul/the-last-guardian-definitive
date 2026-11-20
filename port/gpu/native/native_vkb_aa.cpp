@@ -153,6 +153,9 @@ void HandOverLine(const char* made) {
         return;
     }
     std::scoped_lock lock{handover_mutex};
+    if (handover_line.empty()) {
+        return; // a second hand-over's flag, its steps already in the line written before
+    }
     took_over = made != nullptr ? made : "off";
     const std::string text = handover_line + ". " + (made != nullptr ? fmt::format("{} native AA took over", made) : std::string("Nothing could take over: AA off"));
     if (handover_line_fault || made == nullptr) {
@@ -649,9 +652,14 @@ bool EnsureTaa(u32 w, u32 h, std::string& why) {
     return true;
 }
 
+const char* AaName() {
+    return Chosen() == Kind::Fsr4 ? "FSR 4" : Chosen() == Kind::Taa ? "TAA" : Chosen() == Kind::Dlaa ? "DLAA" : "FSR 3.1";
+}
+
 bool EnsureContext(u32 w, u32 h) {
     if ((context != nullptr || (Chosen() == Kind::Dlaa && output != VK_NULL_HANDLE) || (Chosen() == Kind::Fsr4 && fsr4_made) ||
          (Chosen() == Kind::Taa && taa_hist[0] != VK_NULL_HANDLE)) && ctx_w == w && ctx_h == h) {
+        HandOverLine(AaName()); // a hand-over to an AA that already exists (none today) still gets its line
         return true;
     }
     DestroyContext();
@@ -747,7 +755,7 @@ make_output:
     } else if (Chosen() == Kind::Taa) {
         LOG_INFO(Render_Vulkan, "vkb aa: TAA {}x{} on the game's motion vectors (in render pixels)", w, h);
     }
-    HandOverLine(Chosen() == Kind::Fsr4 ? "FSR 4" : Chosen() == Kind::Taa ? "TAA" : Chosen() == Kind::Dlaa ? "DLAA" : "FSR 3.1");
+    HandOverLine(AaName());
     return true;
 }
 
@@ -1157,6 +1165,7 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter, bool came
                     why = "DLSS did not run on a frame";
                 }
                 HandOver(From::Dlaa, *instance, why, true);
+                Core::Vkb::DlssGlue::Release(instance->GetDevice()); // DLAA is not used again this session
                 Barrier(cmd);
                 return;
             }
