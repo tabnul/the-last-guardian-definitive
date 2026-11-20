@@ -197,6 +197,14 @@ def summary(row):
 STOP = []
 
 
+def pid_alive(pid):
+    """Is process pid running (the lock check; /proc on Linux, tasklist on Windows: issue 89)."""
+    if os.name != "nt":
+        return os.path.exists(f"/proc/{pid}")
+    out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True).stdout
+    return str(pid) in out
+
+
 def main():
     args = sys.argv[1:]
     scenes_file = None
@@ -224,7 +232,7 @@ def main():
     lock = os.path.join(root, f"sweep-vkb{vkb}.pid")
     if os.path.exists(lock):
         pid = int(open(lock).read().strip() or 0)
-        if pid and os.path.exists(f"/proc/{pid}"):
+        if pid and pid_alive(pid):
             sys.exit(f"a sweep is already running in {root} (pid {pid})")
     with open(lock, "w") as f:
         f.write(f"{os.getpid()}\n")
@@ -236,7 +244,8 @@ def main():
 
     def stop(sig, frame):
         STOP.append(sig)
-        if child and child[0].poll() is None:
+        # Windows: Ctrl+C already reaches shot.py (same console); send_signal(SIGINT) is not supported there
+        if child and child[0].poll() is None and os.name != "nt":
             child[0].send_signal(signal.SIGINT)  # shot.py ends its take, puts the save back, closes its screen
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)

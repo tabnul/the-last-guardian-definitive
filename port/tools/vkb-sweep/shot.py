@@ -21,7 +21,13 @@ import compare  # noqa: E402  (blank picture check)
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORT = os.path.dirname(os.path.dirname(HERE))
 START = os.path.join(PORT, "tools", "scene-check", "start.save")
-USER = os.environ.get("TLG_USER_DIR", os.path.expanduser("~/tlgrun/user"))
+# Windows (owner's PC sweep, issue 89): the game runs from an install folder (SHOT_INSTALL, a staged release with
+# this build's out/), fullscreen on the real screen; the picture is the game window's area of that screen.
+WIN = os.name == "nt"
+INSTALL = os.environ.get("SHOT_INSTALL", "")
+if WIN and not os.path.isfile(os.path.join(INSTALL, "Play The Last Guardian.exe")):
+    sys.exit("Windows: set SHOT_INSTALL to the test install (the folder with 'Play The Last Guardian.exe')")
+USER = os.path.join(INSTALL, "user") if WIN else os.environ.get("TLG_USER_DIR", os.path.expanduser("~/tlgrun/user"))
 DISPLAY = os.environ.get("SHOT_DISPLAY", ":93")
 TITLE_S, LOAD_S, WAIT_S, SETTLE_S = 400, 240, 8, 4
 GB = 1 << 30
@@ -92,8 +98,10 @@ def run(cmd, **kw):
 
 
 class Screen:
-    """Own Xvfb, so the game window is the only thing on it and the display number is known."""
+    """Own Xvfb, so the game window is the only thing on it and the display number is known. Windows: the real screen."""
     def __init__(self):
+        if WIN:
+            return
         if os.path.exists(f"/tmp/.X11-unix/X{DISPLAY[1:]}"):
             sys.exit(f"display {DISPLAY} is in use (set SHOT_DISPLAY)")
         self.proc = subprocess.Popen(["Xvfb", DISPLAY, "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
@@ -105,8 +113,46 @@ class Screen:
         sys.exit("Xvfb did not start")
 
     def close(self):
+        if WIN:
+            return
         self.proc.terminate()
         self.proc.wait(10)
+
+
+def win_picture(path):
+    """Windows: bring the game window to the front, then save only that window's area of the screen."""
+    import ctypes
+    from ctypes import wintypes
+    from PIL import ImageGrab
+    u = ctypes.windll.user32
+    u.SetProcessDPIAware()
+    out = run(["tasklist", "/FI", "IMAGENAME eq tlg-probe.exe", "/FO", "CSV", "/NH"]).stdout
+    pids = {int(m) for m in re.findall(r'"tlg-probe\.exe","(\d+)"', out)}
+    found = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def each(hwnd, _):
+        pid = wintypes.DWORD()
+        u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        r = wintypes.RECT()
+        if pid.value in pids and u.IsWindowVisible(hwnd) and u.GetWindowRect(hwnd, ctypes.byref(r)):
+            found.append(((r.right - r.left) * (r.bottom - r.top), hwnd))
+        return True
+    u.EnumWindows(each, 0)
+    if not found:
+        return "no window"
+    hwnd = max(found)[1]
+    u.ShowWindow(hwnd, 9)  # restore if minimised
+    u.SetForegroundWindow(hwnd)
+    time.sleep(1.0)
+    r, pt = wintypes.RECT(), wintypes.POINT(0, 0)
+    u.GetClientRect(hwnd, ctypes.byref(r))
+    u.ClientToScreen(hwnd, ctypes.byref(pt))
+    w, h = r.right, r.bottom
+    if w <= 0 or h <= 0:
+        return "no window"
+    ImageGrab.grab(bbox=(pt.x, pt.y, pt.x + w, pt.y + h), all_screens=True).save(path)
+    return f"{w}x{h}" if os.path.exists(path) else "import failed: grab saved nothing"
 
 
 def game_window():
@@ -125,6 +171,8 @@ def game_window():
 
 
 def picture(path):
+    if WIN:
+        return win_picture(path)
     win = game_window()
     if not win:
         return "no window"
@@ -232,6 +280,8 @@ class MemoryGuard:
 class Game:
     def __init__(self, env, log_path, exec_path):
         self.log_path, self.seen = log_path, []
+        if WIN:
+            return self.win_start(env, exec_path)
         # no TLG_ setting of the calling shell reaches the game: only the fixed ones below and NAME=VALUE
         base = {k: v for k, v in os.environ.items() if not k.startswith("TLG_")}
         full = dict(base, DISPLAY=DISPLAY, MESA_VK_WSI_DEBUG="sw", TLG_USER_DIR=USER, TLG_SKIP_LOGOS="1",
@@ -241,7 +291,44 @@ class Game:
         self.proc = subprocess.Popen([sys.executable, os.path.join(PORT, "launcher", "tlg_run.py")], cwd=PORT,
                                      env=full, stdout=self.log, stderr=subprocess.STDOUT, start_new_session=True)
 
+    def win_start(self, env, exec_path):
+        """Windows: start the install's launcher exe; the game writes its own log in out/logs (copied to TAG.log)."""
+        base = {k: v for k, v in os.environ.items() if not k.startswith("TLG_")}
+        full = dict(base, TLG_SKIP_LOGOS="1", TLG_FPS="unlocked", TLG_HDR="0", TLG_FG="0", TLG_DLAA="1",
+                    TLG_FRAME_STATS="1", TLG_LUA_EXEC=exec_path)
+        full.update(env)
+        self.launched, self.game_log, self.log = time.time(), None, None
+        self.proc = subprocess.Popen([os.path.join(INSTALL, "Play The Last Guardian.exe")], cwd=INSTALL, env=full,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def ended(self):
+        """None while the game runs, else its exit code ("unknown" on Windows, where the launcher starts it)."""
+        if not WIN:
+            return self.proc.poll()
+        return None if game_running() or time.time() - self.launched < 30 else "unknown"
+
+    def win_lines(self):
+        if not self.game_log:
+            logs = []
+            for p in glob.glob(os.path.join(INSTALL, "out", "logs", "run-*.log")):
+                try:
+                    if os.path.getmtime(p) >= self.launched - 1:
+                        logs.append((os.path.getmtime(p), p))
+                except OSError:
+                    continue  # the game deletes old logs while we look
+            if not logs:
+                return self.seen
+            self.game_log = max(logs)[1]
+        try:
+            with open(self.game_log, errors="replace") as f:
+                self.seen = f.read().splitlines()
+        except OSError:
+            pass
+        return self.seen
+
     def lines(self):
+        if WIN:
+            return self.win_lines()
         with open(self.log_path, errors="replace") as f:
             self.seen = f.read().splitlines()
         return self.seen
@@ -251,7 +338,7 @@ class Game:
         while time.monotonic() < end:
             if until(self.lines()):
                 return True
-            if self.proc.poll() is not None:
+            if self.ended() is not None:
                 return False
             time.sleep(0.2)
         return False
@@ -260,6 +347,13 @@ class Game:
         return next((l for l in self.lines()[start:] if text in l), "")
 
     def close(self):
+        if WIN:  # our own test start of the game (never the owner's): closed like bench.py does
+            run(["taskkill", "/F", "/IM", "tlg-probe.exe"])
+            if self.game_log:
+                shutil.copyfile(self.game_log, self.log_path)
+            if not gone():
+                raise SystemExit("the game did not exit after the take; stopped")
+            return
         for sig in (signal.SIGTERM, signal.SIGKILL):
             try:
                 os.killpg(self.proc.pid, sig)
@@ -275,10 +369,16 @@ class Game:
             raise SystemExit("the game did not exit after the take; stopped")
 
 
+def game_running():
+    if WIN:
+        return "tlg-probe.exe" in run(["tasklist", "/FI", "IMAGENAME eq tlg-probe.exe"]).stdout
+    return run(["pgrep", "-x", "tlg-probe"]).returncode == 0
+
+
 def gone(seconds=20):
     """True once no game process is left (a killed game takes a moment to go)."""
     end = time.monotonic() + seconds
-    while run(["pgrep", "-x", "tlg-probe"]).returncode == 0:
+    while game_running():
         if time.monotonic() > end:
             return False
         time.sleep(0.5)
@@ -300,7 +400,7 @@ def take(guard, out, tag, stage, scene, env, cam_file, cam_arg):
     guard.watch(game.proc)
     try:
         status = steps(game, send, out, tag, stage, scene, env, cam_file, cam_arg)
-        code = game.proc.poll()
+        code = game.ended()
         if code is not None and not guard.fired:  # it ended by itself, before this script closed it
             print(f"  game ended by itself before the take was done (exit code {code})", flush=True)
     finally:
@@ -313,9 +413,14 @@ def take(guard, out, tag, stage, scene, env, cam_file, cam_arg):
 
 def steps(game, send, out, tag, stage, scene, env, cam_file, cam_arg):
     if not game.wait(TITLE_S, lambda ls: any("opA_010 titleScreen" in l for l in ls)):
-        return "no title" if game.proc.poll() is None else "ended before title"
+        return "no title" if game.ended() is None else "ended before title"
     # the renderer that really runs: the new engine says so in its log, the normal renderer does not
-    new_engine = any(l.startswith("Renderer: engine-to-Vulkan backend") for l in game.seen)
+    # Windows (issue 89): the release launcher writes no "Renderer:" line; the new engine's own frame-rate lines end in
+    # "; new engine" (TLG_FRAME_STATS=1, every 5 s; the title can come first, so wait for one such line)
+    if WIN:
+        game.wait(8, lambda ls: any(l.startswith("Frame stats:") for l in ls))
+    new_engine = any(l.startswith("Renderer: engine-to-Vulkan backend") or (l.startswith("Frame stats:") and "new engine" in l)
+                     for l in game.seen)
     if new_engine != (env["TLG_VKB"] == "1"):
         return f"wrong renderer: TLG_VKB={env['TLG_VKB']} but the new engine {'ran' if new_engine else 'did not run'}"
     game.wait(1)
@@ -331,7 +436,7 @@ def steps(game, send, out, tag, stage, scene, env, cam_file, cam_arg):
         i = next((j for j, l in enumerate(new) if "blocking overlay started" in l), None)
         return i is not None and any("blocking overlay ended" in l for l in new[i:])
     if not game.wait(LOAD_S, loaded):
-        return "no load" if game.proc.poll() is None else "ended during load"
+        return "no load" if game.ended() is None else "ended during load"
     game.wait(WAIT_S)
     cam = cam_arg or (open(cam_file).read().split() if os.path.exists(cam_file) else None)
     if not cam:
