@@ -122,7 +122,7 @@ std::array<std::atomic<u64>, 8> c_rec_refused_by{};
 constexpr std::array<const char*, 8> RecRefusedNames{"flat_user_data", "written_buffer", "not_indexed_buffer", "bda_or_fault", "image_without_key", "compile", "pipeline", "other"};
 /// R2 / R3 switch: TLG_VKB_RECORD=1 (the global set is made) and the scope; this step: the shadow cascades (Z pass views 1, 2)
 thread_local bool t_row_failed = false;
-thread_local std::array<u64, 16> t_pipe_words{}; ///< R7 step B: the key of a cache miss, stored when the slow path found the pipeline
+thread_local std::array<u64, 24> t_pipe_words16{}; ///< R7 step D: the key of a cache miss, stored when the slow path found the pipeline
 thread_local u64 t_pipe_hash = 0;
 thread_local bool t_pipe_pending = false; ///< R3: the record-mode draw could not build its row (it is drawn the plain way)
 bool RecordOn() {
@@ -1438,30 +1438,55 @@ Stream::Slice RowSlice(u64 size) {
 /// indexed mode assigned them (buffers, images, samplers); the hazards into `uses`. False: the draw cannot go this way (it then takes the plain path).
 /// R7 step C: the row entries of one batch's resources, made once per batch (its first draw pushed their hazards into the batch); empty when the batch changes
 struct RowMemoEntry {
+    u64 key{}, serial{};
     u32 a{}, b{}, c{};
 };
+/// R7 step D: the lean path's per-thread state, one plain block (fixed-size open-addressing tables)
+struct PipeSlotLean {
+    u64 hash{};
+    std::array<u64, 24> words{};
+    void* v{};
+    const VkbVulkan::FixedState* fixed{};
+};
+struct LeanBlock {
+    std::array<RowMemoEntry, 4096> memo{};
+    std::array<PipeSlotLean, 4096> pipes{};
+};
+thread_local LeanBlock* t_lean = nullptr;
+inline LeanBlock& Lean() {
+    if (t_lean == nullptr) {
+        t_lean = new LeanBlock;
+    }
+    return *t_lean;
+}
 thread_local u64 t_row_memo_serial = ~0ull;
-thread_local std::unordered_map<u64, RowMemoEntry> t_row_memo;
+inline RowMemoEntry* MemoFind(u64 key, u64 serial) {
+    auto& memo = Lean().memo;
+    const u32 at = static_cast<u32>((key * 0x9e3779b97f4a7c15ull) >> 52) & 4095;
+    for (u32 i = 0; i < 4; ++i) {
+        RowMemoEntry& e = memo[(at + i) & 4095];
+        if (e.key == key && e.serial == serial) {
+            return &e;
+        }
+    }
+    return nullptr;
+}
+inline void MemoPut(u64 key, u64 serial, u32 a, u32 b, u32 c) {
+    auto& memo = Lean().memo;
+    const u32 at = static_cast<u32>((key * 0x9e3779b97f4a7c15ull) >> 52) & 4095;
+    for (u32 i = 0; i < 4; ++i) {
+        RowMemoEntry& e = memo[(at + i) & 4095];
+        if (e.serial != serial || e.key == key) {
+            e = {key, serial, a, b, c};
+            return;
+        }
+    }
+    memo[at] = {key, serial, a, b, c};
+}
 std::atomic<u64> c_row_memo_hits{0}, c_row_memo_misses{0};
 bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<Stream::Use, 64>& uses, u64 memo_serial = 0) {
     using BT = VkbShader::BufferType;
-    if (memo_serial != 0 && memo_serial != t_row_memo_serial) {
-        t_row_memo.clear();
-        t_row_memo_serial = memo_serial;
-    }
-    const auto memo_find = [&](u64 key, u32 n) -> bool {
-        if (memo_serial == 0) {
-            return false;
-        }
-        const auto it = t_row_memo.find(key);
-        if (it == t_row_memo.end()) {
-            c_row_memo_misses.fetch_add(1, std::memory_order_relaxed);
-            return false;
-        }
-        c_row_memo_hits.fetch_add(1, std::memory_order_relaxed);
-        return n != 0;
-    };
-    (void)memo_find;
+    t_row_memo_serial = memo_serial;
     const auto& info = *st.info;
     const u64 alignment = instance->StorageMinAlignment();
     u32 at = st.row_start;
@@ -1492,11 +1517,11 @@ bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector
             } else {
                 memo_key = (src.address * 0x9e3779b97f4a7c15ull) ^ src.size ^ (u64{7} << 60);
             }
-            if (const auto it = t_row_memo.find(memo_key); it != t_row_memo.end()) {
+            if (const RowMemoEntry* e = MemoFind(memo_key, memo_serial)) {
                 c_row_memo_hits.fetch_add(1, std::memory_order_relaxed);
-                row[at++] = it->second.a;
-                row[at++] = it->second.b;
-                row[at++] = it->second.c;
+                row[at++] = e->a;
+                row[at++] = e->b;
+                row[at++] = e->c;
                 continue;
             }
             c_row_memo_misses.fetch_add(1, std::memory_order_relaxed);
@@ -1541,7 +1566,7 @@ bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector
         row[at++] = static_cast<u32>(w.offset);
         row[at++] = static_cast<u32>(size);
         if (memo_key != 0) {
-            t_row_memo[memo_key] = {row[at - 3], row[at - 2], row[at - 1]};
+            MemoPut(memo_key, memo_serial, row[at - 3], row[at - 2], row[at - 1]);
         }
         uses.push_back(Stream::BufferUse(w.buffer, w.offset, size, false));
         Core::Vkb::NoteBind(1, w, size, false);
@@ -1551,9 +1576,9 @@ bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector
         const u64 object = src.cls == Source::Class::Slot && src.kind == 1 ? SlotObject(ctx, st.index, 1, src.slot) : 0;
         const u64 image_key = memo_serial != 0 && object != 0 ? (object * 0x9e3779b97f4a7c15ull) ^ (u64{static_cast<u32>(st.image_types[i])} << 48) ^ (u64{info.images[i].array_key} << 56) ^ 2 : 0;
         if (image_key != 0) {
-            if (const auto it = t_row_memo.find(image_key); it != t_row_memo.end()) {
+            if (const RowMemoEntry* e = MemoFind(image_key, memo_serial)) {
                 c_row_memo_hits.fetch_add(1, std::memory_order_relaxed);
-                row[at++] = it->second.a;
+                row[at++] = e->a;
                 continue;
             }
         }
@@ -1564,7 +1589,7 @@ bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector
         }
         row[at++] = Core::Vkb::Indexed::ImageSlot(info.images[i].array_key, view);
         if (image_key != 0) {
-            t_row_memo[image_key] = {row[at - 1], 0, 0};
+            MemoPut(image_key, memo_serial, row[at - 1], 0, 0);
         }
         uses.push_back(Stream::ImageUse(image, info.images[i].is_written));
     }
@@ -1583,8 +1608,7 @@ bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector
 /// R7 step C: a cached record-mode draw goes straight into the open batch of its pass (the same depth and colour targets): its row (memo per batch), its index buffer,
 /// its push constants; no draw job. False: the generic path (first draw of a batch, other targets, AA on, a buffer the lean path does not take).
 std::atomic<u64> c_lean{0}, c_lean_refused{0};
-bool BatchMatches(u64 ctx);
-u64 CurrentBatchSerial();
+std::atomic<u64> c_lean_ns{0}, c_lean_n{0}, c_lean_words_ns{0}, c_lean_row_ns{0}; ///< TLG_VKB_LEAN_TIMES=1
 bool LeanAppend(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u64 a1, u64 a2, u64 a3);
 
 /// note 109 census (debug, TLG_VKB_DEPTH_CENSUS=1, inside the shadow cascade passes the Z pass hook marks): does each stage read the same engine objects as at the
@@ -2564,7 +2588,7 @@ struct BatchJob final : Stream::Job {
         c_batch_draws.fetch_add(draws.size(), std::memory_order_relaxed);
     }
 };
-thread_local std::unique_ptr<BatchJob> t_batch;
+thread_local BatchJob* t_batch = nullptr; ///< R7 step D: a plain pointer (owned; enqueued at the flush)
 bool BatchMatches(u64 ctx) {
     return t_batch && !t_batch->draws.empty() && t_batch->engine_dsv == Rd<u64>(ctx, CtxDepthStencilView) && t_batch->engine_rtv0 == Rd<u64>(ctx, CtxRenderTargets) &&
            t_batch->engine_dsv != 0;
@@ -2592,12 +2616,40 @@ bool LeanAppend(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kin
     boost::container::small_vector<Stream::Use, 64> uses;
     const Stream::Slice slice = RowSlice(std::max<u32>(v.row_dwords, 1) * 4);
     u32* row = reinterpret_cast<u32*>(slice.data);
+    static const bool lean_times = [] { const char* e = std::getenv("TLG_VKB_LEAN_TIMES"); return e != nullptr && e[0] == '1'; }();
+    const u64 r0 = lean_times ? NowNs() : 0;
     if ((v.has_ps && !BuildRow(ctx, v.ps, row, uses, serial)) || !BuildRow(ctx, v.vs, row, uses, serial)) {
         return false;
+    }
+    if (lean_times) {
+        c_lean_row_ns.fetch_add(NowNs() - r0, std::memory_order_relaxed);
     }
     d.push.row_base = static_cast<u32>(slice.offset / 4);
     // the index buffer (the engine's index view, its own memory from its start, R7 / note 56)
     const u64 view = Rd<u64>(ctx, 0x58);
+    { // research (TLG_VKB_ID_CENSUS=1): are the engine's object ids dense (a flat table by id instead of hash lookups)?
+        static const bool id_census = [] { const char* e = std::getenv("TLG_VKB_ID_CENSUS"); return e != nullptr && e[0] == '1'; }();
+        if (id_census) {
+            static std::atomic<u64> lo{~0ull}, hi{0}, n{0};
+            const u64 vb = SlotObject(ctx, 0, 1, 0);
+            const u64 vbuf = vb != 0 ? Rd<u64>(vb, 0x30) : 0;
+            for (const u64 id : {view != 0 ? Rd<u64>(view, 0x10) : 0, vb != 0 ? Rd<u64>(vb, 0x10) : 0, vbuf != 0 ? Rd<u64>(vbuf, 0x10) : 0}) {
+                if (id == 0) {
+                    continue;
+                }
+                u64 cur = lo.load();
+                while (id < cur && !lo.compare_exchange_weak(cur, id)) {
+                }
+                cur = hi.load();
+                while (id > cur && !hi.compare_exchange_weak(cur, id)) {
+                }
+            }
+            if ((n.fetch_add(1) & 0xfffff) == 0) {
+                LOG_WARNING(Render_Vulkan, "id census: index view id {} (object {:#x}), vertex view id {}, its buffer id {}; ids seen {}..{}", view != 0 ? Rd<u64>(view, 0x10) : 0, view,
+                            vb != 0 ? Rd<u64>(vb, 0x10) : 0, vbuf != 0 ? Rd<u64>(vbuf, 0x10) : 0, lo.load(), hi.load());
+            }
+        }
+    }
     const u32 type = Rd<u32>(ctx, 0x64);
     if (view == 0 || Rd<u32>(ctx, 0x60) != 0x39 || type > 1) {
         return false;
@@ -2646,7 +2698,9 @@ void FlushBatchHere() {
     c_flush_by[std::min<u32>(t_flush_reason, 2)].fetch_add(1, std::memory_order_relaxed);
     t_flush_reason = 0;
     t_batch->work = Stream::Work::Draw;
-    Stream::EnqueueNoHook(std::move(t_batch));
+    std::unique_ptr<Stream::Job> job{t_batch};
+    t_batch = nullptr;
+    Stream::EnqueueNoHook(std::move(job));
     t_batch_flushing = false;
 }
 bool BatchOn() {
@@ -2671,7 +2725,7 @@ bool JoinBatch(DrawJob& job) {
     }
     if (!t_batch) {
         static std::atomic<u64> serials{1};
-        t_batch.reset(new BatchJob);
+        t_batch = new BatchJob;
         t_batch->serial = serials.fetch_add(1, std::memory_order_relaxed);
         t_batch->engine_dsv = t_join_dsv, t_batch->engine_rtv0 = t_join_rtv0;
         t_batch->pass = job.pass;
@@ -2920,12 +2974,6 @@ struct StepHint {
     bool valid{};
 };
 thread_local StepHint t_hint;
-struct PipeEntry {
-    std::array<u64, 16> words{};
-    Variant* v{};
-    const VkbVulkan::FixedState* fixed{};
-};
-thread_local std::unordered_map<u64, PipeEntry> t_pipe_cache;
 std::atomic<u64> c_pipe_hits{0}, c_pipe_misses{0}, c_pipe_verify{0}, c_pipe_verify_diff{0};
 void SetStepHint(u64 batch, u64 material) {
     t_hint = {batch, material, true};
@@ -2933,29 +2981,41 @@ void SetStepHint(u64 batch, u64 material) {
 void ClearStepHint() {
     t_hint.valid = false;
 }
-std::array<u64, 16> PipeWords(u64 ctx, u32 kind) {
-    std::array<u64, 16> w{};
-    w[0] = Rd<u64>(ctx, CtxVertexShader);
-    w[1] = Rd<u64>(ctx, CtxPixelShader);
-    w[2] = Rd<u64>(ctx, CtxInputLayout);
-    w[3] = Rd<u64>(ctx, 0x46c8); // rasterizer state
-    w[4] = Rd<u64>(ctx, 0x46e0); // depth stencil state
-    w[5] = Rd<u64>(ctx, 0x46f0); // blend state
-    w[6] = Rd<u64>(ctx, CtxDepthStencilView);
-    w[7] = Rd<u64>(ctx, 0x44ec) ^ (Rd<u64>(ctx, 0x44f4) * 0x9e3779b97f4a7c15ull) ^ (Rd<u64>(ctx, 0x44fc) * 0xc2b2ae3d27d4eb4full); // viewport words
-    w[8] = Rd<u64>(ctx, 0x46e8) | u64{Rd<u32>(ctx, 0x4480)} << 8 | u64{kind} << 40 | u64{Rd<u64>(ctx, 0x130e0) != 0} << 44; // stencil ref, topology, kind, target 7
-    w[9] = Rd<u64>(ctx, 0x46f8) ^ (Rd<u64>(ctx, 0x4700) << 1); // blend factor
-    w[10] = t_hint.batch;
-    w[11] = t_hint.material;
-    w[12] = t_hint.material != 0 ? Rd<u64>(t_hint.material, 0x38) : 0;
-    w[13] = Rd<u64>(ctx, SrvTable(0)); // the batch's vertex view (slot 0)
-    w[14] = Rd<u64>(ctx, CtxRenderTargets);
+/// R7 step D: the context words the fixed state (Fixed::Build's key) and the variant key (VariantKeyFast) read
+inline u64 IdOf(u64 object) {
+    return object != 0 ? Rd<u64>(object, 0x10) : 0;
+}
+void LeanWords(u64 ctx, u32 kind, u64 vs, u64 ps, std::array<u64, 24>& w) {
+    const u64 blend = Rd<u64>(ctx, 0x46f0), raster = Rd<u64>(ctx, 0x46c8), ds = Rd<u64>(ctx, 0x46e0), dsv = Rd<u64>(ctx, CtxDepthStencilView), il = Rd<u64>(ctx, CtxInputLayout);
+    w[0] = vs, w[1] = IdOf(vs), w[2] = ps, w[3] = ps != 0 ? IdOf(ps) : 0;
+    w[4] = il, w[5] = il != 0 ? Rd<u64>(vs + 0x30, 0xe0) : 0; // the input layout and the fetch object
+    w[6] = blend, w[7] = IdOf(blend), w[8] = raster, w[9] = IdOf(raster), w[10] = ds, w[11] = IdOf(ds);
+    w[12] = dsv, w[13] = IdOf(dsv);
+    w[14] = Rd<u64>(ctx, 0x46e8) | u64{Rd<u32>(ctx, 0x4480)} << 8 | u64{kind} << 40 | u64{Rd<u64>(ctx, 0x130e0) != 0} << 44;
+    w[15] = Rd<u64>(ctx, 0x46f8), w[16] = Rd<u64>(ctx, 0x4700); // blend factor
+    w[17] = Rd<u64>(ctx, 0x44ec), w[18] = Rd<u64>(ctx, 0x44f4), w[19] = Rd<u64>(ctx, 0x44fc); // viewport
     u64 t = 0;
-    for (u32 j = 0; j < 16; ++j) { // the batch's table views (vertex stage slots 40..55)
-        t = (t ^ Rd<u64>(ctx, SrvTable(0) + (40 + j) * 8)) * 0x100000001b3ull;
+    for (u32 cb = 0; cb < 8; ++cb) {
+        t = (t ^ Rd<u64>(ctx, CtxRenderTargets + cb * 8)) * 0x100000001b3ull;
     }
-    w[15] = t;
-    return w;
+    w[20] = t;
+    for (u32 stage = 0; stage < 2; ++stage) { // the objects in the shader slots each stage uses (the variant key's object classes)
+        const u64 shader = stage == 0 ? vs : ps;
+        u64 h = 0x84222325ull + stage;
+        if (shader != 0) {
+            const u64 masks[2] = {Rd<u64>(shader, 0x30 + 0xc0), Rd<u64>(shader, 0x30 + 0xc8)};
+            for (u32 half = 0; half < 2; ++half) {
+                for (u64 bits = masks[half]; bits != 0; bits &= bits - 1) {
+                    const u32 slot = half * 64 + static_cast<u32>(std::countr_zero(bits));
+                    const u64 object = Rd<u64>(ctx, SrvTable(stage) + slot * 8);
+                    h = (h ^ object ^ (u64{slot} << 56)) * 0x100000001b3ull;
+                    h = (h ^ (object != 0 ? Rd<u64>(object, 0x10) : 0)) * 0x100000001b3ull;
+                }
+            }
+        }
+        w[21 + stage] = h;
+    }
+    w[23] = ps != 0 ? Rd<u64>(ps, 0x120) : 0; // (the pixel shader's Gnm block: the export mask the fixed state reads)
 }
 void SetDepthPass(bool on) {
     t_depth_pass = on;
@@ -2994,17 +3054,35 @@ void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
         c_special.fetch_add(1, std::memory_order_relaxed);
         return;
     }
-    // R7 step B: a generator-issued record-mode draw of a cascade finds its pipeline and fixed state by the cache
+    // R7 step D: a record-mode draw of a cascade finds its pipeline and fixed state in the per-thread cache, keyed by every context word the fixed state and
+    // the variant key read (state objects and their ids, shaders, input layout, targets, viewport, blend factor, stencil reference, topology, the objects in the
+    // shader slots the stages use); a hit is the slow path's answer by construction (TLG_VKB_R7_VERIFY=1 checks it)
     t_pipe_pending = false;
-    if (t_hint.valid && t_depth_pass && RecordOn() && (kind == 0 || kind == 2) && Ready() && Core::Vkb::Indexed::On()) {
-        const std::array<u64, 16> words = PipeWords(ctx, kind);
+    if (t_depth_pass && RecordOn() && (kind == 0 || kind == 2) && BatchMatches(ctx) && Ready()) {
+        static const bool lean_times = [] { const char* e = std::getenv("TLG_VKB_LEAN_TIMES"); return e != nullptr && e[0] == '1'; }();
+        const u64 lt0 = lean_times ? NowNs() : 0;
+        struct LeanTimer {
+            u64 t0;
+            ~LeanTimer() {
+                if (t0 != 0) {
+                    c_lean_ns.fetch_add(NowNs() - t0, std::memory_order_relaxed);
+                    c_lean_n.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+        } lean_timer{lt0};
+        std::array<u64, 24> words{};
+        LeanWords(ctx, kind, vs, ps, words);
+        if (lean_times) {
+            c_lean_words_ns.fetch_add(NowNs() - lt0, std::memory_order_relaxed);
+        }
         u64 h = 0xcbf29ce484222325ull;
         for (const u64 w : words) {
             h = (h ^ w) * 0x100000001b3ull;
         }
-        const auto found = t_pipe_cache.find(h);
-        if (found != t_pipe_cache.end() && found->second.words == words) {
+        PipeSlotLean& slot = Lean().pipes[static_cast<u32>(h >> 52) & 4095];
+        if (slot.hash == h && slot.words == words && slot.v != nullptr) {
             c_pipe_hits.fetch_add(1, std::memory_order_relaxed);
+            Variant& cv = *static_cast<Variant*>(slot.v);
             static const bool verify = [] { const char* e = std::getenv("TLG_VKB_R7_VERIFY"); return e != nullptr && e[0] == '1'; }();
             if (verify) {
                 const VkbVulkan::FixedState* f = Core::NativeDraw::FixedStateOf(ctx);
@@ -3012,25 +3090,17 @@ void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
                 std::scoped_lock lock{mutex};
                 const auto r = record_variants.find(k);
                 c_pipe_verify.fetch_add(1, std::memory_order_relaxed);
-                if (f != found->second.fixed || r == record_variants.end() || r->second.get() != found->second.v) {
+                if (f != slot.fixed || r == record_variants.end() || r->second.get() != &cv) {
                     c_pipe_verify_diff.fetch_add(1, std::memory_order_relaxed);
                 }
             }
-            if (LeanAppend(ctx, *found->second.v, *found->second.fixed, kind, a1, a2, a3)) { // R7 step C
+            if (LeanAppend(ctx, cv, *slot.fixed, kind, a1, a2, a3)) {
                 return;
             }
             c_lean_refused.fetch_add(1, std::memory_order_relaxed);
-            t_row_failed = false;
-            {
-                std::scoped_lock lock{mutex};
-                Record(ctx, *found->second.v, *found->second.fixed, kind, a1, a2, a3);
-            }
-            if (!t_row_failed) {
-                return;
-            }
         } else {
             c_pipe_misses.fetch_add(1, std::memory_order_relaxed);
-            t_pipe_words = words, t_pipe_hash = h, t_pipe_pending = true; // filled below, when the slow path has the answer
+            t_pipe_words16 = words, t_pipe_hash = h, t_pipe_pending = true; // filled below, when the slow path has the answer
         }
     }
     const u64 fs0 = TimesOn() ? NowNs() : 0;
@@ -3087,8 +3157,9 @@ void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
             Compile(ctx, vs, ps, fetch, *fixed, *rit->second, kind == 2, true);
         }
         if (rit->second->ok) {
-            if (t_pipe_pending) { // R7 step B: the cache learns the slow path's answer
-                t_pipe_cache[t_pipe_hash] = {t_pipe_words, rit->second.get(), fixed};
+            if (t_pipe_pending) { // R7 step D: the cache learns the slow path's answer
+                PipeSlotLean& slot = Lean().pipes[static_cast<u32>(t_pipe_hash >> 52) & 4095];
+                slot.hash = t_pipe_hash, slot.words = t_pipe_words16, slot.v = rit->second.get(), slot.fixed = fixed;
                 t_pipe_pending = false;
             }
             t_row_failed = false;
@@ -3140,7 +3211,7 @@ nlohmann::json Report() {
                              }
                              return j;
                          }()},
-                         {"draws", c_rec_draws.load()}, {"batches_draws", {c_batches.load(), c_batch_draws.load()}}, {"lean_appended_refused", {c_lean.load(), c_lean_refused.load()}}, {"row_memo_hits_misses", {c_row_memo_hits.load(), c_row_memo_misses.load()}}, {"pipe_cache_hits_misses_verify_diff", {c_pipe_hits.load(), c_pipe_misses.load(), c_pipe_verify.load(), c_pipe_verify_diff.load()}}, {"flush_by_job_pass_end", {c_flush_by[0].load(), c_flush_by[1].load(), c_flush_by[2].load()}}, {"cut_by_work_kind", [] { nlohmann::json j = nlohmann::json::object(); for (u32 i = 0; i < 16; ++i) { if (c_cut_by_work[i].load() != 0) { j[std::to_string(i)] = c_cut_by_work[i].load(); } } return j; }()}, {"fallback_draws", c_rec_fallback.load()}, {"row_failures", c_rec_row_fail.load()}, {"global_set", Core::Vkb::Indexed::Report()}}},
+                         {"draws", c_rec_draws.load()}, {"batches_draws", {c_batches.load(), c_batch_draws.load()}}, {"lean_appended_refused", {c_lean.load(), c_lean_refused.load()}}, {"lean_ns_n_words_row", {c_lean_ns.load(), c_lean_n.load(), c_lean_words_ns.load(), c_lean_row_ns.load()}}, {"row_memo_hits_misses", {c_row_memo_hits.load(), c_row_memo_misses.load()}}, {"pipe_cache_hits_misses_verify_diff", {c_pipe_hits.load(), c_pipe_misses.load(), c_pipe_verify.load(), c_pipe_verify_diff.load()}}, {"flush_by_job_pass_end", {c_flush_by[0].load(), c_flush_by[1].load(), c_flush_by[2].load()}}, {"cut_by_work_kind", [] { nlohmann::json j = nlohmann::json::object(); for (u32 i = 0; i < 16; ++i) { if (c_cut_by_work[i].load() != 0) { j[std::to_string(i)] = c_cut_by_work[i].load(); } } return j; }()}, {"fallback_draws", c_rec_fallback.load()}, {"row_failures", c_rec_row_fail.load()}, {"global_set", Core::Vkb::Indexed::Report()}}},
             {"depth_census", {{"draws", c_dc_draws.load()}, {"variant_same", c_dc_variant_same.load()}, {"vs_n_same_samebutcb", {c_dc_stage_n[0].load(), c_dc_stage_same[0].load(), c_dc_same_but_cb[0].load()}},
                               {"ps_n_same_samebutcb", {c_dc_stage_n[1].load(), c_dc_stage_same[1].load(), c_dc_same_but_cb[1].load()}}, {"draw_same", c_dc_draw_same.load()},
                               {"shapes", [] {
