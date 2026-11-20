@@ -11138,6 +11138,18 @@ u64 PS4_SYSV_ABI ZPassEnter(u64 render_device, u64 desc, u64 a2, u64 a3, u64 a4,
             return 1;
         }
     }
+    if (NativeZPassGen::ZPassCensusOn()) { // note 107 census: the pass scanned read only, then the engine's loop runs and is counted
+        if (static const u64 original = Core::GuestHooks::OriginalEntry("DrawZPass"); original != 0) {
+            NativeZPassGen::ZPassCensus(render_device, desc, [&] {
+                const u64 d0 = Vkb::draws.load(std::memory_order_relaxed) + Vkb::inline_draws.load(std::memory_order_relaxed);
+                const auto t0 = std::chrono::steady_clock::now();
+                reinterpret_cast<GuestDraw6>(original)(render_device, desc, a2, a3, a4, a5);
+                return std::pair<u64, u64>{Vkb::draws.load(std::memory_order_relaxed) + Vkb::inline_draws.load(std::memory_order_relaxed) - d0,
+                                           static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count())};
+            });
+            return 0x8000000000000000ull;
+        }
+    }
     if (PassTimesOn()) {
         if (static const u64 original = Core::GuestHooks::OriginalEntry("DrawZPass"); original != 0) {
             return TimedPass(0, [&] { return reinterpret_cast<GuestDraw6>(original)(render_device, desc, a2, a3, a4, a5); });

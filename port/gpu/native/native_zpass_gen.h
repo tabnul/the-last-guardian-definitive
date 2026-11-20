@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <functional>
+#include <utility>
 #include <nlohmann/json_fwd.hpp>
 #include "common/types.h"
 
@@ -19,6 +21,9 @@ namespace Core::NativeZPassGen {
 /// `DrawZPass(render_device, desc)` was entered. Returns true when the pass is done (generated, or run by the loop through `original_loop`, the hook's original entry) and the
 /// hooked function must be skipped, false when nothing was done (the view type is not handled: the engine's loop runs).
 bool HandlePass(u64 render_device, u64 desc, u64 original_loop);
+/// note 107 census (debug, TLG_VKB_ZPASS_CENSUS=1): the Z pass about to run, scanned read only; `draws` / `ns` the engine loop's draws and time (counted by the caller)
+[[nodiscard]] bool ZPassCensusOn();
+void ZPassCensus(u64 render_device, u64 desc, const std::function<std::pair<u64, u64>()>& run); ///< `run` runs the engine's loop, returns its draws and ns
 /// N6.6, the G-buffer loop (`RenderDev_DrawGBufferPrimitives`): `TLG_GBUFFER_GEN=1`. Same contract as HandlePass; `param7` is the
 /// byte the loop takes on the stack, `original_loop` the hook's original entry.
 [[nodiscard]] bool GBufferEnabled();

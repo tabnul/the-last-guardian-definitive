@@ -18,6 +18,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <set>
@@ -4344,6 +4345,63 @@ bool Enabled() {
 }
 
 
+
+// note 107 census (debug, TLG_VKB_ZPASS_CENSUS=1, from the Z pass hook): the generator's scan, read only and guarded, on the pass about to run (nothing is generated; the engine's loop
+// draws). Counts, per view type and pass kind, the primitives of each batch shape (plain, instance group, vertex modifier entry, visibility cache), the pass-level reasons the
+// generator gives up for, and the draws and time of the engine's loop that follows (the caller passes them). What a direct path for one ordinary batch shape could take.
+namespace {
+struct ZCensusRow {
+    u64 passes{}, ns{}, draws{}, steps_plain{}, steps_group{}, steps_modifier{}, steps_visibility{}, batches{}, group_batches{}, only_580{};
+    std::map<std::string, u64> reasons;
+};
+std::mutex zc_mutex;
+std::map<u64, ZCensusRow> zc_rows; // (view type << 32) | pass kind
+std::atomic<u64> zc_calls{0};
+const std::unordered_map<u64, TableEntry> zc_empty_table;
+} // namespace
+
+bool ZPassCensusOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_ZPASS_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+
+void ZPassCensus(u64 render_device, u64 desc, const std::function<std::pair<u64, u64>()>& run) {
+    Plan plan;
+    ScanArgs args{&plan, render_device, desc, &zc_empty_table};
+    const bool scanned = NativeDraw::GuardedCall([](void* p) { ScanImpl(*static_cast<ScanArgs*>(p)); }, &args); // before the loop: what it is about to draw
+    const auto [draws, ns] = run();
+    std::scoped_lock lock{zc_mutex};
+    ZCensusRow& row = zc_rows[(u64{plan.view_type} << 32) | plan.kind];
+    ++row.passes;
+    row.ns += ns;
+    row.draws += draws;
+    if (!scanned) {
+        ++row.reasons["scan faulted"];
+    }
+    for (const char* r : plan.reasons) {
+        const std::string reason{r};
+        if (reason.find("variant") == std::string::npos) { // (the census has no learned variants: every step says so)
+            ++row.reasons[reason];
+        }
+    }
+    row.batches += plan.batches.size();
+    for (const BatchLevel& level : plan.batches) {
+        row.group_batches += level.group ? 1 : 0;
+        row.only_580 += level.only_580 ? 1 : 0;
+        u64& bucket = level.group ? row.steps_group : level.special != 0 ? row.steps_modifier : level.visibility ? row.steps_visibility : row.steps_plain;
+        bucket += level.step_count;
+    }
+    if ((zc_calls.fetch_add(1, std::memory_order_relaxed) & 63) == 0) {
+        nlohmann::json out = nlohmann::json::object();
+        for (const auto& [key, r] : zc_rows) {
+            nlohmann::json j = {{"passes", r.passes}, {"ms", static_cast<double>(r.ns) / 1e6}, {"engine_draws", r.draws}, {"batches", r.batches}, {"group_batches", r.group_batches},
+                                {"only_580_batches", r.only_580}, {"steps_plain", r.steps_plain}, {"steps_instance_group", r.steps_group}, {"steps_vertex_modifier", r.steps_modifier},
+                                {"steps_visibility", r.steps_visibility}, {"pass_reasons", r.reasons}};
+            out[fmt::format("view{}_kind{}", key >> 32, key & 0xffffffffull)] = std::move(j);
+        }
+        DebugServer::Publish("zpass_census", std::move(out));
+    }
+}
 
 bool HandlePass(u64 render_device, u64 desc, u64 original_loop) {
     const Config& cfg = Cfg();
