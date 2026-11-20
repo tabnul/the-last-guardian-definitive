@@ -11122,7 +11122,7 @@ struct PassStat {
 PassStat g_pass_stats[4];
 constexpr const char* PassNames[4] = {"zpass", "gbuffer", "forward", "decal"};
 template <typename Run>
-u64 TimedPass(u32 pass, Run&& run) {
+u64 MeasurePass(u32 pass, Run&& run) {
     const u64 d0 = Vkb::draws.load(std::memory_order_relaxed) + Vkb::inline_draws.load(std::memory_order_relaxed);
     const u64 x0 = Vkb::dispatches.load(std::memory_order_relaxed) + Vkb::indirect_dispatches.load(std::memory_order_relaxed);
     const auto t0 = std::chrono::steady_clock::now();
@@ -11141,13 +11141,17 @@ u64 TimedPass(u32 pass, Run&& run) {
         }
         Core::DebugServer::Publish("pass_times", std::move(out));
     }
-    return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
+    return result;
+}
+template <typename Run>
+u64 TimedPass(u32 pass, Run&& run) {
+    return 0x8000000000000000ull | (MeasurePass(pass, run) & 0x7fffffffffffffffull);
 }
 using GuestFn7 = u64(PS4_SYSV_ABI*)(u64, u64, u64, u64, u64, u64, u64);
 using GuestFn9 = u64(PS4_SYSV_ABI*)(u64, u64, u64, u64, u64, u64, u64, u64, u64);
 
 /// RenderDev_DrawZPass(render device, pass description): the cascade generator takes the pass over when it can; otherwise the engine's loop runs.
-u64 PS4_SYSV_ABI ZPassEnter(u64 render_device, u64 desc, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+u64 RunZPassHook(u64 render_device, u64 desc, u64 a2, u64 a3, u64 a4, u64 a5) {
     if (NativeZPassGen::Enabled()) {
         static const u64 loop_entry = Core::GuestHooks::OriginalEntry("DrawZPass");
         // R7 step A: the generator's cascade passes in record mode too (its draws reach our handler directly), batched per pass
@@ -11208,12 +11212,26 @@ u64 PS4_SYSV_ABI ZPassEnter(u64 render_device, u64 desc, u64 a2, u64 a3, u64 a4,
             return 0x8000000000000000ull;
         }
     }
-    if (PassTimesOn()) {
-        if (static const u64 original = Core::GuestHooks::OriginalEntry("DrawZPass"); original != 0) {
-            return TimedPass(0, [&] { return reinterpret_cast<GuestDraw6>(original)(render_device, desc, a2, a3, a4, a5); });
-        }
-    }
     return 0;
+}
+
+u64 PS4_SYSV_ABI ZPassEnter(u64 render_device, u64 desc, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    if (!PassTimesOn()) {
+        return RunZPassHook(render_device, desc, a2, a3, a4, a5);
+    }
+    // Include generated and recorded cascades, including the end-of-pass batch flush.
+    return MeasurePass(0, [&]() -> u64 {
+        const u64 handled = RunZPassHook(render_device, desc, a2, a3, a4, a5);
+        if (handled != 0) {
+            return handled;
+        }
+        static const u64 original = Core::GuestHooks::OriginalEntry("DrawZPass");
+        if (original == 0) {
+            return 0;
+        }
+        const u64 result = reinterpret_cast<GuestDraw6>(original)(render_device, desc, a2, a3, a4, a5);
+        return result | 0x8000000000000000ull;
+    });
 }
 
 /// C4: the scene's per object constant slots. `FUN_01e05330(float, frameData, ...)` takes the next slot of a ring (`DAT_069b1630`, three groups of 8192 slot objects, the group
