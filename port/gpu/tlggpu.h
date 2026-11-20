@@ -96,6 +96,10 @@ void tlggpu_audio_settings(TlgGpuAudioSettings *settings);
 typedef void (*TlgGpuWaitBegin)(const char *kind, const void *object, const char *name, uintptr_t frame);
 typedef void (*TlgGpuWaitEnd)(void);
 void tlggpu_set_wait_hooks(TlgGpuWaitBegin begin, TlgGpuWaitEnd end);
+/* The game's kernel semaphores (src/runtime_sema.c): the GPU library signals one as the game's own signal call does
+ * (VKB: a backend wait that holds a game worker keeps the game's job scheduler awake, issue 78). */
+typedef int32_t (*TlgGpuGameSemaSignal)(uint32_t id, int32_t count);
+void tlggpu_set_game_sema_signal(TlgGpuGameSemaSignal signal);
 /* The game executable's address range, so diagnostics (TLG_FAULT_PROFILE) print guest offsets. */
 void tlggpu_set_guest_image(uintptr_t base, uint64_t size);
 /* VKB: the engine-to-Vulkan backend's guest hooks (TLG_VKB=1; the hooks file of the game), once the eboot is loaded and patched. Nothing without TLG_VKB. */
