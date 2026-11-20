@@ -1773,7 +1773,17 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
             Core::Vkb::Aa::NoteSceneDepth(dsv_id);
         }
         const bool geometry = (kind == 2) || a1 > 6 || instances > 1;
-        const u64 mesh = Mix(Mix(Mix(a1, a2), a3), v.vs.info ? v.vs.info->pgm_hash : 0ull);
+        // issue 54: a mesh is its index data, as the normal renderer's rule (vk_rasterizer.cpp: index address and count): the address of the first index and
+        // the index count (an indirect draw: the index data and its arguments), whatever shader draws it, so a second pass of a surface with another vertex shader
+        // matches its shifted pre-pass. Not indexed: no mesh. TLG_VKB_AA_MESH_KEY=0: the old key (counts and the vertex shader; it never matched, issue 54)
+        u64 mesh = 0;
+        if (!Core::Vkb::Aa::MeshKeySwitch()) {
+            mesh = Mix(Mix(Mix(a1, a2), a3), v.vs.info ? v.vs.info->pgm_hash : 0ull);
+        } else if (const u64 index_view = Rd<u64>(ctx, 0x58); (kind == 0 || kind == 2) && index_view != 0) {
+            const u64 index_address = static_cast<u64>(Rd<u32>(index_view, 0x64) & 0xff) << 32 | (Rd<u32>(index_view, 0x60) & 0xfffffffeu);
+            const u64 index_bytes = Rd<u32>(ctx, 0x64) == 1 ? 4 : 2;
+            mesh = index_address == 0 ? 0 : kind == 0 ? Mix(index_address + a2 * index_bytes, a1) : Mix(Mix(index_address, a1), a2);
+        }
         // does the pixel shader read a scene depth (decals, lights): its used texture slots' resources against the scene depth ids
         bool samples_depth = false;
         const u64 ps_object = Rd<u64>(ctx, CtxPixelShader);
