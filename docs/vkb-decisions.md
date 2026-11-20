@@ -9,6 +9,22 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-20 - Author sync: how the four merge conflicts were resolved (not yet merged)
+
+- **Problem:** Merging the author's branch into ours conflicted in four files (`native_draw.cpp`, `native_legacy.h`,
+  `native_vkb_aa.cpp`, `native_vkb_objects.cpp`). The author deleted the guard that stopped the old AABB reader,
+  while our table lock (pull request 52, switch `TLG_AABB_TABLE_LOCK`) is still used by the K2 census check.
+- **Considered:** (1) take the author's side everywhere and drop our lock; (2) keep both: the author's code as it is,
+  and our lock kept only where the census check and the start of recording still use it; (3) put the author's commit
+  aside (not allowed, rule 13).
+- **Choice:** 2. No author commit is left out or changed; our lock stays a switch, used only with `TLG_K2_CENSUS=1`
+  and at the start of recording. Our water fix (mesh key, pull request 72) is untouched by the author and stays on.
+  One restore commit puts back the RCAS declarations next to the author's new K4 counter.
+- **Who chose:** box (rule 13), the owner can overrule at the merge.
+- **Links:** sync pull request of branch `sync/author-2026-11-19`.
+
+---
+
 ## 2026-11-20 - 14 scenes where the photo setup crashes the normal renderer: log only (not yet merged)
 
 - **Problem:** in 14 scenes the normal renderer crashes when the photo is set up (7 scenes in both takes, 7 in one take;
