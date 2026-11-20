@@ -121,7 +121,10 @@ std::atomic<u64> c_rec_compiled{0}, c_rec_refused{0}, c_rec_draws{0}, c_rec_fall
 std::array<std::atomic<u64>, 8> c_rec_refused_by{};
 constexpr std::array<const char*, 8> RecRefusedNames{"flat_user_data", "written_buffer", "not_indexed_buffer", "bda_or_fault", "image_without_key", "compile", "pipeline", "other"};
 /// R2 / R3 switch: TLG_VKB_RECORD=1 (the global set is made) and the scope; this step: the shadow cascades (Z pass views 1, 2)
-thread_local bool t_row_failed = false; ///< R3: the record-mode draw could not build its row (it is drawn the plain way)
+thread_local bool t_row_failed = false;
+thread_local std::array<u64, 16> t_pipe_words{}; ///< R7 step B: the key of a cache miss, stored when the slow path found the pipeline
+thread_local u64 t_pipe_hash = 0;
+thread_local bool t_pipe_pending = false; ///< R3: the record-mode draw could not build its row (it is drawn the plain way)
 bool RecordOn() {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_RECORD"); return e != nullptr && e[0] == '1'; }();
     return on;
@@ -1433,8 +1436,32 @@ Stream::Slice RowSlice(u64 size) {
 
 /// R3: a record-mode stage's entries of the draw's row (slots, a read-only guest buffer's byte offset and size, image and sampler slots), in the order the recompiler's
 /// indexed mode assigned them (buffers, images, samplers); the hazards into `uses`. False: the draw cannot go this way (it then takes the plain path).
-bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<Stream::Use, 64>& uses) {
+/// R7 step C: the row entries of one batch's resources, made once per batch (its first draw pushed their hazards into the batch); empty when the batch changes
+struct RowMemoEntry {
+    u32 a{}, b{}, c{};
+};
+thread_local u64 t_row_memo_serial = ~0ull;
+thread_local std::unordered_map<u64, RowMemoEntry> t_row_memo;
+std::atomic<u64> c_row_memo_hits{0}, c_row_memo_misses{0};
+bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<Stream::Use, 64>& uses, u64 memo_serial = 0) {
     using BT = VkbShader::BufferType;
+    if (memo_serial != 0 && memo_serial != t_row_memo_serial) {
+        t_row_memo.clear();
+        t_row_memo_serial = memo_serial;
+    }
+    const auto memo_find = [&](u64 key, u32 n) -> bool {
+        if (memo_serial == 0) {
+            return false;
+        }
+        const auto it = t_row_memo.find(key);
+        if (it == t_row_memo.end()) {
+            c_row_memo_misses.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+        c_row_memo_hits.fetch_add(1, std::memory_order_relaxed);
+        return n != 0;
+    };
+    (void)memo_find;
     const auto& info = *st.info;
     const u64 alignment = instance->StorageMinAlignment();
     u32 at = st.row_start;
@@ -1455,6 +1482,25 @@ bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector
         Core::Vkb::BufferWindow w;
         u64 address = 0, size = 0;
         bool ok = false;
+        u64 memo_key = 0;
+        if (memo_serial != 0) { // the identity of what this entry resolves: the slot object and the words the resolution reads
+            if (src.cls == Source::Class::Slot) {
+                const u64 object = SlotObject(ctx, st.index, src.kind, src.slot);
+                const u64 word = object == 0 ? 0 : src.kind == 3 ? Rd<u64>(object, 0x60) ^ (u64{Rd<u32>(object, 0x180)} << 40)
+                                                                   : (Rd<u64>(object, 0x30) != 0 ? Rd<u64>(Rd<u64>(object, 0x30), 0x30) : 0) ^ (u64{Rd<u32>(object, 0x44)} << 56);
+                memo_key = (object * 0x9e3779b97f4a7c15ull) ^ word ^ (u64{src.kind} << 60) ^ 1;
+            } else {
+                memo_key = (src.address * 0x9e3779b97f4a7c15ull) ^ src.size ^ (u64{7} << 60);
+            }
+            if (const auto it = t_row_memo.find(memo_key); it != t_row_memo.end()) {
+                c_row_memo_hits.fetch_add(1, std::memory_order_relaxed);
+                row[at++] = it->second.a;
+                row[at++] = it->second.b;
+                row[at++] = it->second.c;
+                continue;
+            }
+            c_row_memo_misses.fetch_add(1, std::memory_order_relaxed);
+        }
         if (src.cls == Source::Class::Slot && src.kind == 3) {
             const u64 object = SlotObject(ctx, st.index, 3, src.slot);
             if (object != 0) {
@@ -1494,18 +1540,32 @@ bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector
         row[at++] = Core::Vkb::Indexed::BufferSlot(w.buffer);
         row[at++] = static_cast<u32>(w.offset);
         row[at++] = static_cast<u32>(size);
+        if (memo_key != 0) {
+            t_row_memo[memo_key] = {row[at - 3], row[at - 2], row[at - 1]};
+        }
         uses.push_back(Stream::BufferUse(w.buffer, w.offset, size, false));
         Core::Vkb::NoteBind(1, w, size, false);
     }
     for (u32 i = 0; i < st.images.size(); ++i) {
         const Source& src = st.images[i];
         const u64 object = src.cls == Source::Class::Slot && src.kind == 1 ? SlotObject(ctx, st.index, 1, src.slot) : 0;
+        const u64 image_key = memo_serial != 0 && object != 0 ? (object * 0x9e3779b97f4a7c15ull) ^ (u64{static_cast<u32>(st.image_types[i])} << 48) ^ (u64{info.images[i].array_key} << 56) ^ 2 : 0;
+        if (image_key != 0) {
+            if (const auto it = t_row_memo.find(image_key); it != t_row_memo.end()) {
+                c_row_memo_hits.fetch_add(1, std::memory_order_relaxed);
+                row[at++] = it->second.a;
+                continue;
+            }
+        }
         vk::ImageView view{};
         vk::Image image{};
         if (object == 0 || !Core::Vkb::ViewForCompute(Rd<u64>(object, 0x10), st.image_types[i], vk::CommandBuffer{}, view, &image)) {
             return false;
         }
         row[at++] = Core::Vkb::Indexed::ImageSlot(info.images[i].array_key, view);
+        if (image_key != 0) {
+            t_row_memo[image_key] = {row[at - 1], 0, 0};
+        }
         uses.push_back(Stream::ImageUse(image, info.images[i].is_written));
     }
     for (u32 i = 0; i < st.samplers.size(); ++i) {
@@ -1519,6 +1579,13 @@ bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector
     }
     return true;
 }
+
+/// R7 step C: a cached record-mode draw goes straight into the open batch of its pass (the same depth and colour targets): its row (memo per batch), its index buffer,
+/// its push constants; no draw job. False: the generic path (first draw of a batch, other targets, AA on, a buffer the lean path does not take).
+std::atomic<u64> c_lean{0}, c_lean_refused{0};
+bool BatchMatches(u64 ctx);
+u64 CurrentBatchSerial();
+bool LeanAppend(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u64 a1, u64 a2, u64 a3);
 
 /// note 109 census (debug, TLG_VKB_DEPTH_CENSUS=1, inside the shadow cascade passes the Z pass hook marks): does each stage read the same engine objects as at the
 /// previous draw (the same shader, the same slot objects, a constant buffer's same rename address and size, a buffer view's same buffer memory, the same image and sampler
@@ -1633,6 +1700,7 @@ std::atomic<u64> c_phase_ns[4]{}, c_job_ns{0}, c_job_n{0}, c_fixed_ns{0}, c_vari
 bool TimesOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_TIMES"); return e != nullptr && e[0] == '1'; }(); return on || (t_depth_pass && DepthCensusOn()); } // note 109 census: the cascade draws timed alone ///< note 45: these timers only with TLG_VKB_TIMES=1
 bool BatchOn();
 bool JoinBatch(DrawJob& job);
+thread_local u64 t_join_dsv = 0, t_join_rtv0 = 0; ///< R7 step C: the engine views of the draw joining (set by Record)
 void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u64 a1, u64 a2, u64 a3) {
     if (Core::Vkb::FillReadersOn() || Core::Vkb::R3dTraceSize() != 0) {
         Core::Vkb::CensusTag((v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0x10000000000ull) | (v.vs.info ? u64{v.vs.info->pgm_hash} << 32 : 0)); // note 49 census: a draw, its pixel shader (debug R3d trace: vertex shader above)
@@ -2181,6 +2249,7 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         }
     }
     job->work = Stream::Work::Draw;
+    t_join_dsv = Rd<u64>(ctx, CtxDepthStencilView), t_join_rtv0 = Rd<u64>(ctx, CtxRenderTargets);
     if (job->record && BatchOn() && JoinBatch(*job)) { // R3b
         phase(3);
         c_recorded.fetch_add(1, std::memory_order_relaxed);
@@ -2441,6 +2510,8 @@ std::atomic<u64> c_flush_by[3]{}; ///< R3b: batches cut by another job / submit 
 thread_local u32 t_flush_reason = 0;
 struct BatchJob final : Stream::Job {
     Stream::Pass pass{};
+    u64 engine_dsv{}, engine_rtv0{}; ///< R7 step C: the engine views the pass was made from
+    u64 serial{};
     boost::container::small_vector<Stream::Use, 9> attachment_uses;
     std::vector<Stream::Use> uses;
     std::vector<BatchDraw> draws;
@@ -2494,6 +2565,70 @@ struct BatchJob final : Stream::Job {
     }
 };
 thread_local std::unique_ptr<BatchJob> t_batch;
+bool BatchMatches(u64 ctx) {
+    return t_batch && !t_batch->draws.empty() && t_batch->engine_dsv == Rd<u64>(ctx, CtxDepthStencilView) && t_batch->engine_rtv0 == Rd<u64>(ctx, CtxRenderTargets) &&
+           t_batch->engine_dsv != 0;
+}
+u64 CurrentBatchSerial() {
+    return t_batch ? t_batch->serial : 0;
+}
+bool LeanAppend(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u64 a1, u64 a2, u64 a3) {
+    if (!BatchMatches(ctx) || v.key.num_color_attachments != 0 || Core::Vkb::Aa::On() || (kind != 0 && kind != 2)) {
+        return false;
+    }
+    const u64 serial = t_batch->serial;
+    BatchDraw d{};
+    d.pipeline = v.pipeline->Handle();
+    d.layout = v.pipeline->GetLayout();
+    d.fixed = &fixed;
+    d.masks = v.key.write_masks;
+    d.push.xoffset = fixed.transform.x_offset;
+    d.push.xscale = fixed.transform.x_scale;
+    d.push.yoffset = fixed.transform.y_offset;
+    d.push.yscale = fixed.transform.y_scale;
+    d.ps_hash = v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0ull;
+    d.color_format0 = static_cast<u32>(v.color_formats[0]);
+    d.instances = std::max(Rd<u32>(ctx, 0x4724), 1u);
+    boost::container::small_vector<Stream::Use, 64> uses;
+    const Stream::Slice slice = RowSlice(std::max<u32>(v.row_dwords, 1) * 4);
+    u32* row = reinterpret_cast<u32*>(slice.data);
+    if ((v.has_ps && !BuildRow(ctx, v.ps, row, uses, serial)) || !BuildRow(ctx, v.vs, row, uses, serial)) {
+        return false;
+    }
+    d.push.row_base = static_cast<u32>(slice.offset / 4);
+    // the index buffer (the engine's index view, its own memory from its start, R7 / note 56)
+    const u64 view = Rd<u64>(ctx, 0x58);
+    const u32 type = Rd<u32>(ctx, 0x64);
+    if (view == 0 || Rd<u32>(ctx, 0x60) != 0x39 || type > 1) {
+        return false;
+    }
+    const u64 index_bytes = type == 1 ? 4 : 2;
+    const u64 index_range = kind == 0 ? (a2 + a1) * index_bytes : static_cast<u64>(Rd<u32>(view, 0x68)) * index_bytes;
+    Core::Vkb::BufferWindow w;
+    if (index_range == 0 || !Core::Vkb::BufferOfObject(view, 0, index_range, w) || (w.offset % index_bytes) != 0) {
+        return false;
+    }
+    d.index_buffer = w.buffer, d.index_offset = w.offset, d.index_size = w.device ? 0 : index_range;
+    d.index_type = type == 1 ? vk::IndexType::eUint32 : vk::IndexType::eUint16;
+    uses.push_back(Stream::BufferUse(w.buffer, w.offset, index_range, false));
+    if (kind == 2) {
+        Core::Vkb::BufferWindow aw;
+        if (a1 == 0 || !IsHeapPointer(a1) || !Core::Vkb::BufferOfObject(a1, static_cast<u32>(a2), 20, aw) || (aw.offset & 3) != 0) {
+            return false;
+        }
+        d.args_buffer = aw.buffer, d.args_offset = aw.offset;
+        uses.push_back(Stream::BufferUse(aw.buffer, aw.offset, 20, false));
+    } else {
+        d.count = static_cast<u32>(a1), d.first = static_cast<u32>(a2), d.vertex_offset = static_cast<s32>(static_cast<u32>(a3));
+    }
+    if (!t_batch || t_batch->serial != serial) { // a job went into the stream while the row was made (it flushed the batch): the generic path
+        return false;
+    }
+    t_batch->uses.insert(t_batch->uses.end(), uses.begin(), uses.end());
+    t_batch->draws.push_back(d);
+    c_lean.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
 thread_local bool t_batch_flushing = false;
 std::atomic<u64> c_cut_by_work[16]{};
 void FlushBatchHere();
@@ -2535,7 +2670,10 @@ bool JoinBatch(DrawJob& job) {
         FlushBatchHere();
     }
     if (!t_batch) {
+        static std::atomic<u64> serials{1};
         t_batch.reset(new BatchJob);
+        t_batch->serial = serials.fetch_add(1, std::memory_order_relaxed);
+        t_batch->engine_dsv = t_join_dsv, t_batch->engine_rtv0 = t_join_rtv0;
         t_batch->pass = job.pass;
         t_batch->attachment_uses = job.attachment_uses;
         t_batch->draws.reserve(1024);
@@ -2774,6 +2912,51 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
 } // namespace
 
 void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3);
+/// R7 step B: the generator's hint and the per-thread pipeline cache of record-mode draws. Its key holds every context word the fixed state and the variant key read
+/// in a cascade pass (shaders, input layout, state objects, depth target, viewport, the batch's views, the material and its render object), so a hit is exactly the slow
+/// path's answer; TLG_VKB_R7_VERIFY=1 computes the slow path too and counts disagreements.
+struct StepHint {
+    u64 batch{}, material{};
+    bool valid{};
+};
+thread_local StepHint t_hint;
+struct PipeEntry {
+    std::array<u64, 16> words{};
+    Variant* v{};
+    const VkbVulkan::FixedState* fixed{};
+};
+thread_local std::unordered_map<u64, PipeEntry> t_pipe_cache;
+std::atomic<u64> c_pipe_hits{0}, c_pipe_misses{0}, c_pipe_verify{0}, c_pipe_verify_diff{0};
+void SetStepHint(u64 batch, u64 material) {
+    t_hint = {batch, material, true};
+}
+void ClearStepHint() {
+    t_hint.valid = false;
+}
+std::array<u64, 16> PipeWords(u64 ctx, u32 kind) {
+    std::array<u64, 16> w{};
+    w[0] = Rd<u64>(ctx, CtxVertexShader);
+    w[1] = Rd<u64>(ctx, CtxPixelShader);
+    w[2] = Rd<u64>(ctx, CtxInputLayout);
+    w[3] = Rd<u64>(ctx, 0x46c8); // rasterizer state
+    w[4] = Rd<u64>(ctx, 0x46e0); // depth stencil state
+    w[5] = Rd<u64>(ctx, 0x46f0); // blend state
+    w[6] = Rd<u64>(ctx, CtxDepthStencilView);
+    w[7] = Rd<u64>(ctx, 0x44ec) ^ (Rd<u64>(ctx, 0x44f4) * 0x9e3779b97f4a7c15ull) ^ (Rd<u64>(ctx, 0x44fc) * 0xc2b2ae3d27d4eb4full); // viewport words
+    w[8] = Rd<u64>(ctx, 0x46e8) | u64{Rd<u32>(ctx, 0x4480)} << 8 | u64{kind} << 40 | u64{Rd<u64>(ctx, 0x130e0) != 0} << 44; // stencil ref, topology, kind, target 7
+    w[9] = Rd<u64>(ctx, 0x46f8) ^ (Rd<u64>(ctx, 0x4700) << 1); // blend factor
+    w[10] = t_hint.batch;
+    w[11] = t_hint.material;
+    w[12] = t_hint.material != 0 ? Rd<u64>(t_hint.material, 0x38) : 0;
+    w[13] = Rd<u64>(ctx, SrvTable(0)); // the batch's vertex view (slot 0)
+    w[14] = Rd<u64>(ctx, CtxRenderTargets);
+    u64 t = 0;
+    for (u32 j = 0; j < 16; ++j) { // the batch's table views (vertex stage slots 40..55)
+        t = (t ^ Rd<u64>(ctx, SrvTable(0) + (40 + j) * 8)) * 0x100000001b3ull;
+    }
+    w[15] = t;
+    return w;
+}
 void SetDepthPass(bool on) {
     t_depth_pass = on;
 }
@@ -2810,6 +2993,45 @@ void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
     if (Rd<u64>(vs, 0x420) != 0 || Rd<u64>(ctx, 0x4680) != 0 || Rd<u64>(ctx, 0x4688) != 0 || Rd<u32>(ctx, 0x130c8) == 0x200) {
         c_special.fetch_add(1, std::memory_order_relaxed);
         return;
+    }
+    // R7 step B: a generator-issued record-mode draw of a cascade finds its pipeline and fixed state by the cache
+    t_pipe_pending = false;
+    if (t_hint.valid && t_depth_pass && RecordOn() && (kind == 0 || kind == 2) && Ready() && Core::Vkb::Indexed::On()) {
+        const std::array<u64, 16> words = PipeWords(ctx, kind);
+        u64 h = 0xcbf29ce484222325ull;
+        for (const u64 w : words) {
+            h = (h ^ w) * 0x100000001b3ull;
+        }
+        const auto found = t_pipe_cache.find(h);
+        if (found != t_pipe_cache.end() && found->second.words == words) {
+            c_pipe_hits.fetch_add(1, std::memory_order_relaxed);
+            static const bool verify = [] { const char* e = std::getenv("TLG_VKB_R7_VERIFY"); return e != nullptr && e[0] == '1'; }();
+            if (verify) {
+                const VkbVulkan::FixedState* f = Core::NativeDraw::FixedStateOf(ctx);
+                const u64 k = f != nullptr ? VariantKey(ctx, vs, ps, Core::NativeDraw::FetchObjectOf(ctx, vs), f, kind == 2) : 0;
+                std::scoped_lock lock{mutex};
+                const auto r = record_variants.find(k);
+                c_pipe_verify.fetch_add(1, std::memory_order_relaxed);
+                if (f != found->second.fixed || r == record_variants.end() || r->second.get() != found->second.v) {
+                    c_pipe_verify_diff.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+            if (LeanAppend(ctx, *found->second.v, *found->second.fixed, kind, a1, a2, a3)) { // R7 step C
+                return;
+            }
+            c_lean_refused.fetch_add(1, std::memory_order_relaxed);
+            t_row_failed = false;
+            {
+                std::scoped_lock lock{mutex};
+                Record(ctx, *found->second.v, *found->second.fixed, kind, a1, a2, a3);
+            }
+            if (!t_row_failed) {
+                return;
+            }
+        } else {
+            c_pipe_misses.fetch_add(1, std::memory_order_relaxed);
+            t_pipe_words = words, t_pipe_hash = h, t_pipe_pending = true; // filled below, when the slow path has the answer
+        }
     }
     const u64 fs0 = TimesOn() ? NowNs() : 0;
     const VkbVulkan::FixedState* fixed = Core::NativeDraw::FixedStateOf(ctx);
@@ -2865,6 +3087,10 @@ void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
             Compile(ctx, vs, ps, fetch, *fixed, *rit->second, kind == 2, true);
         }
         if (rit->second->ok) {
+            if (t_pipe_pending) { // R7 step B: the cache learns the slow path's answer
+                t_pipe_cache[t_pipe_hash] = {t_pipe_words, rit->second.get(), fixed};
+                t_pipe_pending = false;
+            }
             t_row_failed = false;
             Record(ctx, *rit->second, *fixed, kind, a1, a2, a3);
             if (!t_row_failed) {
@@ -2914,7 +3140,7 @@ nlohmann::json Report() {
                              }
                              return j;
                          }()},
-                         {"draws", c_rec_draws.load()}, {"batches_draws", {c_batches.load(), c_batch_draws.load()}}, {"flush_by_job_pass_end", {c_flush_by[0].load(), c_flush_by[1].load(), c_flush_by[2].load()}}, {"cut_by_work_kind", [] { nlohmann::json j = nlohmann::json::object(); for (u32 i = 0; i < 16; ++i) { if (c_cut_by_work[i].load() != 0) { j[std::to_string(i)] = c_cut_by_work[i].load(); } } return j; }()}, {"fallback_draws", c_rec_fallback.load()}, {"row_failures", c_rec_row_fail.load()}, {"global_set", Core::Vkb::Indexed::Report()}}},
+                         {"draws", c_rec_draws.load()}, {"batches_draws", {c_batches.load(), c_batch_draws.load()}}, {"lean_appended_refused", {c_lean.load(), c_lean_refused.load()}}, {"row_memo_hits_misses", {c_row_memo_hits.load(), c_row_memo_misses.load()}}, {"pipe_cache_hits_misses_verify_diff", {c_pipe_hits.load(), c_pipe_misses.load(), c_pipe_verify.load(), c_pipe_verify_diff.load()}}, {"flush_by_job_pass_end", {c_flush_by[0].load(), c_flush_by[1].load(), c_flush_by[2].load()}}, {"cut_by_work_kind", [] { nlohmann::json j = nlohmann::json::object(); for (u32 i = 0; i < 16; ++i) { if (c_cut_by_work[i].load() != 0) { j[std::to_string(i)] = c_cut_by_work[i].load(); } } return j; }()}, {"fallback_draws", c_rec_fallback.load()}, {"row_failures", c_rec_row_fail.load()}, {"global_set", Core::Vkb::Indexed::Report()}}},
             {"depth_census", {{"draws", c_dc_draws.load()}, {"variant_same", c_dc_variant_same.load()}, {"vs_n_same_samebutcb", {c_dc_stage_n[0].load(), c_dc_stage_same[0].load(), c_dc_same_but_cb[0].load()}},
                               {"ps_n_same_samebutcb", {c_dc_stage_n[1].load(), c_dc_stage_same[1].load(), c_dc_same_but_cb[1].load()}}, {"draw_same", c_dc_draw_same.load()},
                               {"shapes", [] {

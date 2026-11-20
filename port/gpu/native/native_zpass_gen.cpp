@@ -43,6 +43,7 @@
 #include "native/native_job_gen.h"
 #include "native/native_site_gen.h"
 #include "native/native_debug_server.h"
+#include "native/native_vkb_graphics.h"
 
 namespace Core::NativeZPassGen {
 /// note 57: under the engine-to-Vulkan backend (TLG_VKB=1) the generators are off by default: the engine's own pass loops call the API, and our backend takes the
@@ -166,6 +167,7 @@ const Config& Cfg() {
         c.on = e != nullptr ? *e != '0' : GeneratorsDefaultOn(); // off under TLG_VKB (note 57); before: default on since 2026-10-27 (the owner's play test); TLG_ZPASS_GEN=0 turns it off
         const char* v = std::getenv("TLG_ZPASS_GEN_VIEWS");
         std::string list = v != nullptr && *v != 0 ? v : "0,1,2,5,6,7";
+        std::replace(list.begin(), list.end(), '+', ','); // (R7: '+' also separates, for env lists that split at commas)
         size_t at = 0;
         while (at < list.size()) {
             const size_t comma = list.find(',', at);
@@ -997,10 +999,16 @@ void Generate(Target& t, const Plan& plan) {
                 }
             }
             const s32 triangles = R<s32>(step.record + 0x14);
+            if (t.live) {
+                Core::Vkb::Graphics::SetStepHint(level.batch, step.material); // R7 step B
+            }
             if (level.group) {
                 IssueDraw(t, 1, level.indirect_buffer, (u64{step.index} * 9 + plan.view_type) * 0x18);
             } else {
                 IssueDraw(t, 0, static_cast<u32>(triangles * 3), R<u32>(step.record + 0x10));
+            }
+            if (t.live) {
+                Core::Vkb::Graphics::ClearStepHint();
             }
             if (t.live) {
                 W<s32>(rd + 0x10, R<s32>(rd + 0x10) + 1);

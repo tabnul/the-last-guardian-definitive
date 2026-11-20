@@ -11150,7 +11150,19 @@ using GuestFn9 = u64(PS4_SYSV_ABI*)(u64, u64, u64, u64, u64, u64, u64, u64, u64)
 u64 PS4_SYSV_ABI ZPassEnter(u64 render_device, u64 desc, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
     if (NativeZPassGen::Enabled()) {
         static const u64 loop_entry = Core::GuestHooks::OriginalEntry("DrawZPass");
-        if (NativeZPassGen::HandlePass(render_device, desc, loop_entry)) {
+        // R7 step A: the generator's cascade passes in record mode too (its draws reach our handler directly), batched per pass
+        static const bool record_mode_gen = [] { const char* e = std::getenv("TLG_VKB_RECORD"); return e != nullptr && e[0] == '1'; }();
+        const u32 gen_view = static_cast<u32>(Rd<u64>(desc, 8));
+        const bool mark = record_mode_gen && (gen_view == 1 || gen_view == 2);
+        if (mark) {
+            Core::Vkb::Graphics::SetDepthPass(true);
+        }
+        const bool handled = NativeZPassGen::HandlePass(render_device, desc, loop_entry);
+        if (mark) {
+            Core::Vkb::Graphics::SetDepthPass(false);
+            Core::Vkb::Graphics::FlushBatch();
+        }
+        if (handled) {
             return 1;
         }
     }

@@ -18,6 +18,9 @@ void Draw(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3);
 void SetDepthPass(bool on);
 /// R3b: the open batch of record-mode draws goes into the stream (the end of a pass)
 void FlushBatch();
+/// R7 step B: the generator says which batch / material it issues the next draw for (a pipeline cache by these objects skips the fixed state and the variant key)
+void SetStepHint(u64 batch, u64 material);
+void ClearStepHint();
 
 [[nodiscard]] nlohmann::json Report();
 
