@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <string>
 #include <vector>
 #include "common/types.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
@@ -27,6 +28,8 @@ struct Image {
 [[nodiscard]] bool FsrFgWanted();
 /// F2: either kind of frame generation: the AA keeps the depth and motion for it
 [[nodiscard]] bool AnyFgWanted();
+/// Issue 99: Wanted, and the bridge and NGX came up with our device (their Dlss::Available, known once Initialize ran). False: `why` says what is wrong.
+[[nodiscard]] bool Usable(std::string& why);
 /// Our instance and device creation (only when Wanted): what NGX needs
 void AppendInstanceExtensions(std::vector<const char*>& enabled);
 void AppendDeviceExtensions(vk::Instance instance, vk::PhysicalDevice physical, std::vector<const char*>& enabled);

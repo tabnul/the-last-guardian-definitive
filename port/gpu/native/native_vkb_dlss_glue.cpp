@@ -57,6 +57,19 @@ bool Wanted() {
     return wanted;
 }
 
+bool Usable(std::string& why) {
+    Vulkan::Dlss* dlss = Vulkan::Dlss::Get();
+    if (!Wanted() || dlss == nullptr) {
+        why = "tlg_dlss.dll / nvngx_dlss.dll are not next to the executable";
+        return false;
+    }
+    if (!dlss->Available()) {
+        why = dlss->Problem().empty() ? std::string("the DLSS bridge did not start") : dlss->Problem();
+        return false;
+    }
+    return true;
+}
+
 bool FgAvailable() {
     Vulkan::Dlss* dlss = Vulkan::Dlss::Get();
     return FgWanted() && dlss != nullptr && dlss->FgAvailable();

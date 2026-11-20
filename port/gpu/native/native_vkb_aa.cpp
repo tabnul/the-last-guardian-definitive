@@ -80,7 +80,8 @@ bool TaaSwitch() {
 
 namespace {
 
-/// The AA in use (recording thread writes, any thread reads): decided in Init from TLG_VKB_AA; a chosen FSR 4 that cannot run becomes FSR 3.1 (Fsr4Fault)
+/// The AA in use (recording thread writes, any thread reads): decided in Init from TLG_VKB_AA; an AA that cannot run hands over to the next
+/// (HandOver: DLAA to FSR 4 or FSR 3.1; FSR 4, TAA to FSR 3.1)
 std::atomic<Kind> active{Kind::Off};
 const char* asked = ""; ///< TLG_VKB_AA as given (report)
 
@@ -103,27 +104,81 @@ bool ChoiceSwitch() {
     return on;
 }
 
-/// A player's choice this engine has no AA for (issue 57): a fault, said in the log and (once the AA first runs) on screen; FSR 3.1 native AA runs, so the
-/// game keeps its anti-aliasing (owner, pull request 51: "The game is never left without AA"; the same reading as a chosen FSR 4 that fails, issue 55)
-std::atomic<u64> c_choice_faults{0};
-std::mutex choice_fault_mutex;
-std::string choice_fault;                  ///< why the choice could not be run (empty: no fault); written in Init, read by the report (under choice_fault_mutex)
-std::atomic<bool> choice_notice_due{false}; ///< the on-screen message waits for the first AA frame (Init runs while the game still loads)
+/// TLG_VKB_DLAA_FALLBACK=0: the old way for DLAA (issue 99): DLAA without DLSS is FSR 3.1, an installed DLSS that cannot start or fails is AA off for the session
+bool DlaaFallbackSwitch() {
+    static const bool on = [] {
+        const char* e = std::getenv("TLG_VKB_DLAA_FALLBACK");
+        return e == nullptr || e[0] != '0';
+    }();
+    return on;
+}
 
-Kind ChoiceFault(const std::string& why) {
-    c_choice_faults.fetch_add(1, std::memory_order_relaxed);
+/// The hand-over (issue 99): one route for every anti-aliasing that cannot run, at the start or on any frame. Before it each case had its own (a choice the
+/// engine has no AA for, issue 57; a chosen FSR 4, issue 55; a chosen TAA, issue 57) and DLAA had none (AA off for the rest of the session). The owner's
+/// rules: "the game is never left without AA" (pull request 51); a DLAA that fails falls back "to FSR 4, or FSR 3.1 where FSR 4 is not available, like the
+/// old engine does" (issue 99). So: DLAA -> FSR 4 on a card that runs it (the normal renderer's FSR 4 rule, IsFsr4Int8Supported), else FSR 3.1; FSR 4, TAA
+/// and a choice without an AA -> FSR 3.1; FSR 3.1 itself has nothing after it (`failed`: AA off, counted). A fault (something installed or chosen that
+/// does not work) is an error line and an on-screen message; the two quiet cases the owner named (DLSS not installed, FSR 4 model files not installed) are
+/// an info line. The line is written once the AA that takes over is made (EnsureContext), so a chain (DLAA -> FSR 4 without model files -> FSR 3.1) is one
+/// line that names every step and the AA that took over. Counted per kind (the report).
+enum class From : u32 { Choice, Dlaa, Fsr4, Taa, Count };
+constexpr std::array<const char*, u32(From::Count)> from_names{"the anti-aliasing choice", "DLAA", "FSR 4", "TAA"};
+std::array<std::atomic<u64>, u32(From::Count)> c_handover_faults{}, c_handover_quiet{};
+std::mutex handover_mutex;
+std::array<std::string, u32(From::Count)> handover_fault, handover_quiet; ///< the last reason per kind, fault or quiet (report; under handover_mutex)
+std::string handover_line;                 ///< the steps since the last AA was made (under handover_mutex)
+bool handover_line_fault = false;          ///< one of them was a fault (under handover_mutex)
+std::string took_over;                     ///< the AA that took over last (report; under handover_mutex)
+std::atomic<bool> handover_due{false};     ///< a hand-over waits for its line (EnsureContext, or BeforeCombine when nothing could be made)
+
+Kind HandOver(From from, const VkbVulkan::Instance& inst, const std::string& why, bool fault) {
+    const u32 f = u32(from);
+    (fault ? c_handover_faults : c_handover_quiet)[f].fetch_add(1, std::memory_order_relaxed);
+    const Kind next = from == From::Dlaa && Fsr4Switch() && inst.IsFsr4Int8Supported() ? Kind::Fsr4 : Kind::Fsr3;
     {
-        std::scoped_lock lock{choice_fault_mutex};
-        choice_fault = why;
+        std::scoped_lock lock{handover_mutex};
+        (fault ? handover_fault : handover_quiet)[f] = why;
+        handover_line += handover_line.empty() ? "" : "; then ";
+        handover_line += from == From::Choice ? why : fmt::format("{} could not run ({})", from_names[f], why);
+        handover_line_fault = handover_line_fault || fault;
     }
-    choice_notice_due.store(true, std::memory_order_release);
-    LOG_ERROR(Render_Vulkan, "vkb aa: {}. FSR 3.1 native AA runs instead", why);
-    return Kind::Fsr3;
+    active.store(next, std::memory_order_relaxed);
+    handover_due.store(true, std::memory_order_release);
+    return next;
+}
+
+/// The one line of a hand-over, once the AA that took over is made (`made`: its name) or nothing could be made (null: AA off)
+void HandOverLine(const char* made) {
+    if (!handover_due.exchange(false, std::memory_order_acq_rel)) {
+        return;
+    }
+    std::scoped_lock lock{handover_mutex};
+    took_over = made != nullptr ? made : "off";
+    const std::string text = handover_line + ". " + (made != nullptr ? fmt::format("{} native AA took over", made) : std::string("Nothing could take over: AA off"));
+    if (handover_line_fault || made == nullptr) {
+        LOG_ERROR(Render_Vulkan, "vkb aa: {}", text);
+        std::string notice = text;
+        notice[0] = char(std::toupper(static_cast<unsigned char>(notice[0])));
+        TlgOverlay::Notice(notice, 15.0f);
+    } else {
+        LOG_INFO(Render_Vulkan, "vkb aa: {}", text);
+    }
+    handover_line.clear();
+    handover_line_fault = false;
+}
+
+/// DLAA as chosen, or (DLSS installed but its bridge or NGX did not come up with our device) the fallback at the start
+Kind DlaaOrFallback(const VkbVulkan::Instance& inst) {
+    std::string why;
+    if (!DlaaFallbackSwitch() || Core::Vkb::DlssGlue::Usable(why)) {
+        return Kind::Dlaa;
+    }
+    return HandOver(From::Dlaa, inst, "DLSS is installed but cannot start: " + why, true);
 }
 
 /// TLG_VKB_AA: fsr3 (or 1), fsr4, dlaa, off, taa, auto (the launcher on a fresh launch: the player chose nothing). The launcher passes every choice the game's
-/// own settings can hold (tlg_run.backend_aa_env, the rule of TlgSettings::Load). The owner's rules (pull request 51): a choice is used as is (DLAA without
-/// DLSS is FSR 3.1, their DlssFallback); the fresh-launch default is DLSS if present, else FSR 4 on an RDNA 4 card, else FSR 3.1; never without AA, so a
+/// own settings can hold (tlg_run.backend_aa_env, the rule of TlgSettings::Load). The owner's rules (pull request 51): a choice is used as is (DLAA that
+/// cannot run is FSR 4 where the card runs it, else FSR 3.1: HandOver, issue 99); the fresh-launch default is DLSS if present, else FSR 4 on an RDNA 4 card, else FSR 3.1; never without AA, so a
 /// choice this engine has no AA for (an unknown value; taa with TLG_VKB_TAA=0) is a fault and FSR 3.1 runs. Not set at all (a tool that starts the engine without the
 /// launcher): off, with an info line. TLG_VKB_FSR4=0: the old way for FSR 4 (fsr4 runs as FSR 3.1, auto as dlaa); TLG_VKB_AA_CHOICE=0: the old way for
 /// taa and unknown values (off, no line).
@@ -151,7 +206,7 @@ Kind Resolve(const VkbVulkan::Instance& inst) {
     if (v == "auto" && Fsr4Switch()) {
         if (Core::Vkb::DlssGlue::Wanted()) {
             LOG_INFO(Render_Vulkan, "vkb aa: no anti-aliasing chosen yet: DLAA (DLSS is installed)");
-            return Kind::Dlaa;
+            return DlaaOrFallback(inst);
         }
         const bool rdna4 = IsRdna4(inst);
         LOG_INFO(Render_Vulkan, "vkb aa: no anti-aliasing chosen yet, DLSS not installed, {} (device {:04x}:{:04x}): {}", rdna4 ? "an RDNA 4 card" : "not an RDNA 4 card",
@@ -160,9 +215,12 @@ Kind Resolve(const VkbVulkan::Instance& inst) {
     }
     if (v == "dlaa" || v == "auto") {
         if (Core::Vkb::DlssGlue::Wanted()) {
-            return Kind::Dlaa;
+            return DlaaOrFallback(inst);
         }
         if (PicturePart('f')) {
+            if (DlaaFallbackSwitch()) {
+                return HandOver(From::Dlaa, inst, "tlg_dlss.dll / nvngx_dlss.dll are not next to the executable", false);
+            }
             // the normal renderer's rule (TlgSettings::ConfigureDlssSupport): DLAA without DLSS is FSR 3.1 native AA, on every machine
             LOG_INFO(Render_Vulkan, "vkb aa: DLAA asked for, but tlg_dlss.dll / nvngx_dlss.dll are not next to the executable: FSR 3.1 native AA instead");
             return Kind::Fsr3;
@@ -177,9 +235,9 @@ Kind Resolve(const VkbVulkan::Instance& inst) {
         if (TaaSwitch()) {
             return Kind::Taa; // issue 57: the normal renderer's TAA (their taa.comp), native size
         }
-        return ChoiceFault("TAA was chosen, but the new engine has no TAA yet (TLG_VKB_TAA=0)"); // the old way
+        return HandOver(From::Choice, inst, "TAA was chosen, but the new engine has no TAA yet (TLG_VKB_TAA=0)", true); // the old way
     }
-    return ChoiceFault(fmt::format("anti-aliasing '{}' is not a choice the new engine knows", v));
+    return HandOver(From::Choice, inst, fmt::format("anti-aliasing '{}' is not a choice the new engine knows", v), true);
 }
 
 const VkbVulkan::Instance* instance = nullptr;
@@ -204,10 +262,7 @@ u64 frame_id = 0;
 std::chrono::steady_clock::time_point last_run{};
 bool failed = false;
 bool fsr4_made = false;                     ///< the FSR 4 provider exists (Fsr4::Create returned Ok)
-std::atomic<bool> fsr4_model_missing{false}; ///< a chosen FSR 4 found no model files: FSR 3.1 instead, quietly (owner, pull request 51)
-std::mutex fsr4_fault_mutex;
-std::string fsr4_fault;                     ///< why a chosen FSR 4 could not run (empty: no fault; under fsr4_fault_mutex, the report reads it)
-std::atomic<u64> c_fsr4_faults{0}, c_fsr4_runs{0};
+std::atomic<u64> c_fsr4_runs{0};
 
 std::atomic<u64> c_motion_passes{0}, c_runs{0}, c_no_inputs{0}, c_unusable{0}, c_failed{0}, c_resets{0}, c_cut_resets{0};
 std::atomic<u64> c_rcas_passes{0}, c_scene_bias_draws{0};
@@ -232,9 +287,7 @@ vk::DescriptorSetLayout taa_set_layout{};
 vk::PipelineLayout taa_layout{};
 vk::Pipeline taa_pipeline{};
 vk::Sampler taa_sampler{};
-std::mutex taa_fault_mutex;
-std::string taa_fault; ///< why a chosen TAA could not run (empty: no fault; under taa_fault_mutex, the report reads it)
-std::atomic<u64> c_taa_runs{0}, c_taa_faults{0};
+std::atomic<u64> c_taa_runs{0};
 
 bool Facts(vk::Image image, Input& out) {
     out.image = image;
@@ -515,30 +568,13 @@ void DestroyContext() {
     }
 }
 
-/// A chosen FSR 4 that cannot run: a fault, said in the log and on screen (owner, pull request 51: no quiet switch); FSR 3.1 native AA takes over from the
-/// next frame so the game keeps its anti-aliasing
+/// A chosen FSR 4 or TAA that cannot run: a fault, said in the log and on screen (owner, pull request 51: no quiet switch); FSR 3.1 native AA takes over
+/// (HandOver) so the game keeps its anti-aliasing
 void Fsr4Fault(const std::string& why) {
-    c_fsr4_faults.fetch_add(1, std::memory_order_relaxed);
-    {
-        std::scoped_lock lock{fsr4_fault_mutex};
-        fsr4_fault = why;
-    }
-    LOG_ERROR(Render_Vulkan, "vkb aa: FSR 4 could not run: {}. FSR 3.1 native AA runs instead", why);
-    TlgOverlay::Notice("FSR 4 could not start (" + why + "). FSR 3.1 is used instead.", 15.0f);
-    active.store(Kind::Fsr3, std::memory_order_relaxed);
+    HandOver(From::Fsr4, *instance, why, true);
 }
-
-/// A chosen TAA that cannot be made: a fault, said in the log and on screen (no quiet switch, rule 5); FSR 3.1 native AA runs so the game keeps its
-/// anti-aliasing (the same reading as a chosen FSR 4 that fails, issue 55)
 void TaaFault(const std::string& why) {
-    c_taa_faults.fetch_add(1, std::memory_order_relaxed);
-    {
-        std::scoped_lock lock{taa_fault_mutex};
-        taa_fault = why;
-    }
-    LOG_ERROR(Render_Vulkan, "vkb aa: TAA could not run: {}. FSR 3.1 native AA runs instead", why);
-    TlgOverlay::Notice("TAA could not start (" + why + "). FSR 3.1 is used instead.", 15.0f);
-    active.store(Kind::Fsr3, std::memory_order_relaxed);
+    HandOver(From::Taa, *instance, why, true);
 }
 
 /// TAA's pipeline (once; their layout: 4 sampled inputs with a nearest sampler, 3 storage outputs, 64 bytes of push constants) and its two histories at
@@ -614,12 +650,6 @@ bool EnsureTaa(u32 w, u32 h, std::string& why) {
 }
 
 bool EnsureContext(u32 w, u32 h) {
-    if (choice_notice_due.exchange(false, std::memory_order_acquire)) {
-        std::scoped_lock lock{choice_fault_mutex};
-        std::string text = choice_fault + ". FSR 3.1 is used instead.";
-        text[0] = char(std::toupper(static_cast<unsigned char>(text[0])));
-        TlgOverlay::Notice(text, 15.0f);
-    }
     if ((context != nullptr || (Chosen() == Kind::Dlaa && output != VK_NULL_HANDLE) || (Chosen() == Kind::Fsr4 && fsr4_made) ||
          (Chosen() == Kind::Taa && taa_hist[0] != VK_NULL_HANDLE)) && ctx_w == w && ctx_h == h) {
         return true;
@@ -631,9 +661,7 @@ bool EnsureContext(u32 w, u32 h) {
             fsr4_made = true;
         } else if (start == Core::Vkb::Fsr4::Start::NoModel) {
             // the owner's one exception: the FSR 4 files are not installed, FSR 3.1 instead with an info line, nothing on screen
-            fsr4_model_missing.store(true, std::memory_order_relaxed);
-            LOG_INFO(Render_Vulkan, "vkb aa: FSR 4 model files are not installed ({}): FSR 3.1 native AA instead", Core::Vkb::Fsr4::Problem());
-            active.store(Kind::Fsr3, std::memory_order_relaxed);
+            HandOver(From::Fsr4, *instance, "its model files are not installed: " + Core::Vkb::Fsr4::Problem(), false);
         } else {
             Fsr4Fault(Core::Vkb::Fsr4::Problem());
         }
@@ -719,6 +747,7 @@ make_output:
     } else if (Chosen() == Kind::Taa) {
         LOG_INFO(Render_Vulkan, "vkb aa: TAA {}x{} on the game's motion vectors (in render pixels)", w, h);
     }
+    HandOverLine(Chosen() == Kind::Fsr4 ? "FSR 4" : Chosen() == Kind::Taa ? "TAA" : Chosen() == Kind::Dlaa ? "DLAA" : "FSR 3.1");
     return true;
 }
 
@@ -937,6 +966,7 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter, bool came
     // RecordGameMotion, mode 2 without a camera), and frame generation
     const bool want_px = Chosen() == Kind::Dlaa || Chosen() == Kind::Fsr4 || Chosen() == Kind::Taa || Core::Vkb::DlssGlue::AnyFgWanted();
     if (!context_ok || (want_px && !EnsureDlaa(w, h)) || (Core::Vkb::DlssGlue::AnyFgWanted() && !EnsureDepthCopies(w, h, d.format))) {
+        HandOverLine(nullptr); // a hand-over waiting for an AA that could not be made
         failed = true;
         c_failed.fetch_add(1, std::memory_order_relaxed);
         return;
@@ -1120,7 +1150,17 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter, bool came
         const Image oimg{vk::Image{output}, output_view, vk::Format::eR16G16B16A16Sfloat, vk::ImageAspectFlagBits::eColor, w, h};
         ++frame_id; // the history counter both paths share (a reset only after a gap)
         if (!Core::Vkb::DlssGlue::Run(instance->GetDevice(), cmd, color, dimg, mimg, oimg, jitter[0], jitter[1], reset, frame_ms, setting_sharpen ? 0.0f : own)) {
-            LOG_ERROR(Render_Vulkan, "vkb aa: DLAA failed; AA off");
+            if (DlaaFallbackSwitch()) {
+                // issue 99: this frame keeps the scene colour as drawn; the AA that takes over runs from the next one (EnsureContext makes it)
+                std::string why;
+                if (Core::Vkb::DlssGlue::Usable(why)) {
+                    why = "DLSS did not run on a frame";
+                }
+                HandOver(From::Dlaa, *instance, why, true);
+                Barrier(cmd);
+                return;
+            }
+            LOG_ERROR(Render_Vulkan, "vkb aa: DLAA failed; AA off"); // TLG_VKB_DLAA_FALLBACK=0: the old way
             failed = true;
             c_failed.fetch_add(1, std::memory_order_relaxed);
             Barrier(cmd);
@@ -1258,16 +1298,24 @@ SamplerLook LookFor(u32 mrt_mask) {
     return look;
 }
 
+static std::string Why(const std::array<std::string, u32(From::Count)>& list, From from) {
+    std::scoped_lock lock{handover_mutex};
+    return list[u32(from)];
+}
+
 nlohmann::json Report() {
     return {{"on", On()},
             {"kind", Chosen() == Kind::Fsr3 ? "fsr3" : Chosen() == Kind::Dlaa ? "dlaa" : Chosen() == Kind::Fsr4 ? "fsr4" : Chosen() == Kind::Taa ? "taa" : "off"},
             {"asked", asked},
-            {"choice", {{"switch", ChoiceSwitch()}, {"faults", c_choice_faults.load()}, {"fault", [] { std::scoped_lock lock{choice_fault_mutex}; return choice_fault; }()}}},
+            {"choice", {{"switch", ChoiceSwitch()}, {"faults", c_handover_faults[u32(From::Choice)].load()}, {"fault", Why(handover_fault, From::Choice)}}},
             {"fsr4", {{"switch", Fsr4Switch()}, {"device_supported", instance != nullptr && instance->IsFsr4Int8Supported()},
-                      {"rdna4", instance != nullptr && IsRdna4(*instance)}, {"model_missing", fsr4_model_missing.load()}, {"runs", c_fsr4_runs.load()},
-                      {"faults", c_fsr4_faults.load()}, {"fault", [] { std::scoped_lock lock{fsr4_fault_mutex}; return fsr4_fault; }()}}},
-            {"taa", {{"switch", TaaSwitch()}, {"runs", c_taa_runs.load()}, {"faults", c_taa_faults.load()},
-                     {"fault", [] { std::scoped_lock lock{taa_fault_mutex}; return taa_fault; }()},
+                      {"rdna4", instance != nullptr && IsRdna4(*instance)}, {"model_missing", c_handover_quiet[u32(From::Fsr4)].load() != 0}, {"runs", c_fsr4_runs.load()},
+                      {"faults", c_handover_faults[u32(From::Fsr4)].load()}, {"fault", Why(handover_fault, From::Fsr4)}}},
+            {"dlaa", {{"fallback_switch", DlaaFallbackSwitch()}, {"faults", c_handover_faults[u32(From::Dlaa)].load()},
+                      {"not_installed", c_handover_quiet[u32(From::Dlaa)].load()}, {"fault", Why(handover_fault, From::Dlaa)}}},
+            {"took_over", [] { std::scoped_lock lock{handover_mutex}; return took_over; }()}, // issue 99: the AA of the last hand-over ("" none, "off")
+            {"taa", {{"switch", TaaSwitch()}, {"runs", c_taa_runs.load()}, {"faults", c_handover_faults[u32(From::Taa)].load()},
+                     {"fault", Why(handover_fault, From::Taa)},
                      {"camera", false}}}, // no camera for its depth test (the normal renderer finds none in this game either)
             {"size", fmt::format("{}x{}", ctx_w, ctx_h)},
             {"motion_passes", c_motion_passes.load()},
