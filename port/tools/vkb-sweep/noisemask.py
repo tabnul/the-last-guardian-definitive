@@ -17,6 +17,9 @@ noise-ignore.txt: one entry per scene, `STATUS STAGE SCENE SHARE% CAUSES | reaso
 `confirmed_mask(stage, scene)` gives the entry only then. Nothing in the game or the engine changes."""
 import os, subprocess, sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from compare import im  # noqa: E402  (convert on Linux, magick on Windows)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 LIST = os.path.join(HERE, "noise-ignore.txt")
 THRESHOLD = "6.3%"  # 16 of 255
@@ -32,10 +35,10 @@ def make(pics, mask, moving=False):
         raise ValueError("a noise mask needs at least 2 pictures")
     lo, hi = mask + ".lo.png", mask + ".hi.png"
     try:
-        subprocess.run(["convert", *pics, "-evaluate-sequence", "min", lo], check=True)
-        subprocess.run(["convert", *pics, "-evaluate-sequence", "max", hi], check=True)
-        subprocess.run(["convert", hi, lo, "-compose", "difference", "-composite", "-separate", "-evaluate-sequence", "max",
-                        "-threshold", MOVING_THRESHOLD if moving else THRESHOLD, *moving_steps(moving), "-morphology", "Dilate", GROW, mask], check=True)
+        subprocess.run(im(*pics, "-evaluate-sequence", "min", lo), check=True)
+        subprocess.run(im(*pics, "-evaluate-sequence", "max", hi), check=True)
+        subprocess.run(im(hi, lo, "-compose", "difference", "-composite", "-separate", "-evaluate-sequence", "max",
+                        "-threshold", MOVING_THRESHOLD if moving else THRESHOLD, *moving_steps(moving), "-morphology", "Dilate", GROW, mask), check=True)
     finally:
         for f in (lo, hi):
             if os.path.exists(f):
@@ -53,7 +56,7 @@ def moving_steps(moving):
 
 
 def share(mask):
-    out = subprocess.run(["convert", mask, "-format", "%[fx:mean*100]", "info:"], capture_output=True, text=True, check=True)
+    out = subprocess.run(im(mask, "-format", "%[fx:mean*100]", "info:"), capture_output=True, text=True, check=True)
     return round(float(out.stdout), 2)
 
 
