@@ -177,6 +177,7 @@ public:
     }
 
     int WaitForSmallTimer(OrbisKernelEvent* ev, int num, u32 micros);
+    int WaitForSmallTimerImpl(OrbisKernelEvent* ev, int num, u32 micros);
 
     bool EventExists(u64 id, s16 filter);
 

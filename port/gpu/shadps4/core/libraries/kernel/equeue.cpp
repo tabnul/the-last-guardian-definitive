@@ -16,6 +16,11 @@
 #include "core/libraries/kernel/time.h"
 #include "core/libraries/libs.h"
 #include "tlg_freeze.h"
+#include "common/thread.h"
+#include <cstdlib>
+#include <deque>
+#include <mutex>
+#include <string>
 
 namespace Libraries::Kernel {
 
@@ -274,8 +279,53 @@ bool EqueueInternal::AddSmallTimer(EqueueEvent& ev) {
     return true;
 }
 
+namespace {
+// tlg note 106 census (TLG_HRTIMER_CENSUS=1): every wait on a small high-resolution timer (under HrTimerSpinlockThresholdNs, a yield loop), per thread: how many and
+// how long. The engine's spin locks (SpinLock_Acquire 0x1d77ac0, the scene lock of Scene_SnapshotToFrameData) wait 100 us this way when contended.
+// Logged every 4,096 waits (Kernel_Event warning "hr timer census").
+bool HrCensusOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_HRTIMER_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+struct HrThreadStat {
+    std::string name;
+    std::atomic<u64> waits{0}, ns{0};
+};
+std::mutex hr_mutex;
+std::deque<HrThreadStat> hr_stats;
+thread_local HrThreadStat* t_hr = nullptr;
+std::atomic<u64> hr_total{0};
+void NoteHrWait(u64 ns) {
+    if (t_hr == nullptr) {
+        std::scoped_lock lock{hr_mutex};
+        t_hr = &hr_stats.emplace_back();
+        t_hr->name = Common::GetCurrentThreadName();
+    }
+    t_hr->waits.fetch_add(1, std::memory_order_relaxed);
+    t_hr->ns.fetch_add(ns, std::memory_order_relaxed);
+    if ((hr_total.fetch_add(1, std::memory_order_relaxed) & 4095) == 0) {
+        std::string text;
+        std::scoped_lock lock{hr_mutex};
+        for (const auto& t : hr_stats) {
+            text += fmt::format(" [{}: {} waits, {:.1f} ms]", t.name, t.waits.load(), static_cast<double>(t.ns.load()) / 1e6);
+        }
+        LOG_WARNING(Kernel_Event, "hr timer census:{}", text);
+    }
+}
+} // namespace
+
 int EqueueInternal::WaitForSmallTimer(OrbisKernelEvent* ev, int num, u32 micros) {
     ASSERT(num >= 1);
+    if (HrCensusOn()) {
+        const auto t0 = std::chrono::steady_clock::now();
+        const int n = WaitForSmallTimerImpl(ev, num, micros);
+        NoteHrWait(static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count()));
+        return n;
+    }
+    return WaitForSmallTimerImpl(ev, num, micros);
+}
+
+int EqueueInternal::WaitForSmallTimerImpl(OrbisKernelEvent* ev, int num, u32 micros) {
 
     auto curr_clock = std::chrono::steady_clock::now();
     const auto wait_end_us = (micros == 0) ? std::chrono::steady_clock::time_point::max()

@@ -11094,12 +11094,53 @@ u64 PS4_SYSV_ABI PrimitiveBind(u64 render_device, u64 a1, u64 a2, u64 a3, u64 a4
     return 0;
 }
 
+/// Note 106 bound (debug, TLG_VKB_PASS_TIMES=1): each engine pass function (Z, G-buffer, forward, decal) runs inside its hook, timed from entry to exit on the calling thread,
+/// with the draws and dispatches taken while it ran. What a rewrite of a pass's submission could remove at most. /stats key pass_times (cumulative).
+bool PassTimesOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_PASS_TIMES"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+struct PassStat {
+    std::atomic<u64> calls{0}, ns{0}, draws{0}, dispatches{0};
+};
+PassStat g_pass_stats[4];
+constexpr const char* PassNames[4] = {"zpass", "gbuffer", "forward", "decal"};
+template <typename Run>
+u64 TimedPass(u32 pass, Run&& run) {
+    const u64 d0 = Vkb::draws.load(std::memory_order_relaxed) + Vkb::inline_draws.load(std::memory_order_relaxed);
+    const u64 x0 = Vkb::dispatches.load(std::memory_order_relaxed) + Vkb::indirect_dispatches.load(std::memory_order_relaxed);
+    const auto t0 = std::chrono::steady_clock::now();
+    const u64 result = run();
+    const u64 ns = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count());
+    PassStat& s = g_pass_stats[pass];
+    const u64 n = s.calls.fetch_add(1, std::memory_order_relaxed) + 1;
+    s.ns.fetch_add(ns, std::memory_order_relaxed);
+    s.draws.fetch_add(Vkb::draws.load(std::memory_order_relaxed) + Vkb::inline_draws.load(std::memory_order_relaxed) - d0, std::memory_order_relaxed);
+    s.dispatches.fetch_add(Vkb::dispatches.load(std::memory_order_relaxed) + Vkb::indirect_dispatches.load(std::memory_order_relaxed) - x0, std::memory_order_relaxed);
+    if ((n & 63) == 1) {
+        nlohmann::json out = nlohmann::json::object();
+        for (u32 i = 0; i < 4; ++i) {
+            out[PassNames[i]] = {{"calls", g_pass_stats[i].calls.load()}, {"ms", static_cast<double>(g_pass_stats[i].ns.load()) / 1e6},
+                                 {"draws", g_pass_stats[i].draws.load()}, {"dispatches", g_pass_stats[i].dispatches.load()}};
+        }
+        Core::DebugServer::Publish("pass_times", std::move(out));
+    }
+    return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
+}
+using GuestFn7 = u64(PS4_SYSV_ABI*)(u64, u64, u64, u64, u64, u64, u64);
+using GuestFn9 = u64(PS4_SYSV_ABI*)(u64, u64, u64, u64, u64, u64, u64, u64, u64);
+
 /// RenderDev_DrawZPass(render device, pass description): the cascade generator takes the pass over when it can; otherwise the engine's loop runs.
 u64 PS4_SYSV_ABI ZPassEnter(u64 render_device, u64 desc, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
     if (NativeZPassGen::Enabled()) {
         static const u64 loop_entry = Core::GuestHooks::OriginalEntry("DrawZPass");
         if (NativeZPassGen::HandlePass(render_device, desc, loop_entry)) {
             return 1;
+        }
+    }
+    if (PassTimesOn()) {
+        if (static const u64 original = Core::GuestHooks::OriginalEntry("DrawZPass"); original != 0) {
+            return TimedPass(0, [&] { return reinterpret_cast<GuestDraw6>(original)(render_device, desc, a2, a3, a4, a5); });
         }
     }
     return 0;
@@ -11769,6 +11810,12 @@ u64 PS4_SYSV_ABI GBufferEnter(u64 render_device, u64 mode, u64 list, u64 a3, u64
             return 1;
         }
     }
+    if (PassTimesOn()) {
+        if (static const u64 original = Core::GuestHooks::OriginalEntry("DrawGBufferPrimitives"); original != 0) {
+            const u64 stack0 = Rd<u64>(caller_rsp, 0);
+            return TimedPass(1, [&] { return reinterpret_cast<GuestFn7>(original)(render_device, mode, list, a3, flags, query_mode, stack0); });
+        }
+    }
     return 0;
 }
 
@@ -11781,6 +11828,11 @@ u64 PS4_SYSV_ABI ForwardEnter(u64 render_device, u64 a1, u64 a2, u64 list, u64 m
             return 1;
         }
     }
+    if (PassTimesOn()) {
+        if (static const u64 original = Core::GuestHooks::OriginalEntry("DrawForwardPass"); original != 0) {
+            return TimedPass(2, [&] { return reinterpret_cast<GuestDraw6>(original)(render_device, a1, a2, list, mode, a5); });
+        }
+    }
     return 0;
 }
 
@@ -11791,6 +11843,12 @@ u64 PS4_SYSV_ABI DecalEnter(u64 render_device, u64 view, u64 a3, u64 a4, u64 des
         static const u64 loop_entry = Core::GuestHooks::OriginalEntry("DrawDecalPass");
         if (NativeZPassGen::HandleDecal(render_device, view, a3, a4, desc, static_cast<u32>(flags), Rd<s32>(caller_rsp, 0), Rd<u32>(caller_rsp, 8), Rd<u32>(caller_rsp, 0x10), loop_entry)) {
             return 1;
+        }
+    }
+    if (PassTimesOn()) {
+        if (static const u64 original = Core::GuestHooks::OriginalEntry("DrawDecalPass"); original != 0) {
+            const u64 s0 = Rd<u64>(caller_rsp, 0), s1 = Rd<u64>(caller_rsp, 8), s2 = Rd<u64>(caller_rsp, 0x10);
+            return TimedPass(3, [&] { return reinterpret_cast<GuestFn9>(original)(render_device, view, a3, a4, desc, flags, s0, s1, s2); });
         }
     }
     return 0;
