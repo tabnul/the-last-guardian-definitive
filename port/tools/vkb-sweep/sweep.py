@@ -80,13 +80,18 @@ def counters(path):
     return out
 
 
+LATE_RESULT = "anim query order: timeout on thread"
+
+
 def log_counts(path):
     if not os.path.exists(path):
         return None
     lines = open(path, errors="replace").read().splitlines()
     return {"errors": sum(1 for l in lines if "<Error>" in l or "<Critical>" in l),
             "warnings": sum(1 for l in lines if "<Warning>" in l),
-            "faults": sum(1 for l in lines if "Fault: exception" in l)}
+            "faults": sum(1 for l in lines if "Fault: exception" in l),
+            # late query results dropped after the 50 ms limit (the author's fix A, one log line per timeout)
+            "late_results": sum(1 for l in lines if LATE_RESULT in l)}
 
 
 def ended_takes(folder, vkb):
