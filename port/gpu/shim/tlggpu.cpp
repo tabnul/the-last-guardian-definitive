@@ -10,6 +10,7 @@
 #endif
 #include "tlg_toggles.h"
 #include "tlg_freeze.h"
+#include "tlg_game_sema.h"
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
@@ -451,6 +452,10 @@ extern "C" void tlggpu_install_hooks(std::uintptr_t image_base, std::uint64_t im
     if (Core::Vkb::On()) {
         Core::GuestHooks::InstallForEboot(image_base, image_size);
     }
+}
+
+extern "C" void tlggpu_set_game_sema_signal(TlgGpuGameSemaSignal signal) {
+    TlgGameSema::signal.store(signal);
 }
 
 extern "C" void tlggpu_set_wait_hooks(TlgGpuWaitBegin begin, TlgGpuWaitEnd end) {
