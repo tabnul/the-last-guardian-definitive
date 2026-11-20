@@ -10,7 +10,6 @@
 #include "native/native_framewalk.h"
 #include "native/native_timeline.h"
 #include "native/native_draw.h"
-#include "native/native_hook_ring.h"
 #include "native/native_frame_gate.h"
 #include "native/shadps4/core/libraries/gnmdriver/gnm_error.h"
 #include "native/shadps4/core/libraries/gnmdriver/gnmdriver.h"
@@ -338,7 +337,6 @@ int PS4_SYSV_ABI sceGnmDestroyWorkloadStream() {
 }
 
 void PS4_SYSV_ABI sceGnmDingDong(u32 gnm_vqid, u32 next_offs_dw) {
-    Core::HookRing::NoteSubmit(); // S4a census
     HLE_TRACE;
     LOG_DEBUG(Lib_GnmDriver, "vqid {}, offset_dw {}", gnm_vqid, next_offs_dw);
 

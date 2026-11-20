@@ -23,7 +23,6 @@
 
 #include "common/logging/log.h"
 #include "common/path_util.h"
-#include "native/native_hook_owned.h"
 #include "native/native_texture_version.h"
 #include "common/thread.h"
 #include "native/shadps4/core/guest_heap.h"
@@ -38,7 +37,6 @@
 #include "native/native_vkb_objects.h"
 #include "native/native_vkb_side_census.h"
 #include "native/native_resources.h"
-#include "native/native_updates.h"
 #include "native/native_target_desc.h"
 #include "native/native_image_caller.h"
 #include "native/native_sync.h"
@@ -192,21 +190,6 @@ void Insert(const Object& object) {
             }
         }
         resource_by_address[object.address] = AddrEntry{object.id, object.address + bytes, object.kind, object.usage, object.cpu_access};
-        if (object.kind != Kind::Buffer && bytes != 0 && Core::HookOwned::Mode() != 0) {
-            // note 90: a texture in a buffer's memory excludes the buffer from the hook-owned class for good (here, in game order, before any later write of it)
-            const VAddr end = object.address + bytes;
-            auto it = resource_by_address.lower_bound(end);
-            u32 below = 0;
-            while (it != resource_by_address.begin() && below < 16) {
-                --it;
-                if (it->first < object.address) {
-                    ++below;
-                }
-                if (it->second.kind == Kind::Buffer && it->second.end > object.address) {
-                    Core::HookOwned::ExcludeBuffer(it->second.id);
-                }
-            }
-        }
     }
     live_by_kind[static_cast<u32>(object.kind)].fetch_add(1, std::memory_order_relaxed);
 }
@@ -377,9 +360,6 @@ void NoteTextureCreated(u64 object) {
             }
             if (overlap) {
                 tac[TacBufferOverlap].fetch_add(1, std::memory_order_relaxed);
-                if (Core::HookOwned::Mode() != 0 && Core::HookOwned::MemberIn(entry.address, entry.bytes)) {
-                    tac[TacHookMember].fetch_add(1, std::memory_order_relaxed);
-                }
             }
         }
     }
@@ -425,17 +405,6 @@ void NoteDelete(u64 object) {
         const Object& gone = entry->second;
         if (const auto at = resource_by_address.find(gone.address); at != resource_by_address.end() && at->second.id == gone.id) {
             resource_by_address.erase(at); // a deleted resource leaves the map by memory (the walks below would count it)
-        }
-        const bool texture = gone.kind >= Kind::Texture1D && gone.kind <= Kind::Texture3D;
-        if (texture && gone.address != 0) { // (a texture whose size read 0 at creation still owns images: its lists go too)
-            // B8.2: another live texture at the same memory (an alias) keeps the images (they are not freed; the deleted texture's lists still go)
-            const auto at = resource_by_address.find(gone.address);
-            const bool alias = at != resource_by_address.end() && at->second.id != gone.id && at->second.kind >= Kind::Texture1D && at->second.kind <= Kind::Texture3D;
-            if (alias) {
-                Core::NativeUpdates::NoteB8(Core::NativeUpdates::B8TextureAliasKept);
-            }
-        } else if (gone.kind == Kind::Buffer && gone.address != 0) {
-            Core::HookOwned::BufferGone(gone.id); // note 90
         }
     }
     id_by_object.erase(it);

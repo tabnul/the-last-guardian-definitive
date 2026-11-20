@@ -76,8 +76,6 @@
 #include "native/native_draw_tag.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_fixed_state.h"
 #include "native/native_untracked_ring.h"
-#include "native/native_ring_census.h"
-#include "native/native_hook_ring.h"
 #include "core/memory.h"
 #include "core/address_space.h"
 
@@ -7332,16 +7330,6 @@ bool FrameAllocLocked() {
 }
 std::mutex g_frame_alloc_mutex;
 thread_local bool t_host_side_alloc = false;   // R3c: this allocation is for the slot ring (the game reads its copies back on the CPU): host memory
-thread_local bool t_engine_frame_alloc = false; // TLG_RING_CENSUS: the allocation below was asked for by the engine (through RingDiscover), not by one of our redirects
-thread_local u32 t_engine_frame_alloc_site = 0;  // TLG_RING_CENSUS: its call site (Ghidra address)
-thread_local u32 t_census_map_type = 0;          // TLG_RING_CENSUS: the map type of the Map running on this thread (its allocation sites get it in the top bits of the site)
-u32 CensusSite(u64 ret) {
-    u32 site = static_cast<u32>(ret - ImageBase() + 0x1000000);
-    if ((site == 0x247fcf0 || site == 0x247ffe9) && t_census_map_type != 0) {
-        site |= (t_census_map_type & 0xf) << 28; // e.g. 0x1247fcf0: texture branch of a READ Map, 0x4247fcf0: of a WRITE_DISCARD Map
-    }
-    return site;
-}
 
 u64 LockedFrameAlloc(u64 original, u64 allocator, u64 size, u64 alignment) {
     u64 block;
@@ -7363,8 +7351,6 @@ u64 LockedFrameAlloc(u64 original, u64 allocator, u64 size, u64 alignment) {
         } else {
             block = reinterpret_cast<u64(PS4_SYSV_ABI*)(u64, u64, u64)>(original)(allocator, size, alignment);
         }
-        Core::RingCensus::NoteAlloc(block, size & 0xffffffffull, !t_engine_frame_alloc, t_engine_frame_alloc ? t_engine_frame_alloc_site : 0); // TLG_RING_CENSUS (counters only)
-        Core::HookRing::NoteAlloc(block, size & 0xffffffffull); // TLG_HOOK_RING (F1 1a shadow)
     }
     return block;
 }
@@ -7379,10 +7365,7 @@ u64 PS4_SYSV_ABI RingDiscover(u64 allocator, u64 a1, u64 a2, u64 a3, u64 a4, u64
     bool ran = false;
     if (FrameAllocLocked() && allocator != 0) {
         if (const u64 original = Core::GuestHooks::OriginalEntry("AllocFrameGarlic"); original != 0) {
-            t_engine_frame_alloc = true;
-            t_engine_frame_alloc_site = Core::RingCensus::On() && ImageBase() != 0 ? CensusSite(ret) : 0;
             allocated = LockedFrameAlloc(original, allocator, a1, a2);
-            t_engine_frame_alloc = false;
             ran = true;
         }
     }
@@ -8869,7 +8852,6 @@ SkinRename SkinRingRename(u64 ring, u64 scene) {
 }
 void SkinRingRestore(const SkinRename& r) {
     if (r.buffer != 0 && r.block != 0) {
-        Core::HookRing::Fill(r.block, r.bytes); // TLG_HOOK_RING (F1 1a shadow): the pass that writes the matrices returned
     }
     if (r.buffer != 0) {
         Guarded([&]() -> u64 {
@@ -8957,7 +8939,6 @@ u64 PS4_SYSV_ABI LightWrites(u64 object, u64 source, u64 a2, u64 a3, u64 a4, u64
                 continue;
             }
             std::memcpy(reinterpret_cast<void*>(block), reinterpret_cast<const void*>(memory), size);
-            Core::HookRing::Fill(block, size); // TLG_HOOK_RING (F1 1a shadow): our copy is the write
             Wr<u32>(buffer, 0x60, static_cast<u32>(block));
             Wr<u32>(buffer, 0x64, static_cast<u32>(block >> 32) & 0xfffu | 0x100000u);
             Wr<u32>(buffer, 0x6c, 0x20077facu);
@@ -9626,7 +9607,6 @@ u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64
     Guarded([&]() -> u64 {
         for (const Renamed& r : renamed) {
             if (r.buffer != 0) {
-                Core::HookRing::Fill(Rd<u64>(r.buffer, 0x30), Rd<u32>(r.buffer, 0x180)); // TLG_HOOK_RING (F1 1a shadow): the engine's call that writes the block returned
                 Wr<u64>(r.buffer, 0x30, r.memory);
             }
         }
@@ -9741,7 +9721,6 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
     }
     // F2.2 (TLG_F2_STORE=1): which Maps are announced: by resource kind, map type and the path taken (0 buffer, announced at Unmap; 1 texture, native upload record; 2 texture, record refused;
     // 3 not handled here: the guest function runs and nothing is announced)
-    const u32 census_kind = Core::RingCensus::On() && IsHeapPointer(resource) && (resource & 7) == 0 ? Guarded([&]() -> u64 { return Rd<u32>(resource, 0x124); }) : 0xffu;
     // note 42, debug only (TLG_STAGING_LOG=1, old renderer): the values the CPU reads from the 16x16 R32F staging texture, as a reference for the backend's readback
     static const bool staging_log = [] { const char* e = std::getenv("TLG_STAGING_LOG"); return e != nullptr && e[0] == '1'; }();
     if (staging_log && !Core::Vkb::On() && ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0 && Rd<u32>(resource, 0x124) >= 2 && Rd<u32>(resource, 0x124) <= 4 && type == 1 &&
@@ -9790,12 +9769,6 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
             return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
         }
     }
-    if (Core::RingCensus::On()) {
-        t_census_map_type = static_cast<u32>(type); // stays set while the engine's Map runs after this hook (path 3) or inside it
-    }
-    const auto count_map = [&](u32 path) {
-        Core::RingCensus::NoteMapPath(census_kind, subresource, static_cast<u32>(type), path); // TLG_RING_CENSUS (counters only)
-    };
     if (ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0 && Rd<u32>(resource, 0x124) == 1) {
         // a Map of a buffer: the game's function runs here and its result is returned
         const u64 original_map = Core::GuestHooks::OriginalEntry("Map");
@@ -9817,7 +9790,6 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
                 Core::HookDiff::BumpVersion(Rd<u64>(resource, 0x10));
             }
             Core::NativeDevice::NoteMapped(Rd<u64>(resource, 0x10), Rd<u64>(out_map, 0), Rd<u32>(out_map, 8), static_cast<u32>(type));
-            count_map(0);
             return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
         }
     }
@@ -9825,13 +9797,11 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
     const auto valid = [](u64 pointer) { return IsHeapPointer(pointer) && (pointer & 7) == 0; };
     if (mode == 0 || ctx == 0 || !valid(resource) || subresource != 0 || (type != 2 && type != 3 && type != 4) ||
         Rd<u32>(resource, 0x124) != 3) {
-        count_map(3);
         return 0;
     }
     const u64 original = Core::GuestHooks::OriginalEntry("Map");
     const u64 out = Rd<u64>(caller_rsp, 0);
     if (original == 0 || out == 0 || (out & 7) != 0) {
-        count_map(3);
         return 0;
     }
     auto& live = Live();
@@ -9871,16 +9841,13 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
     if (Rd<u64>(writer, 0x0) != base_before || span_end < span_begin + 2 * sizeof(u32) || span_end > Rd<u64>(writer, 0x8) ||
         scratch == 0 || scratch != Rd<u64>(resource, 0x170)) {
         live.map_refused.fetch_add(1, std::memory_order_relaxed);
-        count_map(2);
         return value;
     }
     const u64 seq = Guarded([&] { return MakeMapUploadRecord(ctx, resource, scratch, ret); });
     if (seq == 0 || Slot(seq).flags != 0) {
         live.map_refused.fetch_add(1, std::memory_order_relaxed);
-        count_map(2);
         return value;
     }
-    count_map(1);
     const bool exec = mode >= 2 && ExecEligibleCompute(ctx, seq, ret);
     std::memcpy(&words[9], &seq, sizeof(u64));
     if (exec) {
@@ -11229,7 +11196,6 @@ void SlotRingCopy(u32 group, u32 first, u32 upto) {
                 continue;
             }
             std::memcpy(reinterpret_cast<void*>(block), reinterpret_cast<const void*>(memory), size);
-            Core::HookRing::Fill(block, size); // TLG_HOOK_RING (F1 1a shadow): our copy is the write
             Wr<u32>(buffer, 0x60, static_cast<u32>(block));
             Wr<u32>(buffer, 0x64, static_cast<u32>(block >> 32) & 0xfffu | 0x100000u);
             Wr<u32>(buffer, 0x6c, 0x20077facu);

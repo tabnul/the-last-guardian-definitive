@@ -36,11 +36,7 @@
 #include "native/native_timeline.h"
 #include "native/native_registry.h"
 #include "native/native_frame_gate.h"
-#include "native/native_updates.h"
 #include "native/native_drain_audit.h"
-#include "native/native_uploads.h"
-#include "native/native_ring_census.h"
-#include "native/native_hook_ring.h"
 #include "native/native_zpass_gen.h"
 #include "native/native_resources.h"
 #include "core/memory.h"
@@ -652,19 +648,11 @@ void RegisterBuiltins() {
                  }
                  return Core::NativeRegistry::Report();
              });
-    Register("/updates", "?start=1 turns the update audit on (N5a): buffer Maps the engine announces, and which CPU write faults they cover",
-             [](const Params& params) {
-                 return Core::NativeUpdates::Report();
-             });
-    Register("/uploads", "(N5c, TLG_NATIVE_UPLOADS=1) announced writes, how many were published, queued before records and uploaded before the draws that use them",
-             [](const Params&) { return Core::NativeUploads::Report(); });
     Register("/drain", "(N6a, TLG_DRAIN_AUDIT=1) the command processor's wait for queued memory writes: did any guest read of the planning touch a pending write",
              [](const Params&) { return Core::DrainAudit::Report(); });
     Register("/zpassgen", "(N6.3i, TLG_ZPASS_GEN=1) the cascade generator: passes generated, run by the loop, declined (and why), verify runs and their differences, the learned variant table",
              [](const Params&) { return Core::NativeZPassGen::Report(); });
     Register("/threads", "CPU use of the busiest threads since the previous call", Threads);
-    Register("/hook_ring", "TLG_HOOK_RING=1 (F1 class 1a shadow): front constant copies compared with a ring filled at the writes", [](const Params&) { return Core::HookRing::Report(); });
-    Register("/ring_census", "TLG_RING_CENSUS=1 (design review F1): frame ring bytes the GPU reads, announced by a hook or silent", [](const Params&) { return Core::RingCensus::Report(); });
     Register("/memory", "?addr=0x..&size=N (max 65536): guest memory as hex", Memory);
     Register("/log", "?lines=N&filter=text&file=shad_log.txt: tail of a log file", Log);
     Register("/profile",
