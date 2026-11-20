@@ -9,6 +9,31 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-20 - Texture reads out of per-pixel branches in the new engine's translator (not yet merged)
+
+- **Problem:** with forced 16x AF the new engine drew horizontal stripes in the sky of one scene (issue 75). The cloud
+  shader reads the cloud picture inside a per-pixel "if" (made from a console region where pixels are switched off); a
+  read with automatic level choice looks at its 2x2 neighbours, and neighbours that skipped the "if" bring leftover
+  values, so the level and direction are undefined at the edge of the "if". That holds for every pixel shader with
+  such a read, not only this one.
+- **Considered:** (1) in the translator, move each such read, with the plain arithmetic its coordinates need, to the
+  block before the outermost per-pixel "if"; reads have no side effects, so the values inside stay the same; reads
+  that need anything else stay and are counted with a reason; (2) let the whole 2x2 group enter the "if" and keep the
+  per-pixel condition for results and writes: covers every derivative, but needs quad operations (an optional driver
+  feature, a second path) and a bigger change to how branches are built; (3) forced AF off for samplers read inside
+  such an "if": hides the fault, the level stays undefined, the player loses sharpness.
+- **Choice:** 1, chosen in the design note on issue 75 and built as planned. Plain SPIR-V, so every machine (principle
+  6); one rule for all pixel shaders (10); the right picture first, the cost is stated in the pull request (11).
+  Widened on the way: a constant buffer read at an address that is the same for every pixel may move with the read (on
+  the console it is a scalar load that runs for the whole wave anyway; out of range it reads zero). Narrowed after the
+  second read: a constant read by raw address does not move, and a shader that writes memory is left as it is (a read
+  must not pass a write); both are counted. The normal renderer has the same fault in its own
+  translation and keeps it (principle 8). Way 2 stays the fallback if a sweep shows a wrong picture from a read that
+  way 1 keeps. Switch `TLG_VKB_READS_OUT_OF_BRANCH` (`=0` the old translation).
+- **Who:** box (rule 14).
+- **Links:** issue 75 (https://github.com/tabnul/tlg-vkb-work/issues/75); pull request for branch
+  `fix/vkb-reads-out-of-branch`.
+
 ## 2026-11-19 - The AA's shift: a second pass of a mesh is known by its index data, as in the normal renderer (not yet merged)
 
 - **Problem:** with an anti-aliasing on (FSR 3.1 by default since pull request 51), the stained-glass window of the first room

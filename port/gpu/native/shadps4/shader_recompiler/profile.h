@@ -57,6 +57,8 @@ struct Profile {
     bool supports_shader_stencil_export{};
     /// tlg C9: graphics shaders read their guest buffers through the global indexed table (descriptor arrays) instead of push descriptors
     bool indexed_resources{};
+    /// tlg issue 75 (TLG_VKB_READS_OUT_OF_BRANCH): pixel shaders read textures with automatic level choice before a per-pixel branch, not inside it
+    bool reads_out_of_branch{};
 
     bool operator==(const Profile&) const = default;
 };
