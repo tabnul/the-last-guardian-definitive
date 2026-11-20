@@ -1196,6 +1196,10 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
                 if (address != 0 && size != 0) {
                     if (Core::Vkb::ConstantInRing(address, size, w)) {
                         ok = bind_window(address, size, w);
+                    } else if (Core::Vkb::CbInPlaceOn() && !desc.is_written && Core::Vkb::PoolConstantBuffer(object) &&
+                               (w = Core::Vkb::SourceWindow(address, size)).buffer) { // note 98: a pool constant buffer, read in place (no copy)
+                        Core::Vkb::NotePoolInPlace();
+                        ok = bind_window(address, size, w);
                     } else if (!desc.is_written && size <= 65536 && !Core::Vkb::R7NoCopy()) {
                         Core::Vkb::NoteConstantCopied();
                         ok = copy_at_draw(address, size);

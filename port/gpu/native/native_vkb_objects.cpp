@@ -1636,6 +1636,59 @@ std::atomic<u64> c_r7_ring_buffers{0}, c_r7_window_checks{0}, c_r7_window_differ
 void NoteConstantCopied() {
     c_r7_cb_copied.fetch_add(1, std::memory_order_relaxed);
 }
+namespace {
+constexpr u64 PoolTableBits = 17, PoolTableSize = 1ull << PoolTableBits;
+std::array<std::atomic<u64>, PoolTableSize> pool_cbs{}; ///< engine objects of the per-object constant buffer pool (open addressing, never removed: the pool only grows)
+std::atomic<u64> c_pool_cbs{0}, c_pool_full{0}, c_pool_in_place{0}, c_pool_submits{0}, c_pool_submits_late{0};
+u64 PoolSlot(u64 object) {
+    return (object * 0x9e3779b97f4a7c15ull) >> (64 - PoolTableBits);
+}
+} // namespace
+bool CbInPlaceOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_CB_IN_PLACE"); return e != nullptr && e[0] == '1'; }();
+    return on && On();
+}
+void NotePoolConstantBuffer(u64 object) {
+    if (!CbInPlaceOn() || object == 0) {
+        return;
+    }
+    for (u64 n = 0, i = PoolSlot(object); n < PoolTableSize; ++n, i = (i + 1) & (PoolTableSize - 1)) {
+        u64 expected = 0;
+        if (pool_cbs[i].compare_exchange_strong(expected, object, std::memory_order_acq_rel)) {
+            c_pool_cbs.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        if (expected == object) {
+            return;
+        }
+    }
+    c_pool_full.fetch_add(1, std::memory_order_relaxed);
+}
+bool PoolConstantBuffer(u64 object) {
+    for (u64 n = 0, i = PoolSlot(object); n < PoolTableSize; ++n, i = (i + 1) & (PoolTableSize - 1)) {
+        const u64 v = pool_cbs[i].load(std::memory_order_acquire);
+        if (v == object) {
+            return true;
+        }
+        if (v == 0) {
+            return false;
+        }
+    }
+    return false;
+}
+void NotePoolInPlace() {
+    c_pool_in_place.fetch_add(1, std::memory_order_relaxed);
+}
+void PoolSubmitCheck(bool gpu_two_back_done) {
+    c_pool_submits.fetch_add(1, std::memory_order_relaxed);
+    if (!gpu_two_back_done) {
+        c_pool_submits_late.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+nlohmann::json PoolReport() {
+    return {{"on", CbInPlaceOn()}, {"pool_buffers", c_pool_cbs.load()}, {"table_full", c_pool_full.load()}, {"bound_in_place", c_pool_in_place.load()},
+            {"submits_checked", c_pool_submits.load()}, {"submits_gpu_more_than_two_behind", c_pool_submits_late.load()}};
+}
 bool ConstantInRing(u64 address, u64 size, BufferWindow& out) {
     if (InVramRing(address, size, out)) {
         c_r7_ring_cb.fetch_add(1, std::memory_order_relaxed);
@@ -4166,6 +4219,7 @@ nlohmann::json ObjectsReport() {
                           {"buffer_lookups", {{"range_leaves_a_device_buffer", c_find_straddle.load()}, {"not_in_place", c_find_none.load()}}},
                           {"r7_census", R7CensusReport()},
                           {"bind_by_object", BindByObjectReport()},
+                          {"cb_in_place", PoolReport()}, // note 98
                           {"targets_fixed_test", {{"on", TargetsFixed()}, {"targets", c_fixed_targets.load()}, {"views_forced_to_the_image_format", c_fixed_view_format_forced.load()},
                                                   {"attachments_refused", c_fixed_attachment_refused.load()}}},
                           {"staging_textures", {{"note", "note 42: copies into staging textures written back for the CPU's Map(READ)"}, {"copies", c_staging_copies.load()},

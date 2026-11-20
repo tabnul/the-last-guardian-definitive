@@ -544,6 +544,12 @@ void SubmitGraphics() {
             c_lap_wait_us.fetch_add(static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count()), std::memory_order_relaxed);
         }
     }
+    if (CbInPlaceOn() && OverlapOn() && Stream::Ready()) { // note 98: the engine rewrites a pool slot of constants 3 frames later; the GPU must not lag that far
+        const u64 now = c_submits[0].load(std::memory_order_relaxed);
+        if (now > 2) {
+            PoolSubmitCheck(GraphicsSubmitDone(now - 2));
+        }
+    }
     if (Census::On()) {
         Census::Frame();
     }

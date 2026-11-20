@@ -157,6 +157,15 @@ bool BufferInRing(u64 address, u64 size, BufferWindow& out);
 void NoteConstantCopied();
 /// note 56 bisect (TLG_VKB_R7_NO_CB_COPY=1): constant buffers outside the frame ring bound in place again, not copied at the draw
 inline bool R7NoCopy() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_R7_NO_CB_COPY"); return e != nullptr && e[0] == '1'; }(); return on; }
+/// O3 L-CB (TLG_VKB_CB_IN_PLACE=1, note 98): the engine's per-object constant buffers (a pool of 0x130-byte buffers per frame slot, 3 slots in rotation,
+/// FrameData_AddRenderable / FrameData_BuildBatches / the pool fill in Engine_RegisterModules) are read by the GPU in place, where the engine wrote them, instead
+/// of being copied at every draw: the engine's own contract (on PS4 the GPU reads them in place), safe while the GPU is less than 3 frames behind the writer
+[[nodiscard]] bool CbInPlaceOn();
+void NotePoolConstantBuffer(u64 object);
+[[nodiscard]] bool PoolConstantBuffer(u64 object);
+void NotePoolInPlace();
+/// at each graphics submit (engine thread): counts submits where the GPU has not finished the submit two back (a pool slot could be rewritten while read)
+void PoolSubmitCheck(bool gpu_two_back_done);
 void R7Census(u32 bind, u64 object, u64 address, u64 size);
 void FillReadersTarget(u64 destination, u64 bytes, u64 caller, const char* what);
 /// The async context's counter read-back: bytes of our GDS at `gds_offset` copied to guest memory (or our device buffer) in the frame stream
