@@ -59,6 +59,7 @@ bool ViewExtent(u64 view_id, u32& width, u32& height, u32* depth = nullptr, u64*
 /// note 41, debug only: the first subresource of our view of engine view `view_id` to log/vkb_image_dump/<name>_<w>x<h>_<format>.bin once the GPU has it (recording thread, outside a pass)
 void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name);
 /// note 41, debug only: `size` bytes of `buffer` at `offset` (the GPU's copy) to log/vkb_image_dump/<name>_<size>B.gpu once the GPU has it
+void DumpBoundView(vk::CommandBuffer cmd, vk::ImageView handle, const std::string& name); ///< debug: the image an image view handle shows
 void DumpBuffer(vk::CommandBuffer cmd, vk::Buffer buffer, u64 offset, u64 size, const std::string& name);
 /// note 91: the image `image` (a pass attachment, by its Vulkan handle) at full size, as DumpView
 void DumpImageHandle(vk::CommandBuffer cmd, vk::Image image, const std::string& name);
@@ -136,6 +137,9 @@ bool FillPattern(u64 destination, u64 bytes, u64 source, u32 dwords);
 /// note 49 census (TLG_VKB_FILL_READERS=1): the tag of the work being recorded on this thread, a fill target's engine caller
 bool FillReadersOn();
 void CensusTag(u64 tag);
+void R3dDumpTraced(const std::string& label); ///< debug R3d trace: the device buffers of the traced size dumped now
+u64 R3dTraceSize(); ///< debug: TLG_VKB_R3D_TRACE=<bytes> (0: off)
+void R3dTraceMapRead(u64 memory, u64 bytes, u64 caller); ///< debug R3d trace: a Map READ against the fur copies into that memory
 /// R7 census (TLG_VKB_R7_CENSUS=1, note 56): a buffer binding as today's path resolved it (address from the descriptor words), against the engine object it came from.
 /// `bind`: 0 constant buffer, 1 buffer view (SRV), 2 UAV view, 3 vertex, 4 index; `object` the slot's object (a buffer, or a view for 1 and 2)
 bool R7CensusOn();

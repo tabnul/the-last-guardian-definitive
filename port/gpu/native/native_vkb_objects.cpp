@@ -834,6 +834,22 @@ bool R3dCheckOn() {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_R3D_CHECK"); return e != nullptr && e[0] == '1'; }();
     return on;
 }
+/// debug (with TLG_VKB_R3D_TRACE=<bytes>): a lookup of a buffer of that size, by path; logged at its 1st, 2nd, 10th, 100th, 1000th lookup of that buffer and path
+extern thread_local u64 t_census_tag;
+std::vector<std::pair<u64, u64>> r3d_deleted; ///< debug trace: deleted buffers of the traced size (start, end), under the module lock
+void R3dTracePath(u64 start, const char* path, u64 address, u64 size, u64 now) {
+    static std::mutex m;
+    static std::map<std::pair<u64, const char*>, u64> counts;
+    u64 n = 0;
+    {
+        std::scoped_lock lock{m};
+        n = ++counts[{start, path}];
+    }
+    if (n == 1 || n == 2 || n == 10 || n == 100 || n == 1000 || n == 10000) {
+        LOG_WARNING(Render_Vulkan, "vkb R3d trace: lookup #{} of buffer {:#x} ({}) range +{:#x} {} bytes, recorder {}, submit {}, tag {:#x}", n, start, path, address - start, size,
+                    Stream::OnRecorder(), now, t_census_tag);
+    }
+}
 VkBuffer MakeDeviceBuffer(u64 bytes, VmaAllocation& allocation) {
     const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                                 .size = bytes,
@@ -874,12 +890,22 @@ bool FindLocked(u64 address, u64 size, BufferWindow& out) {
         }
         if (DeviceBuffersMode() == 2) {
             // V4j: the device copy (V4e), in the same lock; the in-place lookup is not needed for it
+            if (R3dTraceBytes() != 0) {
+                for (const auto& [a, e] : r3d_deleted) {
+                    if (address < e && a < address + size) {
+                        R3dTracePath(a, "deleted", address, size, GraphicsSubmits());
+                    }
+                }
+            }
             auto it = watched.upper_bound(address);
             if (it != watched.begin()) {
                 --it;
                 Watched& wb = it->second;
                 if (address >= it->first && address + size <= wb.end && wb.cls == 0) {
                     const u64 now = GraphicsSubmits();
+                    if (R3dTraceBytes() != 0 && wb.end - it->first == R3dTraceBytes()) {
+                        R3dTracePath(it->first, wb.first_bind_submit == 0 ? "first" : wb.state == Watched::State::Device ? (now >= wb.ready_submit ? "device" : "device not ready") : wb.state == Watched::State::Unstable ? "unstable" : "settling", address, size, now);
+                    }
                     if (wb.first_bind_submit == 0 && StaticAtBindOn() && !wb.gpu_written && !(Stream::OnRecorder() && Stream::RecorderOn()) &&
                         !R3dSkipped(wb.end - it->first)) {
                         // R3d: its device copy now; the copy job goes into the stream below, after the lock, in front of the job of this bind
@@ -901,7 +927,8 @@ bool FindLocked(u64 address, u64 size, BufferWindow& out) {
                         } else {
                             wb.state = Watched::State::Device;
                             BumpBufferEpoch(); // note 46: A1 memo answers may change
-                            wb.ready_submit = R3dFirstInPlace() ? now + 2 : 0;
+                            static const bool via_batch = [] { const char* e = std::getenv("TLG_VKB_R3D_VIA_BATCH"); return e != nullptr && e[0] == '1'; }(); // (=2: bound at once)
+                            wb.ready_submit = R3dFirstInPlace() || via_batch ? now + 2 : 0;
                             initial = {it->first, bytes, wb.device};
                             out = {vk::Buffer{wb.device}, address - it->first, true};
                             c_static_at_bind.fetch_add(1, std::memory_order_relaxed);
@@ -932,11 +959,45 @@ bool FindLocked(u64 address, u64 size, BufferWindow& out) {
         }
         const VkBuffer device = initial.device;
         const u64 bytes = initial.bytes;
+        // test: TLG_VKB_R3D_VIA_BATCH=1: the copy in the upload batch (as settling), this bind and the next ones until ready_submit read in place; =2: the copy in the
+        // upload batch (in front of this submission), the device copy bound at once
+        static const char via_batch = [] { const char* e = std::getenv("TLG_VKB_R3D_VIA_BATCH"); return e != nullptr ? e[0] : '0'; }();
+        if (via_batch != '0' && src.buffer) {
+            Upload::CopyBuffer(src.buffer, src.offset, vk::Buffer{device}, 0, bytes);
+            if (via_batch == '2') {
+                return true;
+            }
+            out = {};
+            goto in_place;
+        }
         Stream::NoteBytes(Stream::Work::Upload, bytes);
-        Stream::Defer(Stream::Work::Upload, [src, device, bytes](vk::CommandBuffer cmd) {
+        static const bool dump_on = [] { const char* e = std::getenv("TLG_VKB_R3D_DUMP"); return e != nullptr && e[0] == '1'; }();
+        const bool dump = dump_on && R3dTraceBytes() == bytes; // debug R3d trace (with TLG_VKB_R3D_DUMP=1): the host bytes now, and the copy and its source right after the copy on the GPU
+        const u64 dump_address = initial.address, dump_submit = GraphicsSubmits();
+        if (dump) {
+            const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_image_dump" / "r3d";
+            std::error_code ec;
+            std::filesystem::create_directories(dir, ec);
+            if (FILE* f = std::fopen((dir / fmt::format("{:x}_s{}_cpu_at_bind.bin", dump_address, dump_submit)).string().c_str(), "wb")) {
+                std::fwrite(reinterpret_cast<const void*>(dump_address), 1, bytes, f);
+                std::fclose(f);
+            }
+        }
+        Stream::Defer(Stream::Work::Upload, [src, device, bytes, dump, dump_address, dump_submit](vk::CommandBuffer cmd) {
             if (src.buffer) {
                 Stream::Hazard(cmd, {Stream::BufferUse(src.buffer, src.offset, bytes, false), Stream::BufferUse(vk::Buffer{device}, 0, bytes, true)});
                 cmd.copyBuffer(src.buffer, vk::Buffer{device}, vk::BufferCopy{src.offset, 0, bytes});
+                static const bool barrier_after = [] { const char* e = std::getenv("TLG_VKB_R3D_BARRIER_AFTER"); return e != nullptr && e[0] == '1'; }(); // test
+                if (barrier_after) {
+                    const vk::MemoryBarrier2 full{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands, .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+                                                  .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                                                  .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite};
+                    cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &full});
+                }
+                if (dump) {
+                    DumpBuffer(cmd, vk::Buffer{device}, 0, bytes, fmt::format("r3d/{:x}_s{}_dev_after_copy", dump_address, dump_submit));
+                    DumpBuffer(cmd, src.buffer, src.offset, bytes, fmt::format("r3d/{:x}_s{}_src_after_copy", dump_address, dump_submit));
+                }
             } else {
                 Stream::Hazard(cmd, {Stream::BufferUse(vk::Buffer{device}, 0, bytes, true)});
                 cmd.fillBuffer(vk::Buffer{device}, 0, VK_WHOLE_SIZE, 0);
@@ -947,6 +1008,7 @@ bool FindLocked(u64 address, u64 size, BufferWindow& out) {
         }
         out = {}; // this bind reads in place (below)
     }
+in_place:
     if (host_import == nullptr) {
         return false;
     }
@@ -1318,6 +1380,10 @@ void BufferCreated(const Object& buffer) {
             watched[buffer.address] = {buffer.address + buffer.bytes, buffer.id, cls, buffer.usage, buffer.bind, buffer.cpu_access,
                                        cls == 0 ? HashGuest(buffer.address, buffer.bytes) : 0, false};
             watched_by_id[buffer.id] = buffer.address;
+            if (R3dTraceBytes() != 0 && buffer.bytes == R3dTraceBytes()) {
+                LOG_WARNING(Render_Vulkan, "vkb R3d trace: created buffer {:#x} id {} object usage {} bind {:#x} cpu {:#x} cls {} submit {} recorder {}", buffer.address, buffer.id, buffer.usage, buffer.bind,
+                            buffer.cpu_access, cls, GraphicsSubmits(), Stream::OnRecorder());
+            }
             c_watch_buffers[cls].fetch_add(1, std::memory_order_relaxed);
             c_watch_bytes[cls].fetch_add(buffer.bytes, std::memory_order_relaxed);
         }
@@ -1361,6 +1427,10 @@ void ObjectDeletedNow(u64 id) {
     std::scoped_lock lock{mutex};
     if (const auto wid = watched_by_id.find(id); wid != watched_by_id.end()) {
         if (const auto w = watched.find(wid->second); w != watched.end() && w->second.id == id) {
+            if (R3dTraceBytes() != 0 && w->second.end - w->first == R3dTraceBytes()) {
+                LOG_WARNING(Render_Vulkan, "vkb R3d trace: deleted buffer {:#x} id {} state {} submit {}", w->first, id, static_cast<u32>(w->second.state), GraphicsSubmits());
+                r3d_deleted.push_back({w->first, w->second.end});
+            }
             if (w->second.device != VK_NULL_HANDLE) {
                 doomed.push_back({due, {}, {}, {}, w->second.device, w->second.allocation});
                 c_dev2_mb.fetch_sub(w->second.end - w->first, std::memory_order_relaxed);
@@ -1527,6 +1597,31 @@ void FillReadersLine(const std::string& text) {
 } // namespace
 void CensusTag(u64 tag) {
     t_census_tag = tag;
+}
+/// debug R3d trace: every device buffer of the traced size (the fur outputs) dumped now into vkb_image_dump/r3d/<label>_<address>
+void R3dDumpTraced(const std::string& label) {
+    if (R3dTraceBytes() == 0) {
+        return;
+    }
+    std::vector<std::pair<u64, VkBuffer>> list;
+    {
+        std::scoped_lock lock{mutex};
+        for (const auto& [start, d] : device_buffers) {
+            if (d.end - start == R3dTraceBytes()) {
+                list.emplace_back(start, d.buffer);
+            }
+        }
+    }
+    const u64 bytes = R3dTraceBytes();
+    LOG_WARNING(Render_Vulkan, "vkb R3d trace: dumping {} device buffers of {} bytes ({})", list.size(), bytes, label);
+    for (const auto& [start, buffer] : list) {
+        Stream::Defer(Stream::Work::Other, [start, buffer, bytes, label](vk::CommandBuffer cmd) {
+            DumpBuffer(cmd, vk::Buffer{buffer}, 0, bytes, fmt::format("r3d/{}_{:x}", label, start));
+        });
+    }
+}
+u64 R3dTraceSize() {
+    return R3dTraceBytes();
 }
 extern std::atomic<u64> g_buffer_epoch; // note 46, defined below
 namespace {
@@ -1872,6 +1967,21 @@ void ObjectsTick() {
             c_dev2_mb.fetch_add(bytes, std::memory_order_relaxed);
             return true;
         });
+        if (R3dTraceBytes() != 0) { // debug R3d trace: the traced buffers' memory hashed every submit; a change is logged with their state
+            static std::unordered_map<u64, u64> traced_hash;
+            for (auto& [start, tw] : watched) {
+                if (tw.end - start != R3dTraceBytes()) {
+                    continue;
+                }
+                const u64 h = HashGuest(start, tw.end - start);
+                auto [th, fresh] = traced_hash.try_emplace(start, h);
+                if (!fresh && th->second != h) {
+                    LOG_WARNING(Render_Vulkan, "vkb R3d trace: memory of buffer {:#x} changed (no announcement seen by the hash) state {} first bind {} submit {}", start,
+                                static_cast<u32>(tw.state), tw.first_bind_submit, now);
+                }
+                th->second = h;
+            }
+        }
         // buffers with a device copy: watched round robin (16 MiB a submit); a change sends one back to in place for good
         // kill-experiment; R3d: off by default with the copies at first bind (TLG_VKB_NO_WATCH=0 turns it on again)
         static const bool no_watch = [] { const char* e = std::getenv("TLG_VKB_NO_WATCH"); return e != nullptr ? e[0] == '1' : StaticAtBindOn() && !R3dCheckOn(); }();
@@ -2473,6 +2583,31 @@ bool WaitDumps(u64 timeout_ms) {
     return true;
 }
 
+/// debug: the image behind an image view handle as bound (found by handle among our views), dumped as DumpView does; its view and texture ids go into the log
+void DumpBoundView(vk::CommandBuffer cmd, vk::ImageView handle, const std::string& name) {
+    u64 view_id = 0, texture_id = 0;
+    {
+        std::scoped_lock lock{mutex};
+        for (const auto& [id, v] : views) {
+            bool match = v.view == handle;
+            for (const vk::ImageView o : v.other) {
+                match = match || (o && o == handle);
+            }
+            for (const auto& [f, o] : v.formatted) {
+                match = match || o == handle;
+            }
+            if (match) {
+                view_id = id, texture_id = v.texture_id;
+                break;
+            }
+        }
+    }
+    LOG_WARNING(Render_Vulkan, "vkb bound view dump {}: handle {:#x} -> view id {} texture id {}", name, reinterpret_cast<u64>(static_cast<VkImageView>(handle)), view_id,
+                texture_id);
+    if (view_id != 0) {
+        DumpView(cmd, view_id, name);
+    }
+}
 void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
     vk::Image image{};
     vk::Format format{};
@@ -2497,6 +2632,23 @@ void DumpView(vk::CommandBuffer cmd, u64 view_id, const std::string& name) {
         }
     }
     DumpImageCore(cmd, image, format, width, height, slices, mip, layer, depth, name);
+    // debug (TLG_VKB_DUMP_MIPS=1): the view's further mips too, as <name>_mip<n>
+    static const bool all_mips = [] { const char* e = std::getenv("TLG_VKB_DUMP_MIPS"); return e != nullptr && e[0] == '1'; }();
+    if (all_mips && !depth && slices == 1) {
+        u32 levels = 1, full_w = 0, full_h = 0;
+        {
+            std::scoped_lock lock{mutex};
+            if (const auto v = views.find(view_id); v != views.end()) {
+                if (const auto i = images.find(v->second.texture_id); i != images.end()) {
+                    levels = v->second.range.levelCount == VK_REMAINING_MIP_LEVELS ? i->second.mips - mip : v->second.range.levelCount;
+                    full_w = i->second.width, full_h = i->second.height;
+                }
+            }
+        }
+        for (u32 m = 1; m < levels; ++m) {
+            DumpImageCore(cmd, image, format, std::max(1u, full_w >> (mip + m)), std::max(1u, full_h >> (mip + m)), 1, mip + m, layer, false, fmt::format("{}_mip{}", name, mip + m));
+        }
+    }
 }
 
 void DumpImageCore(vk::CommandBuffer cmd, vk::Image image, vk::Format format, u32 width, u32 height, u32 slices, u32 mip, u32 layer, bool depth, const std::string& name) {
@@ -3445,6 +3597,9 @@ bool MoveBufferNow(u64 destination, u64 source, u64 bytes) {
             }
         }
     }
+    if (R3dTraceBytes() != 0 && bytes == R3dTraceBytes()) {
+        LOG_WARNING(Render_Vulkan, "vkb R3d trace: engine buffer move {:#x} -> {:#x} ({} bytes), {} submit {}", source, destination, bytes, gpu_side ? "in the stream" : "now", GraphicsSubmits());
+    }
     if (gpu_side) {
         c_moves_in_stream.fetch_add(1, std::memory_order_relaxed);
         return false;
@@ -3486,9 +3641,55 @@ void TextureLayerCopied(u64 dst_id, u32 dst_layer, u64 src_id, u32 src_layer, u3
     c_layer_copies.fetch_add(1, std::memory_order_relaxed);
 }
 
+namespace {
+/// debug R3d trace: GPU copies out of a device buffer of the traced size (the fur results into a staging buffer): destination -> (submit at the copy, stream value it was recorded in)
+std::mutex fur_copy_mutex;
+std::map<u64, std::pair<u64, u64>> fur_copy;
+} // namespace
+std::map<u64, u64> fur_staging; ///< memory -> bytes of the buffers the fur readback maps (debug R3d trace)
+void R3dTraceMapRead(u64 memory, u64 bytes, u64 caller) {
+    if (R3dTraceBytes() == 0) {
+        return;
+    }
+    std::scoped_lock lock{fur_copy_mutex};
+    if (caller == 0x1e64d2b) {
+        fur_staging[memory] = bytes;
+        u64 sum = 0;
+        for (u64 i = 0; i + 8 <= std::min<u64>(bytes, 4096); i += 8) {
+            sum = sum * 31 + *reinterpret_cast<const u64*>(memory + i);
+        }
+        LOG_WARNING(Render_Vulkan, "vkb R3d trace: fur readback Map READ of {:#x} ({} bytes) at submit {}, first 4 KiB sum {:#x}, GPU done up to {}", memory, bytes, GraphicsSubmits(), sum,
+                    Stream::CompletedValue());
+    }
+    for (auto it = fur_copy.lower_bound(memory); it != fur_copy.end() && it->first < memory + std::max<u64>(bytes, 1); ++it) {
+        LOG_WARNING(Render_Vulkan, "vkb R3d trace: Map READ of {:#x} ({} bytes, caller {:#x}) at submit {}: last fur copy into it at submit {}, recorded in stream value {}, GPU done up to {} -> {}", memory, bytes,
+                    caller, GraphicsSubmits(), it->second.first, it->second.second, Stream::CompletedValue(),
+                    it->second.second == 0 ? "NOT RECORDED YET" : Stream::CompletedValue() >= it->second.second ? "done" : "NOT DONE");
+    }
+}
 bool CopyBuffer(u64 destination, u64 source, u64 bytes) {
     if (!device_ready || bytes == 0) {
         return false;
+    }
+    bool fur_traced = false;
+    if (R3dTraceBytes() != 0) {
+        std::scoped_lock lock{mutex};
+        u64 st = 0;
+        bool sd = false;
+        if (const DeviceBuffer* d = DeviceBufferOf(source, bytes, st, sd); d != nullptr && d->end - st == R3dTraceBytes()) {
+            fur_traced = true;
+        }
+    }
+    if (R3dTraceBytes() != 0 && !fur_traced) {
+        std::scoped_lock lock{fur_copy_mutex};
+        if (auto it = fur_staging.upper_bound(destination); it != fur_staging.begin() && destination < std::prev(it)->first + std::prev(it)->second) {
+            fur_traced = true;
+        }
+    }
+    if (fur_traced) {
+        LOG_WARNING(Render_Vulkan, "vkb R3d trace: GPU copy out of a fur output buffer {:#x} -> {:#x} ({} bytes) at submit {}", source, destination, bytes, GraphicsSubmits());
+        std::scoped_lock lock{fur_copy_mutex};
+        fur_copy[destination] = {GraphicsSubmits(), 0};
     }
     R3dTrace("GPU copy", destination, bytes);
     if (ContractCensusOn()) { // api-contract.md W5 (debug): a buffer copy whose destination is a texture's memory (the engine's memory move, FUN_01c97a00)
@@ -3522,9 +3723,13 @@ bool CopyBuffer(u64 destination, u64 source, u64 bytes) {
         return false;
     }
     Stream::NoteBytes(Stream::Work::CopyBuffer, bytes);
-    Stream::Defer(Stream::Work::CopyBuffer, [from, to, bytes](vk::CommandBuffer cmd) {
+    Stream::Defer(Stream::Work::CopyBuffer, [from, to, bytes, fur_traced, destination](vk::CommandBuffer cmd) {
         Stream::Hazard(cmd, {Stream::BufferUse(from.buffer, from.offset, bytes, false), Stream::BufferUse(to.buffer, to.offset, bytes, true)});
         cmd.copyBuffer(from.buffer, to.buffer, vk::BufferCopy{from.offset, to.offset, bytes});
+        if (fur_traced) {
+            std::scoped_lock lock{fur_copy_mutex};
+            fur_copy[destination].second = Stream::RecordingValue();
+        }
         if (!to.device) {
             Stream::NoteInPlaceWrite(to.buffer, to.offset, bytes);
         }

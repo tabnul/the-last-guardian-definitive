@@ -552,6 +552,42 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
         }
         spv = VkbShader::Backend::SPIRV::EmitSPIRV(profile, out.runtime, program, binding);
     }
+    { // debug: TLG_VKB_DUMP_SPV=<hashes, hex, comma separated>: each compiled stage of those shaders -> log/vkb_spv/<vs|ps>_<hash>_<n>.spv, its GCN code (.gcn) and user data (.ud)
+        static const std::vector<u64> dump_spv = [] {
+            std::vector<u64> list;
+            if (const char* e = std::getenv("TLG_VKB_DUMP_SPV")) {
+                for (const char* p = e; *p != 0;) {
+                    char* end = nullptr;
+                    const u64 h = std::strtoull(p, &end, 16);
+                    if (end == p) {
+                        break;
+                    }
+                    list.push_back(h);
+                    p = *end == ',' ? end + 1 : end;
+                }
+            }
+            return list;
+        }();
+        if (std::ranges::find(dump_spv, static_cast<u64>(out.info->pgm_hash)) != dump_spv.end()) {
+            static std::atomic<u32> dumped{0};
+            const auto dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "vkb_spv";
+            std::error_code ec;
+            std::filesystem::create_directories(dir, ec);
+            const std::string base = (dir / fmt::format("{}_{:08x}_{}_s{}", stage == 0 ? "vs" : "ps", out.info->pgm_hash, dumped.fetch_add(1), Core::Vkb::GraphicsSubmits())).string();
+            if (FILE* f = std::fopen((base + ".spv").c_str(), "wb")) {
+                std::fwrite(spv.data(), sizeof(u32), spv.size(), f);
+                std::fclose(f);
+            }
+            if (FILE* f = std::fopen((base + ".gcn").c_str(), "wb")) {
+                std::fwrite(params.code.data(), sizeof(u32), params.code.size(), f);
+                std::fclose(f);
+            }
+            if (FILE* f = std::fopen((base + ".ud").c_str(), "wb")) {
+                std::fwrite(out.layout.sgpr.data(), sizeof(u32), out.layout.sgpr.size(), f);
+                std::fclose(f);
+            }
+        }
+    }
     out.module = VkbVulkan::CompileSPV(spv, instance->GetDevice());
     Core::Vkb::ShaderDump::Keep(stage == 0 ? Core::Vkb::ShaderDump::Stage::Vertex : Core::Vkb::ShaderDump::Stage::Pixel, out.info->pgm_hash, spv, params.code); // note 89
     // the slot map: the same layout with a tag per slot, flattened by the shader's own table walker
@@ -958,6 +994,7 @@ struct DrawJob final : Stream::Job {
 std::mutex g_live_dump_mutex;
 std::string g_live_dump_label; ///< debug: the label of the armed live image dump (TLG_VKB_DRAW_CENSUS_TRIGGER "... ps=<hash>")
 std::atomic<u64> g_live_dump_ps{0};
+std::atomic<u64> g_live_dump_vs{0}; ///< debug: "<label> vs=<hash>": the first draw of that vertex shader is dumped (as ps= does)
 void DrawDumpLine(const std::string& line) {
     static std::mutex m;
     std::scoped_lock lock{m};
@@ -1034,7 +1071,11 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
     static const u64 dump_hash = [] { const char* e = std::getenv("TLG_VKB_DRAW_DUMP"); return e != nullptr ? std::strtoull(e, nullptr, 16) : 0ull; }();
     static std::atomic<u32> dump_uses{0};
     const bool dumping = dump_hash != 0 && st.info != nullptr && (st.info->pgm_hash == dump_hash || (st.info->pgm_hash & 0xffffffffull) == dump_hash) &&
-                         [] { const u32 n = dump_uses.fetch_add(1, std::memory_order_relaxed); return n == 100 || n == 400 || n == 1000; }();
+                         [] {
+                             static const u32 every = [] { const char* e = std::getenv("TLG_VKB_DRAW_DUMP_EVERY"); return e != nullptr ? static_cast<u32>(std::strtoul(e, nullptr, 10)) : 0u; }();
+                             const u32 n = dump_uses.fetch_add(1, std::memory_order_relaxed);
+                             return n == 100 || n == 400 || n == 1000 || (every != 0 && n % every == 0);
+                         }();
     std::string dump_text;
     LateList* const late = dumping ? nullptr : late_list; // R2b: a dumped draw resolves here (its text needs the windows)
     LateImages* const late_img = dumping ? nullptr : late_images; // R2b part 2b
@@ -1256,8 +1297,8 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
 std::atomic<u64> c_phase_ns[4]{}, c_job_ns{0}, c_job_n{0}, c_fixed_ns{0}, c_variant_find_ns{0};
 bool TimesOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_TIMES"); return e != nullptr && e[0] == '1'; }(); return on; } ///< note 45: these timers only with TLG_VKB_TIMES=1
 void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u64 a1, u64 a2, u64 a3) {
-    if (Core::Vkb::FillReadersOn()) {
-        Core::Vkb::CensusTag(v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0x10000000000ull); // note 49 census: a draw, its pixel shader
+    if (Core::Vkb::FillReadersOn() || Core::Vkb::R3dTraceSize() != 0) {
+        Core::Vkb::CensusTag((v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0x10000000000ull) | (v.vs.info ? u64{v.vs.info->pgm_hash} << 32 : 0)); // note 49 census: a draw, its pixel shader (debug R3d trace: vertex shader above)
     }
     // note 41, test only: TLG_VKB_TEST_SKIP_DRAW_PS=hex,hex,... skips the draws of those pixel shaders (visual bisect; the picture is wrong)
     static const std::vector<u64> skip_ps = [] {
@@ -1586,6 +1627,7 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
                 std::filesystem::remove(trigger, ec);
                 census_at.store(now + 1, std::memory_order_relaxed);
                 DrawDumpLine(fmt::format("=== census {} from submit {}", label, now + 1));
+                Core::Vkb::R3dDumpTraced(label.substr(0, label.find(' '))); // debug R3d trace (TLG_VKB_R3D_TRACE)
                 // "<label> ps=<hash>": the first draw of that pixel shader from now on dumps its images into vkb_image_dump/<label>/
                 if (const auto at = label.find("ps="); at != std::string::npos) {
                     std::scoped_lock lock{g_live_dump_mutex};
@@ -1594,6 +1636,13 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
                         g_live_dump_label.pop_back();
                     }
                     g_live_dump_ps.store(std::strtoull(label.c_str() + at + 3, nullptr, 16), std::memory_order_relaxed);
+                } else if (const auto vat = label.find("vs="); vat != std::string::npos) {
+                    std::scoped_lock lock{g_live_dump_mutex};
+                    g_live_dump_label = label.substr(0, vat);
+                    while (!g_live_dump_label.empty() && g_live_dump_label.back() == ' ') {
+                        g_live_dump_label.pop_back();
+                    }
+                    g_live_dump_vs.store(std::strtoull(label.c_str() + vat + 3, nullptr, 16), std::memory_order_relaxed);
                 }
             }
         }
@@ -1661,6 +1710,10 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         std::string live_prefix;
         if (u64 live = g_live_dump_ps.load(std::memory_order_relaxed); live != 0 && v.has_ps && v.ps.info &&
             (v.ps.info->pgm_hash == live || (v.ps.info->pgm_hash & 0xffffffffull) == live) && g_live_dump_ps.compare_exchange_strong(live, 0)) {
+            std::scoped_lock lock{g_live_dump_mutex};
+            live_prefix = g_live_dump_label + "/";
+        } else if (u64 live_vs = g_live_dump_vs.load(std::memory_order_relaxed); live_vs != 0 && v.vs.info &&
+                   (v.vs.info->pgm_hash == live_vs || (v.vs.info->pgm_hash & 0xffffffffull) == live_vs) && g_live_dump_vs.compare_exchange_strong(live_vs, 0)) {
             std::scoped_lock lock{g_live_dump_mutex};
             live_prefix = g_live_dump_label + "/";
         }
@@ -2160,6 +2213,18 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
             if (b.buffers[i].range != VK_WHOLE_SIZE) {
                 Core::Vkb::DumpBuffer(cmd, b.buffers[i].buffer, b.buffers[i].offset, b.buffers[i].range, fmt::format("{}g{}", dump_prefix, i));
             }
+        }
+        if (dump_buffers && !dump_prefix.empty() && kind == 0 && index_buffer) { // debug: the index buffer as bound (first index + count indices)
+            const u64 index_bytes = index_type == vk::IndexType::eUint32 ? 4 : 2;
+            Core::Vkb::DumpBuffer(cmd, index_buffer, index_offset, (static_cast<u64>(a2) + a1) * index_bytes, fmt::format("{}index_{}", dump_prefix, index_bytes == 4 ? "u32" : "u16"));
+        }
+        for (u32 i = 0; dump_buffers && !dump_prefix.empty() && i < b.images.size(); ++i) { // debug: the images as bound (by their view handles)
+            if (b.images[i].imageView) {
+                Core::Vkb::DumpBoundView(cmd, b.images[i].imageView, fmt::format("{}bound{}", dump_prefix, i));
+            }
+        }
+        if (dump_buffers && kind == 2 && args_buffer) { // an indirect draw's arguments (index count, instances, first index, base vertex, first instance)
+            Core::Vkb::DumpBuffer(cmd, args_buffer, args_offset, 20, dump_prefix + "args");
         }
         if (!dump_prefix.empty()) { // note 90: what the draw was and how it bound its buffers (binding order = the shader's buffer bindings, vertex stage first)
             nlohmann::json bufs = nlohmann::json::array();
