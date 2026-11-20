@@ -2426,6 +2426,25 @@ void BufferCpuWritten(u64 address, u64 size) {
         return;
     }
     if (DeviceBuffersMode() == 2) {
+        // the GPU wrote our device copy (a copy or fill into it): it holds the buffer, the engine memory under it is older; the CPU's bytes go into it
+        VkBuffer written_device{};
+        u64 written_offset = 0;
+        {
+            std::scoped_lock lock{mutex};
+            if (Watched* w = WatchedAt(address, size); w != nullptr && w->cls == 0 && w->state == Watched::State::Device && w->gpu_written) {
+                written_device = w->device, written_offset = address - std::prev(watched.upper_bound(address))->first;
+            }
+        }
+        if (written_device != VK_NULL_HANDLE) { // (no job is made under this module's lock)
+            if (const BufferWindow src = SourceWindow(address, size); src.buffer) {
+                Stream::NoteBytes(Stream::Work::UploadCpuWritten, size);
+                Stream::Defer(Stream::Work::UploadCpuWritten, [src, device = written_device, offset = written_offset, size](vk::CommandBuffer cmd) {
+                    Stream::Hazard(cmd, {Stream::BufferUse(src.buffer, src.offset, size, false), Stream::BufferUse(vk::Buffer{device}, offset, size, true)});
+                    cmd.copyBuffer(src.buffer, vk::Buffer{device}, vk::BufferCopy{src.offset, offset, size});
+                });
+            }
+            return;
+        }
         std::scoped_lock lock{mutex};
         if (Watched* w = WatchedAt(address, size); w != nullptr && w->cls == 0 && w->state == Watched::State::Device) {
             w->state = Watched::State::Unstable;
@@ -2775,6 +2794,79 @@ void DumpBuffer(vk::CommandBuffer cmd, vk::Buffer source, u64 offset, u64 size, 
             std::fclose(f);
         }
         vmaDestroyBuffer(instance->GetAllocator(), buffer, allocation);
+    });
+}
+
+/// debug (TLG_VKB_R3D_STALE_CHECK=<graphics submit>): at the census trigger, every static buffer copied to device memory at or after that submit (R3d / settling) is read
+/// back and compared with the engine memory under it; a mismatch (a write our copy never got) is logged with the buffer's description
+void R3dStaleCheck(const std::string& label) {
+    static const u64 from = [] { const char* e = std::getenv("TLG_VKB_R3D_STALE_CHECK"); return e != nullptr ? std::strtoull(e, nullptr, 10) : 0ull; }();
+    if (from == 0 || !device_ready) {
+        return;
+    }
+    struct Item {
+        u64 address, bytes, id, first_bind;
+        u32 usage, bind, cpu;
+        VkBuffer device;
+    };
+    std::vector<Item> items;
+    u64 total = 0;
+    {
+        std::scoped_lock lock{mutex};
+        for (const auto& [start, w] : watched) {
+            if (w.state == Watched::State::Device && w.device != VK_NULL_HANDLE && w.first_bind_submit >= from && total + (w.end - start) <= (1024ull << 20)) {
+                items.push_back({start, w.end - start, w.id, w.first_bind_submit, w.usage, w.bind, w.cpu_access, w.device});
+                total += w.end - start;
+            }
+        }
+    }
+    LOG_WARNING(Render_Vulkan, "vkb R3d stale check {}: {} device copies made since submit {} ({} MiB)", label, items.size(), from, total >> 20);
+    if (items.empty()) {
+        return;
+    }
+    const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = total, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT, .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+    VmaAllocationCreateInfo alloc{};
+    alloc.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    alloc.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VkBuffer host{};
+    VmaAllocation allocation{};
+    VmaAllocationInfo info{};
+    if (vmaCreateBuffer(instance->GetAllocator(), &ci, &alloc, &host, &allocation, &info) != VK_SUCCESS || info.pMappedData == nullptr) {
+        return;
+    }
+    Stream::Defer(Stream::Work::Other, [items, host, allocation, mapped = info.pMappedData, label](vk::CommandBuffer cmd) {
+        const vk::MemoryBarrier2 barrier{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands, .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+                                         .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands, .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite};
+        cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &barrier});
+        u64 at = 0;
+        for (const Item& it : items) {
+            cmd.copyBuffer(vk::Buffer{it.device}, vk::Buffer{host}, vk::BufferCopy{0, at, it.bytes});
+            at += it.bytes;
+        }
+        cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &barrier});
+        const u64 after = Stream::RecordingValue();
+        QueueDump(after, [items, host, allocation, mapped, label, after] {
+            Stream::Wait(after);
+            u64 at = 0, stale = 0;
+            for (const Item& it : items) {
+                const u8* ours = static_cast<const u8*>(mapped) + at;
+                const u8* engine = reinterpret_cast<const u8*>(it.address);
+                if (std::memcmp(ours, engine, it.bytes) != 0) {
+                    u64 diff = 0, first = ~0ull, last = 0;
+                    for (u64 k = 0; k < it.bytes; ++k) {
+                        if (ours[k] != engine[k]) {
+                            ++diff, first = std::min(first, k), last = k;
+                        }
+                    }
+                    ++stale;
+                    LOG_WARNING(Render_Vulkan, "vkb R3d stale check {}: STALE {:#x} {} B id {} usage {} bind {:#x} cpu {:#x} first bind {}: {} bytes differ (+{:#x}..+{:#x})", label,
+                                it.address, it.bytes, it.id, it.usage, it.bind, it.cpu, it.first_bind, diff, first, last);
+                }
+                at += it.bytes;
+            }
+            LOG_WARNING(Render_Vulkan, "vkb R3d stale check {}: {} of {} copies differ from engine memory", label, stale, items.size());
+            vmaDestroyBuffer(instance->GetAllocator(), host, allocation);
+        });
     });
 }
 
@@ -3734,7 +3826,7 @@ bool CopyBuffer(u64 destination, u64 source, u64 bytes) {
             Stream::NoteInPlaceWrite(to.buffer, to.offset, bytes);
         }
     });
-    if (!to.device) {
+    { // a GPU write, in place or into our device copy: marked GPU-written either way (a later engine move copies it on the GPU, not from stale engine memory)
         std::scoped_lock marks_lock{gpu_write_mutex};
         gpu_write_pending.push_back({destination, bytes});
     }
@@ -3763,7 +3855,7 @@ bool CopyFromGds(u64 gds_offset, u64 destination, u64 bytes) {
             Stream::NoteInPlaceWrite(to.buffer, to.offset, bytes);
         }
     });
-    if (!to.device) {
+    { // a GPU write, in place or into our device copy: marked GPU-written either way (a later engine move copies it on the GPU, not from stale engine memory)
         std::scoped_lock marks_lock{gpu_write_mutex};
         gpu_write_pending.push_back({destination, bytes});
     }
@@ -3789,7 +3881,7 @@ bool FillBuffer(u64 destination, u64 bytes, u32 value) {
             Stream::NoteInPlaceWrite(to.buffer, to.offset, bytes);
         }
     });
-    if (!to.device) {
+    { // a GPU write, in place or into our device copy: marked GPU-written either way (a later engine move copies it on the GPU, not from stale engine memory)
         std::scoped_lock marks_lock{gpu_write_mutex};
         gpu_write_pending.push_back({destination, bytes});
     }
@@ -3910,7 +4002,7 @@ bool FillPattern(u64 destination, u64 bytes, u64 source, u32 dwords) {
                 Stream::NoteInPlaceWrite(to.buffer, to.offset, bytes);
             }
         });
-        if (!to.device) {
+        { // a GPU write, in place or into our device copy: marked GPU-written either way (a later engine move copies it on the GPU, not from stale engine memory)
             std::scoped_lock marks_lock{gpu_write_mutex};
             gpu_write_pending.push_back({destination, bytes});
         }
@@ -3940,7 +4032,7 @@ bool FillPattern(u64 destination, u64 bytes, u64 source, u32 dwords) {
             Stream::NoteInPlaceWrite(to.buffer, to.offset, bytes);
         }
     });
-    if (!to.device) {
+    { // a GPU write, in place or into our device copy: marked GPU-written either way (a later engine move copies it on the GPU, not from stale engine memory)
         std::scoped_lock marks_lock{gpu_write_mutex};
         gpu_write_pending.push_back({destination, bytes});
     }

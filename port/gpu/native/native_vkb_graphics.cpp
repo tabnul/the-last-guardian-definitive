@@ -1628,6 +1628,7 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
                 census_at.store(now + 1, std::memory_order_relaxed);
                 DrawDumpLine(fmt::format("=== census {} from submit {}", label, now + 1));
                 Core::Vkb::R3dDumpTraced(label.substr(0, label.find(' '))); // debug R3d trace (TLG_VKB_R3D_TRACE)
+                Core::Vkb::R3dStaleCheck(label.substr(0, label.find(' '))); // debug (TLG_VKB_R3D_STALE_CHECK)
                 // "<label> ps=<hash>": the first draw of that pixel shader from now on dumps its images into vkb_image_dump/<label>/
                 if (const auto at = label.find("ps="); at != std::string::npos) {
                     std::scoped_lock lock{g_live_dump_mutex};

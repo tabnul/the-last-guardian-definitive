@@ -138,6 +138,7 @@ bool FillPattern(u64 destination, u64 bytes, u64 source, u32 dwords);
 bool FillReadersOn();
 void CensusTag(u64 tag);
 void R3dDumpTraced(const std::string& label); ///< debug R3d trace: the device buffers of the traced size dumped now
+void R3dStaleCheck(const std::string& label); ///< debug (TLG_VKB_R3D_STALE_CHECK=<submit>): device copies vs engine memory, at the census trigger
 u64 R3dTraceSize(); ///< debug: TLG_VKB_R3D_TRACE=<bytes> (0: off)
 void R3dTraceMapRead(u64 memory, u64 bytes, u64 caller); ///< debug R3d trace: a Map READ against the fur copies into that memory
 /// R7 census (TLG_VKB_R7_CENSUS=1, note 56): a buffer binding as today's path resolved it (address from the descriptor words), against the engine object it came from.
