@@ -1089,6 +1089,61 @@ mismatch:
     printf("Re-init lock: unavailable (code signature mismatch)\n");
 }
 
+/* Trico copy guard (boot crash: read of 0x478 at 0xe19214, issue #37; TLG_TRICO_GUARD: 1 fix, the
+ * default; 0 off). The per-frame copy of scene data (0xe15db0, run as a job by the flip task) finds
+ * the object named "Condor" by name and asks it for its model part (0xd73040), with no check for
+ * "none". A Lua Clone (0xd8a050) running as another job adds Trico's parts while that copy runs:
+ * crashes found Trico with 4 of its 20 parts (all 20 100 ms later), already marked ready
+ * (+0x16 & 2), so the ready bit does not tell. Every later read in the copy is checked by the game
+ * (bone count, bone lookup, missing bone); the model part is the one that is not. The call to
+ * 0xd73040 now goes through a stub: a part, the copy goes on; none, it leaves for the copy's own
+ * "no Trico" path (0xe19320, the code a missing Trico takes; it only uses r12, r15 and rax), so
+ * that frame has no Trico bones and the next frame has them. */
+static int64_t trico_guard_skips;
+
+static ABI void trico_guard_skip(void) {
+    const int64_t n = __atomic_add_fetch(&trico_guard_skips, 1, __ATOMIC_RELAXED);
+    if (n <= 10 || !(n % 1000))
+        printf("Trico guard: skipped a Trico without its model part yet (%" PRId64 " so far)\n", n);
+}
+static void install_trico_guard(Segment *segments, uint64_t count) {
+    const char *mode = getenv("TLG_TRICO_GUARD");
+    if (mode && !strtoul(mode, NULL, 0)) return;
+    static const uint64_t site = 0xe1920f, target = 0xd73040, no_trico = 0xe19320;
+    /* mov rdi, rbx; call 0xd73040; cmp dword [rax+0x478], 0 */
+    static const unsigned char before[3] = {0x48,0x89,0xdf}, after[7] = {0x83,0xb8,0x78,0x04,0x00,0x00,0x00};
+    int32_t relative;
+    if (!mapped(segments, count, site - 3, 15) || memcmp(image + site - 3, before, 3) || image[site] != 0xe8 ||
+        memcmp(image + site + 5, after, 7))
+        goto mismatch;
+    memcpy(&relative, image + site + 1, 4);
+    if (site + 5 + (int64_t)relative != target) goto mismatch;
+    /* sub rsp, 8; movabs rax, target; call rax; add rsp, 8; test rax, rax; jz skip; ret;
+     * skip: add rsp, 8 (the site's return); movabs rax, trico_guard_skip; call rax; movabs rax, no_trico; jmp rax */
+    static const unsigned char body[54] = {0x48,0x83,0xec,0x08, 0x48,0xb8, 0,0,0,0,0,0,0,0, 0xff,0xd0,
+        0x48,0x83,0xc4,0x08, 0x48,0x85,0xc0, 0x74,0x01, 0xc3,
+        0x48,0x83,0xc4,0x08, 0x48,0xb8, 0,0,0,0,0,0,0,0, 0xff,0xd0, 0x48,0xb8, 0,0,0,0,0,0,0,0, 0xff,0xe0};
+    unsigned char *stub = allocate(page_size);
+    const uintptr_t to_target = (uintptr_t)image + target, to_skip = (uintptr_t)trico_guard_skip,
+                    to_no_trico = (uintptr_t)image + no_trico;
+    memcpy(stub, body, sizeof(body));
+    memcpy(stub + 6, &to_target, 8);
+    memcpy(stub + 32, &to_skip, 8);
+    memcpy(stub + 44, &to_no_trico, 8);
+    const int64_t delta = (int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + site + 5);
+    if (delta < INT32_MIN || delta > INT32_MAX) {
+        printf("Trico guard: unavailable (outside relative-call range)\n");
+        return;
+    }
+    protect(stub, page_size, 5);
+    relative = (int32_t)delta;
+    memcpy(image + site + 1, &relative, 4);
+    printf("Trico guard: ready\n");
+    return;
+mismatch:
+    printf("Trico guard: unavailable (code signature mismatch)\n");
+}
+
 /* TLGPATCH (tlg_patches.py): the patches' image base, then byte writes at image offsets, applied
  * after relocation. A write may replace a whole base-relative pointer slot (60/90 FPS++ swap
  * function pointers): the patch holds the address at the patches' base, rebased here. */
@@ -1577,6 +1632,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_input_timing(segments, ns);
     if (gpu_enabled) install_bind_guard(segments, ns);
     if (gpu_enabled) install_reinit_lock(segments, ns);
+    if (gpu_enabled) install_trico_guard(segments, ns);
     if (gpu_enabled) tlggpu_set_game_sema_signal(runtime_sema_signal); /* VKB: a backend wait keeps the game's job scheduler awake (issue 78) */
     if (gpu_enabled) tlggpu_install_hooks((uintptr_t)image, size); /* VKB: the engine-to-Vulkan backend's hooks (TLG_VKB=1 only) */
     runtime_pad_set_image((uintptr_t)image, size); /* VKB: TLG_AUTO_START */
