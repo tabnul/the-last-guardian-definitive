@@ -1005,6 +1005,7 @@ void DrawDumpLine(const std::string& line) {
 }
 
 std::atomic<u64> c_cb_at_draw{0};
+thread_local u64 t_dc_copies = 0; ///< note 109 census: constant buffer copies at the draw on this thread
 /// O1 census (debug, TLG_VKB_CB_CENSUS=1): a constant buffer copied at the draw (R7) whose bytes equal what was copied for the same address earlier in the same
 /// graphics submission (a copy a once-per-Map scheme would save)
 bool CbCensusOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_CB_CENSUS"); return e != nullptr && e[0] == '1'; }(); return on; }
@@ -1098,6 +1099,7 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
             b.guest.back() = {address, size};
             b.stageable.resize(b.buffers.size());
             b.stageable.back() = 0;
+            ++t_dc_copies;
             if (CbCensusOn()) {
                 if (const u64 epoch = Core::Vkb::GraphicsSubmits(); epoch != t_cbc_epoch) {
                     t_cbc_epoch = epoch, t_cbc_seen.clear();
@@ -1320,10 +1322,82 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
     return true;
 }
 
+/// note 109 census (debug, TLG_VKB_DEPTH_CENSUS=1, inside the shadow cascade passes the Z pass hook marks): does each stage read the same engine objects as at the
+/// previous draw (the same shader, the same slot objects, a constant buffer's same rename address and size, a buffer view's same buffer memory, the same image and sampler
+/// objects); does the whole draw (variant, fixed state, both stages, vertex elements, index view, targets, instances); its constant buffer copies; and the time of Draw and of
+/// its two BindStage calls. What a capture that keeps an unchanged stage's bindings would leave out.
+thread_local bool t_depth_pass = false;
+bool DepthCensusOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_DEPTH_CENSUS"); return e != nullptr && e[0] == '1'; }(); return on; }
+std::atomic<u64> c_dc_draws{0}, c_dc_stage_n[2]{}, c_dc_stage_same[2]{}, c_dc_draw_same{0}, c_dc_copies{0}, c_dc_draw_ns{0}, c_dc_bind_ns{0}, c_dc_variant_same{0};
+std::atomic<u64> c_dc_same_but_cb[2]{}; ///< stages equal except a constant buffer's rename address
+thread_local u64 t_dc_prev_stage[2]{}, t_dc_prev_stage_nocb[2]{}, t_dc_prev_draw{0};
+thread_local const void* t_dc_prev_variant = nullptr;
+inline u64 DcMix(u64 h, u64 v) { return (h ^ v) * 0x100000001b3ull + 0x9E3779B97F4A7C15ull; }
+std::pair<u64, u64> DcStageKey(u64 ctx, const Stage& st) { // (with the constant buffers' addresses, without)
+    u64 h = DcMix(0xcbf29ce484222325ull, reinterpret_cast<u64>(st.info.get())), n = h;
+    for (const Source& src : st.buffers) {
+        if (src.cls == Source::Class::Slot && src.kind != 4) {
+            const u64 object = SlotObject(ctx, st.index, src.kind, src.slot);
+            h = DcMix(h, object), n = DcMix(n, object);
+            if (object != 0 && src.kind == 3) {
+                h = DcMix(DcMix(h, Rd<u64>(object, 0x60)), Rd<u32>(object, 0x180));
+            } else if (object != 0 && src.kind == 1) {
+                const u64 buffer = Rd<u64>(object, 0x30);
+                const u64 memory = buffer != 0 ? Rd<u64>(buffer, 0x30) : 0;
+                h = DcMix(DcMix(h, buffer), memory), n = DcMix(DcMix(n, buffer), memory);
+            }
+        } else {
+            h = DcMix(DcMix(h, src.address), src.size), n = DcMix(DcMix(n, src.address), src.size);
+        }
+    }
+    for (const Source& src : st.images) {
+        const u64 object = src.cls == Source::Class::Slot && src.kind == 1 ? SlotObject(ctx, st.index, 1, src.slot) : 0;
+        h = DcMix(h, object), n = DcMix(n, object);
+    }
+    for (const Source& src : st.samplers) {
+        const u64 object = src.cls == Source::Class::Slot && src.kind == 2 ? SlotObject(ctx, st.index, 2, src.slot) : 0;
+        h = DcMix(h, object), n = DcMix(n, object);
+    }
+    return {h, n};
+}
+void DcCensus(u64 ctx, const Variant& v, const VkbVulkan::FixedState* fixed, u32 kind) {
+    c_dc_draws.fetch_add(1, std::memory_order_relaxed);
+    u64 draw = DcMix(DcMix(DcMix(0xcbf29ce484222325ull, reinterpret_cast<u64>(&v)), reinterpret_cast<u64>(fixed)), kind);
+    c_dc_variant_same.fetch_add(t_dc_prev_variant == &v ? 1 : 0, std::memory_order_relaxed);
+    t_dc_prev_variant = &v;
+    for (u32 k = 0; k < 2; ++k) {
+        if (k == 1 && !v.has_ps) {
+            continue;
+        }
+        const Stage& st = k == 0 ? v.vs : v.ps;
+        const auto [key, nocb] = DcStageKey(ctx, st);
+        c_dc_stage_n[k].fetch_add(1, std::memory_order_relaxed);
+        c_dc_stage_same[k].fetch_add(key == t_dc_prev_stage[k] ? 1 : 0, std::memory_order_relaxed);
+        c_dc_same_but_cb[k].fetch_add(key != t_dc_prev_stage[k] && nocb == t_dc_prev_stage_nocb[k] ? 1 : 0, std::memory_order_relaxed);
+        t_dc_prev_stage[k] = key, t_dc_prev_stage_nocb[k] = nocb;
+        draw = DcMix(draw, key);
+    }
+    for (u32 i = 0; i < v.attributes.size(); ++i) {
+        Core::NativeDraw::VertexElement e;
+        if (v.attributes[i].cls == Source::Class::Slot && Core::NativeDraw::VertexElementOf(ctx, v.attributes[i].slot, e)) {
+            draw = DcMix(DcMix(DcMix(DcMix(draw, e.buffer), e.start), e.stride), e.bytes);
+        }
+    }
+    const u64 index_view = Rd<u64>(ctx, 0x58);
+    draw = DcMix(DcMix(DcMix(draw, index_view), index_view != 0 ? Rd<u64>(index_view, 0x30) : 0), Rd<u32>(ctx, 0x64));
+    const auto targets = TargetViews(ctx);
+    for (u32 cb = 0; cb < 8; ++cb) {
+        draw = DcMix(draw, targets[cb]);
+    }
+    draw = DcMix(DcMix(draw, Rd<u64>(ctx, CtxDepthStencilView)), Rd<u32>(ctx, 0x4724));
+    c_dc_draw_same.fetch_add(draw == t_dc_prev_draw ? 1 : 0, std::memory_order_relaxed);
+    t_dc_prev_draw = draw;
+}
+
 /// Binds and records one draw of a compiled variant into the frame stream (mutex held)
 /// note 45 (R2 design): Record's phases on the engine thread (0 views + attachments, 1 stage bindings, 2 vertex + index, 3 the rest + the job hand-over) and the job on the recorder
 std::atomic<u64> c_phase_ns[4]{}, c_job_ns{0}, c_job_n{0}, c_fixed_ns{0}, c_variant_find_ns{0};
-bool TimesOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_TIMES"); return e != nullptr && e[0] == '1'; }(); return on; } ///< note 45: these timers only with TLG_VKB_TIMES=1
+bool TimesOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_TIMES"); return e != nullptr && e[0] == '1'; }(); return on || (t_depth_pass && DepthCensusOn()); } // note 109 census: the cascade draws timed alone ///< note 45: these timers only with TLG_VKB_TIMES=1
 void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u64 a1, u64 a2, u64 a3) {
     if (Core::Vkb::FillReadersOn() || Core::Vkb::R3dTraceSize() != 0) {
         Core::Vkb::CensusTag((v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0x10000000000ull) | (v.vs.info ? u64{v.vs.info->pgm_hash} << 32 : 0)); // note 49 census: a draw, its pixel shader (debug R3d trace: vertex shader above)
@@ -1489,11 +1563,18 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     u32 buffer_index = 0;
     LateList* const late = ResolveOnRecorder() ? &job->late : nullptr; // R2b (note 64)
     LateImages* const late_imgs = late_images ? &job->late_images : nullptr; // R2b part 2b
+    const bool dc = t_depth_pass && DepthCensusOn();
+    const u64 dc_b0 = dc ? NowNs() : 0;
+    const u64 dc_c0 = t_dc_copies;
     if (v.has_ps && !BindStage(ctx, v.ps, cmd, push, buffer_index, b, ranges, uses, late, late_imgs)) {
         return;
     }
     if (!BindStage(ctx, v.vs, cmd, push, buffer_index, b, ranges, uses, late, late_imgs)) {
         return;
+    }
+    if (dc) {
+        c_dc_bind_ns.fetch_add(NowNs() - dc_b0, std::memory_order_relaxed);
+        c_dc_copies.fetch_add(t_dc_copies - dc_c0, std::memory_order_relaxed);
     }
     phase(1);
     // the vertex inputs: each fetch attribute from its element of the input layout
@@ -2285,7 +2366,20 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
 
 } // namespace
 
+void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3);
+void SetDepthPass(bool on) {
+    t_depth_pass = on;
+}
 void Draw(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
+    if (t_depth_pass && DepthCensusOn()) {
+        const u64 t0 = NowNs();
+        DrawImpl(ctx, kind, a1, a2, a3);
+        c_dc_draw_ns.fetch_add(NowNs() - t0, std::memory_order_relaxed);
+        return;
+    }
+    DrawImpl(ctx, kind, a1, a2, a3);
+}
+void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
     c_draws.fetch_add(1, std::memory_order_relaxed);
     // sensitivity experiment: TLG_VKB_SPIN_NS=N spends N ns more per draw on the render thread (how much of its time is on the frame's critical path)
     static const u64 spin_ns = [] { const char* e = std::getenv("TLG_VKB_SPIN_NS"); return e != nullptr ? std::strtoull(e, nullptr, 10) : 0ull; }();
@@ -2354,6 +2448,9 @@ void Draw(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
     static const bool no_draw_record = [] { const char* e = std::getenv("TLG_VKB_NO_DRAW_RECORD"); return e != nullptr && *e == '1'; }(); // kill experiment: variant found, nothing recorded
     // note 62 bound: TLG_VKB_NO_DRAW_RECORD_AFTER=N: the same kill experiment from graphics submit N on (after the load, which the plain switch does not survive)
     static const u64 no_record_after = [] { const char* e = std::getenv("TLG_VKB_NO_DRAW_RECORD_AFTER"); return e != nullptr ? std::strtoull(e, nullptr, 10) : 0ull; }();
+    if (t_depth_pass && DepthCensusOn()) {
+        DcCensus(ctx, *it->second, fixed, kind);
+    }
     if (!no_draw_record && !(no_record_after != 0 && Core::Vkb::GraphicsSubmits() >= no_record_after)) {
         Record(ctx, *it->second, *fixed, kind, a1, a2, a3);
     }
@@ -2379,6 +2476,9 @@ nlohmann::json Report() {
                               {"samplers", {c_src[stage][2][0].load(), c_src[stage][2][1].load()}}};
     };
     return {{"draws", draws},
+            {"depth_census", {{"draws", c_dc_draws.load()}, {"variant_same", c_dc_variant_same.load()}, {"vs_n_same_samebutcb", {c_dc_stage_n[0].load(), c_dc_stage_same[0].load(), c_dc_same_but_cb[0].load()}},
+                              {"ps_n_same_samebutcb", {c_dc_stage_n[1].load(), c_dc_stage_same[1].load(), c_dc_same_but_cb[1].load()}}, {"draw_same", c_dc_draw_same.load()},
+                              {"cb_copies", c_dc_copies.load()}, {"draw_ms", static_cast<double>(c_dc_draw_ns.load()) / 1e6}, {"bind_ms", static_cast<double>(c_dc_bind_ns.load()) / 1e6}}},
             {"by_kind_indexed_auto_indirect", {c_by_kind[0].load(), c_by_kind[1].load(), c_by_kind[2].load()}},
             {"no_vertex_shader", c_no_vs.load()},
             {"special_pipeline", c_special.load()},

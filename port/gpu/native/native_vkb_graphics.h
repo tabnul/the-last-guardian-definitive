@@ -14,6 +14,8 @@ namespace Core::Vkb::Graphics {
 
 /// A draw of the device context `ctx` (game thread): kind 0 indexed, 1 auto, 2 indirect; the engine's arguments
 void Draw(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3);
+/// note 109 census (debug): this thread is inside a shadow cascade pass (set by the Z pass hook)
+void SetDepthPass(bool on);
 
 [[nodiscard]] nlohmann::json Report();
 
