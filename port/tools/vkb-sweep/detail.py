@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Faint-detail check (issue 54). A second, separate measure next to compare.py; it changes no limit of compare.py.
+No AI inside. Needs numpy and Pillow (on the test box: /home/runner/diag/venv/bin/python).
+
+compare.py counts pixels that differ by more than 8/16/32. A faint detail that goes missing on a still surface
+(carved lines on a wall, differing by under 10 levels) never reaches those limits. This tool compares how much
+fine detail each small tile of the picture holds:
+
+  detail of a tile = standard deviation of (grey picture minus its blurred copy), in grey levels
+  ratio of a tile  = detail of the new picture / detail of the normal renderer's picture
+  self spread      = the same ratio between the normal renderer's own two takes (mist, water, things that move
+                     change from take to take, so they show up here and widen the allowance of that tile)
+
+A tile whose coarse brightness (blur 12) differs by more than 4 levels or 3 x its self spread is a moved thing and is
+left out. A tile is flagged when its detail ratio is off by more than max(MARGIN, SPREAD_K x self spread) AND it holds real
+detail (at least MIN_DETAIL levels in the normal picture) AND every new-engine take agrees (same tile, same
+direction). LOST = the new engine shows less detail, ADDED = more. A scene is flagged (LOST or ADDED) when at
+least FLAG_TILES flagged tiles touch each other (a group of 10 tiles = about 200x200 pixels, not a lone tile
+such as the boy's pose). When tiles go both ways the verdict is MOVED: things changed place or shape (an
+elevator, a different camera spot), that is not lost detail and is not flagged, but it is printed.
+
+Usage:
+  detail.py NORMAL1.png NORMAL2.png NEW1.png [NEW2.png ...] [--map OUT.png] [--tile N] [--sigma S]
+  detail.py --scene-dir FOLDER [--map OUT.png]       (FOLDER holds vkb0_take1/2.png and vkb1_take1/2.png)
+Prints one line:  detail <OK|LOST|ADDED|MOVED> tiles flagged F of D with detail (worst x,y ratio R, self spread S)
+Exit code is always 0 (like compare.py); nothing in the sweep reads this tool yet: it is a proposal.
+Switch: nothing runs unless this script is called (off costs nothing). Environment DETAIL_MARGIN, DETAIL_SPREAD_K,
+DETAIL_MIN, DETAIL_FLAG_TILES override the numbers below."""
+import os, sys
+import numpy as np
+from PIL import Image
+
+TILE = 64
+SIGMA = 4.0
+MARGIN = float(os.environ.get("DETAIL_MARGIN", 0.20))        # allowed detail change (20%) even where nothing moves
+SPREAD_K = float(os.environ.get("DETAIL_SPREAD_K", 3.0))     # times the normal renderer's own take-to-take spread
+MIN_DETAIL = float(os.environ.get("DETAIL_MIN", 0.8))        # grey levels; below this a tile is flat, not judged
+LOW_MAX = float(os.environ.get("DETAIL_LOW_MAX", 4.0))      # grey levels; coarse brightness of a still tile may differ this much
+FLAG_TILES = int(os.environ.get("DETAIL_FLAG_TILES", 10))     # touching flagged tiles needed to flag the scene
+
+
+def grey(path):
+    return np.asarray(Image.open(path).convert("L"), dtype=np.float32)
+
+
+def blur(a, sigma):
+    r = int(3 * sigma)
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
+    k /= k.sum()
+    for axis in (0, 1):
+        p = np.pad(a, [(r, r) if i == axis else (0, 0) for i in range(2)], mode="edge")
+        out = np.zeros_like(a)
+        n = a.shape[axis]
+        for i, w in enumerate(k):
+            out += w * (p[i:i + n] if axis == 0 else p[:, i:i + n])
+        a = out
+    return a
+
+
+def tiles(x, tile):
+    h, w = (x.shape[0] // tile) * tile, (x.shape[1] // tile) * tile
+    return x[:h, :w].reshape(h // tile, tile, w // tile, tile)
+
+
+def tile_detail(a, tile, sigma):
+    """(detail, coarse): per tile the standard deviation of the fine detail, and the coarse picture (blurred
+    with 4 x sigma) as a small map of the tile means."""
+    low = blur(a, sigma)
+    return tiles(a - low, tile).std(axis=(1, 3)), tiles(blur(low, 3 * sigma), tile).mean(axis=(1, 3))
+
+
+def groups(mask, need):
+    """True where the flagged tile belongs to a group of at least `need` touching flagged tiles (8 neighbours)."""
+    seen = np.zeros_like(mask)
+    keep = np.zeros_like(mask)
+    H, W = mask.shape
+    for y in range(H):
+        for x in range(W):
+            if mask[y, x] and not seen[y, x]:
+                stack, comp = [(y, x)], []
+                seen[y, x] = True
+                while stack:
+                    cy, cx = stack.pop()
+                    comp.append((cy, cx))
+                    for dy in (-1, 0, 1):
+                        for dx in (-1, 0, 1):
+                            ny, nx = cy + dy, cx + dx
+                            if 0 <= ny < H and 0 <= nx < W and mask[ny, nx] and not seen[ny, nx]:
+                                seen[ny, nx] = True
+                                stack.append((ny, nx))
+                if len(comp) >= need:
+                    for cy, cx in comp:
+                        keep[cy, cx] = True
+    return keep
+
+
+def judge(normal1, normal2, news, tile=TILE, sigma=SIGMA):
+    """Returns dict: verdict, flagged tiles (lost/added masks), worst tile, self spread, tiles with detail."""
+    (d1, c1), (d2, c2) = tile_detail(grey(normal1), tile, sigma), tile_detail(grey(normal2), tile, sigma)
+    ref = np.maximum(d1, d2)
+    has = np.minimum(d1, d2) >= MIN_DETAIL
+    eps = 1e-3
+    spread = np.abs(np.log((d2 + eps) / (d1 + eps)))
+    allow = np.maximum(np.log(1 + MARGIN), SPREAD_K * spread)
+    mean_ref = (d1 + d2) / 2
+    # a tile whose coarse brightness differs more than a still surface should is a moved object, shadow, door,
+    # water ring ...: it is judged by compare.py, not here
+    low_allow = np.maximum(LOW_MAX, 3 * np.abs(c1 - c2))
+    still = np.ones_like(has)
+    lost = has.copy()
+    added = has.copy()
+    ratios = []
+    for p in news:
+        dn, cn = tile_detail(grey(p), tile, sigma)
+        still &= np.abs(cn - (c1 + c2) / 2) <= low_allow
+        lr = np.log((dn + eps) / (mean_ref + eps))
+        ratios.append(lr)
+        lost &= lr < -allow
+        added &= lr > allow
+    lost, added = groups(lost & still, FLAG_TILES), groups(added & still, FLAG_TILES)
+    worst = np.mean(ratios, axis=0)
+    flagged = lost | added
+    verdict = "OK" if not flagged.any() else ("LOST" if lost.any() and not added.any() else "ADDED" if added.any() and not lost.any() else "MOVED")
+    if flagged.any():
+        wy, wx = np.unravel_index(np.argmax(np.where(flagged, np.abs(worst), -1)), worst.shape)
+    else:
+        wy, wx = np.unravel_index(np.argmax(np.where(has, np.abs(worst), -1)), worst.shape) if has.any() else (0, 0)
+    return {"verdict": verdict, "lost": lost, "added": added, "flagged": int(flagged.sum()), "with_detail": int(has.sum()),
+            "worst_xy": (int(wx * tile), int(wy * tile)), "worst_ratio": float(np.exp(worst[wy, wx])),
+            "moved_tiles": int((has & ~still).sum()), "self_spread": float(np.exp(spread[wy, wx]) - 1), "tile": tile}
+
+
+def draw_map(res, base_png, out):
+    """The new picture (or the first normal one) with flagged tiles tinted: red = LOST, blue = ADDED."""
+    im = np.asarray(Image.open(base_png).convert("RGB")).astype(np.float32)
+    t = res["tile"]
+    for mask, col in ((res["lost"], (255, 0, 0)), (res["added"], (0, 120, 255))):
+        for y, x in zip(*np.nonzero(mask)):
+            im[y * t:(y + 1) * t, x * t:(x + 1) * t] = 0.5 * im[y * t:(y + 1) * t, x * t:(x + 1) * t] + 0.5 * np.array(col)
+    Image.fromarray(im.clip(0, 255).astype(np.uint8)).save(out)
+
+
+def main():
+    a = sys.argv[1:]
+    out = tile = sigma = None
+    for flag in ("--map", "--tile", "--sigma"):
+        if flag in a:
+            i = a.index(flag)
+            v = a[i + 1]
+            del a[i:i + 2]
+            if flag == "--map":
+                out = v
+            elif flag == "--tile":
+                tile = int(v)
+            else:
+                sigma = float(v)
+    if a[:1] == ["--scene-dir"]:
+        d = a[1]
+        n1, n2 = os.path.join(d, "vkb0_take1.png"), os.path.join(d, "vkb0_take2.png")
+        news = [os.path.join(d, f"vkb1_take{i}.png") for i in (1, 2) if os.path.exists(os.path.join(d, f"vkb1_take{i}.png"))]
+    elif len(a) >= 3:
+        n1, n2, news = a[0], a[1], a[2:]
+    else:
+        sys.exit(__doc__)
+    if not news:
+        sys.exit("no new-engine picture")
+    r = judge(n1, n2, news, tile or TILE, sigma or SIGMA)
+    print(f"detail {r['verdict']}  tiles flagged {r['flagged']} of {r['with_detail']} with detail  "
+          f"(worst tile x,y {r['worst_xy'][0]},{r['worst_xy'][1]} ratio {r['worst_ratio']:.2f}, normal self spread {r['self_spread']:.2f}; {r['moved_tiles']} tiles left out as moved)")
+    if out:
+        draw_map(r, news[0], out)
+
+
+if __name__ == "__main__":
+    main()

@@ -9,6 +9,23 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-20 - A second picture measure for faint detail, as a separate tool (not yet merged)
+
+- **Problem:** the picture check counts pixels that differ by more than 8, 16 or 32 levels. A faint detail that goes
+  missing on a still surface (carved lines on a wall, under 10 levels) never reaches those limits, so the check could
+  not see it (issue 54).
+- **Considered:** (1) a new tool `detail.py` that compares how much fine detail each 64x64 tile holds in the new
+  picture against the normal renderer, with an allowance taken from the normal renderer's own take-to-take spread in
+  that tile; (2) lower the existing limits: not allowed, the limits are the owner's (issue 9) and it would flag every
+  moving thing; (3) a whole-picture sharpness number: too coarse, one lost wall is a few percent of the picture.
+- **Choice:** 1, as a proposal. It changes no limit and nothing calls it (off costs nothing). Tiles whose coarse
+  brightness also differs are treated as moved things and left out, and it only flags 10 touching tiles or more, so
+  a boy's pose or a door that moves does not count. Box choice; the owner decides by merging. The verdict it adds
+  (LOST / ADDED) is not part of the limits.
+- **Links:** issue 54; pull request of branch `fix/detail-measure-issue54`.
+
+---
+
 ## 2026-11-20 - Texture reads out of per-pixel branches in the new engine's translator (not yet merged)
 
 - **Problem:** with forced 16x AF the new engine drew horizontal stripes in the sky of one scene (issue 75). The cloud
