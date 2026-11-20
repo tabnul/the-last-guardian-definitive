@@ -63,6 +63,30 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-20 - One hand-over route when an anti-aliasing cannot run; DLAA hands over to FSR 4 or FSR 3.1 (not yet merged)
+
+- **Problem:** in the new engine a DLAA that could not run (DLSS bridge from another version on the owner's PC; a DLSS
+  feature that cannot be made; a frame that fails) left the rest of the session without anti-aliasing (issue 99). The
+  owner: "fall back to FSR 4, or FSR 3.1 where FSR 4 is not available, like the old engine does". Three other cases (a
+  choice without an AA, FSR 4, TAA) each had their own hand-written fallback, so this is the fourth fix of that kind
+  (rule 14f).
+- **Considered:** (A) one more fallback routine for DLAA; (B) one hand-over route for every AA that cannot run: one rule
+  for what comes next, one line written when the AA that takes over is really made (a chain is one line), errors and
+  an on-screen message for faults, info for the two quiet cases the owner named (DLSS not installed, FSR 4 model files
+  not installed); (C) a list of AAs to try per choice: rebuilds how the AA is made, no extra case covered.
+- **Choice:** B. It removes the cause for every AA at once (principle 10) and replaces the three earlier routines; plain
+  code, so every machine (6). What comes next: DLAA -> FSR 4 on a card that runs it (the normal renderer's own FSR 4
+  test), else FSR 3.1; FSR 4, TAA and a choice without an AA -> FSR 3.1; when FSR 3.1 or the parts every AA shares
+  cannot be made, the line says AA is off. A DLSS that is installed but did not come up with the device is caught at
+  start, before the first frame. Switch `TLG_VKB_DLAA_FALLBACK` (`=0` the old DLAA way: FSR 3.1 when not installed,
+  AA off when it fails).
+- **Who:** box (rule 14); the fallback order is the owner's (issue 99).
+- **Links:** issue 99 (https://github.com/tabnul/tlg-vkb-work/issues/99), design note
+  https://github.com/tabnul/tlg-vkb-work/issues/99#issuecomment-7046024649 ; pull request for branch
+  `fix/vkb-dlaa-fallback`.
+
+---
+
 ## 2026-11-20 - 14 scenes where the photo setup crashes the normal renderer: log only (not yet merged)
 
 - **Problem:** in 14 scenes the normal renderer crashes when the photo is set up (7 scenes in both takes, 7 in one take;
