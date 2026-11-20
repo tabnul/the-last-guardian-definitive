@@ -90,6 +90,7 @@ std::mutex stage_mutex; ///< R4a: the staging ring, its regions and its stamps (
 std::atomic<u64> c_stage_ring{0}, c_stage_ring_bytes{0}; ///< R3 census: copies whose source is the frame ring
 std::atomic<u64> c_stage_own_overlap{0};
 std::atomic<u64> c_staged{0}, c_staged_bytes{0}, c_stage_reused{0}, c_stage_written{0}, c_stage_too_big{0}, c_stage_waits{0};
+std::atomic<u64> c_stage_covered{0}, c_stage_merged{0}, c_stage_merge_too_big{0}; ///< issue 111: reads inside a staged region, copies that took in overlapping regions, unions over the size limit
 // V5b occlusion queries
 constexpr u32 QuerySlots = 2048;
 vk::QueryPool occlusion_pool{};
@@ -123,6 +124,12 @@ void WriteAnswerLocked(u64 address, bool seen) {
 bool StageOn() {
     // default on since 2026-11-14 (gameplay 58.6 -> 84.2 fps); =0 LEGACY(vkb_stage): read in place over the bus
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_STAGE"); return e == nullptr || e[0] != '0'; }();
+    return on;
+}
+/// Issue 111: a staged read reuses this submission's copy of the memory around it, not only a copy of the very same range. All copies of a submission run in front
+/// of it, so a covering copy holds the same bytes as a copy of its own. =0 LEGACY(vkb_stage_merge): a copy is reused only for the same offset and size.
+bool StageMergeOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_STAGE_MERGE"); return e == nullptr || e[0] != '0'; }();
     return on;
 }
 bool HostScratchOn() {
@@ -324,6 +331,8 @@ struct Rec {
     std::deque<std::pair<u64, vk::CommandBuffer>> in_flight;
     vk::CommandBuffer stage_cmd{}; ///< the copies for `current`, submitted in front of it
     std::unordered_map<StageKey, u64, StageKeyHash> stage_map; ///< this submission's copies
+    /// issue 111 (TLG_VKB_STAGE_MERGE): this submission's copies as regions that do not overlap: (buffer handle, start in it) -> (end, offset in the ring)
+    std::map<std::pair<u64, u64>, std::pair<u64, u64>> stage_regions;
     u32 stage_stamp_open = ~0u;
     bool query_open = false;
     u32 query_open_index = 0;
@@ -1291,6 +1300,7 @@ u64 SubmitLocked() {
 #endif
         t_rec->in_flight.emplace_back(value, t_rec->stage_cmd);
         t_rec->stage_map.clear(); // a copy serves its submission only: the CPU may add to a bound range before a later draw of the same frame
+        t_rec->stage_regions.clear();
         t_rec->stage_cmd = vk::CommandBuffer{};
     }
     if (t_rec->current) {
@@ -1876,6 +1886,7 @@ void NewFrame() {
     OverlapCensus::frame_now.fetch_add(1, std::memory_order_relaxed);
     std::scoped_lock lock{mutex};
     t_rec->stage_map.clear();
+    t_rec->stage_regions.clear();
     std::scoped_lock written_lock{frame_written_mutex};
     frame_written.clear();
 }
@@ -1975,18 +1986,61 @@ bool StageRead(vk::Buffer& buffer, u64& offset, u64 size) {
         return false;
     }
     const StageKey key{u.handle, offset, size};
-    if (const auto it = t_rec->stage_map.find(key); it != t_rec->stage_map.end()) {
-        buffer = vk::Buffer{stage_buffer.buffer};
-        offset = it->second;
-        c_stage_reused.fetch_add(1, std::memory_order_relaxed);
-        return true;
+    const bool merge = StageMergeOn();
+    if (!merge) {
+        if (const auto it = t_rec->stage_map.find(key); it != t_rec->stage_map.end()) {
+            buffer = vk::Buffer{stage_buffer.buffer};
+            offset = it->second;
+            c_stage_reused.fetch_add(1, std::memory_order_relaxed);
+            return true;
+        }
     }
+    // issue 111: what is copied. Without merging: the read itself. With it: from the read's start rounded down to 256 bytes (the ring offset keeps the read's
+    // offset modulo 256, so every alignment the draw met still holds), widened over the regions of this submission it overlaps; a region that holds the read
+    // already is used as it is. Before: draws reading the same buffer with a different end (an index range up to the draw's last index) copied it once each.
+    u64 copy_from = offset, copy_size = size;
+    bool keep = false; // the copy is kept as a region of this submission
+    if (merge) {
+        auto& regions = t_rec->stage_regions;
+        u64 lo = offset & ~255ull, hi = offset + size;
+        auto next = regions.upper_bound({u.handle, offset});
+        auto first = next;
+        if (next != regions.begin()) {
+            const auto before = std::prev(next);
+            if (before->first.first == u.handle && before->second.first > lo) {
+                if (before->second.first >= offset + size) {
+                    buffer = vk::Buffer{stage_buffer.buffer};
+                    offset = before->second.second + (offset - before->first.second);
+                    c_stage_covered.fetch_add(1, std::memory_order_relaxed);
+                    return true;
+                }
+                first = before;
+                lo = std::min(lo, before->first.second);
+            }
+        }
+        auto last = next;
+        while (last != regions.end() && last->first.first == u.handle && last->first.second < hi) {
+            hi = std::max(hi, last->second.first);
+            ++last;
+        }
+        if (hi - lo <= StageMaxRange) {
+            if (first != last) {
+                c_stage_merged.fetch_add(1, std::memory_order_relaxed);
+            }
+            copy_from = lo, copy_size = hi - lo, keep = true;
+            regions.erase(first, last); // the union takes their place (draws recorded before keep their own copies)
+        } else {
+            c_stage_merge_too_big.fetch_add(1, std::memory_order_relaxed); // the union would pass the size limit: the read alone, not kept as a region
+        }
+    }
+    size = copy_size; // the ring space and the copy below are for the copied range
     std::unique_lock stage_lock{stage_mutex}; // R4a: the ring, its regions and its stamps are shared by the recording threads
     const u64 mine = RecValue();
     u64 at = (stage_head + 255) & ~255ull;
     if (at + size > StageBytes) {
         at = 0;
         t_rec->stage_map.clear(); // (copies of this frame before the wrap are not reused after it)
+        t_rec->stage_regions.clear();
     }
     // the region is free once the submissions that used it are done on the GPU: the ring is used in order, so only its oldest regions can be in the way
     u64 wait_for = 0;
@@ -2010,14 +2064,18 @@ bool StageRead(vk::Buffer& buffer, u64& offset, u64 size) {
         c_stage_waits.fetch_add(1, std::memory_order_relaxed);
     }
     EnsureStageCmd();
-    t_rec->stage_cmd.copyBuffer(buffer, vk::Buffer{stage_buffer.buffer}, vk::BufferCopy{offset, at, size});
-    t_rec->stage_map.emplace(key, at);
-    if (u64 rh = 0, rb = 0, re = 0; Core::Vkb::FrameRingInPlace(rh, rb, re) && rh == u.handle && offset >= rb && offset + size <= re) {
+    t_rec->stage_cmd.copyBuffer(buffer, vk::Buffer{stage_buffer.buffer}, vk::BufferCopy{copy_from, at, size});
+    if (keep) {
+        t_rec->stage_regions.insert_or_assign({u.handle, copy_from}, std::pair<u64, u64>{copy_from + size, at});
+    } else if (!merge) {
+        t_rec->stage_map.emplace(key, at);
+    }
+    if (u64 rh = 0, rb = 0, re = 0; Core::Vkb::FrameRingInPlace(rh, rb, re) && rh == u.handle && copy_from >= rb && copy_from + size <= re) {
         c_stage_ring.fetch_add(1, std::memory_order_relaxed);
         c_stage_ring_bytes.fetch_add(size, std::memory_order_relaxed);
     }
     buffer = vk::Buffer{stage_buffer.buffer};
-    offset = at;
+    offset = at + (offset - copy_from);
     c_staged.fetch_add(1, std::memory_order_relaxed);
     c_staged_bytes.fetch_add(size, std::memory_order_relaxed);
     return true;
@@ -2535,7 +2593,8 @@ nlohmann::json Report() {
     return {{"occlusion", {{"begun", c_q_begun.load()}, {"ended", c_q_ended.load()}, {"seen", c_q_seen.load()}, {"hidden", c_q_hidden.load()},
                            {"first_answers_visible", c_q_first.load()}, {"nested_ignored", c_q_nested.load()}, {"dropped_unanswered", c_q_dropped.load()},
                            {"ended_by_a_submit", c_q_cut_by_submit.load()}, {"end_without_begin", c_q_unmatched_end.load()}}},
-            {"staging", {{"on", StageOn()}, {"copies", c_staged.load()}, {"mb_copied", c_staged_bytes.load() >> 20}, {"reused_in_a_submission", c_stage_reused.load()}, {"copies_from_the_frame_ring", c_stage_ring.load()},
+            {"staging", {{"on", StageOn()}, {"copies", c_staged.load()}, {"mb_copied", c_staged_bytes.load() >> 20}, {"reused_in_a_submission", c_stage_reused.load()}, {"merge", StageMergeOn()}, {"reads_inside_a_staged_region", c_stage_covered.load()},
+                          {"copies_that_took_in_overlapping_regions", c_stage_merged.load()}, {"unions_over_the_size_limit", c_stage_merge_too_big.load()}, {"copies_from_the_frame_ring", c_stage_ring.load()},
                          {"mb_from_the_frame_ring", c_stage_ring_bytes.load() >> 20},
                          {"left_in_place_gpu_written", c_stage_written.load()}, {"left_in_place_too_big", c_stage_too_big.load()}, {"waits_for_the_ring", c_stage_waits.load()}}},
             {"recorder", {{"on", RecorderOn()}, {"jobs", c_jobs.load()},
