@@ -83,6 +83,22 @@ def counters(path):
 LATE_RESULT = "anim query order: timeout on thread"
 
 
+FRAME_STATS = re.compile(r"Frame stats: ([\d.]+) FPS, worst frame ([\d.]+) ms")
+
+
+def frame_stats(path):
+    """(fps, worst_frame_ms) of the LAST 'Frame stats' line of a take's game log; (None, None) when there is none."""
+    last = None
+    try:
+        for line in open(path, errors="replace"):
+            m = FRAME_STATS.search(line)
+            if m:
+                last = (float(m[1]), float(m[2]))
+    except OSError:
+        pass
+    return last or (None, None)
+
+
 def log_counts(path):
     if not os.path.exists(path):
         return None
@@ -121,7 +137,9 @@ def result(folder, stage, scene, vkb, takes):
         status, seconds, peak, crash = ended[n]
         stem = os.path.join(folder, f"vkb{vkb}_take{n}")
         pic = next((stem + e for e in (".png", ".blank.png") if os.path.exists(stem + e)), None)
+        fps, worst = frame_stats(stem + ".log")
         row["takes"].append({
+            "fps": fps, "worst_frame_ms": worst,
             "take": n, "ok": status.startswith("ok "), "status": status, "seconds": seconds,
             "picture": pic, "blank": bool(pic and pic.endswith(".blank.png")),
             # the game ended by itself before the take was done (a crash or an exit), as shot.py saw it
