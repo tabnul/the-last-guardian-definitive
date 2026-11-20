@@ -21,6 +21,9 @@ boy's pose). When both a LOST and an ADDED group exist the verdict is LOST+ADDED
 hidden. The strip of the picture that does not fill a whole tile (at the right and bottom edge, 28 rows of a 988-line
 picture) is not judged.
 
+Scenes on the confirmed log-only list (log-only.txt; with --scene-dir the folder name STAGE__SCENE is used) get `detail LOGONLY` and no picture verdict.
+A flagged tile also needs an absolute change of its detail of at least DETAIL_ABS_MIN (0.6) grey levels, so faint dark differences that nobody sees are not flagged.
+
 Usage:
   detail.py NORMAL1.png NORMAL2.png NEW1.png [NEW2.png ...] [--map OUT.png] [--tile N] [--sigma S]
   detail.py --scene-dir FOLDER [--map OUT.png]       (FOLDER holds vkb0_take1/2.png and vkb1_take1/2.png)
@@ -28,7 +31,7 @@ Prints one line:  detail <OK|LOST|ADDED|LOST+ADDED|UNJUDGED> tiles flagged F of 
 Exit code 0 for every verdict; 2 for a blank picture or a size difference (like compare.py); 1 for a missing argument or
 picture. Nothing in the sweep reads this tool yet: it is a proposal.
 Switch: nothing runs unless this script is called (off costs nothing). Environment DETAIL_MARGIN, DETAIL_SPREAD_K,
-DETAIL_MIN, DETAIL_FLAG_TILES override the numbers below."""
+DETAIL_MIN, DETAIL_ABS_MIN, DETAIL_FLAG_TILES override the numbers below."""
 import os, sys
 import numpy as np
 from PIL import Image
@@ -39,7 +42,21 @@ MARGIN = float(os.environ.get("DETAIL_MARGIN", 0.20))        # allowed detail ch
 SPREAD_K = float(os.environ.get("DETAIL_SPREAD_K", 3.0))     # times the normal renderer's own take-to-take spread
 MIN_DETAIL = float(os.environ.get("DETAIL_MIN", 0.8))        # grey levels; below this a tile is flat, not judged
 LOW_MAX = float(os.environ.get("DETAIL_LOW_MAX", 4.0))      # grey levels; coarse brightness of a still tile may differ this much
+ABS_MIN = float(os.environ.get("DETAIL_ABS_MIN", 0.6))       # grey levels; a tile also needs this much absolute change of detail (the eye sees no less, owner PR 97)
 FLAG_TILES = int(os.environ.get("DETAIL_FLAG_TILES", 10))     # touching flagged tiles needed to flag the scene
+
+
+def log_only_reason(name):
+    """Reason when the scene (folder name STAGE__SCENE) has a confirmed line in log-only.txt, else None."""
+    try:
+        stage, scene = name.split("__", 1)
+        for line in open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "log-only.txt")):
+            f = line.split(None, 3)
+            if len(f) >= 3 and f[0] == "confirmed" and f[1] == stage and f[2] == scene:
+                return f[3].strip() if len(f) > 3 else "no reason"
+    except (OSError, ValueError):
+        pass
+    return None
 
 
 def grey(path):
@@ -122,6 +139,7 @@ def judge(normal1, normal2, news, tile=TILE, sigma=SIGMA):
     spread = np.abs(np.log((d2 + eps) / (d1 + eps)))
     allow = np.maximum(np.log(1 + MARGIN), SPREAD_K * spread)
     mean_ref = (d1 + d2) / 2
+    ref_lin = mean_ref
     # a tile whose coarse brightness differs more than a still surface should is a moved object, shadow, door,
     # water ring ...: it is judged by compare.py, not here
     low_allow = np.maximum(LOW_MAX, 3 * np.abs(c1 - c2))
@@ -134,8 +152,9 @@ def judge(normal1, normal2, news, tile=TILE, sigma=SIGMA):
         still &= np.abs(cn - (c1 + c2) / 2) <= low_allow
         lr = np.log((dn + eps) / (mean_ref + eps))
         ratios.append(lr)
-        lost &= lr < -allow
-        added &= lr > allow
+        big = np.abs(dn - ref_lin) >= ABS_MIN
+        lost &= (lr < -allow) & big
+        added &= (lr > allow) & big
     lost, added = groups(lost & still, FLAG_TILES), groups(added & still, FLAG_TILES)
     worst = np.mean(ratios, axis=0)
     flagged = lost | added
@@ -177,6 +196,10 @@ def main():
                 sigma = float(v)
     if a[:1] == ["--scene-dir"]:
         d = a[1]
+        reason = log_only_reason(os.path.basename(os.path.normpath(d)))
+        if reason:
+            print(f"detail LOGONLY  scene is on the log-only list ({reason}); picture not judged")
+            return
         n1, n2 = os.path.join(d, "vkb0_take1.png"), os.path.join(d, "vkb0_take2.png")
         news = [os.path.join(d, f"vkb1_take{i}.png") for i in (1, 2) if os.path.exists(os.path.join(d, f"vkb1_take{i}.png"))]
     elif len(a) >= 3:

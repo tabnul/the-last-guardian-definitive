@@ -154,7 +154,7 @@ for `compare.py`. A tile is off when its ratio differs by more than max(20%, 3 x
 is hidden). When no group is found and more than half of the tiles with detail are left out as moved (or no tile has detail),
 the verdict is `UNJUDGED`, never `OK`. A blank picture or a size difference is refused (exit 2). The strip at the right and bottom edge that does
 not fill a whole tile is not judged. The numbers can be changed with `DETAIL_MARGIN`, `DETAIL_SPREAD_K`,
-`DETAIL_MIN`, `DETAIL_LOW_MAX`, `DETAIL_FLAG_TILES`. `--map` writes the new picture with the off tiles tinted:
+`DETAIL_MIN`, `DETAIL_ABS_MIN`, `DETAIL_LOW_MAX`, `DETAIL_FLAG_TILES`. A tile also needs an absolute change of its detail of at least 0.6 grey levels (`DETAIL_ABS_MIN`), so faint differences in dark areas that cannot be seen are not flagged. A scene on the confirmed list of `log-only.txt` gets `detail LOGONLY` (with `--scene-dir`, the folder name STAGE__SCENE is read) and no picture verdict. `--map` writes the new picture with the off tiles tinted:
 red = lost, blue = added. The numbers were set on pictures of this box only (AMD Linux): untested elsewhere.
 
 ## Log only group and the log verdict (verdict.py)

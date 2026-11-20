@@ -11,6 +11,7 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ## 2026-11-20 - A second picture measure for faint detail, as a separate tool (not yet merged)
 
+- **Owner review 2026-11-20 (pull request 97), added to this entry:** owner: "some should be ignored (log only), some it is way too harsh". Done: (1) the tool reads the confirmed log-only list (no per-scene rule in the tool); the fight scene and the two ending videos the owner named are on that list already. (2) a flagged tile must also change its detail by at least 0.6 grey levels in absolute terms, so faint dark differences nobody can see are not flagged. This clears the owner's two "no difference by eye" scenes and the mild floor-grain scene without a mask; the Tritrigger wall without the fix and the blurred rock scene stay flagged. The two masks the owner asked for were not needed, since neither scene is flagged any more. Chosen by: owner asked, box built.
 - **Problem:** the picture check counts pixels that differ by more than 8, 16 or 32 levels. A faint detail that goes
   missing on a still surface (carved lines on a wall, under 10 levels) never reaches those limits, so the check could
   not see it (issue 54).
