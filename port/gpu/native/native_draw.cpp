@@ -6821,6 +6821,19 @@ void Publish() {
                                            {"work_census", Core::Vkb::WorkCensus::Report()}, {"side_census", Core::Vkb::SideCensus::Report()}, {"engine_calls_skipped", Core::Vkb::EngineCallsSkipped()}});
     }
 }
+/// Note 108 kill experiment (A/B only, never default): TLG_VKB_TEST_ZPASS=skip skips the shadow cascade passes (Z pass view types 1 and 2) whole; =nodraw runs the engine's
+/// loop for them but drops our per-draw work (the draws are not captured: Graphics::Draw is not called). The fps ceilings of removing all / only our side of those passes.
+int ZPassTest() {
+    static const int mode = [] {
+        const char* e = std::getenv("TLG_VKB_TEST_ZPASS");
+        if (e == nullptr) {
+            return 0;
+        }
+        return std::string{e} == "skip" ? 1 : std::string{e} == "nodraw" ? 2 : 0;
+    }();
+    return mode;
+}
+thread_local bool t_drop_draws = false;
 /// A draw (kind 0 indexed, 1 auto, 2 indirect; `inline_draw`: the decal loop's inlined auto draw, where the hook sits on PrepareDraw).
 u64 TakeDrawImpl(u64 ctx, u64 a1, u64 a2, u64 a3, u32 kind, bool inline_draw);
 u64 TakeDraw(u64 ctx, u64 a1, u64 a2, u64 a3, u32 kind, bool inline_draw) {
@@ -6876,6 +6889,9 @@ u64 TakeDrawImpl(u64 ctx, u64 a1, u64 a2, u64 a3, u32 kind, bool inline_draw) {
     draws.fetch_add(1, std::memory_order_relaxed);
     TakePendingDynamicMap(); // pointer trace: this thread's in-place Map's writes before the draw that may read them
     const u64 g0 = TimesOn() ? TakeNs() : 0;
+    if (t_drop_draws) {
+        return 1; // note 108 kill experiment only
+    }
     Core::Vkb::Graphics::Draw(ctx, kind, a1, a2, a3); // V4: our pipeline for the bound shaders and state
     if (TimesOn()) {
         graphics_draw_ns.fetch_add(TakeNs() - g0, std::memory_order_relaxed);
@@ -11136,6 +11152,19 @@ u64 PS4_SYSV_ABI ZPassEnter(u64 render_device, u64 desc, u64 a2, u64 a3, u64 a4,
         static const u64 loop_entry = Core::GuestHooks::OriginalEntry("DrawZPass");
         if (NativeZPassGen::HandlePass(render_device, desc, loop_entry)) {
             return 1;
+        }
+    }
+    if (const int test = Vkb::ZPassTest(); test != 0) {
+        const u32 view = static_cast<u32>(Rd<u64>(desc, 8));
+        if (view == 1 || view == 2) {
+            if (test == 1) {
+                return 0x8000000000000000ull;
+            }
+            static const u64 original = Core::GuestHooks::OriginalEntry("DrawZPass");
+            Vkb::t_drop_draws = true;
+            reinterpret_cast<GuestDraw6>(original)(render_device, desc, a2, a3, a4, a5);
+            Vkb::t_drop_draws = false;
+            return 0x8000000000000000ull;
         }
     }
     if (NativeZPassGen::ZPassCensusOn()) { // note 107 census: the pass scanned read only, then the engine's loop runs and is counted
