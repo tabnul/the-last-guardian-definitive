@@ -9,6 +9,23 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-20 - A second picture measure for faint detail, as a separate tool (not yet merged)
+
+- **Owner review 2026-11-20 (pull request 97), added to this entry:** owner: "some should be ignored (log only), some it is way too harsh". Done: (1) the tool reads the confirmed log-only list (no per-scene rule in the tool); the fight scene and the two ending videos the owner named are on that list already. (2) a flagged tile must also change its detail by at least 0.6 grey levels in absolute terms, so faint dark differences nobody can see are not flagged. This clears the owner's two "no difference by eye" scenes and the mild floor-grain scene without a mask; the Tritrigger wall without the fix and the blurred rock scene stay flagged. The two masks the owner asked for were not needed, since neither scene is flagged any more. Cost: a tile whose detail falls from about 1.0 to 0.3 grey levels is no longer flagged, so very faint losses in dark areas are not seen by this tool. Proof numbers (new verdicts, from stored pictures): FA_f02_End OK, FB2_End OK, FF_c01_TunnelEntrance OK, SF_c02_Before_bridge OK, Care_Step2 LOST (404 tiles), Tritrigger without PR 51 LOST (168 tiles), with PR 51 UNJUDGED. The fight scene is SD_a01_Start (confirmed in log-only.txt). The list is read only with `--scene-dir`. Chosen by: owner asked, box built.
+- **Problem:** the picture check counts pixels that differ by more than 8, 16 or 32 levels. A faint detail that goes
+  missing on a still surface (carved lines on a wall, under 10 levels) never reaches those limits, so the check could
+  not see it (issue 54).
+- **Considered:** (1) a new tool `detail.py` that compares how much fine detail each 64x64 tile holds in the new
+  picture against the normal renderer, with an allowance taken from the normal renderer's own take-to-take spread in
+  that tile; (2) lower the existing limits: not allowed, the limits are the owner's (issue 9) and it would flag every
+  moving thing; (3) a whole-picture sharpness number: too coarse, one lost wall is a few percent of the picture.
+- **Choice:** 1, as a proposal. It changes no limit and nothing calls it (off costs nothing). Tiles whose coarse
+  brightness also differs are treated as moved things and left out, and it only flags 10 touching tiles or more, so
+  a boy's pose or a door that moves does not count. Box choice; the owner decides by merging. The verdict it adds
+  (LOST / ADDED / LOST+ADDED) is not part of the limits. The numbers were set on stored pictures of this box only
+  (AMD Linux); a blank picture, a size difference or too many moved tiles give no verdict instead of a false OK.
+- **Links:** issue 54; pull request of branch `fix/detail-measure-issue54`.
+
 ## 2026-11-20 - Fix A's wait keeps the game's job scheduler awake (not yet merged)
 
 - **Problem:** The author's fix A makes the game's query recording wait (up to 50 ms) for the soldiers' animation work

@@ -130,6 +130,33 @@ difference is above 8, 16 and 32, and the largest difference. With a third path 
 picture (4x brighter). It refuses a blank picture (exit code 2), so a black screen is never compared.
 No clean / not clean limits are applied here: those are the owner's call (issue 9). The blank limits (8 and 99.5%) only decide whether a picture can be compared at all.
 
+## detail.py: lost or added faint detail (issue 54, a proposal)
+
+`compare.py` only sees pixels that differ by more than 8/16/32 levels. A faint detail that goes missing on a
+still surface (carved lines on a wall, under 10 levels) never reaches those limits. `detail.py` is a second,
+separate measure; it does not touch `compare.py` or any limit (the limits are the owner's, issue 9). It is not
+called by `sweep.py` or anything else: off costs nothing, and it has no switch because nothing runs it.
+
+```
+/home/runner/diag/venv/bin/python detail.py NORMAL1.png NORMAL2.png NEW1.png [NEW2.png ...] [--map OUT.png]
+/home/runner/diag/venv/bin/python detail.py --scene-dir FOLDER [--map OUT.png]   # vkb0_take1/2 + vkb1_take1/2
+```
+
+It needs numpy and Pillow (the box's `diag/venv` has both). Per tile of 64x64 pixels it takes the "detail" =
+standard deviation of (grey picture minus a copy blurred with sigma 4). The detail of the new picture is divided
+by that of the normal renderer. The normal renderer's own two takes give the self spread of every tile (mist,
+water and things that move change between takes, so those tiles get a wider allowance by themselves).
+A tile whose coarse brightness (blur of about 12 pixels) also differs by more than 4 levels (or 3 x the normal
+self difference) is a moved thing (a door, a shadow, a creature, water rings, a video) and is left out: those are
+for `compare.py`. A tile is off when its ratio differs by more than max(20%, 3 x self spread), it holds real detail
+(at least 0.8 grey levels in the normal pictures), and every new-engine take agrees. At least 10 touching tiles
+(8 neighbours) make the scene `LOST` (less detail), `ADDED` (more) or `LOST+ADDED` (both kinds of group; nothing
+is hidden). When no group is found and more than half of the tiles with detail are left out as moved (or no tile has detail),
+the verdict is `UNJUDGED`, never `OK`. A blank picture or a size difference is refused (exit 2). The strip at the right and bottom edge that does
+not fill a whole tile is not judged. The numbers can be changed with `DETAIL_MARGIN`, `DETAIL_SPREAD_K`,
+`DETAIL_MIN`, `DETAIL_ABS_MIN`, `DETAIL_LOW_MAX`, `DETAIL_FLAG_TILES`. A tile also needs an absolute change of its detail of at least 0.6 grey levels (`DETAIL_ABS_MIN`), so faint differences in dark areas that cannot be seen are not flagged. A scene on the confirmed list of `log-only.txt` gets `detail LOGONLY` (with `--scene-dir`, the folder name STAGE__SCENE is read) and no picture verdict. `--map` writes the new picture with the off tiles tinted:
+red = lost, blue = added. The numbers were set on pictures of this box only (AMD Linux): untested elsewhere.
+
 ## Log only group and the log verdict (verdict.py)
 
 `log-only.txt` lists scenes that are left out of the PICTURE comparison (cutscenes and the like): `STATUS STAGE
