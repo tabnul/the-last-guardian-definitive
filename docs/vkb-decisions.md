@@ -25,6 +25,18 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   (AMD Linux); a blank picture, a size difference or too many moved tiles give no verdict instead of a false OK.
 - **Links:** issue 54; pull request of branch `fix/detail-measure-issue54`.
 
+## 2026-11-20 - 14 scenes where the photo setup crashes the normal renderer: log only (not yet merged)
+
+- **Problem:** in 14 scenes the normal renderer crashes when the photo is set up (7 scenes in both takes, 7 in one take;
+  one of them also gives a blank picture), so there is no usable picture to compare with (issue 20).
+- **Considered:** keep judging them by picture (impossible without a normal picture); fix the normal renderer (not
+  allowed); judge them through the log only, as other confirmed entries.
+- **Choice:** the 14 scenes the owner ticked go into `log-only.txt` as `confirmed`. They still run in every sweep and
+  errors, warnings and crashes in them are fixed as usual. Owner words: "all of the other checked images look good,
+  differences are moving objects or antialiasing"; the cutscene `CH_e01_EndCare_001` he accepts as log only. The scene
+  `FA_a04_OpenGate_002` is not added: he cannot judge it (no normal picture), it stays as it is.
+- **Chosen by:** owner. Issue 20; pull request: this one.
+
 ---
 
 ## 2026-11-20 - Texture reads out of per-pixel branches in the new engine's translator (not yet merged)
