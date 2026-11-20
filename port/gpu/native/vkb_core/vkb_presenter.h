@@ -18,6 +18,7 @@
 #include "native/shadps4/video_core/renderer_vulkan/vk_instance.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_scheduler.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_swapchain.h"
+#include "native/vkb_core/vkb_fsr_fg.h"
 
 namespace Frontend {
 class WindowSDL;
@@ -113,6 +114,7 @@ private:
     /// acquired with again. With frame generation two presents per frame turn the rotation over twice as fast, and the generated present has no fence of its own
     /// (VUID-vkAcquireNextImageKHR-semaphore-01779, then device lost: owner play 2026-11-16)
     std::vector<u64> acquire_slot_ticks;
+    std::unique_ptr<FsrFg> fsr_fg; ///< F2 TLG_VKB_FG=fsr; last member: destroyed first, after ~Presenter finished the schedulers
 };
 
 extern std::unique_ptr<Presenter> g_presenter;

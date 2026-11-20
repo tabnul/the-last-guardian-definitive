@@ -399,7 +399,7 @@ bool EnsureDepthCopies(u32 w, u32 h, vk::Format format) {
                                .arrayLayers = 1,
                                .samples = VK_SAMPLE_COUNT_1_BIT,
                                .tiling = VK_IMAGE_TILING_OPTIMAL,
-                               .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                               .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, // source: FSR's depth copy
                                .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
                                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
     const VmaAllocationCreateInfo alloc{.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
@@ -926,8 +926,8 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
     const bool context_ok = EnsureContext(w, h); // may turn a chosen FSR 4 into FSR 3.1 (missing model files, a fault)
     // the motion in render pixels, previous - current: what DLSS, FSR 4 and TAA read (the normal renderer gives FSR 4 and TAA the same: their
     // RecordGameMotion, mode 2 without a camera), and frame generation
-    const bool want_px = Chosen() == Kind::Dlaa || Chosen() == Kind::Fsr4 || Chosen() == Kind::Taa || Core::Vkb::DlssGlue::FgWanted();
-    if (!context_ok || (want_px && !EnsureDlaa(w, h)) || (Core::Vkb::DlssGlue::FgWanted() && !EnsureDepthCopies(w, h, d.format))) {
+    const bool want_px = Chosen() == Kind::Dlaa || Chosen() == Kind::Fsr4 || Chosen() == Kind::Taa || Core::Vkb::DlssGlue::AnyFgWanted();
+    if (!context_ok || (want_px && !EnsureDlaa(w, h)) || (Core::Vkb::DlssGlue::AnyFgWanted() && !EnsureDepthCopies(w, h, d.format))) {
         failed = true;
         c_failed.fetch_add(1, std::memory_order_relaxed);
         return;
@@ -983,7 +983,7 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
         cmd.pushConstants(motion_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(size), size.data());
         cmd.dispatch((w + 7) / 8, (h + 7) / 8, 1);
         Barrier(cmd);
-        if (Core::Vkb::DlssGlue::FgWanted()) { // F2: this frame's depth (our copy) and motion for the presenter's frame generation
+        if (Core::Vkb::DlssGlue::AnyFgWanted()) { // F2: this frame's depth (our copy) and motion for the presenter's frame generation
             const vk::Image copy{depth_copies[px_index]};
             const vk::ImageMemoryBarrier2 to_dst{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands, .srcAccessMask = vk::AccessFlagBits2::eNone,
                                                  .dstStageMask = vk::PipelineStageFlagBits2::eTransfer, .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
@@ -996,7 +996,7 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
             Barrier(cmd);
             std::scoped_lock fg_lock{fg_mutex};
             fg_slots[px_index] = {.inputs = {.depth = copy, .motion = vk::Image{motion_px}, .depth_view = depth_copy_views[px_index], .motion_view = motion_px_view,
-                                             .depth_format = d.format, .width = w, .height = h, .reset = reset},
+                                             .depth_format = d.format, .width = w, .height = h, .jitter_x = jitter[0], .jitter_y = jitter[1], .reset = reset},
                                   .value = Core::Vkb::Stream::RecordingValue(),
                                   .serial = ++fg_serial};
         }

@@ -37,6 +37,18 @@ bool FgWanted() {
     return wanted;
 }
 
+bool FsrFgWanted() {
+    static const bool wanted = [] {
+        const char* e = std::getenv("TLG_VKB_FG");
+        return e != nullptr && std::strcmp(e, "fsr") == 0;
+    }();
+    return wanted;
+}
+
+bool AnyFgWanted() {
+    return FgWanted() || FsrFgWanted();
+}
+
 bool Wanted() {
     static const bool wanted = [] {
         const char* e = std::getenv("TLG_VKB_AA");
