@@ -209,7 +209,7 @@ std::mutex fsr4_fault_mutex;
 std::string fsr4_fault;                     ///< why a chosen FSR 4 could not run (empty: no fault; under fsr4_fault_mutex, the report reads it)
 std::atomic<u64> c_fsr4_faults{0}, c_fsr4_runs{0};
 
-std::atomic<u64> c_motion_passes{0}, c_runs{0}, c_no_inputs{0}, c_unusable{0}, c_failed{0}, c_resets{0};
+std::atomic<u64> c_motion_passes{0}, c_runs{0}, c_no_inputs{0}, c_unusable{0}, c_failed{0}, c_resets{0}, c_cut_resets{0};
 std::atomic<u64> c_rcas_passes{0}, c_scene_bias_draws{0};
 
 // Issue 42 (part s): RCAS passes after the AA, as the normal renderer's ExtraSharpen / DlssSharpen; the result ping-pongs between `output` and this image
@@ -220,6 +220,7 @@ vk::DescriptorSetLayout rcas_set_layout{};
 vk::PipelineLayout rcas_layout{};
 vk::Pipeline rcas_pipeline{};
 bool rcas_broken = false; ///< the pipeline could not be made (logged once, in the report): the AA's own sharpening only
+std::atomic<bool> frame_cut{false}; ///< K4: the engine's camera-cut flag of the frame being recorded (render thread)
 
 // Issue 57: TAA, the normal renderer's (their TemporalUpscaler::RecordTaa with taa.comp): two histories (scene colour and depth, RGBA32F) alternate
 // between read and write; its result goes to `output`, its sharpening is the RCAS passes after it (as DLAA: an AA without RCAS of its own)
@@ -853,6 +854,14 @@ bool DrawJitter(u64 depth_view_id, bool depth_write, bool geometry, bool samples
     return on;
 }
 
+void NoteFrameCut(bool cut) {
+    frame_cut.store(cut, std::memory_order_relaxed);
+}
+
+bool TakeFrameCut() {
+    return frame_cut.exchange(false, std::memory_order_relaxed);
+}
+
 std::array<float, 2> OnCombineQueued() {
     const std::array<float, 2> used = frame_jitter;
     if (CensusOn()) {
@@ -896,7 +905,7 @@ void NoteMotionPass(std::span<const vk::Image> attachments, u32 color_count, boo
     ++inputs_serial;
 }
 
-void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
+void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter, bool camera_cut) {
     if (!On() || instance == nullptr || failed) {
         return;
     }
@@ -934,7 +943,17 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter) {
     }
     const auto now = std::chrono::steady_clock::now();
     float frame_ms = std::chrono::duration<float, std::milli>(now - last_run).count();
-    const bool reset = frame_id == 0 || frame_ms > 100.0f; // fresh history after a gap (menu, load, cut)
+    // fresh history after a gap (menu, load) or on the engine's camera cut (api-contract.md K4: the frame the engine clears its own TAA history in)
+    const bool reset = frame_id == 0 || frame_ms > 100.0f || camera_cut;
+    if (camera_cut) {
+        const u64 cuts = c_cut_resets.fetch_add(1, std::memory_order_relaxed) + 1;
+        static u64 last_cut_run = 0;
+        const u64 run = c_runs.load(std::memory_order_relaxed);
+        if (run != last_cut_run + 1) { // the first frame of a run of cut frames (a paused or zero-step stretch is one run)
+            LOG_WARNING(Render_Vulkan, "vkb aa: camera cut at AA run {} (cut frames so far {})", run, cuts);
+        }
+        last_cut_run = run;
+    }
     if (frame_ms <= 0.0f || frame_ms > 200.0f) {
         frame_ms = 16.6f;
     }
@@ -1257,6 +1276,7 @@ nlohmann::json Report() {
             {"unusable", c_unusable.load()},
             {"failed", c_failed.load()},
             {"history_resets", c_resets.load()},
+            {"history_resets_camera_cut", c_cut_resets.load()},
             {"jitter", JitterWanted()},
             {"jittered_draws", c_jittered.load()},
             {"jittered_mesh_redraws", c_jittered_meshes.load()},

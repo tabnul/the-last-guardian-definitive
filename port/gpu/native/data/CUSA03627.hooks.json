@@ -195,6 +195,170 @@
       "expect": "554889e541574156"
     },
     {
+      "name": "CopyStructureCount",
+      "ghidra": "0x247e770",
+      "mode": "call",
+      "handler": "tag_copy_structure_count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "LG1_SetPredication",
+      "ghidra": "0x247e4a0",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "LG1_BeginPredication",
+      "ghidra": "0x2481610",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "LG1_EndPredication",
+      "ghidra": "0x24816b0",
+      "mode": "count",
+      "expect": "554889e553504889"
+    },
+    {
+      "name": "LG3_WriteTimestamp",
+      "ghidra": "0x2481240",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "LG3_AscWriteTimestamp",
+      "ghidra": "0x24725c0",
+      "mode": "count",
+      "expect": "554889e541565348"
+    },
+    {
+      "name": "LG4_LabelWait",
+      "ghidra": "0x2480e20",
+      "mode": "count",
+      "expect": "554889e541565348"
+    },
+    {
+      "name": "LG5_AscGetResourceAddress",
+      "ghidra": "0x2471ce0",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "LG6_AscInlineData",
+      "ghidra": "0x24724e0",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "LG7_BeginDispatchDraw",
+      "ghidra": "0x249ec50",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "K2_RegisterGroupB",
+      "ghidra": "0x1ce5da0",
+      "mode": "call",
+      "handler": "k2_register_b",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "K2_RegisterGroupC",
+      "ghidra": "0x1ce5bd0",
+      "mode": "call",
+      "handler": "k2_register_c",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "K2_TricoChain",
+      "ghidra": "0x17d3f40",
+      "mode": "mid",
+      "handler": "k2_trico_chain",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "K2_TaskObject",
+      "ghidra": "0x15a0160",
+      "mode": "mid",
+      "handler": "k2_task_object",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "K2_Enqueue",
+      "ghidra": "0x1e4ac30",
+      "mode": "mid",
+      "handler": "k2_enqueue",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "K2_AnimationTick",
+      "ghidra": "0x1d0ded0",
+      "mode": "call",
+      "handler": "k2_animation_tick",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AnimJobDone",
+      "ghidra": "0x1e4bb59",
+      "mode": "mid",
+      "handler": "anim_job_done",
+      "expect": "498b4424304c89f7"
+    },
+    {
+      "name": "AnimJobDonePrio",
+      "ghidra": "0x1e4bb95",
+      "mode": "mid",
+      "handler": "anim_job_done",
+      "expect": "498b4424304c89f7"
+    },
+    {
+      "name": "AnimGroupRelease",
+      "ghidra": "0x1e4bd50",
+      "mode": "call",
+      "handler": "anim_group_release",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "K2_Gather",
+      "ghidra": "0x1254880",
+      "mode": "call",
+      "handler": "k2_gather",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "AnimQueryRecording",
+      "ghidra": "0x1255570",
+      "mode": "mid",
+      "handler": "anim_query_recording",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "K2_FrameDataReset",
+      "ghidra": "0x1dfdea0",
+      "mode": "call",
+      "handler": "k2_frame_reset",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "T2_CGbufVariant",
+      "ghidra": "0x18b4090",
+      "mode": "call",
+      "handler": "note_c_gbuf_variant",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "T2_VertexCacheCopy",
+      "ghidra": "0x1d84830",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
+      "name": "T2_WaterSimulate",
+      "ghidra": "0x199bf00",
+      "mode": "count",
+      "expect": "554889e541574156"
+    },
+    {
       "name": "AscCopyResource",
       "ghidra": "0x24717c0",
       "mode": "call",
