@@ -106,18 +106,18 @@ TOOLS = [
     },
     {
         'name': 'shadps4_get',
-        'description': 'Reads any endpoint of the game\'s debug server, e.g. /hook_ring, /ring_census, /updates, '
-                       '/frame_gate, /native, /invariants. path "/" lists every endpoint with its description. '
+        'description': 'Reads any endpoint of the game\'s debug server, e.g. /stats, /frame_gate, '
+                       '/native, /invariants, /resources. (/hook_ring, /ring_census, /updates and /uploads were removed 2026-11-20, note 105.) path "/" lists every endpoint with its description. '
                        'Only read endpoints: /set and other switches are refused here.',
         'path': None,
-        'params': {'path': 'endpoint path, e.g. /hook_ring', 'query': 'optional query string, e.g. n=200'},
+        'params': {'path': 'endpoint path, e.g. /frame_gate', 'query': 'optional query string, e.g. n=200'},
         'required': ['path'],
         'local': 'get',
     },
 ]
 
 # shadps4_get refuses the endpoints that change the running game (owner rule: no live switches while testing): /set, /capture,
-# /timeline_capture, /prof with arguments, /updates?start, /flight?bench
+# /timeline_capture, /prof with arguments, /resources?start, /registry?start, /flight?bench
 
 
 _symbols = None
@@ -273,7 +273,7 @@ def get_endpoint(arguments):
         path = '/' + path
     query = str(arguments.get('query') or '').lstrip('?')
     full = path + ('?' + query if query else '')
-    if path in ('/set', '/capture', '/timeline_capture') or (path == '/prof' and query) or any(full.startswith(p) for p in ('/updates?start', '/flight?bench')):
+    if path in ('/set', '/capture', '/timeline_capture') or (path == '/prof' and query) or any(full.startswith(p) for p in ('/resources?start', '/registry?start', '/flight?bench')):
         raise RuntimeError(f'{path} changes the running game; it is not called from this tool')
     return http_get(full, 60)
 
