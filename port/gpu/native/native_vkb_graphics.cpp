@@ -1005,6 +1005,9 @@ void DrawDumpLine(const std::string& line) {
 }
 
 std::atomic<u64> c_cb_at_draw{0};
+std::atomic<u64> c_dc_flat_n{0}, c_dc_flat_same{0}, c_dc_flat_dwords{0}; ///< X0 census
+thread_local bool t_depth_pass = false;
+bool DepthCensusOn();
 thread_local u64 t_dc_copies = 0; ///< note 109 census: constant buffer copies at the draw on this thread
 /// O1 census (debug, TLG_VKB_CB_CENSUS=1): a constant buffer copied at the draw (R7) whose bytes equal what was copied for the same address earlier in the same
 /// graphics submission (a copy a once-per-Map scheme would save)
@@ -1234,6 +1237,26 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
                 Core::NativeDraw::BuildUserLayout(ctx, st.index, st.shader, st.index == 0 ? 0x28 : 0x3c, false, st.live);
                 st.info->user_data = std::span<const u32>{st.live.sgpr.data(), st.live.sgpr.size()};
                 st.info->RefreshFlatBuf();
+                if (t_depth_pass && DepthCensusOn()) { // X0 census: the flat user data of the cascades' stages (size, same as the stage's previous draw)
+                    u64 h = 0xcbf29ce484222325ull;
+                    for (const u32 w : st.info->flattened_ud_buf) {
+                        h = (h ^ w) * 0x100000001b3ull;
+                    }
+                    thread_local u64 prev[2]{};
+                    const u32 si = st.index & 1;
+                    c_dc_flat_n.fetch_add(1, std::memory_order_relaxed);
+                    c_dc_flat_same.fetch_add(prev[si] == h ? 1 : 0, std::memory_order_relaxed);
+                    c_dc_flat_dwords.fetch_add(st.info->flattened_ud_buf.size(), std::memory_order_relaxed);
+                    prev[si] = h;
+                    static std::atomic<u32> shown{0};
+                    if (shown.fetch_add(1, std::memory_order_relaxed) < 6) {
+                        std::string t = fmt::format("X0 flat user data: stage {} shader {:#x} {} dwords:", st.index, st.info->pgm_hash, st.info->flattened_ud_buf.size());
+                        for (const u32 w : st.info->flattened_ud_buf) {
+                            t += fmt::format(" {:08x}", w);
+                        }
+                        LOG_WARNING(Render_Vulkan, "{}", t);
+                    }
+                }
                 const u64 bytes = std::max<u64>(st.info->flattened_ud_buf.size() * sizeof(u32), 16);
                 const Stream::Slice slice = Stream::HostRing(bytes, alignment);
                 std::memset(slice.data, 0, bytes);
@@ -1326,7 +1349,6 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
 /// previous draw (the same shader, the same slot objects, a constant buffer's same rename address and size, a buffer view's same buffer memory, the same image and sampler
 /// objects); does the whole draw (variant, fixed state, both stages, vertex elements, index view, targets, instances); its constant buffer copies; and the time of Draw and of
 /// its two BindStage calls. What a capture that keeps an unchanged stage's bindings would leave out.
-thread_local bool t_depth_pass = false;
 bool DepthCensusOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_DEPTH_CENSUS"); return e != nullptr && e[0] == '1'; }(); return on; }
 std::atomic<u64> c_dc_draws{0}, c_dc_stage_n[2]{}, c_dc_stage_same[2]{}, c_dc_draw_same{0}, c_dc_copies{0}, c_dc_draw_ns{0}, c_dc_bind_ns{0}, c_dc_variant_same{0};
 std::atomic<u64> c_dc_same_but_cb[2]{}; ///< stages equal except a constant buffer's rename address
@@ -1360,8 +1382,44 @@ std::pair<u64, u64> DcStageKey(u64 ctx, const Stage& st) { // (with the constant
     }
     return {h, n};
 }
+/// X0 shape census (debug, with TLG_VKB_DEPTH_CENSUS): per pipeline variant of the cascades, what its stages read (buffer sources by class / kind, images, samplers,
+/// vertex attributes) and how many draws use it: what a record-mode shader must fetch from a draw record.
+std::mutex dc_shape_mutex;
+std::unordered_map<const void*, std::pair<std::string, u64>> dc_shapes;
+std::string DcShape(const Variant& v, const VkbVulkan::FixedState* fixed, u32 kind) {
+    const auto stage = [](const Stage& st) {
+        std::string t = fmt::format("{:#x} bufs[", st.info ? st.info->pgm_hash : 0ull);
+        for (const Source& src : st.buffers) {
+            t += src.cls == Source::Class::Slot ? fmt::format(" slot k{} s{}", src.kind, src.slot)
+                 : src.cls == Source::Class::ProgramConstant ? fmt::format(" progconst {}B", src.size)
+                                                             : std::string(" special");
+        }
+        t += fmt::format(" ] images {} samplers {}", st.images.size(), st.samplers.size());
+        for (u32 i = 0; i < st.samplers.size(); ++i) {
+            if (st.constant_samplers[i]) {
+                t += " (const sampler)";
+            }
+        }
+        return t;
+    };
+    std::string text = fmt::format("kind {} vs {} | attrs {}", kind, stage(v.vs), v.attributes.size());
+    for (const Source& a : v.attributes) {
+        text += fmt::format(" a{}", a.cls == Source::Class::Slot ? static_cast<int>(a.slot) : -1);
+    }
+    text += v.has_ps ? " | ps " + stage(v.ps) : std::string(" | no ps");
+    text += fmt::format(" | colors {} depth {}", v.key.num_color_attachments, fixed != nullptr && fixed->depth_write ? "write" : "test-only");
+    return text;
+}
 void DcCensus(u64 ctx, const Variant& v, const VkbVulkan::FixedState* fixed, u32 kind) {
     c_dc_draws.fetch_add(1, std::memory_order_relaxed);
+    {
+        std::scoped_lock lock{dc_shape_mutex};
+        auto [it, fresh] = dc_shapes.try_emplace(&v);
+        if (fresh) {
+            it->second.first = DcShape(v, fixed, kind);
+        }
+        ++it->second.second;
+    }
     u64 draw = DcMix(DcMix(DcMix(0xcbf29ce484222325ull, reinterpret_cast<u64>(&v)), reinterpret_cast<u64>(fixed)), kind);
     c_dc_variant_same.fetch_add(t_dc_prev_variant == &v ? 1 : 0, std::memory_order_relaxed);
     t_dc_prev_variant = &v;
@@ -2478,7 +2536,20 @@ nlohmann::json Report() {
     return {{"draws", draws},
             {"depth_census", {{"draws", c_dc_draws.load()}, {"variant_same", c_dc_variant_same.load()}, {"vs_n_same_samebutcb", {c_dc_stage_n[0].load(), c_dc_stage_same[0].load(), c_dc_same_but_cb[0].load()}},
                               {"ps_n_same_samebutcb", {c_dc_stage_n[1].load(), c_dc_stage_same[1].load(), c_dc_same_but_cb[1].load()}}, {"draw_same", c_dc_draw_same.load()},
-                              {"cb_copies", c_dc_copies.load()}, {"draw_ms", static_cast<double>(c_dc_draw_ns.load()) / 1e6}, {"bind_ms", static_cast<double>(c_dc_bind_ns.load()) / 1e6}}},
+                              {"shapes", [] {
+                                   std::scoped_lock lock{dc_shape_mutex};
+                                   std::vector<std::pair<u64, std::string>> rows;
+                                   for (const auto& [k, e] : dc_shapes) {
+                                       rows.push_back({e.second, e.first});
+                                   }
+                                   std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+                                   nlohmann::json j = nlohmann::json::array();
+                                   for (const auto& [n, t] : rows) {
+                                       j.push_back(fmt::format("{} draws: {}", n, t));
+                                   }
+                                   return j;
+                               }()},
+                              {"flat_n_same_dwords", {c_dc_flat_n.load(), c_dc_flat_same.load(), c_dc_flat_dwords.load()}}, {"cb_copies", c_dc_copies.load()}, {"draw_ms", static_cast<double>(c_dc_draw_ns.load()) / 1e6}, {"bind_ms", static_cast<double>(c_dc_bind_ns.load()) / 1e6}}},
             {"by_kind_indexed_auto_indirect", {c_by_kind[0].load(), c_by_kind[1].load(), c_by_kind[2].load()}},
             {"no_vertex_shader", c_no_vs.load()},
             {"special_pipeline", c_special.load()},
