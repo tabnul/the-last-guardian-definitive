@@ -53,6 +53,7 @@ struct FgInputs {
     vk::ImageView depth_view{}, motion_view{};
     vk::Format depth_format{};
     u32 width{}, height{};
+    float jitter_x{}, jitter_y{}; ///< the offset this frame's geometry had (render pixels, FSR's sign convention)
     bool reset{};
 };
 bool TakeFgInputs(FgInputs& out);

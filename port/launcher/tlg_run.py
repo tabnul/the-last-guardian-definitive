@@ -991,8 +991,8 @@ def backend_aa_env(settings, ini):
     FSR 3.1: owner, pull request 51, "The game is never left without AA"). With nothing chosen yet (no
     aa_row in tlg.ini: a fresh launch) the backend decides (TLG_VKB_AA=auto: DLAA if DLSS is
     installed, else FSR 4 on an RDNA 4 card, else FSR 3.1; owner, pull request 51). Frame generation:
-    DLSS only, on top of an anti-aliasing (it takes the AA's depth and motion), off at a 30 FPS game
-    rate. TLG_VKB_AA_CHOICE=0: the old table (only dlss, fsr3, fsr4 reached the backend)."""
+    the row's 1 = DLSS, 2 = FSR (as TLG_FG for the normal renderer), on top of an anti-aliasing (it takes
+    the AA's depth and motion), off at a 30 FPS game rate. TLG_VKB_AA_CHOICE=0: the old table (only dlss, fsr3, fsr4 reached the backend)."""
     env = {}
     # tlg.ini dlss_supported / dlss_fg_supported are the default renderer's own DLSS checks: they never run with the
     # backend (which loads DLSS through its own glue, tlg_dlss.dll), so they say nothing here
@@ -1011,13 +1011,13 @@ def backend_aa_env(settings, ini):
         else:
             aa = 'dlaa' if loaded == 'dlss' else loaded
     blocked = settings.get('frame_rate') == '30' or ini.get('fps_limit') == '30'
-    fg = ini.get('frame_generation', '0') == '1' and not blocked
+    fg = {'1': 'dlss', '2': 'fsr'}.get(ini.get('frame_generation', '0')) if not blocked else None
     if fg and aa in (None, 'off'):
         aa = 'dlaa'                         # frame generation needs an anti-aliasing's inputs
     if aa:
         env['TLG_VKB_AA'] = aa
     if fg:
-        env['TLG_VKB_FG'] = 'dlss'
+        env['TLG_VKB_FG'] = fg
     return env
 
 
