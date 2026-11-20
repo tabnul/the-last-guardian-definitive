@@ -1345,6 +1345,9 @@ Slice HostRing(u64 size, u64 alignment) {
     return {vk::Buffer{ring_buffer.buffer}, at, static_cast<u8*>(ring_buffer.mapped) + at};
 }
 
+vk::Buffer HostRingBuffer() {
+    return vk::Buffer{ring_buffer.buffer};
+}
 vk::Buffer GdsBuffer() {
     return vk::Buffer{gds_buffer.buffer};
 }

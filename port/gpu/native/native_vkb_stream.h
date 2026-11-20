@@ -226,6 +226,8 @@ struct Slice {
     void* data{};
 };
 [[nodiscard]] Slice HostRing(u64 size, u64 alignment);
+/// Scene on the GPU R1: the host ring's buffer (the record-mode row table)
+vk::Buffer HostRingBuffer();
 /// The GDS stand-in (64 KiB, device local), a 64 KiB zero-initialised buffer for empty buffer slots, and a 1x1 image view in the general layout for empty image slots
 [[nodiscard]] vk::Buffer GdsBuffer();
 /// Kill-experiment TLG_VKB_HOST_SCRATCH=1 (wrong picture, fps bound only): a 256 MiB zeroed device-local buffer that stands in for every engine buffer read in place

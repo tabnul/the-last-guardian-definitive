@@ -7,6 +7,7 @@
 #include "native/native_debug_server.h"
 #include "native/native_marker.h"
 #include "native/native_vkb_graphics.h"
+#include "native/native_vkb_indexed.h"
 
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
 
@@ -91,6 +92,7 @@ struct Stage {
     VkbShader::RuntimeInfo runtime{};
     vk::ShaderModule module{};
     std::vector<Source> buffers, images, samplers;
+    u32 row_start{}; ///< R2 (record mode): the stage's first entry in the draw's row
 };
 
 struct Variant {
@@ -104,12 +106,25 @@ struct Variant {
     vk::Format depth_format{};                 ///< our depth image's format (the pipeline's depth format)
     std::unique_ptr<VkbVulkan::Vkb::GraphicsPipeline> pipeline;
     bool ok{};
+    bool record{};     ///< R2: compiled in record mode (resources through the global set and the draw's row)
+    u32 row_dwords{};  ///< R2: the entries of a draw's row
 };
 
 std::mutex mutex;
 std::unordered_map<u64, std::unique_ptr<Variant>> variants;
+std::unordered_map<u64, std::unique_ptr<Variant>> record_variants; ///< R2: the record-mode twin of a variant (same key)
 std::unique_ptr<VkbShader::Pools> pools;
 VkbShader::Profile profile{};
+VkbShader::Profile record_profile{}; ///< R2: the profile with the constant offset layout (a read-only guest buffer's offset and size in the row)
+std::atomic<u64> c_rec_compiled{0}, c_rec_refused{0}, c_rec_draws{0}, c_rec_fallback{0}, c_rec_row_fail{0};
+std::array<std::atomic<u64>, 8> c_rec_refused_by{};
+constexpr std::array<const char*, 8> RecRefusedNames{"flat_user_data", "written_buffer", "not_indexed_buffer", "bda_or_fault", "image_without_key", "compile", "pipeline", "other"};
+/// R2 / R3 switch: TLG_VKB_RECORD=1 (the global set is made) and the scope; this step: the shadow cascades (Z pass views 1, 2)
+thread_local bool t_row_failed = false; ///< R3: the record-mode draw could not build its row (it is drawn the plain way)
+bool RecordOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RECORD"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
 const VkbVulkan::Instance* instance = nullptr;
 
 enum Fail : u32 { FailLayout, FailNoCode, FailTranslation, FailFetch, FailNoDynamicVertexInput, FailPipeline, FailCount };
@@ -147,6 +162,8 @@ bool Ready() {
     }
     instance = &Core::Vkb::Device::Instance();
     profile = Core::Vkb::Device::Profile();
+    record_profile = profile;
+    record_profile.constant_offsets = true;
     pools = std::make_unique<VkbShader::Pools>();
     return true;
 }
@@ -485,7 +502,8 @@ vk::ImageViewType ViewTypeOf(VkbAmdGpu::ImageType type) {
 }
 
 /// Compiles one stage (mutex held): its user data, program, translation, module and slot map
-bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, VkbShader::Backend::Bindings& binding) {
+bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, VkbShader::Backend::Bindings& binding, bool record = false) {
+    const VkbShader::Profile& stage_profile = record ? record_profile : profile; // R2
     const HwStage hw = stage == 0 ? HwStage::Vertex : HwStage::Fragment;
     const SwStage sw = stage == 0 ? SwStage::Vertex : SwStage::Fragment;
     const u32 inputs_offset = stage == 0 ? 0x28 : 0x3c;
@@ -508,9 +526,12 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
     };
     out.info = std::make_unique<VkbShader::Info>(hw, sw, params);
     out.info->pgm_base = params.Base();
+    out.info->indexed = record;          // R2: resources through the global set and the draw's row
+    out.info->constant_offsets = record; // (the row layout's two entries behind a read-only guest buffer's slot)
+    out.row_start = binding.indexed;
     std::vector<u32> spv;
     {
-        const auto program = VkbShader::TranslateProgram(params.code, *pools, *out.info, out.runtime, profile);
+        const auto program = VkbShader::TranslateProgram(params.code, *pools, *out.info, out.runtime, stage_profile);
         if (out.info->translation_failed) {
             c_fail[FailTranslation].fetch_add(1, std::memory_order_relaxed);
             return false;
@@ -550,7 +571,7 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
             }
             LOG_WARNING(Render_Vulkan, "vkb ps probe {:#x}: coordinates {} found, {} exports patched", probe, coords != nullptr, patched);
         }
-        spv = VkbShader::Backend::SPIRV::EmitSPIRV(profile, out.runtime, program, binding);
+        spv = VkbShader::Backend::SPIRV::EmitSPIRV(stage_profile, out.runtime, program, binding);
     }
     { // debug: TLG_VKB_DUMP_SPV=<hashes, hex, comma separated>: each compiled stage of those shaders -> log/vkb_spv/<vs|ps>_<hash>_<n>.spv, its GCN code (.gcn) and user data (.ud)
         static const std::vector<u64> dump_spv = [] {
@@ -640,7 +661,37 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
 }
 
 /// Compiles the variant of the draw (mutex held)
-void Compile(u64 ctx, u64 vs, u64 ps, u64 fetch_object, const VkbVulkan::FixedState& fixed, Variant& v, bool indirect) {
+/// R2: can a record-mode stage's resources all be found through the global set and the row (counted by the reason it cannot)
+bool RecordEligible(const Stage& st) {
+    using BT = VkbShader::BufferType;
+    const auto refuse = [](u32 why) { c_rec_refused_by[why].fetch_add(1, std::memory_order_relaxed); return false; };
+    for (const auto& b : st.info->buffers) {
+        if (b.buffer_type == BT::Flatbuf) {
+            return refuse(0);
+        }
+        if (b.buffer_type == BT::BdaPagetable || b.buffer_type == BT::FaultBuffer) {
+            return refuse(3);
+        }
+        if (!VkbShader::Indexed::IsIndexedBufferType(b.buffer_type)) {
+            return refuse(2);
+        }
+        if (b.buffer_type == BT::Guest && b.is_written) {
+            return refuse(1);
+        }
+        if (b.buffer_type == BT::SharedMemory) {
+            return refuse(7);
+        }
+    }
+    for (const auto& image : st.info->images) {
+        if (!VkbShader::Indexed::IsIndexedImage(image) || image.mip_fallback_mode == VkbShader::MipStorageFallbackMode::DynamicIndex) {
+            return refuse(4);
+        }
+    }
+    return true;
+}
+
+void Compile(u64 ctx, u64 vs, u64 ps, u64 fetch_object, const VkbVulkan::FixedState& fixed, Variant& v, bool indirect, bool record = false) {
+    v.record = record;
     const u64 t0 = NowNs();
     const u64 vs_gnm = Rd<u64>(vs, 0x120);
     const u64 ps_gnm = ps != 0 ? Rd<u64>(ps, 0x120) : 0;
@@ -757,7 +808,7 @@ void Compile(u64 ctx, u64 vs, u64 ps, u64 fetch_object, const VkbVulkan::FixedSt
         rt.hw.fs.clip_distance_emulation =
             ((env.has_vertex && VkbVulkan::ShaderBoundary::GuestClipDistances(env.vertex)) || fixed.user_clip_plane_mask != 0) && profile.needs_clip_distance_emulation;
         VkbVulkan::ShaderBoundary::ApplyShaderEnv(rt, env, HwStage::Fragment, samples);
-        if (!CompileStage(ctx, ps, 1, env.pixel.program.address, v.ps, binding)) {
+        if (!CompileStage(ctx, ps, 1, env.pixel.program.address, v.ps, binding, record)) {
             c_failed.fetch_add(1, std::memory_order_relaxed);
             return;
         }
@@ -782,7 +833,7 @@ void Compile(u64 ctx, u64 vs, u64 ps, u64 fetch_object, const VkbVulkan::FixedSt
             rt.sw.vs.instance_sgpr_offset = static_cast<u16>(sgprs >> 16);
             rt.sw.vs.is_indirect = true;
         }
-        if (!CompileStage(ctx, vs, 0, env.vertex.program.address, v.vs, binding)) {
+        if (!CompileStage(ctx, vs, 0, env.vertex.program.address, v.vs, binding, record)) {
             c_failed.fetch_add(1, std::memory_order_relaxed);
             return;
         }
@@ -857,10 +908,19 @@ void Compile(u64 ctx, u64 vs, u64 ps, u64 fetch_object, const VkbVulkan::FixedSt
         v.color_formats[i] = instance->GetSupportedFormat(VkbVulkan::Vkb::LiverpoolToVK::SurfaceFormat(key.color_buffers[i].data_format, key.color_buffers[i].num_format),
                                                           vk::FormatFeatureFlagBits2::eColorAttachment);
     }
-    v.pipeline = std::make_unique<VkbVulkan::Vkb::GraphicsPipeline>(*instance, Core::Vkb::Device::Scheduler(), Core::Vkb::Device::DescHeap(), profile, key, vk::PipelineCache{},
+    if (record) { // R2: every resource of both stages through the global set, or no record twin
+        if (!RecordEligible(v.vs) || (v.has_ps && !RecordEligible(v.ps))) {
+            c_rec_refused.fetch_add(1, std::memory_order_relaxed);
+            c_failed.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        v.row_dwords = binding.indexed;
+    }
+    v.pipeline = std::make_unique<VkbVulkan::Vkb::GraphicsPipeline>(*instance, Core::Vkb::Device::Scheduler(), Core::Vkb::Device::DescHeap(), record ? record_profile : profile, key, vk::PipelineCache{},
                                                              std::span<const VkbShader::Info*, VkbVulkan::Vkb::MaxShaderStages>{infos},
                                                              std::span<const VkbShader::RuntimeInfo, VkbVulkan::Vkb::MaxShaderStages>{runtimes}, v.has_fetch ? &v.fetch : nullptr,
-                                                             std::span<const vk::ShaderModule>{modules}, sdata, false, v.depth_format);
+                                                             std::span<const vk::ShaderModule>{modules}, sdata, false, v.depth_format,
+                                                             record ? Core::Vkb::Indexed::Layout() : vk::DescriptorSetLayout{});
     if (!v.pipeline->Handle()) {
         c_fail[FailPipeline].fetch_add(1, std::memory_order_relaxed);
         c_failed.fetch_add(1, std::memory_order_relaxed);
@@ -868,6 +928,9 @@ void Compile(u64 ctx, u64 vs, u64 ps, u64 fetch_object, const VkbVulkan::FixedSt
     }
     v.ok = true;
     c_compiled.fetch_add(1, std::memory_order_relaxed);
+    if (record) {
+        c_rec_compiled.fetch_add(1, std::memory_order_relaxed);
+    }
     Core::Vkb::FrameNote(fmt::format("new graphics variant: vs {:#x} ps {:#x} colors {} depth {}", v.vs.info ? v.vs.info->pgm_hash : 0ull,
                                      v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0ull, key.num_color_attachments, v.depth_format != vk::Format::eUndefined ? 1 : 0)); // note 44
     c_compile_ns.fetch_add(NowNs() - t0, std::memory_order_relaxed);
@@ -980,6 +1043,7 @@ struct DrawJob final : Stream::Job {
     u32 instances{};
     u64 ps_hash{};
     u32 color_format0{};
+    bool record{};    ///< R3: a record-mode draw: its resources are in its row (push row base), the global set is bound
     void Run(vk::CommandBuffer cmd) override;
     static void* operator new(size_t) {
         return Stream::JobBlocks<sizeof(DrawJob)>::Get();
@@ -1345,6 +1409,95 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
     return true;
 }
 
+/// R3: a record-mode stage's entries of the draw's row (slots, a read-only guest buffer's byte offset and size, image and sampler slots), in the order the recompiler's
+/// indexed mode assigned them (buffers, images, samplers); the hazards into `uses`. False: the draw cannot go this way (it then takes the plain path).
+bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<Stream::Use, 64>& uses) {
+    using BT = VkbShader::BufferType;
+    const auto& info = *st.info;
+    const u64 alignment = instance->StorageMinAlignment();
+    u32 at = st.row_start;
+    for (u32 i = 0; i < st.buffers.size(); ++i) {
+        const Source& src = st.buffers[i];
+        const auto& desc = info.buffers[i];
+        if (desc.buffer_type == BT::GdsBuffer) {
+            row[at++] = Core::Vkb::Indexed::BufferSlot(Stream::GdsBuffer());
+            continue;
+        }
+        if (desc.buffer_type == BT::ClipPlanes) {
+            row[at++] = Core::Vkb::Indexed::BufferSlot(Stream::NullBuffer());
+            continue;
+        }
+        if (desc.buffer_type != BT::Guest) {
+            return false;
+        }
+        Core::Vkb::BufferWindow w;
+        u64 address = 0, size = 0;
+        bool ok = false;
+        if (src.cls == Source::Class::Slot && src.kind == 3) {
+            const u64 object = SlotObject(ctx, st.index, 3, src.slot);
+            if (object != 0) {
+                address = static_cast<u64>(Rd<u32>(object, 0x60)) | static_cast<u64>(Rd<u32>(object, 0x64) & 0xffu) << 32;
+                size = Rd<u32>(object, 0x180);
+                if (address != 0 && size != 0) {
+                    if (Core::Vkb::ConstantInRing(address, size, w)) {
+                        ok = true;
+                    } else if (size <= 65536) { // R7: copied at the draw (a D3D11 driver's per-draw version)
+                        const Stream::Slice slice = Stream::HostRing(size, alignment);
+                        std::memcpy(slice.data, reinterpret_cast<const void*>(address), size);
+                        w.buffer = slice.buffer, w.offset = slice.offset, w.device = false;
+                        ok = true;
+                        Core::Vkb::NoteConstantCopied();
+                    }
+                }
+            }
+        } else if (src.cls == Source::Class::Slot && src.kind == 1) {
+            const u64 object = SlotObject(ctx, st.index, 1, src.slot);
+            if (object != 0 && (Rd<u32>(object, 0x44) == 1 || Rd<u32>(object, 0x44) == 0xb)) {
+                const u64 buffer = Rd<u64>(object, 0x30);
+                const u64 bytes = buffer != 0 ? Rd<u32>(buffer, 0x180) : 0;
+                u64 offset = 0;
+                size = bytes;
+                Core::Vkb::ViewRange(object, true, buffer, bytes, offset, size);
+                const u64 memory = buffer != 0 ? Rd<u64>(buffer, 0x30) : 0;
+                address = memory + offset;
+                ok = bytes != 0 && (Core::Vkb::BufferInRing(address, size, w) || (Core::Vkb::BufferOfObject(buffer, offset, size, w) && w.device));
+            }
+        } else if (src.cls == Source::Class::ProgramConstant && src.size != 0) {
+            address = src.address, size = src.size;
+            ok = Core::Vkb::FindBuffer(address, size, w) && w.device;
+        }
+        if (!ok || !w.buffer || (w.offset & 3) != 0) {
+            return false;
+        }
+        row[at++] = Core::Vkb::Indexed::BufferSlot(w.buffer);
+        row[at++] = static_cast<u32>(w.offset);
+        row[at++] = static_cast<u32>(size);
+        uses.push_back(Stream::BufferUse(w.buffer, w.offset, size, false));
+        Core::Vkb::NoteBind(1, w, size, false);
+    }
+    for (u32 i = 0; i < st.images.size(); ++i) {
+        const Source& src = st.images[i];
+        const u64 object = src.cls == Source::Class::Slot && src.kind == 1 ? SlotObject(ctx, st.index, 1, src.slot) : 0;
+        vk::ImageView view{};
+        vk::Image image{};
+        if (object == 0 || !Core::Vkb::ViewForCompute(Rd<u64>(object, 0x10), st.image_types[i], vk::CommandBuffer{}, view, &image)) {
+            return false;
+        }
+        row[at++] = Core::Vkb::Indexed::ImageSlot(info.images[i].array_key, view);
+        uses.push_back(Stream::ImageUse(image, info.images[i].is_written));
+    }
+    for (u32 i = 0; i < st.samplers.size(); ++i) {
+        const Source& src = st.samplers[i];
+        const u64 object = src.cls == Source::Class::Slot && src.kind == 2 ? SlotObject(ctx, st.index, 2, src.slot) : 0;
+        const vk::Sampler sampler = st.constant_samplers[i] ? st.constant_samplers[i]->Handle() : object != 0 ? Core::Vkb::SamplerFor(object, i < info.samplers.size() && info.samplers[i].is_depth) : vk::Sampler{};
+        if (!sampler) {
+            return false;
+        }
+        row[at++] = Core::Vkb::Indexed::SamplerSlot(sampler);
+    }
+    return true;
+}
+
 /// note 109 census (debug, TLG_VKB_DEPTH_CENSUS=1, inside the shadow cascade passes the Z pass hook marks): does each stage read the same engine objects as at the
 /// previous draw (the same shader, the same slot objects, a constant buffer's same rename address and size, a buffer view's same buffer memory, the same image and sampler
 /// objects); does the whole draw (variant, fixed state, both stages, vertex elements, index view, targets, instances); its constant buffer copies; and the time of Draw and of
@@ -1624,11 +1777,26 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     const bool dc = t_depth_pass && DepthCensusOn();
     const u64 dc_b0 = dc ? NowNs() : 0;
     const u64 dc_c0 = t_dc_copies;
+    if (v.record) {
+        // R3: the draw's row in the host ring (the row table); the shaders read every resource through it
+        const Stream::Slice slice = Stream::HostRing(std::max<u32>(v.row_dwords, 1) * 4, 16);
+        u32* row = reinterpret_cast<u32*>(slice.data);
+        if ((v.has_ps && !BuildRow(ctx, v.ps, row, uses)) || !BuildRow(ctx, v.vs, row, uses)) {
+            c_rec_row_fail.fetch_add(1, std::memory_order_relaxed);
+            t_row_failed = true; // the caller draws it the plain way
+            return;
+        }
+        push.buf_offsets.fill(0);
+        push.row_base = static_cast<u32>(slice.offset / 4);
+        job->record = true;
+        c_rec_draws.fetch_add(1, std::memory_order_relaxed);
+    } else {
     if (v.has_ps && !BindStage(ctx, v.ps, cmd, push, buffer_index, b, ranges, uses, late, late_imgs)) {
         return;
     }
     if (!BindStage(ctx, v.vs, cmd, push, buffer_index, b, ranges, uses, late, late_imgs)) {
         return;
+    }
     }
     if (dc) {
         c_dc_bind_ns.fetch_add(NowNs() - dc_b0, std::memory_order_relaxed);
@@ -2193,6 +2361,15 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
         state.pipeline = static_cast<VkPipeline>(pipeline);
         c_state_pipelines.fetch_add(1, std::memory_order_relaxed);
     }
+    // R3: a record-mode draw binds the global set (once while the command buffer's set 0 is it) and only pushes its row base
+    thread_local VkCommandBuffer t_global_cmd{};
+    thread_local u64 t_global_generation{~0ull};
+    if (record) {
+        if (t_global_cmd != static_cast<VkCommandBuffer>(cmd) || t_global_generation != Stream::RecordingGeneration()) {
+            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, Core::Vkb::Indexed::Set(), {});
+            t_global_cmd = static_cast<VkCommandBuffer>(cmd), t_global_generation = Stream::RecordingGeneration();
+        }
+    }
     // A2 (note 46): the descriptor writes are made here, on the recording thread, in its own reused list (they were 4 KB of every draw's job)
     thread_local boost::container::small_vector<vk::WriteDescriptorSet, 64> writes;
     writes.clear();
@@ -2212,6 +2389,7 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
     }
     if (!writes.empty() && push_descriptors) {
         cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, layout, 0, writes);
+        t_global_cmd = {}; // (set 0 is a push set now: the next record-mode draw binds the global set again)
     } else if (!writes.empty()) {
         // note 41: more bindings than push descriptors allow (the layout is a plain one, as the old path's): a descriptor set of ours, written now
         const vk::DescriptorSet set = BigDescriptorSet(set_layout);
@@ -2221,6 +2399,7 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
             }
             instance->GetDevice().updateDescriptorSets(writes, {});
             cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, set, {});
+            t_global_cmd = {};
         }
     }
     cmd.pushConstants(layout, VkbVulkan::Vkb::AllGraphicsStageBits, 0, sizeof(push), &push);
@@ -2500,6 +2679,21 @@ void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
         c_skip_not_compiled.fetch_add(1, std::memory_order_relaxed);
         return;
     }
+    if (t_depth_pass && RecordOn() && kind == 0 && Core::Vkb::Indexed::On()) { // R2 / R3: the cascades' indexed draws through their record-mode twin when it exists
+        auto [rit, rfresh] = record_variants.try_emplace(key);
+        if (rfresh) {
+            rit->second = std::make_unique<Variant>();
+            Compile(ctx, vs, ps, fetch, *fixed, *rit->second, false, true);
+        }
+        if (rit->second->ok) {
+            t_row_failed = false;
+            Record(ctx, *rit->second, *fixed, kind, a1, a2, a3);
+            if (!t_row_failed) {
+                return;
+            }
+        }
+        c_rec_fallback.fetch_add(1, std::memory_order_relaxed);
+    }
     if (Core::FrameWalk::DebuggerMode()) [[unlikely]] { // note 89: the shaders of the scene for the freeze
         Core::Vkb::ShaderDump::NoteDraw(it->second->vs.info ? it->second->vs.info->pgm_hash : 0, it->second->has_ps && it->second->ps.info ? it->second->ps.info->pgm_hash : 0);
     }
@@ -2534,6 +2728,14 @@ nlohmann::json Report() {
                               {"samplers", {c_src[stage][2][0].load(), c_src[stage][2][1].load()}}};
     };
     return {{"draws", draws},
+            {"record", {{"compiled", c_rec_compiled.load()}, {"refused", c_rec_refused.load()}, {"refused_by", [] {
+                             nlohmann::json j = nlohmann::json::object();
+                             for (u32 i = 0; i < RecRefusedNames.size(); ++i) {
+                                 j[RecRefusedNames[i]] = c_rec_refused_by[i].load();
+                             }
+                             return j;
+                         }()},
+                         {"draws", c_rec_draws.load()}, {"fallback_draws", c_rec_fallback.load()}, {"row_failures", c_rec_row_fail.load()}, {"global_set", Core::Vkb::Indexed::Report()}}},
             {"depth_census", {{"draws", c_dc_draws.load()}, {"variant_same", c_dc_variant_same.load()}, {"vs_n_same_samebutcb", {c_dc_stage_n[0].load(), c_dc_stage_same[0].load(), c_dc_same_but_cb[0].load()}},
                               {"ps_n_same_samebutcb", {c_dc_stage_n[1].load(), c_dc_stage_same[1].load(), c_dc_same_but_cb[1].load()}}, {"draw_same", c_dc_draw_same.load()},
                               {"shapes", [] {

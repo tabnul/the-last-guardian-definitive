@@ -11167,7 +11167,8 @@ u64 PS4_SYSV_ABI ZPassEnter(u64 render_device, u64 desc, u64 a2, u64 a3, u64 a4,
             return 0x8000000000000000ull;
         }
     }
-    if (static const bool depth_census = [] { const char* e = std::getenv("TLG_VKB_DEPTH_CENSUS"); return e != nullptr && e[0] == '1'; }(); depth_census) {
+    static const bool record_mode = [] { const char* e = std::getenv("TLG_VKB_RECORD"); return e != nullptr && e[0] == '1'; }(); // scene on the GPU R3: the cascades
+    if (static const bool depth_census = [] { const char* e = std::getenv("TLG_VKB_DEPTH_CENSUS"); return e != nullptr && e[0] == '1'; }(); depth_census || record_mode) {
         const u32 view = static_cast<u32>(Rd<u64>(desc, 8));
         if (static const u64 original = Core::GuestHooks::OriginalEntry("DrawZPass"); (view == 1 || view == 2) && original != 0) { // note 109 census
             Core::Vkb::Graphics::SetDepthPass(true);

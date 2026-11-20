@@ -100,7 +100,8 @@ public:
                      std::span<const VkbShader::RuntimeInfo, MaxShaderStages> runtime_infos,
                      const VkbShader::Gcn::FetchShaderData* fetch_shader,
                      std::span<const vk::ShaderModule> modules, SerializationSupport& sdata,
-                     bool preloading, vk::Format depth_format_override = vk::Format::eUndefined);
+                     bool preloading, vk::Format depth_format_override = vk::Format::eUndefined,
+                     vk::DescriptorSetLayout global_layout = {}); ///< scene on the GPU R2: set 0 is the global set (record mode)
     ~GraphicsPipeline();
 
     const VkbShader::Gcn::FetchShaderData& GetFetchShader() const noexcept {

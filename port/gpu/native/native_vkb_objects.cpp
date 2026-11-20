@@ -3,6 +3,7 @@
 
 #include "native/vkb_core/vkb_device.h"
 #include "native/native_vkb_objects.h"
+#include "native/native_vkb_indexed.h"
 #include "native/native_tsharp_watch.h"
 #include "native/native_vkb_util.h"
 
@@ -616,6 +617,7 @@ void DestroyDue(u32 now, bool all) {
     const vk::Device device = instance->GetDevice();
     for (const Doomed& d : due) {
         if (d.view) {
+            Indexed::ForgetView(d.view); // R1: its record-mode slots are free again
             device.destroyImageView(d.view);
             c_views_destroyed.fetch_add(1, std::memory_order_relaxed);
         }
@@ -624,6 +626,7 @@ void DestroyDue(u32 now, bool all) {
             c_images_destroyed.fetch_add(1, std::memory_order_relaxed);
         }
         if (d.buffer) {
+            Indexed::ForgetBuffer(vk::Buffer{d.buffer}); // R1
             vmaDestroyBuffer(instance->GetAllocator(), d.buffer, d.buffer_allocation);
             c_dev_destroyed.fetch_add(1, std::memory_order_relaxed);
         }

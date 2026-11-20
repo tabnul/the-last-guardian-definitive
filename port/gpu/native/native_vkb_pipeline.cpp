@@ -34,7 +34,7 @@ GraphicsPipeline::GraphicsPipeline(
     vk::PipelineCache pipeline_cache, std::span<const VkbShader::Info*, MaxShaderStages> infos,
     std::span<const VkbShader::RuntimeInfo, MaxShaderStages> runtime_infos,
     const VkbShader::Gcn::FetchShaderData* fetch_shader_, std::span<const vk::ShaderModule> modules,
-    SerializationSupport& sdata, bool preloading, vk::Format depth_format_override)
+    SerializationSupport& sdata, bool preloading, vk::Format depth_format_override, vk::DescriptorSetLayout global_layout)
     : Pipeline{instance, scheduler, desc_heap, profile, pipeline_cache}, key{key_} {
     if (fetch_shader_) {
         fetch_shader = *fetch_shader_;
@@ -51,7 +51,11 @@ GraphicsPipeline::GraphicsPipeline(
         .size = sizeof(VkbShader::PushData),
     };
 
-    const vk::DescriptorSetLayout set_layout = *desc_layout;
+    // R2: a record-mode pipeline reads every resource through the global set (its shaders were checked to have nothing in the legacy set)
+    const vk::DescriptorSetLayout set_layout = global_layout ? global_layout : *desc_layout;
+    if (global_layout) {
+        uses_push_descriptors = false;
+    }
     const vk::PipelineLayoutCreateInfo layout_info = {
         .setLayoutCount = 1U,
         .pSetLayouts = &set_layout,
