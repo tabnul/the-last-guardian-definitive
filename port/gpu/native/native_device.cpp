@@ -1169,6 +1169,9 @@ std::atomic<u64> hold_bucket_count[6], hold_bucket_bytes[6];
 std::atomic<u64> early_fence_counts[6]; // fences, then label writes: landed at the parse, kept (compute work with a readable result not covered), kept (switch off or no free hold)
 std::deque<HeldFree> held_frees; // under deferred_mutex, in free order (need never decreases)
 u64 held_bytes = 0;              // under deferred_mutex (known sizes only)
+std::atomic<u64> held_now{0};    // note 104: blocks in held_frees (read without the lock: a call that sees 0 has nothing to release)
+std::atomic<u64> hold_done_seen{0}; // note 104: the highest finished count HoldDone() returned (it never goes down): a need at or below it asks nothing
+std::atomic<u64> hold_calls{0}, hold_empty_calls{0}, hold_done_queries{0};
 std::atomic<u64> hold_freed_bytes_total{0}, hold_released_bytes_total{0}, hold_armed_early{0};
 /// TLG_HOLD_ARM_ALL: see ReleaseHeld. On by default since 2026-11-07 (=0 turns it off): one block per call left 200 to 450 MB waiting and the game's Garlic heap ran dry after scene changes.
 bool HoldArmAllOn() {
@@ -1217,7 +1220,26 @@ void ReleaseHeld(bool all, bool ignore_frames = false) {
     if (original == 0) {
         return;
     }
-    const u64 done = HoldDone();
+    hold_calls.fetch_add(1, std::memory_order_relaxed);
+    if (held_now.load(std::memory_order_relaxed) == 0) {
+        hold_empty_calls.fetch_add(1, std::memory_order_relaxed);
+        return; // note 104: nothing held (every Gomalloc allocation calls this)
+    }
+    // note 104: the GPU is asked how far it got (a Vulkan semaphore read) only when a block needs more than the last answer said
+    u64 done = hold_done_seen.load(std::memory_order_relaxed);
+    bool asked = false;
+    const auto passed = [&](u64 need) {
+        if (need <= done || asked) {
+            return need <= done;
+        }
+        asked = true;
+        hold_done_queries.fetch_add(1, std::memory_order_relaxed);
+        done = std::max(done, HoldDone());
+        u64 seen = hold_done_seen.load(std::memory_order_relaxed);
+        while (seen < done && !hold_done_seen.compare_exchange_weak(seen, done, std::memory_order_relaxed)) {
+        }
+        return need <= done;
+    };
     std::vector<HeldFree> due;
     u64 early_blocks = 0, early_bytes = 0; // blocks handed back before the game's own frame rule said so (the heap was dry)
     s64 early_max_frames = 0;
@@ -1250,14 +1272,14 @@ void ReleaseHeld(bool all, bool ignore_frames = false) {
                 front.need = std::max<u64>(front.need, RasterNeed());
                 front.armed = true;
             }
-            if (!all && front.need > done) {
+            if (!all && !passed(front.need)) {
                 break;
             }
-            if (front.need > done) {
+            if (!passed(front.need)) {
                 hold_unsafe_blocks.fetch_add(1, std::memory_order_relaxed);
                 hold_unsafe_bytes.fetch_add(front.size, std::memory_order_relaxed);
             }
-            if (held_frees.front().need > done || (front.due_frame != 0 && !front.armed && !ignore_frames)) {
+            if (!passed(held_frees.front().need) || (front.due_frame != 0 && !front.armed && !ignore_frames)) {
                 hold_forced.fetch_add(1, std::memory_order_relaxed);
             } else if (ignore_frames && front.due_frame != 0 && !front.armed) {
                 hold_mid_released.fetch_add(1, std::memory_order_relaxed);
@@ -1269,6 +1291,7 @@ void ReleaseHeld(bool all, bool ignore_frames = false) {
             held_bytes -= held_frees.front().size;
             due.push_back(held_frees.front());
             held_frees.pop_front();
+            held_now.fetch_sub(1, std::memory_order_relaxed);
         }
     }
     if (early_blocks != 0) {
@@ -1455,6 +1478,7 @@ nlohmann::json FreeHoldReport() {
             {"open_window_same_thread_no_wait", hold_open_same_thread.load()},
             {"open_window_gave_up", hold_open_gave_up.load()},
             {"pending_now", pending},
+            {"release_calls_total_empty_gpu_queries", {hold_calls.load(), hold_empty_calls.load(), hold_done_queries.load()}}, // note 104
             {"pending_bytes_now", bytes},
             {"max_pending", hold_max_pending.load()},
             {"max_pending_bytes", hold_max_bytes.load()},
@@ -1683,9 +1707,6 @@ u64 PS4_SYSV_ABI GomallocAlloc(u64 heap, u64 size, u64 alignment, u64 type, u64 
 u64 PS4_SYSV_ABI GomallocFree(u64 heap, u64 address, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
     static const u64 original = Core::GuestHooks::OriginalEntry("GomallocFree");
     const u32 frames = DeferFrames();
-    if (address != 0) {
-        Core::NativeContent::NoteHeapFree(address);
-    }
     if (FreeHoldOn() && original != 0 && heap != 0 && address != 0) {
         u64 size = 0;
         {
@@ -1703,6 +1724,7 @@ u64 PS4_SYSV_ABI GomallocFree(u64 heap, u64 address, u64 a2, u64 a3, u64 a4, u64
         }
         std::scoped_lock lock{deferred_mutex};
         held_frees.push_back({heap, address, size, need, FreeHoldFrames() != 0 ? EngineFrame() + FreeHoldFrames() : 0, false});
+        held_now.fetch_add(1, std::memory_order_relaxed);
         held_bytes += size;
         hold_freed_bytes_total.fetch_add(size, std::memory_order_relaxed);
         {

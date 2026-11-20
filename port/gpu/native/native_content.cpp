@@ -961,12 +961,6 @@ u64 GateWaitTimeouts() {
     return c_done_wait_timeouts.load(std::memory_order_relaxed);
 }
 
-u64 GpuAllocationSize(u64 address) {
-    std::scoped_lock lock{g_windows_mutex};
-    const auto it = g_gpu_windows.find(address);
-    return it != g_gpu_windows.end() ? it->second.size : 0;
-}
-
 void NoteGpuAllocation(u64 address, u64 size) {
     if (address == 0 || size == 0) {
         return;
@@ -1438,9 +1432,6 @@ namespace {
 /// TLG_REWRITE_GAP=1 (measurement): per writer (1 skinning, 2 lights, 4 scene slots), how many graphics submissions lie between two writes that start at the same address
 std::mutex g_gap_mutex;
 std::unordered_map<u64, u32> g_gap_last[8];
-std::mutex g_heap_free_mutex;
-std::unordered_map<u64, u32> g_heap_free_at; // engine memory frees (Gomalloc): address -> submit count
-std::map<u64, std::pair<u64, u32>> g_heap_free_blocks; ///< freed GPU allocations: start -> (size, submit count), to find the block that contains a read address
 std::atomic<u64> c_gap[8][18]{};
 } // namespace
 
@@ -3596,27 +3587,15 @@ void NoteLateRead(LateKind kind, u64 address, u64 size, u64 seq) {
                     Core::RareEvents::Note("late_read_before_done_marker",
                                            fmt::format("{} {:#x} + {:#x} (rewritten {:#x}): record {} write stamp {}, record submit {}, raster done floor {}, submit count now {}, newest write announced at {} (site {}, writer {}), previous write at {}, freed by the engine at {}, containing freed block {}; owners at the record's submission {}; owners at the write's submission {}; bind: {}",
                                                        LateKindNames[k], address, size, a.rewritten, seq, a.newest, submit, RasterDoneSubmissions(), g_submit_count.load(std::memory_order_relaxed), a.newest_submit,
-                                                       a.newest_site < g_site_names.size() ? g_site_names[a.newest_site] : std::string("?"), a.newest_writer, a.newest_prev_submit, HeapFreeAt(address),
-                                                       [&] { u64 b = 0, n = 0; const u32 at = HeapFreeContaining(address, b, n); return at == 0 ? std::string("none") : fmt::format("{:#x}+{:#x} freed at {}", b, n, at); }(),
+                                                       a.newest_site < g_site_names.size() ? g_site_names[a.newest_site] : std::string("?"), a.newest_writer, a.newest_prev_submit, "not tracked",
+                                                       std::string("not tracked"), // (the free history was deleted 2026-11-20, note 104)
                                                        Core::NativeDevice::OwnersAt(address, size, submit), Core::NativeDevice::OwnersAt(address, size, static_cast<u32>(a.newest_submit)), DescribeBind()));
                 }
             }
         }
         if (a.rewritten != 0) {
             c_late_rewrite_by_site[k][std::min<u32>(a.newest_site, MaxSites - 1)].fetch_add(1, std::memory_order_relaxed);
-            {
-                u32 freed_at = 0;
-                bool freed = false;
-                {
-                    std::scoped_lock lock{g_heap_free_mutex};
-                    const auto it = g_heap_free_at.find(address);
-                    if (it != g_heap_free_at.end()) {
-                        freed = true;
-                        freed_at = it->second;
-                    }
-                }
-                c_late_free_class[k][std::min<u32>(a.newest_site, MaxSites - 1)][!freed ? 0 : freed_at > submit ? 1 : 2].fetch_add(1, std::memory_order_relaxed);
-            }
+            c_late_free_class[k][std::min<u32>(a.newest_site, MaxSites - 1)][0].fetch_add(1, std::memory_order_relaxed); // (free history deleted, note 104)
             c_late_rewrite_bytes_by_site[k][std::min<u32>(a.newest_site, MaxSites - 1)].fetch_add(a.rewritten, std::memory_order_relaxed);
         }
         if (submit != 0) {
@@ -3631,48 +3610,13 @@ void NoteLateRead(LateKind kind, u64 address, u64 size, u64 seq) {
                                        fmt::format("{:#x} + {:#x} (covered {:#x}, rewritten {:#x}): record submit {}, newest write announced at submit count {} (belongs to submission {}), the write it replaced was at {}, submit count now {}, writer {}, site {}, memory freed by the engine at submit {}", address, size, a.covered, a.rewritten,
                                                    submit, a.newest_submit, a.newest_submit + 1, a.newest_prev_submit, g_submit_count.load(std::memory_order_relaxed), a.newest_writer,
                                                    a.newest_site < g_site_names.size() ? g_site_names[a.newest_site] : std::string("?"),
-                                                   [&] { std::scoped_lock lock{g_heap_free_mutex}; const auto it = g_heap_free_at.find(address); return it == g_heap_free_at.end() ? -1 : static_cast<int>(it->second); }()));
+                                                   -1)); // (free history deleted, note 104)
             }
         }
         if (c_late_rare_noted[k].fetch_add(1, std::memory_order_relaxed) < 3) {
             Core::RareEvents::Note(fmt::format("m0_late_read_written_after_its_record_{}", LateKindNames[k]), fmt::format("{:#x} + {:#x}: record {}, newest write stamp {}, writer {}", address, size, seq, a.newest, a.newest_writer));
         }
     }
-}
-
-void NoteHeapFree(u64 address) {
-    const u64 size = GpuAllocationSize(address);
-    std::scoped_lock lock{g_heap_free_mutex};
-    if (g_heap_free_at.size() > 400000) {
-        g_heap_free_at.clear();
-        g_heap_free_blocks.clear();
-    }
-    const u32 at = g_submit_count.load(std::memory_order_relaxed);
-    g_heap_free_at[address] = at;
-    if (size != 0) {
-        g_heap_free_blocks[address] = {size, at};
-    }
-}
-
-u32 HeapFreeAt(u64 address) {
-    std::scoped_lock lock{g_heap_free_mutex};
-    const auto it = g_heap_free_at.find(address);
-    return it == g_heap_free_at.end() ? 0u : it->second;
-}
-
-u32 HeapFreeContaining(u64 address, u64& block_start, u64& block_size) {
-    std::scoped_lock lock{g_heap_free_mutex};
-    auto it = g_heap_free_blocks.upper_bound(address);
-    if (it == g_heap_free_blocks.begin()) {
-        return 0;
-    }
-    --it;
-    if (address >= it->first + it->second.first) {
-        return 0;
-    }
-    block_start = it->first;
-    block_size = it->second.first;
-    return it->second.second;
 }
 
 void CheckUploadMemory(u64 address, u64 size) {
