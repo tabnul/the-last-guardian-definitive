@@ -151,8 +151,8 @@ self difference) is a moved thing (a door, a shadow, a creature, water rings, a 
 for `compare.py`. A tile is off when its ratio differs by more than max(20%, 3 x self spread), it holds real detail
 (at least 0.8 grey levels in the normal pictures), and every new-engine take agrees. At least 10 touching tiles
 (8 neighbours) make the scene `LOST` (less detail), `ADDED` (more) or `LOST+ADDED` (both kinds of group; nothing
-is hidden). When more than half of the tiles with detail are left out as moved, the verdict is `UNJUDGED`, never
-`OK`. A blank picture or a size difference is refused (exit 2). The strip at the right and bottom edge that does
+is hidden). When no group is found and more than half of the tiles with detail are left out as moved (or no tile has detail),
+the verdict is `UNJUDGED`, never `OK`. A blank picture or a size difference is refused (exit 2). The strip at the right and bottom edge that does
 not fill a whole tile is not judged. The numbers can be changed with `DETAIL_MARGIN`, `DETAIL_SPREAD_K`,
 `DETAIL_MIN`, `DETAIL_LOW_MAX`, `DETAIL_FLAG_TILES`. `--map` writes the new picture with the off tiles tinted:
 red = lost, blue = added. The numbers were set on pictures of this box only (AMD Linux): untested elsewhere.

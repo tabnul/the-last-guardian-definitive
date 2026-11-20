@@ -12,12 +12,12 @@ fine detail each small tile of the picture holds:
                      change from take to take, so they show up here and widen the allowance of that tile)
 
 A tile whose coarse brightness (blur about 12 pixels) differs by more than 4 levels or 3 x its self spread is a moved thing and is
-left out. When more than half of the tiles with detail are left out like that, nothing can be judged and the verdict is UNJUDGED (never OK).
+left out. When no group is found and more than half of the tiles with detail are left out like that (or no tile has detail), nothing can be judged and the verdict is UNJUDGED (never OK).
 A blank picture (one flat colour) or pictures of different sizes are refused with exit code 2. A tile is flagged when its detail ratio is off by more than max(MARGIN, SPREAD_K x self spread) AND it holds real
 detail (at least MIN_DETAIL levels in the normal picture) AND every new-engine take agrees (same tile, same
 direction). LOST = the new engine shows less detail, ADDED = more. A scene is flagged (LOST or ADDED) when at
-least FLAG_TILES flagged tiles touch each other (a group, not a lone tile such as the boy's pose; 10 tiles are at least a
-2x5 block, about 128x320 pixels). When both a LOST and an ADDED group exist the verdict is LOST+ADDED: nothing is
+least FLAG_TILES flagged tiles touch each other (a group of touching tiles, 8 neighbours, not a lone tile such as the
+boy's pose). When both a LOST and an ADDED group exist the verdict is LOST+ADDED: nothing is
 hidden. The strip of the picture that does not fill a whole tile (at the right and bottom edge, 28 rows of a 988-line
 picture) is not judged.
 
@@ -25,7 +25,8 @@ Usage:
   detail.py NORMAL1.png NORMAL2.png NEW1.png [NEW2.png ...] [--map OUT.png] [--tile N] [--sigma S]
   detail.py --scene-dir FOLDER [--map OUT.png]       (FOLDER holds vkb0_take1/2.png and vkb1_take1/2.png)
 Prints one line:  detail <OK|LOST|ADDED|LOST+ADDED|UNJUDGED> tiles flagged F of D with detail (worst x,y ratio R, self spread S)
-Exit code is always 0 (like compare.py); nothing in the sweep reads this tool yet: it is a proposal.
+Exit code 0 for every verdict; 2 for a blank picture or a size difference (like compare.py); 1 for a missing argument or
+picture. Nothing in the sweep reads this tool yet: it is a proposal.
 Switch: nothing runs unless this script is called (off costs nothing). Environment DETAIL_MARGIN, DETAIL_SPREAD_K,
 DETAIL_MIN, DETAIL_FLAG_TILES override the numbers below."""
 import os, sys
@@ -139,8 +140,8 @@ def judge(normal1, normal2, news, tile=TILE, sigma=SIGMA):
     worst = np.mean(ratios, axis=0)
     flagged = lost | added
     verdict = "OK" if not flagged.any() else ("LOST" if lost.any() and not added.any() else "ADDED" if added.any() and not lost.any() else "LOST+ADDED")
-    if int((has & ~still).sum()) * 2 > int(has.sum()):
-        verdict = "UNJUDGED"
+    if verdict == "OK" and (int(has.sum()) == 0 or int((has & ~still).sum()) * 2 > int(has.sum())):
+        verdict = "UNJUDGED"  # nothing to judge (flat picture) or most tiles moved: never a false OK
     if flagged.any():
         wy, wx = np.unravel_index(np.argmax(np.where(flagged, np.abs(worst), -1)), worst.shape)
     else:
