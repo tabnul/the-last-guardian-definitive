@@ -41,6 +41,9 @@ void NoteSceneDepth(u64 depth_view_id);
 /// passes test without writing: unjittered they flickered against the jittered depth, owner play 2026-11-16), except volumes that sample a scene depth (decals,
 /// lights rebuild positions from it); a redraw of a mesh drawn jittered with depth writes takes the shift too.
 [[nodiscard]] bool DrawJitter(u64 depth_view_id, bool depth_write, bool geometry, bool samples_depth, u64 mesh_key, std::array<float, 2>& jitter);
+/// Issue 54: the redraw rule above knows a mesh by its index data (the first index's address and the index count), as the normal renderer; switch
+/// TLG_VKB_AA_MESH_KEY (=0: the old key, the counts and the vertex shader)
+[[nodiscard]] bool MeshKeySwitch();
 [[nodiscard]] std::array<float, 2> OnCombineQueued();
 [[nodiscard]] nlohmann::json Report();
 
