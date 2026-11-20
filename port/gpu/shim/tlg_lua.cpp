@@ -1003,6 +1003,8 @@ bool GameEdits(std::string& patched, std::string_view name) {
 }
 } // namespace
 
+extern "C" void tlg_pad_timeline(const char* event); // src/runtime_pad.c: the pad timeline (TLG_PAD_RECORD / TLG_PAD_TIMELINE)
+
 extern "C" void tlg_lua_status(uintptr_t loadbuffer) {
     original = reinterpret_cast<LoadFn>(loadbuffer);
 }
@@ -1030,6 +1032,9 @@ extern "C" __attribute__((sysv_abi)) int tlg_lua_load(void* L, void* options, co
                     put("");
                 }).detach();
             }
+        }
+        if (text.starts_with("mission ") || text.starts_with("demo ") || text.starts_with("fade out")) {
+            tlg_pad_timeline(std::string(text).c_str());
         }
         if (text.starts_with("grip ")) {
             static const auto t0 = std::chrono::steady_clock::now();

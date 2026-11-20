@@ -497,7 +497,7 @@ void FrameDumpDispatch(u64 ctx, const Variant& v, std::vector<std::pair<u64, std
 }
 
 void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_address) {
-    if (Core::Vkb::FillReadersOn()) {
+    if (Core::Vkb::FillReadersOn() || Core::Vkb::R3dTraceSize() != 0) {
         Core::Vkb::CensusTag((1ull << 63) | shader); // note 49 census: compute, the engine's shader id
     }
     if (v.multi_binding) {
@@ -531,6 +531,39 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
         stageable.back() = !w.device && !v.info->buffers[index].is_written ? 1 : 0;
         uses.push_back(Stream::BufferUse(w.buffer, w.offset, size, v.info->buffers[index].is_written));
         Core::Vkb::NoteBind(0, w, size, v.info->buffers[index].is_written);
+        if (Core::Vkb::R3dTraceSize() != 0 && size == Core::Vkb::R3dTraceSize()) { // debug R3d trace: the traced buffer bound to a compute shader
+            static std::mutex last_mutex;
+            static std::map<std::pair<u64, u32>, std::pair<u64, u64>> last; // (shader, binding) -> (address, binds)
+            bool changed = false;
+            u64 count = 0;
+            {
+                std::scoped_lock lock{last_mutex};
+                auto& [a, c] = last[{shader, index}];
+                changed = a != address;
+                a = address;
+                count = ++c;
+            }
+            if (changed || count % 10 == 0) {
+                LOG_WARNING(Render_Vulkan, "vkb R3d trace: compute {:#x} binding {} at {:#x} ({} bytes): written {}, device copy {}, bind #{} submit {}", shader, index, address, size,
+                            v.info->buffers[index].is_written, w.device, count, Core::Vkb::GraphicsSubmits());
+            }
+            // the input's device copy as the dispatch sees it, at a few of its binds after a first-bind copy (its 3rd, 30th and 300th bind of that buffer)
+            static std::unordered_map<u64, u32> binds_of;
+            static std::mutex binds_mutex;
+            u32 n = 0;
+            {
+                std::scoped_lock lock{binds_mutex};
+                n = ++binds_of[address];
+            }
+            static const bool dump_on = [] { const char* e = std::getenv("TLG_VKB_R3D_DUMP"); return e != nullptr && e[0] == '1'; }();
+            if (dump_on && !v.info->buffers[index].is_written && w.device && (n == 3 || n == 30 || n == 300)) {
+                const Core::Vkb::BufferWindow dw = w;
+                const u64 bytes = size, at = address, submit = Core::Vkb::GraphicsSubmits();
+                Stream::Defer(Stream::Work::Other, [dw, bytes, at, n, submit](vk::CommandBuffer cmd) {
+                    Core::Vkb::DumpBuffer(cmd, dw.buffer, dw.offset, bytes, fmt::format("r3d/{:x}_s{}_dev_bind{}", at, submit, n));
+                });
+            }
+        }
         return true;
     };
     const auto bind_range = [&](u32 index, u64 address, u64 size) {

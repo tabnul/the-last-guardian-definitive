@@ -379,6 +379,14 @@ bool WindowSDL::PollEvents() {
         }();
         // VKB: our dev keys while the engine-to-Vulkan backend runs (F5-F9, F12, Print Screen; native/native_dev_keys.h). Before the menu's own handler,
         // so their F8 / F9 / F12 do not run then; with their renderer nothing changes.
+        // tlg: with the pad recorder on (TLG_PAD_RECORD, src/runtime_pad.c) F9 only starts and stops the recording: no frame profiler, no photo mode.
+        static const bool pad_record = [] {
+            const char* env = std::getenv("TLG_PAD_RECORD");
+            return env && *env;
+        }();
+        if (pad_record && (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) && event.key.key == SDLK_F9) {
+            continue;
+        }
         static const bool backend = Core::Vkb::On();
         if (backend && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && Core::DevKeys::Handle(event.key.key, event.key.mod)) {
             continue;
