@@ -2310,6 +2310,7 @@ nlohmann::json TargetCensusReport() {
     return j;
 }
 /// issue 75: the translator's reads with automatic level choice in per-pixel branches (pixel shaders): moved before the branch, or kept with a reason
+/// (reads = moved + in_uniform_branch_only + outside_any_branch + the kept ones)
 nlohmann::json ReadsOutOfBranchReport() {
     namespace O = VkbShader::Optimization;
     const auto& c = O::ReadsOutOfBranchCounters();
@@ -2326,7 +2327,7 @@ nlohmann::json ReadsOutOfBranchReport() {
             }
         }
         shaders.push_back({{"ps", fmt::format("{:016x}", s.hash)}, {"applied", s.applied}, {"reads", s.reads}, {"moved", s.moved},
-                           {"ops_moved", s.ops_moved}, {"in_uniform_branch", s.in_uniform_branch}, {"kept", k}});
+                           {"ops_moved", s.ops_moved}, {"in_uniform_branch", s.in_uniform_branch}, {"outside_any_branch", s.outside_branches}, {"kept", k}});
     }
     return {{"on", profile.reads_out_of_branch},
             {"pixel_shader_translations", c.pixel_shaders.load()},
@@ -2335,6 +2336,7 @@ nlohmann::json ReadsOutOfBranchReport() {
             {"moved", c.moved.load()},
             {"ops_moved", c.ops_moved.load()},
             {"in_uniform_branch_only", c.in_uniform_branch.load()},
+            {"outside_any_branch", c.outside_branches.load()},
             {"kept_in_per_pixel_branch", kept},
             {"shaders", shaders}};
 }

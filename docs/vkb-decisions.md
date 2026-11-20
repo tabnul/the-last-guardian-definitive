@@ -24,9 +24,10 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   such an "if": hides the fault, the level stays undefined, the player loses sharpness.
 - **Choice:** 1, chosen in the design note on issue 75 and built as planned. Plain SPIR-V, so every machine (principle
   6); one rule for all pixel shaders (10); the right picture first, the cost is stated in the pull request (11).
-  Widened on the way: a constant read at an address that is the same for every pixel may move with the read (on the
-  console it is a scalar load that runs for the whole wave anyway, and the translator's constant reads are
-  bounds-checked), except in a shader that writes memory. The normal renderer has the same fault in its own
+  Widened on the way: a constant buffer read at an address that is the same for every pixel may move with the read (on
+  the console it is a scalar load that runs for the whole wave anyway; out of range it reads zero). Narrowed after the
+  second read: a constant read by raw address does not move, and a shader that writes memory is left as it is (a read
+  must not pass a write); both are counted. The normal renderer has the same fault in its own
   translation and keeps it (principle 8). Way 2 stays the fallback if a sweep shows a wrong picture from a read that
   way 1 keeps. Switch `TLG_VKB_READS_OUT_OF_BRANCH` (`=0` the old translation).
 - **Who:** box (rule 14).

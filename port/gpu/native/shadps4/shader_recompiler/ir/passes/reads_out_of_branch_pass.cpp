@@ -12,8 +12,9 @@
 // the outermost per-pixel "if" around it (passing through branches that are the same for all pixels). A read has no
 // side effects, so the values inside the "if" stay as they were; every pixel of the group now runs the coordinate code,
 // so the level is defined. The move stops at anything that is not pure arithmetic (buffer and shared memory loads, other kinds
-// of texture reads, values merged from branches, lane exchanges; constant reads only at a per-pixel address or in a shader
-// that writes memory) and at loops and code after an early return; such a
+// of texture reads, values merged from branches, lane exchanges, constant reads by raw address or at a per-pixel address), at
+// loops, at code after an early return or a per-pixel loop exit, and at shaders that write memory (a read must not pass a
+// write); such a
 // read stays where it is and is counted with its reason (ReadsOutOfBranchStats).
 //
 // Switch: TLG_VKB_READS_OUT_OF_BRANCH (default on, =0 the old translation), read once at start (Profile).
@@ -105,7 +106,7 @@ ReadsOutOfBranchReason ReasonOf(IR::Opcode op) {
 }
 
 /// True when the value is provably the same for every pixel of the wave: built only from immediates, user data and
-/// constant reads at such addresses. Everything else (inputs, texture and buffer reads, merged values) counts as per
+/// constant buffer reads at such addresses (used only in shaders that write no memory). Everything else (inputs, texture and buffer reads, merged values) counts as per
 /// pixel: a branch on it is treated as a per-pixel branch (the safe side: at worst a read moves that did not need to).
 class Uniformity {
 public:
@@ -123,7 +124,7 @@ public:
         memo[inst] = false; // a cycle (only through merged values, which are per pixel) stays per pixel
         const IR::Opcode op = inst->GetOpcode();
         bool uniform = false;
-        if (op == IR::Opcode::GetUserData || op == IR::Opcode::ReadConst || op == IR::Opcode::ReadConstBuffer ||
+        if (op == IR::Opcode::GetUserData || op == IR::Opcode::ReadConstBuffer ||
             op == IR::Opcode::ConditionRef || (IsPure(op) && op != IR::Opcode::GetAttribute && op != IR::Opcode::GetAttributeU32 &&
                                                op != IR::Opcode::GetAttributeU1)) {
             uniform = true;
@@ -168,6 +169,7 @@ bool WritesMemory(const IR::Program& program) {
 
 struct Construct {
     bool is_loop{};
+    bool exited{};    ///< a loop that some pixels may leave early (a per-pixel exit was seen so far)
     bool per_pixel{}; ///< an "if" whose condition can differ between pixels
     IR::Block* header{}; ///< an "if": the block that ends with the branch into it
 };
@@ -175,6 +177,7 @@ struct Construct {
 struct Place {
     std::vector<u32> constructs; ///< the "if"s and loops around the block, outermost first
     bool after_early_return{};   ///< some pixels may have left the shader before this block
+    bool after_loop_exit{};      ///< some pixels may have left a loop around this block before it
 };
 
 } // namespace
@@ -211,7 +214,7 @@ void ReadsOutOfBranchPass(IR::Program& program, bool move) {
     for (const IR::AbstractSyntaxNode& node : program.syntax_list) {
         switch (node.type) {
         case IR::AbstractSyntaxNode::Type::Block:
-            places[node.data.block] = Place{stack, after_return};
+            places[node.data.block] = Place{stack, after_return, std::ranges::any_of(stack, [&](u32 c) { return constructs[c].exited; })};
             last_block = node.data.block;
             break;
         case IR::AbstractSyntaxNode::Type::If: {
@@ -220,12 +223,12 @@ void ReadsOutOfBranchPass(IR::Program& program, bool move) {
             if (header == nullptr || preds.size() != 1 || preds[0] != header) {
                 structure_ok = false;
             }
-            constructs.push_back(Construct{false, !uniformity.Of(node.data.if_node.cond), header});
+            constructs.push_back(Construct{false, false, !uniformity.Of(node.data.if_node.cond), header});
             stack.push_back(static_cast<u32>(constructs.size() - 1));
             break;
         }
         case IR::AbstractSyntaxNode::Type::Loop:
-            constructs.push_back(Construct{true, false, nullptr});
+            constructs.push_back(Construct{true, false, false, nullptr});
             stack.push_back(static_cast<u32>(constructs.size() - 1));
             break;
         case IR::AbstractSyntaxNode::Type::EndIf:
@@ -241,18 +244,28 @@ void ReadsOutOfBranchPass(IR::Program& program, bool move) {
                 after_return = true; // pixels that left the shader are missing for every read after this point
             }
             break;
+        case IR::AbstractSyntaxNode::Type::Break:
+            if (!uniformity.Of(node.data.break_node.cond) || std::ranges::any_of(stack, [&](u32 c) { return constructs[c].per_pixel; })) {
+                for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
+                    if (constructs[*it].is_loop) {
+                        constructs[*it].exited = true; // pixels that left are missing for the rest of this loop
+                        break;
+                    }
+                }
+            }
+            break;
         default:
             break;
         }
     }
 
-    // A constant read (the draw's constant data, read through the bounds-checked constant path) at an address that is the
-    // same for every pixel may move with the read: on the console it is a scalar load, which runs for the whole wave
-    // whatever the exec mask says, so before the "if" is where the console has it. Not when the shader writes memory.
+    // A constant buffer read at an address that is the same for every pixel may move with the read: on the console it is
+    // a scalar load, which runs for the whole wave whatever the exec mask says, so before the "if" is where the console has
+    // it; out of range it reads zero (the translator's bound, else the device's robust buffer access, required at start).
+    // Not a constant read by raw address (its fault check records what it touches).
     const bool writes_memory = WritesMemory(program);
     const auto movable_constant = [&](IR::Inst* inst) {
-        const IR::Opcode op = inst->GetOpcode();
-        if (writes_memory || (op != IR::Opcode::ReadConstBuffer && op != IR::Opcode::ReadConst)) {
+        if (inst->GetOpcode() != IR::Opcode::ReadConstBuffer) {
             return false;
         }
         for (size_t i = 0; i < inst->NumArgs(); ++i) {
@@ -294,7 +307,7 @@ void ReadsOutOfBranchPass(IR::Program& program, bool move) {
             continue;
         }
         const Place* place = place_of(read->GetParent());
-        if (place == nullptr || !structure_ok) {
+        if (place == nullptr) {
             ++shader.not_moved[static_cast<u32>(ReadsOutOfBranchReason::Other)];
             continue;
         }
@@ -302,9 +315,21 @@ void ReadsOutOfBranchPass(IR::Program& program, bool move) {
         if (!in_per_pixel) {
             if (place->after_early_return) {
                 ++shader.not_moved[static_cast<u32>(ReadsOutOfBranchReason::AfterEarlyReturn)];
+            } else if (place->after_loop_exit) {
+                ++shader.not_moved[static_cast<u32>(ReadsOutOfBranchReason::Loop)];
             } else if (!place->constructs.empty()) {
                 ++shader.in_uniform_branch; // the same for all pixels: the level is defined
+            } else {
+                ++shader.outside_branches;
             }
+            continue;
+        }
+        if (!structure_ok) {
+            ++shader.not_moved[static_cast<u32>(ReadsOutOfBranchReason::Other)];
+            continue;
+        }
+        if (writes_memory) {
+            ++shader.not_moved[static_cast<u32>(ReadsOutOfBranchReason::WritesMemory)];
             continue;
         }
         // The outermost per-pixel "if" around the read with no loop between them and the read.
@@ -319,7 +344,7 @@ void ReadsOutOfBranchPass(IR::Program& program, bool move) {
                 target = static_cast<s32>(*it);
             }
         }
-        if (loop || target < 0) {
+        if (loop || target < 0 || place->after_loop_exit) {
             ++shader.not_moved[static_cast<u32>(ReadsOutOfBranchReason::Loop)];
             continue;
         }
@@ -389,6 +414,7 @@ void ReadsOutOfBranchPass(IR::Program& program, bool move) {
     g_stats.moved.fetch_add(shader.moved, std::memory_order_relaxed);
     g_stats.ops_moved.fetch_add(shader.ops_moved, std::memory_order_relaxed);
     g_stats.in_uniform_branch.fetch_add(shader.in_uniform_branch, std::memory_order_relaxed);
+    g_stats.outside_branches.fetch_add(shader.outside_branches, std::memory_order_relaxed);
     if (shader.moved != 0 || not_moved != 0) {
         g_stats.shaders_with_reads_in_branch.fetch_add(1, std::memory_order_relaxed);
         shader.applied = move;

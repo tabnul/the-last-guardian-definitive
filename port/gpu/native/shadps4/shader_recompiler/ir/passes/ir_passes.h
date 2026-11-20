@@ -56,21 +56,23 @@ enum class ReadsOutOfBranchReason : u32 {
     TextureRead,      ///< an operand comes from another kind of texture read (fixed level, gather, fetch, size) inside the branch
     MergedValue,      ///< an operand is a value merged from two ways through a branch inside
     LaneExchange,     ///< an operand reads another pixel's value
-    Loop,             ///< the read sits in a loop
+    Loop,             ///< the read sits in a loop (or after a per-pixel loop exit)
     AfterEarlyReturn, ///< some pixels may have left the shader before the read
+    WritesMemory,     ///< the shader writes memory: a read is not moved past a write
     Other,
 };
-constexpr u32 ReadsOutOfBranchReasonCount = 8;
+constexpr u32 ReadsOutOfBranchReasonCount = 9;
 constexpr std::array<const char*, ReadsOutOfBranchReasonCount> ReadsOutOfBranchReasonNames{
-    "constant_read", "memory_load", "texture_read", "merged_value", "lane_exchange", "loop", "after_early_return", "other"};
+    "constant_read", "memory_load", "texture_read", "merged_value", "lane_exchange", "loop", "after_early_return", "writes_memory", "other"};
 struct ReadsOutOfBranchStats {
-    std::atomic<u64> pixel_shaders{}, shaders_with_reads_in_branch{}, reads{}, moved{}, ops_moved{}, in_uniform_branch{};
+    /// reads = moved + in_uniform_branch + outside_branches + the sum of not_moved
+    std::atomic<u64> pixel_shaders{}, shaders_with_reads_in_branch{}, reads{}, moved{}, ops_moved{}, in_uniform_branch{}, outside_branches{};
     std::array<std::atomic<u64>, ReadsOutOfBranchReasonCount> not_moved{};
 };
 struct ReadsOutOfBranchShader {
     u64 hash{};
     bool applied{}; ///< moved (switch on) or only counted
-    u32 reads{}, moved{}, ops_moved{}, in_uniform_branch{};
+    u32 reads{}, moved{}, ops_moved{}, in_uniform_branch{}, outside_branches{};
     std::array<u32, ReadsOutOfBranchReasonCount> not_moved{};
 };
 /// `move` false (switch off): only counts what it would move.
