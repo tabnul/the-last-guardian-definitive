@@ -196,3 +196,8 @@ Outside the mask the normal renderer still differs from itself a little (median 
 limit. No code in the sweep judges a picture against a limit yet, so `own-limit` is data for the report step.
 No scene needs log only because of noise any more: the 15 scenes that the solid-blob rule had moved to `log-only.txt` are
 back in the picture check. Switch: remove `moving` from an entry's CAUSES (2-photo mask) or the whole line.
+
+## Speed in results and reports (owner 2026-11-20)
+
+`sweep.py` reads the last `Frame stats: <x> FPS, worst frame <y> ms` line of every take's game log into the result line (`fps`, `worst_frame_ms` per take; `null` when the line is missing).
+`python3 -I speed.py BEFORE AFTER` (two `results-vkb*.jsonl` or their folders; old results work, it reads the take logs) prints a speed column per scene: average FPS before and after, the change, the worst frame. A scene is flagged `slower` only when FPS drops 15% or more on both takes. The box runs at ~15 FPS, so smaller changes are noise. Speed alone never makes a change unsafe; box numbers are relative only, real speed numbers come from the owner's Nvidia PC.
