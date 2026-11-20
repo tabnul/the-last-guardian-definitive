@@ -58,7 +58,7 @@ struct Config {
 
 Config LoadConfig() {
     Config config;
-    int depth = 0; // default 0 since 2026-10-31 (the owner played it at 120 fps)
+    int depth = 1; // default 1 since 2026-11-20: at 0 the CPU and the GPU take turns (see native_frame_gate.h)
     int game_waits = -1;
     int presenter_waits = -1;
     const char* source = "default";
@@ -68,7 +68,7 @@ Config LoadConfig() {
             nlohmann::json config;
             std::ifstream in(path);
             in >> config;
-            depth = config.value("frames_in_flight", 0);
+            depth = config.value("frames_in_flight", 1);
             game_waits = config.value("game_waits_own_frame", -1);
             presenter_waits = config.value("presenter_waits_own_frame", -1);
             source = "json";
