@@ -788,7 +788,52 @@ bool StaticAtBindOn() {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_STATIC_AT_BIND"); return e == nullptr || e[0] != '0'; }();
     return on;
 }
-std::atomic<u64> c_static_at_bind{0}, c_static_at_bind_mb{0}, c_static_at_bind_failed{0};
+std::atomic<u64> c_static_at_bind{0}, c_static_at_bind_mb{0}, c_static_at_bind_failed{0}, c_static_at_bind_zero{0};
+/// debug (TLG_VKB_R3D_CHECK=1): a buffer copied at its first bind is hashed then, and the watch runs (all device copies, 16 MiB a submit): a change of its
+/// engine memory after the copy (a CPU write the engine makes without UpdateSubresource) is logged with the buffer and sends it back in place
+/// debug: TLG_VKB_R3D_SKIP=<bytes>,<bytes>,... buffers of those sizes never get a first-bind copy (they settle by hash as with =0); TLG_VKB_R3D_LOG=<file>
+/// writes one line per first-bind copy: graphics submit, address, bytes, usage, bind, cpu access
+bool R3dSkipped(u64 bytes) {
+    static const std::vector<u64> sizes = [] {
+        std::vector<u64> out;
+        if (const char* e = std::getenv("TLG_VKB_R3D_SKIP")) {
+            for (const char* p = e; *p != 0;) {
+                char* end = nullptr;
+                const u64 v = std::strtoull(p, &end, 10);
+                if (end == p) {
+                    break;
+                }
+                out.push_back(v);
+                p = *end == ',' ? end + 1 : end;
+            }
+        }
+        return out;
+    }();
+    return std::find(sizes.begin(), sizes.end(), bytes) != sizes.end();
+}
+void R3dLog(u64 submit, u64 address, u64 bytes, u32 usage, u32 bind, u32 cpu_access) {
+    static FILE* f = [] { const char* e = std::getenv("TLG_VKB_R3D_LOG"); return e != nullptr && e[0] != 0 ? std::fopen(e, "w") : nullptr; }();
+    if (f != nullptr) {
+        std::fprintf(f, "%llu %#llx %llu usage %u bind %#x cpu %#x\n", static_cast<unsigned long long>(submit), static_cast<unsigned long long>(address),
+                     static_cast<unsigned long long>(bytes), usage, bind, cpu_access);
+        std::fflush(f);
+    }
+}
+/// test (TLG_VKB_R3D_FIRST_IN_PLACE=1): the bind that makes a first-bind copy reads the engine's memory in place; the copy serves from two submits on
+bool R3dFirstInPlace() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_R3D_FIRST_IN_PLACE"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+/// debug (TLG_VKB_R3D_TRACE=<bytes>): every write that reaches a watched buffer of that size (our GPU copy into it, an UpdateSubresource) is logged with its
+/// state (in place / device copy) and graphics submit
+u64 R3dTraceBytes() {
+    static const u64 bytes = [] { const char* e = std::getenv("TLG_VKB_R3D_TRACE"); return e != nullptr ? std::strtoull(e, nullptr, 10) : 0ull; }();
+    return bytes;
+}
+bool R3dCheckOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_R3D_CHECK"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
 VkBuffer MakeDeviceBuffer(u64 bytes, VmaAllocation& allocation) {
     const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                                 .size = bytes,
@@ -835,10 +880,18 @@ bool FindLocked(u64 address, u64 size, BufferWindow& out) {
                 Watched& wb = it->second;
                 if (address >= it->first && address + size <= wb.end && wb.cls == 0) {
                     const u64 now = GraphicsSubmits();
-                    if (wb.first_bind_submit == 0 && StaticAtBindOn() && !wb.gpu_written && !(Stream::OnRecorder() && Stream::RecorderOn())) {
+                    if (wb.first_bind_submit == 0 && StaticAtBindOn() && !wb.gpu_written && !(Stream::OnRecorder() && Stream::RecorderOn()) &&
+                        !R3dSkipped(wb.end - it->first)) {
                         // R3d: its device copy now; the copy job goes into the stream below, after the lock, in front of the job of this bind
                         wb.first_bind_submit = now + 1;
                         const u64 bytes = wb.end - it->first;
+                        R3dLog(now, it->first, bytes, wb.usage, wb.bind, wb.cpu_access);
+                        if (bytes == R3dTraceBytes()) {
+                            LOG_WARNING(Render_Vulkan, "vkb R3d trace: first-bind copy of {:#x} ({} bytes) at submit {}", it->first, bytes, now);
+                        }
+                        if (R3dCheckOn()) {
+                            wb.hash = HashGuest(it->first, bytes); // debug: the bytes the device copy gets
+                        }
                         wb.device = MakeDeviceBuffer(bytes, wb.allocation);
                         BumpBufferEpoch(); // note 46: A1 memo answers may change
                         if (wb.device == VK_NULL_HANDLE) {
@@ -848,7 +901,7 @@ bool FindLocked(u64 address, u64 size, BufferWindow& out) {
                         } else {
                             wb.state = Watched::State::Device;
                             BumpBufferEpoch(); // note 46: A1 memo answers may change
-                            wb.ready_submit = 0;
+                            wb.ready_submit = R3dFirstInPlace() ? now + 2 : 0;
                             initial = {it->first, bytes, wb.device};
                             out = {vk::Buffer{wb.device}, address - it->first, true};
                             c_static_at_bind.fetch_add(1, std::memory_order_relaxed);
@@ -870,6 +923,13 @@ bool FindLocked(u64 address, u64 size, BufferWindow& out) {
     }
     if (initial.device != VK_NULL_HANDLE) {
         const BufferWindow src = SourceWindow(initial.address, initial.bytes);
+        if (!src.buffer) {
+            c_static_at_bind_zero.fetch_add(1, std::memory_order_relaxed); // no source window: the device copy is filled with zeros
+            static std::atomic<u32> logged{0};
+            if (logged.fetch_add(1, std::memory_order_relaxed) < 64) {
+                LOG_WARNING(Render_Vulkan, "vkb R3d: first-bind copy of {:#x} ({} bytes) found no source window: filled with zeros", initial.address, initial.bytes);
+            }
+        }
         const VkBuffer device = initial.device;
         const u64 bytes = initial.bytes;
         Stream::NoteBytes(Stream::Work::Upload, bytes);
@@ -882,7 +942,10 @@ bool FindLocked(u64 address, u64 size, BufferWindow& out) {
                 cmd.fillBuffer(vk::Buffer{device}, 0, VK_WHOLE_SIZE, 0);
             }
         });
-        return true;
+        if (!R3dFirstInPlace()) {
+            return true;
+        }
+        out = {}; // this bind reads in place (below)
     }
     if (host_import == nullptr) {
         return false;
@@ -1811,8 +1874,8 @@ void ObjectsTick() {
         });
         // buffers with a device copy: watched round robin (16 MiB a submit); a change sends one back to in place for good
         // kill-experiment; R3d: off by default with the copies at first bind (TLG_VKB_NO_WATCH=0 turns it on again)
-        static const bool no_watch = [] { const char* e = std::getenv("TLG_VKB_NO_WATCH"); return e != nullptr ? e[0] == '1' : StaticAtBindOn(); }();
-        u64 budget = no_watch ? 0 : 4ull << 20; // V4i: 4 MiB a submit (0 copies ever changed after their copy; the hashing was 9 % of the recording thread)
+        static const bool no_watch = [] { const char* e = std::getenv("TLG_VKB_NO_WATCH"); return e != nullptr ? e[0] == '1' : StaticAtBindOn() && !R3dCheckOn(); }();
+        u64 budget = no_watch ? 0 : R3dCheckOn() ? 16ull << 20 : 4ull << 20; // V4i: 4 MiB a submit (0 copies ever changed after their copy; the hashing was 9 % of the recording thread)
         auto it = watched.lower_bound(watch_cursor);
         for (size_t visited = 0; budget != 0 && !watched.empty() && visited < watched.size(); ++visited) {
             if (it == watched.end()) {
@@ -1832,7 +1895,7 @@ void ObjectsTick() {
                     BumpBufferEpoch(); // note 46: A1 memo answers may change
                     c_dev2_unstable.fetch_add(1, std::memory_order_relaxed);
                     static std::atomic<u32> logged{0};
-                    if (logged.fetch_add(1, std::memory_order_relaxed) < 12) {
+                    if (logged.fetch_add(1, std::memory_order_relaxed) < (R3dCheckOn() ? 200u : 12u)) {
                         LOG_WARNING(Render_Vulkan, "vkb device buffers: buffer id {} at {:#x} ({} bytes, usage {}, bind {:#x}) changed after its device copy: back in place",
                                     w.id, it->first, bytes, w.usage, w.bind);
                     }
@@ -2230,7 +2293,25 @@ bool FindBuffer(u64 address, u64 size, BufferWindow& out) {
     return true;
 }
 
+void R3dTrace(const char* what, u64 address, u64 bytes) {
+    if (R3dTraceBytes() == 0) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    auto it = watched.upper_bound(address);
+    if (it == watched.begin()) {
+        return;
+    }
+    --it;
+    const Watched& w = it->second;
+    if (address >= w.end || w.end - it->first != R3dTraceBytes()) {
+        return;
+    }
+    LOG_WARNING(Render_Vulkan, "vkb R3d trace: {} at {:#x} (+{:#x}, {} bytes) into buffer {:#x}: state {} first bind {} now {}", what, address, address - it->first, bytes,
+                it->first, static_cast<u32>(w.state), w.first_bind_submit, GraphicsSubmits());
+}
 void BufferCpuWritten(u64 address, u64 size) {
+    R3dTrace("UpdateSubresource", address, size);
     if (!On() || !device_ready || size == 0) {
         return;
     }
@@ -3409,6 +3490,7 @@ bool CopyBuffer(u64 destination, u64 source, u64 bytes) {
     if (!device_ready || bytes == 0) {
         return false;
     }
+    R3dTrace("GPU copy", destination, bytes);
     if (ContractCensusOn()) { // api-contract.md W5 (debug): a buffer copy whose destination is a texture's memory (the engine's memory move, FUN_01c97a00)
         std::string key = "W5 buffer copy into no texture";
         {
@@ -3489,6 +3571,7 @@ bool FillBuffer(u64 destination, u64 bytes, u32 value) {
     if (!device_ready || bytes == 0 || (destination & 3) != 0 || (bytes & 3) != 0) {
         return false;
     }
+    R3dTrace("GPU fill", destination, bytes);
     BufferWindow to;
     if (!FindLocked(destination, bytes, to) || (to.offset & 3) != 0) {
         c_fill_unresolved.fetch_add(1, std::memory_order_relaxed);
@@ -3787,7 +3870,7 @@ nlohmann::json ObjectsReport() {
                                                   {"attachments_refused", c_fixed_attachment_refused.load()}}},
                           {"staging_textures", {{"note", "note 42: copies into staging textures written back for the CPU's Map(READ)"}, {"copies", c_staging_copies.load()},
                                                 {"reads", c_staging_reads.load()}, {"not_ready", c_staging_unready.load()}, {"older", c_staging_older.load()}, {"unhandled", c_staging_unhandled.load()}, {"retired_with_texture", c_staging_retired.load()}}},
-                          {"static_at_first_bind", {{"on", StaticAtBindOn()}, {"made", c_static_at_bind.load()}, {"mb", c_static_at_bind_mb.load() >> 20},
+                          {"static_at_first_bind", {{"on", StaticAtBindOn()}, {"made", c_static_at_bind.load()}, {"zero_filled_no_source", c_static_at_bind_zero.load()}, {"mb", c_static_at_bind_mb.load() >> 20},
                                                     {"failed", c_static_at_bind_failed.load()}}},
                           {"dynamic_device_buffers", {{"on", DynamicDeviceOn()}, {"made", c_dyn_device.load()}, {"unmap_uploads", c_dyn_unmaps.load()},
                                                       {"unmap_upload_mb", c_dyn_unmap_mb.load() >> 20}, {"checks", c_dyn_checks.load()},
