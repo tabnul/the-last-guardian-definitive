@@ -704,10 +704,17 @@ static void replay_after(const char *event) {
     printf("Runtime: pad replay due %s ms after '%s'\n",at+1,event);
 }
 /* TLG_PAD_REPLAY_SYNC=<the recording's timeline file>: the replay's clock follows the recorded run. When the game logs the next event
- * the recording logged (same text, in order; up to 8 recorded events may be missing), the replay clock is set to that event's recorded
+ * the recording logged (same text, in order; only cutscene steps and the stage's own scenes, up to 15 recorded ones may be missing), the replay clock is set to that event's recorded
  * time, so a cutscene that starts later than in the recording does not leave the later inputs early. */
 typedef struct { uint32_t ms; char text[160]; } SyncEvent;
 static SyncEvent *sync_events; static size_t sync_count, sync_next; static int sync_loaded;
+/* the events the sync lines up on: cutscene steps and the stage's own scenes (not the helper scenes, "_Worker ..." / "... sub_...", nor the
+ * cutscene "ready" lines, which come and go with loading) */
+static int sync_wanted(const char *text) {
+    if (!strncmp(text,"mission ",8)) return text[8]!='_' && !strstr(text," sub_");
+    if (!strncmp(text,"demo ",5)) { const char *sp=strrchr(text,' '); return sp && strcmp(sp," ready"); }
+    return 0;
+}
 static void sync_load(void) {
     sync_loaded=1;
     const char *path=getenv("TLG_PAD_REPLAY_SYNC");
@@ -719,6 +726,7 @@ static void sync_load(void) {
         if (sscanf(line,"%llu %llu %n",&t0,&since,&used)!=2 || !used) continue;
         char *text=line+used; text[strcspn(text,"\r\n")]=0;
         if (!strncmp(text,"F9 ",3) || !strcmp(text,"replay started")) continue;
+        if (!sync_wanted(text)) continue;
         if (sync_count==cap && !(sync_events=realloc(sync_events,(cap=cap ? cap*2 : 256)*sizeof(*sync_events)))) { sync_count=0; break; }
         sync_events[sync_count].ms=(uint32_t)since;
         snprintf(sync_events[sync_count].text,sizeof sync_events[sync_count].text,"%s",text);
@@ -730,7 +738,8 @@ static void sync_load(void) {
 static void sync_event(const char *event, uint64_t t) {
     if (!replay_start) return;
     if (!sync_loaded) sync_load();
-    for (size_t j=sync_next; j<sync_count && j<sync_next+9; ++j) {
+    if (!sync_wanted(event)) return;
+    for (size_t j=sync_next; j<sync_count && j<sync_next+16; ++j) {
         if (strcmp(sync_events[j].text,event)) continue;
         const long long shift=(long long)((t-replay_start)/1000)-(long long)sync_events[j].ms;
         replay_start=t-(uint64_t)sync_events[j].ms*1000u;
