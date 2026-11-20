@@ -19,7 +19,6 @@
 #include "native/native_draw.h"
 #include "native/native_frame_gate.h"
 #include "native/native_frame_events.h"
-#include "native/native_content.h"
 #include "native/native_invariant.h"
 #include "native/native_flight.h"
 #include "native/native_prof.h"
@@ -249,6 +248,13 @@ void EarlyGpuDone(u64 ordinal) {
 
 namespace {
 
+/// `TLG_PROGRESS_WAITS` (default on, =0 off): the frame gate's wait has no time limit while the frame counters move; it gives up only after 10 s without progress
+/// (moved here from the content store, note 105)
+bool ProgressWaitsOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_PROGRESS_WAITS"); return e == nullptr || e[0] != '0'; }();
+    return on;
+}
+
 /// Waits until `done()` holds (called under the mutex); false on timeout
 template <typename Done>
 bool WaitFor(Done&& done, std::atomic<u64>& count, std::atomic<u64>& total_ns, const char* what) {
@@ -260,7 +266,7 @@ bool WaitFor(Done&& done, std::atomic<u64>& count, std::atomic<u64>& total_ns, c
     Flight::Add(Flight::GateWaitBegin, 0, Flight::GateFrame, submitted - ended); // L1
     FLIGHT_SCOPE("waiting: the frame gate (frames in flight)");
     bool ok;
-    if (Core::NativeContent::ProgressWaitsOn()) {
+    if (ProgressWaitsOn()) {
         // TLG_PROGRESS_WAITS=1: no time limit while the frame counters move; the game goes on only after 10 s without progress
         u64 last = ended + raster_reached;
         auto changed_at = std::chrono::steady_clock::now();

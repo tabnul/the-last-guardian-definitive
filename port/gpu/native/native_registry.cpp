@@ -18,7 +18,6 @@
 #endif
 #include <nlohmann/json.hpp>
 
-#include "native/native_content.h"
 #include "native/native_draw.h"
 #include "native/native_registry.h"
 #include "native/native_resources.h"
@@ -621,9 +620,6 @@ void SetCurrentDraw(u64 seq, bool from_plan) {
     current_from_plan = from_plan;
     ++draw_call_index;
     current_draw_seq = seq;
-    if (seq != 0) {
-        Core::NativeContent::NoteRasterRecord(seq);
-    }
 }
 
 u32 CurrentDrawClass() {

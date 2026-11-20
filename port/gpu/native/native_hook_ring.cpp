@@ -13,7 +13,6 @@
 #include <nlohmann/json.hpp>
 #include "native/native_draw.h"
 #include "native/native_device.h"
-#include "native/native_content.h"
 #include <cstdio>
 #include "native/native_hook_ring.h"
 #include "native/native_vkb.h"
@@ -833,13 +832,10 @@ void CompareWide(u64 address, u64 size, bool probe) {
                     t = g_tags[tag];
                 }
             }
-            Core::NativeContent::BindContext bc{};
-            const bool have_bc = Core::NativeContent::CurrentBindContext(bc);
             std::fprintf(stderr,
                          "wide census: window %#llx+%#llx (bound id %#llx program %#llx) prefix %#llx: changed byte at %#llx (ring+%#llx), fill writer %u age %u seq, fill tag how %u caller %#x "
                          "resource %#llx map type %u, open Map over it %d, landed %d; Maps covering it:%s\n",
-                         static_cast<unsigned long long>(lo), static_cast<unsigned long long>(hi - lo), static_cast<unsigned long long>(have_bc ? bc.engine_id : 0),
-                         static_cast<unsigned long long>(have_bc ? bc.program : 0), static_cast<unsigned long long>(prefix), static_cast<unsigned long long>(at),
+                         static_cast<unsigned long long>(lo), static_cast<unsigned long long>(hi - lo), 0ull, 0ull, static_cast<unsigned long long>(prefix), static_cast<unsigned long long>(at),
                          static_cast<unsigned long long>(at - base), g_fill_writer[g].load(std::memory_order_relaxed),
                          static_cast<u32>(Core::NativeDraw::NextSeq()) - g_fill_seq[g].load(std::memory_order_relaxed), t.how, t.caller, static_cast<unsigned long long>(t.resource), t.map_type,
                          0, (filled[g].load(std::memory_order_relaxed) & 2) != 0 ? 1 : 0,

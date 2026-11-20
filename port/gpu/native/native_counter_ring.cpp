@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "common/path_util.h"
-#include "native/native_content.h"
 #include "native/native_counter_ring.h"
 #include "native/native_marker.h"
 
@@ -19,7 +18,6 @@ std::mutex mutex;
 FILE* csv = nullptr;
 FILE* marks = nullptr;
 u64 rows = 0;
-std::vector<u64> values;
 
 std::filesystem::path Dir() {
     return Common::FS::GetUserPath(Common::FS::PathType::LogDir);
@@ -45,18 +43,10 @@ void NotePresent(u64 tick) {
         if (csv == nullptr) {
             return;
         }
-        std::string header = "row,tick,draw_rows";
-        for (const std::string& name : NativeContent::CounterNames()) {
-            header += "," + name;
-        }
-        header += "\n";
+        std::string header = "row,tick,draw_rows\n"; // (the content store's late-read columns went with the store, note 105)
         std::fwrite(header.data(), 1, header.size(), csv);
     }
-    NativeContent::CounterSample(values);
     std::string line = std::to_string(rows) + "," + std::to_string(tick) + "," + std::to_string(Marker::RowsWritten());
-    for (const u64 v : values) {
-        line += "," + std::to_string(v);
-    }
     line += "\n";
     std::fwrite(line.data(), 1, line.size(), csv);
     if (++rows % 60 == 0) {

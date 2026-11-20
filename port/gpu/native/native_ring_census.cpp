@@ -13,7 +13,6 @@
 #include <map>
 #include <string>
 #include <tuple>
-#include "native/native_content.h"
 #include "native/native_ring_census.h"
 #include "native/native_untracked_ring.h"
 
@@ -300,20 +299,15 @@ void NoteUse(Site site, u64 address, u64 size) {
             }
             flush();
         }
-        Core::NativeContent::BindContext ctx{};
-        const bool has = Core::NativeContent::CurrentBindContext(ctx);
-        const std::string where = has && ctx.site != nullptr ? std::string(ctx.site) : std::string("none");
+        const std::string where = "none"; // (the bind context went with the content store, note 105)
         std::scoped_lock lock{g_wide_mutex};
-        auto& w = g_wide[{where, has ? ctx.program : 0, has ? ctx.stage : 0}];
+        auto& w = g_wide[{where, u64{0}, u32{0}}];
         ++w.uses;
         w.bytes += hi - lo;
         w.silent += silent;
         w.silent_open += silent_open;
         w.never += never;
         w.largest = std::max<u64>(w.largest, hi - lo);
-        if (w.example_id == 0 && has) {
-            w.example_id = ctx.engine_id;
-        }
     }
     if (silent == 0 && never == 0) {
         s.uses_all_known.fetch_add(1, std::memory_order_relaxed);

@@ -57,7 +57,6 @@
 #include "native/native_registry.h"
 #include "native/native_resources.h"
 #include "native/native_target_desc.h"
-#include "native/native_content.h"
 #include "native/native_texture_version.h"
 #include "native/native_sync.h"
 #include "native/native_vkb.h"
@@ -7327,7 +7326,7 @@ bool FrameAllocLocked() {
         const char* s = std::getenv("TLG_SLOT_RING");
         const char* k = std::getenv("TLG_SKIN_RING");
         // default on since 2026-11-11 (review notes A3): each ring is on unless its switch is =0
-        return (e == nullptr || e[0] != '0') || (s == nullptr || s[0] != '0') || (k == nullptr || k[0] != '0') || Core::NativeContent::RingLapFenceOn();
+        return (e == nullptr || e[0] != '0') || (s == nullptr || s[0] != '0') || (k == nullptr || k[0] != '0');
     }();
     return on;
 }
@@ -7346,7 +7345,6 @@ u32 CensusSite(u64 ret) {
 
 u64 LockedFrameAlloc(u64 original, u64 allocator, u64 size, u64 alignment) {
     u64 block;
-    u32 lap_wait = 0;
     {
         std::scoped_lock lock{g_frame_alloc_mutex};
         u64 host_base = 0, host_size = 0;
@@ -7367,14 +7365,6 @@ u64 LockedFrameAlloc(u64 original, u64 allocator, u64 size, u64 alignment) {
         }
         Core::RingCensus::NoteAlloc(block, size & 0xffffffffull, !t_engine_frame_alloc, t_engine_frame_alloc ? t_engine_frame_alloc_site : 0); // TLG_RING_CENSUS (counters only)
         Core::HookRing::NoteAlloc(block, size & 0xffffffffull); // TLG_HOOK_RING (F1 1a shadow)
-        if (Core::NativeContent::RingLapFenceOn() && block != 0) {
-            lap_wait = Core::NativeContent::RingLapNote(Rd<u64>(allocator, 0x18), Rd<u64>(allocator, 0x0) & 0xffffffffull, block, size & 0xffffffffull);
-        }
-    }
-    Core::NativeContent::RingLapWait(lap_wait); // outside the lock: the block is not written yet
-    if (Core::NativeContent::ShadowOn() || Core::NativeContent::RingWindowsOn()) {
-        Core::NativeContent::NoteMark(6, block, size & 0xffffffffull);
-        Core::NativeContent::NoteRingWindow(block, size & 0xffffffffull);
     }
     return block;
 }
@@ -7384,24 +7374,15 @@ u64 PS4_SYSV_ABI RingDiscover(u64 allocator, u64 a1, u64 a2, u64 a3, u64 a4, u64
         (void)Core::Vkb::PlaceFrameRing(allocator); // R3a (TLG_VKB_RING_VRAM=1), once
         Core::Vkb::NoteFrameRing(Rd<u64>(allocator, 0x18), Rd<u64>(allocator, 0x0) & 0xffffffffull);
     }
-    // F2.2 shadow (TLG_F2_STORE=1): every allocation of the frame ring is remembered as a mark (writer 6): whatever the caller writes there, the bytes of an older entry over the same
-    // addresses are not the memory's any more. The function (allocator, size, alignment) runs here and its result is returned.
+    // with a ring redirect on (FrameAllocLocked), the engine's allocation runs here under the allocator lock and its result is returned
     u64 allocated = 0;
     bool ran = false;
-    if ((Core::NativeContent::ShadowOn() || Core::NativeContent::RingWindowsOn() || FrameAllocLocked()) && allocator != 0) {
+    if (FrameAllocLocked() && allocator != 0) {
         if (const u64 original = Core::GuestHooks::OriginalEntry("AllocFrameGarlic"); original != 0) {
-            if (FrameAllocLocked()) {
-                t_engine_frame_alloc = true;
-                t_engine_frame_alloc_site = Core::RingCensus::On() && ImageBase() != 0 ? CensusSite(ret) : 0;
-                allocated = LockedFrameAlloc(original, allocator, a1, a2);
-                t_engine_frame_alloc = false;
-            } else {
-                allocated = reinterpret_cast<GuestDraw6>(original)(allocator, a1, a2, a3, a4, a5);
-                Core::RingCensus::NoteAlloc(allocated, a1 & 0xffffffffull, false, Core::RingCensus::On() && ImageBase() != 0 ? CensusSite(ret) : 0); // TLG_RING_CENSUS (counters only)
-                Core::HookRing::NoteAlloc(allocated, a1 & 0xffffffffull); // TLG_HOOK_RING (F1 1a shadow)
-                Core::NativeContent::NoteMark(6, allocated, a1 & 0xffffffffull);
-                Core::NativeContent::NoteRingWindow(allocated, a1 & 0xffffffffull);
-            }
+            t_engine_frame_alloc = true;
+            t_engine_frame_alloc_site = Core::RingCensus::On() && ImageBase() != 0 ? CensusSite(ret) : 0;
+            allocated = LockedFrameAlloc(original, allocator, a1, a2);
+            t_engine_frame_alloc = false;
             ran = true;
         }
     }
@@ -7424,7 +7405,6 @@ u64 PS4_SYSV_ABI RingDiscover(u64 allocator, u64 a1, u64 a2, u64 a3, u64 a4, u64
         return finish();
     }
     VideoCore::UntrackedRing::Get().Set(base, size);
-    Core::NativeContent::SetRing(base, base + size); // F2.2 swap: the store keeps what is announced inside the ring
     // Pages the tracker already protected become writable; nothing protects them again.
     Core::Memory::Instance()->GetAddressSpace().Protect(base, size, Core::MemoryPermission::ReadWrite);
     LOG_INFO(Core, "native draw: upload ring {:#x} + {:#x} is no longer page tracked", base, size);
@@ -9761,7 +9741,6 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
     }
     // F2.2 (TLG_F2_STORE=1): which Maps are announced: by resource kind, map type and the path taken (0 buffer, announced at Unmap; 1 texture, native upload record; 2 texture, record refused;
     // 3 not handled here: the guest function runs and nothing is announced)
-    const u32 map_kind = Core::NativeContent::ShadowOn() && IsHeapPointer(resource) && (resource & 7) == 0 ? Guarded([&]() -> u64 { return Rd<u32>(resource, 0x124); }) : 0xffu;
     const u32 census_kind = Core::RingCensus::On() && IsHeapPointer(resource) && (resource & 7) == 0 ? Guarded([&]() -> u64 { return Rd<u32>(resource, 0x124); }) : 0xffu;
     // note 42, debug only (TLG_STAGING_LOG=1, old renderer): the values the CPU reads from the 16x16 R32F staging texture, as a reference for the backend's readback
     static const bool staging_log = [] { const char* e = std::getenv("TLG_STAGING_LOG"); return e != nullptr && e[0] == '1'; }();
@@ -9815,7 +9794,6 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
         t_census_map_type = static_cast<u32>(type); // stays set while the engine's Map runs after this hook (path 3) or inside it
     }
     const auto count_map = [&](u32 path) {
-        Core::NativeContent::CountMap(map_kind, static_cast<u32>(type), path);
         Core::RingCensus::NoteMapPath(census_kind, subresource, static_cast<u32>(type), path); // TLG_RING_CENSUS (counters only)
     };
     if (ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0 && Rd<u32>(resource, 0x124) == 1) {
@@ -11070,7 +11048,6 @@ u64 PS4_SYSV_ABI ResourceTextureInitAnnounced(u64 object, u64 a1, u64 a2, u64 a3
         const u64 memory = Rd<u64>(object, 0x30);
         const u64 size = Rd<u64>(object, 0x38);
         if (memory != 0 && size != 0 && size <= (1ull << 32)) {
-            NativeContent::SilentProbeNew(1, memory, size); // note 126 probe (off by default)
             Core::TextureVersion::Bump(Rd<u64>(object, 0x10)); // note 100
         }
         return 0;
@@ -11507,66 +11484,7 @@ u64 PS4_SYSV_ABI TextureUpdateSubresource(u64 context, u64 resource, u64 subreso
         }
         return 0;
     }
-    // F2.2: the original runs here (5 arguments, no result) and the guest function is skipped, so what follows sees the copy done
-    u64 ran = 0;
-    if (IsHeapPointer(resource)) {
-        if (const u64 original = Core::GuestHooks::OriginalEntry("TextureUpdateSubresource"); original != 0) {
-            reinterpret_cast<GuestFunction6>(original)(context, resource, subresource, box, data, 0);
-            ran = 1ull << 63;
-        }
-    }
-    static std::atomic<u64> calls{0}, bytes{0}, announced{0};
-    static std::mutex mutex;
-    static std::map<u64, u64> sites;       // return address (ghidra) -> calls
-    static std::map<u32, u64> by_size_log; // log2 of the texture memory size -> calls
-    if (!IsHeapPointer(resource)) {
-        return 0;
-    }
-    Guarded([&]() -> u64 {
-        if (Rd<u32>(resource, 0x124) == 1) {
-            // a buffer: a constant buffer gets a new version in the frame ring; other default buffers (shader resource / unordered access) are written in their
-            // own memory (B2 audit, 2026-10-29): that memory is announced (writer 5, like the initial data of a buffer)
-            const u64 memory = Rd<u64>(resource, 0x30);
-            const u32 width = Rd<u32>(resource, 0x180);
-            const u32 bind = Rd<u32>(resource, 0x188);
-            if ((bind & 0x4) != 0 && ran != 0 && width != 0 && width < (1u << 20)) {
-                // F2.2: the new version of a constant buffer is copied into the frame ring (V# base at +0x60 and +0x64); nothing announces it, the shadow remembers the range as a mark
-                const u64 version = static_cast<u64>(Rd<u32>(resource, 0x60)) | (static_cast<u64>(Rd<u32>(resource, 0x64) & 0xfffu) << 32);
-                Core::NativeContent::NoteMark(3, version, width);
-            }
-            (void)memory;
-            return 0;
-        }
-        const u64 memory = Rd<u64>(resource, 0x30);
-        const u64 size = Rd<u64>(resource, 0x38);
-        const u64 n = calls.fetch_add(1, std::memory_order_relaxed) + 1;
-        bytes.fetch_add(size, std::memory_order_relaxed);
-        if (memory != 0 && size != 0 && size < (1ull << 32)) {
-            Core::TextureVersion::Bump(Rd<u64>(resource, 0x10)); // note 100 (the original ran above)
-            announced.fetch_add(1, std::memory_order_relaxed);
-        }
-        {
-            std::scoped_lock lock{mutex};
-            ++sites[ret >= ImageBase() ? ret - ImageBase() + 0x1000000 : ret];
-            ++by_size_log[static_cast<u32>(std::bit_width(size))];
-        }
-        if ((n & 63) == 1) {
-            nlohmann::json out;
-            out["calls"] = n;
-            out["texture_bytes_covered"] = bytes.load();
-            out["announced"] = announced.load();
-            std::scoped_lock lock{mutex};
-            for (const auto& [site, count] : sites) {
-                out["by_call_site_ghidra"][fmt::format("{:#x}", site)] = count;
-            }
-            for (const auto& [log, count] : by_size_log) {
-                out["by_size_below"][fmt::format("{}", 1ull << log)] = count;
-            }
-            Core::DebugServer::Publish("texture_updates", std::move(out));
-        }
-        return 0;
-    });
-    return ran;
+    return 0; // a constant buffer: the engine's function runs (its new version is a frame-ring block the draws find through the buffer, R7)
 }
 
 /// N2: `FUN_024721a0(context, resource, subresource, box, data)` is JsComputeContext::UpdateSubresource, the compute context's twin of the function above: a constant buffer gets a new version
@@ -11600,30 +11518,7 @@ u64 PS4_SYSV_ABI ComputeUpdateSubresource(u64 context, u64 resource, u64 subreso
         }
         return 0;
     }
-    u64 ran = 0;
-    if (IsHeapPointer(resource)) {
-        if (const u64 original = Core::GuestHooks::OriginalEntry("ComputeUpdateSubresource"); original != 0) {
-            reinterpret_cast<GuestFunction6>(original)(context, resource, subresource, box, data, 0);
-            ran = 1ull << 63;
-        }
-    }
-    if (ran != 0) {
-        Guarded([&]() -> u64 {
-            if (Rd<u32>(resource, 0x124) == 1) {
-                const u32 width = Rd<u32>(resource, 0x180);
-                const u32 bind = Rd<u32>(resource, 0x188);
-                if ((bind & 0x4) != 0 && width != 0 && width < (1u << 20)) {
-                    const u64 version = static_cast<u64>(Rd<u32>(resource, 0x60)) | (static_cast<u64>(Rd<u32>(resource, 0x64) & 0xfffu) << 32);
-                    if (Core::NativeContent::ComputeConstRingMode() != 0 && IsHeapPointer(context) && Rd<u8>(context, 0x2310) == 0 && !Core::NativeContent::InRing(version, width)) {
-                        // note 138: the copy went into the context's own command buffer (the NOP packet payload), not into a frame ring block: register its allocation
-                        Core::NativeContent::CmdConstNote(version, width);
-                    }
-                }
-            }
-            return 0;
-        });
-    }
-    return ran;
+    return 0; // a constant buffer: the engine's function runs
 }
 
 /// C4: the engine's GPU memory allocators (`FUN_02475f90` AllocateGarlicMemory(device, size, alignment, type), `FUN_02476730` AllocateOnionMemory(device, size, alignment), JsDevice.cpp):
@@ -11637,9 +11532,6 @@ u64 PS4_SYSV_ABI GpuAlloc(u64 device, u64 size, u64 alignment, u64 type, u64 a4,
         return 0;
     }
     const u64 result = reinterpret_cast<GuestDraw6>(original)(device, size, alignment, type, a4, a5);
-    if (result != 0) {
-        Core::NativeContent::NoteGpuAllocation(result, size & 0xffffffffull);
-    }
     if constexpr (Which == 0) {
         t_last_garlic_address = result;
         t_last_garlic_size = size & 0xffffffffull;
@@ -11896,7 +11788,6 @@ u64 PS4_SYSV_ABI InstanceGroupBind(u64 inner, u64 group, u64 view, u64 a3, u64 a
         if ((index & ~1) != 0 || bytes <= 0) {
             return 0;
         }
-        Core::NativeContent::ScratchNote(Rd<u64>(uploader, 0x18), Rd<u64>(uploader, 0x20), static_cast<u64>(bytes)); // note 133 (off by default)
         return 0;
     });
     return 0;

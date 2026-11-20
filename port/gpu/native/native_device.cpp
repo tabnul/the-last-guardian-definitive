@@ -41,7 +41,6 @@
 #include "native/native_updates.h"
 #include "native/native_target_desc.h"
 #include "native/native_image_caller.h"
-#include "native/native_content.h"
 #include "native/native_sync.h"
 #include "native/native_frame_gate.h"
 #include "native/native_tsharp_watch.h"
@@ -165,7 +164,6 @@ void Insert(const Object& object) {
         }
     }
     by_id[object.id] = object;
-    by_id[object.id].created_submit = Core::NativeContent::SubmitCount();
     id_by_object[object.object] = object.id;
     if (object.kind >= Kind::Buffer && object.kind <= Kind::Texture3D && object.address != 0) {
         const u64 bytes = object.kind == Kind::Buffer ? std::max<u64>(object.bytes, 1) : object.bytes;
@@ -423,7 +421,6 @@ void NoteDelete(u64 object) {
     Core::Vkb::ObjectDeleted(it->second); // V2: our object goes three submits later
     if (const auto entry = by_id.find(it->second); entry != by_id.end() && entry->second.alive) {
         entry->second.alive = false;
-        entry->second.deleted_submit = std::max<u32>(1u, Core::NativeContent::SubmitCount());
         live_by_kind[static_cast<u32>(entry->second.kind)].fetch_sub(1, std::memory_order_relaxed);
         const Object& gone = entry->second;
         if (const auto at = resource_by_address.find(gone.address); at != resource_by_address.end() && at->second.id == gone.id) {
@@ -444,51 +441,6 @@ void NoteDelete(u64 object) {
     id_by_object.erase(it);
 }
 
-u64 OwnerEndAt(VAddr address, u32 submit) {
-    u64 end = 0;
-    u32 newest = 0;
-    std::shared_lock lock{table_mutex};
-    for (const auto& [id, o] : by_id) {
-        if (o.kind != Kind::Buffer || o.address == 0 || o.created_submit > submit || (o.deleted_submit != 0 && o.deleted_submit <= submit)) {
-            continue;
-        }
-        const u64 bytes = std::max<u64>(o.bytes, 1);
-        if (address >= o.address && address < o.address + bytes && o.created_submit >= newest) {
-            newest = o.created_submit;
-            end = o.address + bytes;
-        }
-    }
-    return end;
-}
-
-std::string OwnersAt(VAddr address, u64 size, u32 submit) {
-    struct Hit {
-        u64 id;
-        u32 created;
-        std::string text;
-    };
-    std::vector<Hit> hits;
-    {
-        std::shared_lock lock{table_mutex};
-        for (const auto& [id, o] : by_id) {
-            if (o.kind < Kind::Buffer || o.kind > Kind::Texture3D || o.address == 0 || o.created_submit > submit || (o.deleted_submit != 0 && o.deleted_submit <= submit)) {
-                continue;
-            }
-            const u64 bytes = o.kind == Kind::Buffer ? std::max<u64>(o.bytes, 1) : o.bytes;
-            if (address >= o.address + bytes || o.address >= address + size) {
-                continue;
-            }
-            hits.push_back({id, o.created_submit, fmt::format("[id {} kind {} {:#x}+{:#x} usage {} bind {:#x} created {} {}]", id, static_cast<u32>(o.kind), static_cast<u64>(o.address), bytes, o.usage, o.bind,
-                                                              o.created_submit, o.deleted_submit != 0 ? fmt::format("deleted {}", o.deleted_submit) : std::string("alive"))});
-        }
-    }
-    std::sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) { return a.created > b.created; });
-    std::string out;
-    for (size_t i = 0; i < hits.size() && i < 3; ++i) {
-        out += hits[i].text;
-    }
-    return out.empty() ? std::string("none") : out;
-}
 
 bool ResourceAt(VAddr address, Object& out) {
     std::shared_lock lock{table_mutex};
@@ -1042,7 +994,6 @@ nlohmann::json Report() {
     out["live"] = std::move(live);
     out["e2_derive"] = Core::NativeImageDesc::Report();
     out["e2_targets"] = Core::NativeTargetDesc::Report();
-    out["f2_store"] = Core::NativeContent::Report();
     out["sync_typed"] = Core::NativeSync::Typed::Report();
     out["note"] = "B1 native device table (cumulative); bindings: the texture cache's / buffer cache's answer against the engine object the record names";
     return out;
@@ -1196,17 +1147,14 @@ bool FreeHoldMidOn() {
 /// The GPU rule of the free hold: a block waits until the GPU has finished the submission that could read it. The engine frees memory as a D3D11 application releases an object (at
 /// once, or by its own frame count), and a D3D11 driver keeps the memory until the GPU is done with it: that is our part of the contract. With the engine-to-Vulkan backend
 /// (TLG_VKB=1, note 103) the clock is our graphics submits: what the engine thread recorded before the free goes with submit `GraphicsSubmits() + 1`, and the block goes back
-/// to the heap when the GPU has finished that submit (before note 103 the frame rule alone stood for it: safe only while the GPU lagged less than 3 frames). Without the
-/// backend: the raster thread's submissions (the old path).
-bool RasterRule() {
-    return !Core::Vkb::On();
-}
+/// to the heap when the GPU has finished that submit (before note 103 the frame rule alone stood for it: safe only while the GPU lagged less than 3 frames). Our hooks run only
+/// with the backend, so there is no other path (the raster thread's submissions were deleted with the content store, note 105).
 u64 RasterNeed() {
-    return RasterRule() ? u64{Core::NativeContent::SubmitCount()} + 1 : Core::Vkb::GraphicsSubmits() + 1;
+    return Core::Vkb::GraphicsSubmits() + 1;
 }
-/// The submissions the GPU (backend) or the raster thread (old path) has finished
+/// The submissions the GPU has finished
 u64 HoldDone() {
-    return RasterRule() ? u64{Core::NativeContent::RasterDoneSubmissions()} : Core::Vkb::GraphicsSubmitsDone();
+    return Core::Vkb::GraphicsSubmitsDone();
 }
 
 bool FreeHoldOn() {
@@ -1297,7 +1245,7 @@ void ReleaseHeld(bool all, bool ignore_frames = false) {
     if (early_blocks != 0) {
         // 2026-11-06 slab / white blob hunt: the heap ran dry and the game's frame rule was dropped. Compare the time of this line with the time of a glitch (auto freeze line).
         TLG_LOG(GPU, Warn, "free hold: heap dry, {} blocks / {} MB handed back before their frame rule (up to {} frames early, engine frame {}), raster done {}, submits {}", early_blocks,
-                early_bytes >> 20, early_max_frames, early_frame, done, Core::NativeContent::SubmitCount());
+                early_bytes >> 20, early_max_frames, early_frame, done, Core::Vkb::GraphicsSubmits());
     }
     for (const auto& entry : due) {
         reinterpret_cast<GuestFunction6>(original)(entry.heap, entry.address, 0, 0, 0, 0);
@@ -1552,7 +1500,7 @@ void HoldTraceSample() {
     constexpr double MB = 1.0 / (1024.0 * 1024.0);
     std::fprintf(file, "%.2f,%lld,%llu,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%lld,%.1f,%.1f,%llu,%u,%.1f\n", (now_ns - start_ns) / 1.0e9, static_cast<long long>(frame), static_cast<unsigned long long>(blocks),
                  bytes * MB, w_frame * MB, w_arm * MB, w_raster * MB, ready * MB, largest * MB, static_cast<long long>(oldest), hold_freed_bytes_total.load() * MB, hold_released_bytes_total.load() * MB,
-                 static_cast<unsigned long long>(done), Core::NativeContent::SubmitCount(), pool_free * MB);
+                 static_cast<unsigned long long>(done), static_cast<u32>(Core::Vkb::GraphicsSubmits()), pool_free * MB);
     std::fflush(file);
 }
 
@@ -1584,7 +1532,7 @@ u64 PS4_SYSV_ABI GomallocAlloc(u64 heap, u64 size, u64 alignment, u64 type, u64 
         ReleaseHeld(false);
     }
     u64 result = reinterpret_cast<GuestFunction6>(original)(heap, size, alignment, type, a4, a5);
-    if (result == 0 && hold && !RasterRule()) {
+    if (result == 0 && hold) {
         // TLG_VKB=1: the heap is dry. First the frame rule is dropped for what is held (the GPU rule stays); then this thread waits (2 s at most) for the GPU to finish the newest
         // submit a held block needs, of those already handed to the GPU (never one not submitted yet: this thread may be the one that submits it); last, everything goes (counted unsafe)
         hold_alloc_failed.fetch_add(1, std::memory_order_relaxed);
@@ -1608,92 +1556,6 @@ u64 PS4_SYSV_ABI GomallocAlloc(u64 heap, u64 size, u64 alignment, u64 type, u64 
             hold_alloc_failed_twice.fetch_add(1, std::memory_order_relaxed);
             ReleaseHeld(true);
             result = reinterpret_cast<GuestFunction6>(original)(heap, size, alignment, type, a4, a5);
-        }
-    } else if (result == 0 && hold) {
-        // the heap ran dry while blocks are held: wait for the raster thread to pass the newest held free (2 s limit), release, retry; then release everything and retry once more
-        u64 newest = 0;
-        {
-            std::scoped_lock lock{deferred_mutex};
-            newest = held_frees.empty() ? 0 : held_frees.back().need;
-        }
-        newest = std::min<u64>(newest, Core::NativeContent::SubmitCount()); // never wait for a submission not announced yet (this thread may be the one that announces it)
-        if (newest != 0) {
-            hold_alloc_failed.fetch_add(1, std::memory_order_relaxed);
-            if (Core::NativeContent::ProgressWaitsOn()) {
-                // TLG_PROGRESS_WAITS=1: wait while the raster thread makes progress (no 2 s limit)
-                if (!Core::NativeContent::WaitRasterSubmissionsProgress(static_cast<u32>(newest), true)) {
-                    Core::Invariant::Hit(Core::Invariant::WaitGaveUp, newest, Core::NativeContent::RasterDoneSubmissions(), 1);
-                }
-            } else {
-                Core::NativeContent::WaitRasterSubmissions(static_cast<u32>(newest));
-            }
-            ReleaseHeld(false);
-            result = reinterpret_cast<GuestFunction6>(original)(heap, size, alignment, type, a4, a5);
-            if (result == 0 && (FreeHoldMidOn() || Core::NativeContent::ProgressWaitsOn())) { // (the game thread is here: the engine frame cannot advance, so the frame rule is dropped, the raster rule stays)
-                ReleaseHeld(false, true);
-                result = reinterpret_cast<GuestFunction6>(original)(heap, size, alignment, type, a4, a5);
-            }
-            bool same_thread_blocked = false;
-            const bool wait_open = HoldWaitOpenOn() && Core::NativeContent::ProgressWaitsOn();
-            // other threads keep freeing while this one waits: repeat until the held blocks are gone or nothing more can be waited for
-            for (int round = 0; wait_open && result == 0 && round < 6; ++round) {
-                u64 open_need = 0;
-                {
-                    std::scoped_lock lock{deferred_mutex};
-                    open_need = held_frees.empty() ? 0 : held_frees.back().need;
-                }
-                if (open_need > Core::NativeContent::RasterDoneSubmissions()) { // (announced since the wait above, or still open)
-                    if (open_need > Core::NativeContent::SubmitCount() && Core::NativeContent::IsSubmitThread()) {
-                        hold_open_same_thread.fetch_add(1, std::memory_order_relaxed); // this thread announces the submission: nothing to wait for
-                        same_thread_blocked = true;
-                        break;
-                    } else {
-                        const auto start = std::chrono::steady_clock::now();
-                        u32 last = Core::NativeContent::SubmitCount();
-                        auto changed_at = start;
-                        bool announced = false;
-                        for (;;) {
-                            if (Core::NativeContent::SubmitCount() >= open_need) {
-                                announced = true;
-                                break;
-                            }
-                            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                            const auto now = std::chrono::steady_clock::now();
-                            if (const u32 count = Core::NativeContent::SubmitCount(); count != last) {
-                                last = count;
-                                changed_at = now;
-                            } else if (now - changed_at > std::chrono::seconds(10)) {
-                                break;
-                            }
-                        }
-                        if (announced && Core::NativeContent::WaitRasterSubmissionsProgress(static_cast<u32>(open_need), true)) {
-                            ReleaseHeld(false, true);
-                            result = reinterpret_cast<GuestFunction6>(original)(heap, size, alignment, type, a4, a5);
-                        } else {
-                            hold_open_gave_up.fetch_add(1, std::memory_order_relaxed);
-                            Core::Invariant::Hit(Core::Invariant::WaitGaveUp, open_need, Core::NativeContent::RasterDoneSubmissions(), 2);
-                            same_thread_blocked = true; // nothing more can be waited for: the old last resort applies
-                            break;
-                        }
-                        hold_open_waits.fetch_add(1, std::memory_order_relaxed);
-                        hold_open_wait_ns.fetch_add(static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count()), std::memory_order_relaxed);
-                    }
-                } else {
-                    ReleaseHeld(false, true); // whatever became safe meanwhile
-                    result = reinterpret_cast<GuestFunction6>(original)(heap, size, alignment, type, a4, a5);
-                    break;
-                }
-            }
-            if (result == 0) {
-                hold_alloc_failed_twice.fetch_add(1, std::memory_order_relaxed);
-                if (wait_open && !same_thread_blocked) {
-                    ReleaseHeld(false, true); // everything that can go safely has gone: the heap is simply full (blocks freed meanwhile by other threads are not released unsafely)
-                } else {
-                    Core::Invariant::Hit(Core::Invariant::HoldReleasedAll, newest, Core::NativeContent::RasterDoneSubmissions(), 0);
-                    ReleaseHeld(true);
-                }
-                result = reinterpret_cast<GuestFunction6>(original)(heap, size, alignment, type, a4, a5);
-            }
         }
     }
     if (hold && result != 0) {
