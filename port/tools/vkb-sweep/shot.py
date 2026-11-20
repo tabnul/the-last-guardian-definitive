@@ -151,7 +151,27 @@ def win_picture(path):
     w, h = r.right, r.bottom
     if w <= 0 or h <= 0:
         return "no window"
-    ImageGrab.grab(bbox=(pt.x, pt.y, pt.x + w, pt.y + h), all_screens=True).save(path)
+
+    # Windows may refuse SetForegroundWindow (someone uses the PC): a grab of the screen area would then hold other
+    # windows (owner rule: pictures of the game window only). Grab only when the game window is in front and owns
+    # the centre and the four corners of its area, before and after the grab; else save nothing.
+    for f, args in ((u.GetForegroundWindow, []), (u.WindowFromPoint, [wintypes.POINT]), (u.GetAncestor, [wintypes.HWND, wintypes.UINT])):
+        f.argtypes, f.restype = args, wintypes.HWND  # full-width handles (int), as EnumWindows gives
+
+    def on_top():
+        if u.GetForegroundWindow() != hwnd:
+            return False
+        for fx, fy in ((0.5, 0.5), (0.02, 0.02), (0.98, 0.02), (0.02, 0.98), (0.98, 0.98)):
+            at = u.WindowFromPoint(wintypes.POINT(pt.x + int(w * fx), pt.y + int(h * fy)))
+            if u.GetAncestor(at, 2) != hwnd:  # GA_ROOT
+                return False
+        return True
+    if not on_top():
+        return "not in front: another window covers the game, no picture taken"
+    picture = ImageGrab.grab(bbox=(pt.x, pt.y, pt.x + w, pt.y + h), all_screens=True)
+    if not on_top():
+        return "not in front: another window came over the game, no picture taken"
+    picture.save(path)
     return f"{w}x{h}" if os.path.exists(path) else "import failed: grab saved nothing"
 
 
