@@ -9,13 +9,23 @@ A blank picture (one flat colour, such as a black screen) is refused with exit c
 compared with anything."""
 import os, subprocess, sys
 
+# Windows (owner's PC sweep, issue 89): ImageMagick 7 is called as "magick"; convert.exe there is a Windows disk tool
+WIN = os.name == "nt"
+
+
+def im(*args):
+    """An ImageMagick convert command line: "convert ..." on Linux, "magick ..." on Windows."""
+    return ["magick", *args] if WIN else ["convert", *args]
+
+
+IDENTIFY = ["magick", "identify"] if WIN else ["identify"]
 BLANK_SPREAD, BLANK_SHARE = 8, 99.5  # blank: this share (%) of pixels within this distance of the most common colour
 
 
 def rgb(path):
-    size = subprocess.run(["identify", "-format", "%w %h", path], capture_output=True, text=True, check=True).stdout
+    size = subprocess.run([*IDENTIFY, "-format", "%w %h", path], capture_output=True, text=True, check=True).stdout
     w, h = map(int, size.split())
-    data = subprocess.run(["convert", path, "-depth", "8", "rgb:-"], capture_output=True, check=True).stdout
+    data = subprocess.run(im(path, "-depth", "8", "rgb:-"), capture_output=True, check=True).stdout
     return w, h, data
 
 
@@ -39,7 +49,7 @@ def blank(data):
 
 def mask_bits(path):
     """Noise mask picture (white = left out) as one byte per pixel, 1 = left out."""
-    return [1 if v > 127 else 0 for v in subprocess.run(["convert", path, "-depth", "8", "-colorspace", "gray", "gray:-"],
+    return [1 if v > 127 else 0 for v in subprocess.run(im(path, "-depth", "8", "-colorspace", "gray", "gray:-"),
                                                         capture_output=True, check=True).stdout]
 
 
@@ -101,8 +111,8 @@ def main():
     print((f"ignored {m['ignored']}%  " if mask is not None else "") + f"pixels {wa}x{ha}  mean {m['mean']:.3f}  >8 {m['gt8']:.3f}%  >16 {m['gt16']:.3f}%  "
           f">32 {m['gt32']:.3f}%  max {m['max']}")
     if len(sys.argv) > 3:
-        subprocess.run(["convert", sys.argv[1], sys.argv[2], "-compose", "difference", "-composite",
-                        "-evaluate", "multiply", "4", sys.argv[3]], check=True)
+        subprocess.run(im(sys.argv[1], sys.argv[2], "-compose", "difference", "-composite",
+                        "-evaluate", "multiply", "4", sys.argv[3]), check=True)
 
 
 if __name__ == "__main__":

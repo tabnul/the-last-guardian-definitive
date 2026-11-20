@@ -23,6 +23,10 @@ struct Image {
 [[nodiscard]] bool Wanted();
 /// F2: TLG_VKB_FG=dlss and the DLLs present
 [[nodiscard]] bool FgWanted();
+/// F2: TLG_VKB_FG=fsr (AMD FSR 3 frame generation, vkb_fsr_fg.h; needs no DLSS)
+[[nodiscard]] bool FsrFgWanted();
+/// F2: either kind of frame generation: the AA keeps the depth and motion for it
+[[nodiscard]] bool AnyFgWanted();
 /// Our instance and device creation (only when Wanted): what NGX needs
 void AppendInstanceExtensions(std::vector<const char*>& enabled);
 void AppendDeviceExtensions(vk::Instance instance, vk::PhysicalDevice physical, std::vector<const char*>& enabled);

@@ -41,6 +41,7 @@
 #include "native/native_vkb_objects.h"
 #include "native/native_vkb_stream.h"
 #include "native/native_vkb_util.h"
+#include "native/shadps4/shader_recompiler/ir/passes/ir_passes.h"
 #include "native/shadps4/shader_recompiler/backend/bindings.h"
 #include "native/shadps4/shader_recompiler/backend/spirv/emit_spirv.h"
 #include "native/shadps4/shader_recompiler/frontend/fetch_shader.h"
@@ -1862,7 +1863,17 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
             Core::Vkb::Aa::NoteSceneDepth(dsv_id);
         }
         const bool geometry = (kind == 2) || a1 > 6 || instances > 1;
-        const u64 mesh = Mix(Mix(Mix(a1, a2), a3), v.vs.info ? v.vs.info->pgm_hash : 0ull);
+        // issue 54: a mesh is its index data, as the normal renderer's rule (vk_rasterizer.cpp: index address and count): the address of the first index and
+        // the index count (an indirect draw: the index data and its arguments), whatever shader draws it, so a second pass of a surface with another vertex shader
+        // matches its shifted pre-pass. Not indexed: no mesh. TLG_VKB_AA_MESH_KEY=0: the old key (counts and the vertex shader; it never matched, issue 54)
+        u64 mesh = 0;
+        if (!Core::Vkb::Aa::MeshKeySwitch()) {
+            mesh = Mix(Mix(Mix(a1, a2), a3), v.vs.info ? v.vs.info->pgm_hash : 0ull);
+        } else if (const u64 index_view = Rd<u64>(ctx, 0x58); (kind == 0 || kind == 2) && index_view != 0) {
+            const u64 index_address = static_cast<u64>(Rd<u32>(index_view, 0x64) & 0xff) << 32 | (Rd<u32>(index_view, 0x60) & 0xfffffffeu);
+            const u64 index_bytes = Rd<u32>(ctx, 0x64) == 1 ? 4 : 2;
+            mesh = index_address == 0 ? 0 : kind == 0 ? Mix(index_address + a2 * index_bytes, a1) : Mix(Mix(index_address, a1), a2);
+        }
         // does the pixel shader read a scene depth (decals, lights): its used texture slots' resources against the scene depth ids
         bool samples_depth = false;
         const u64 ps_object = Rd<u64>(ctx, CtxPixelShader);
@@ -2409,6 +2420,38 @@ nlohmann::json TargetCensusReport() {
     }
     return j;
 }
+/// issue 75: the translator's reads with automatic level choice in per-pixel branches (pixel shaders): moved before the branch, or kept with a reason
+/// (reads = moved + in_uniform_branch_only + outside_any_branch + the kept ones)
+nlohmann::json ReadsOutOfBranchReport() {
+    namespace O = VkbShader::Optimization;
+    const auto& c = O::ReadsOutOfBranchCounters();
+    nlohmann::json kept = nlohmann::json::object();
+    for (u32 i = 0; i < O::ReadsOutOfBranchReasonCount; ++i) {
+        kept[O::ReadsOutOfBranchReasonNames[i]] = c.not_moved[i].load();
+    }
+    nlohmann::json shaders = nlohmann::json::array();
+    for (const auto& s : O::ReadsOutOfBranchShaders()) {
+        nlohmann::json k = nlohmann::json::object();
+        for (u32 i = 0; i < O::ReadsOutOfBranchReasonCount; ++i) {
+            if (s.not_moved[i] != 0) {
+                k[O::ReadsOutOfBranchReasonNames[i]] = s.not_moved[i];
+            }
+        }
+        shaders.push_back({{"ps", fmt::format("{:016x}", s.hash)}, {"applied", s.applied}, {"reads", s.reads}, {"moved", s.moved},
+                           {"ops_moved", s.ops_moved}, {"in_uniform_branch", s.in_uniform_branch}, {"outside_any_branch", s.outside_branches}, {"kept", k}});
+    }
+    return {{"on", profile.reads_out_of_branch},
+            {"pixel_shader_translations", c.pixel_shaders.load()},
+            {"translations_with_reads_in_a_branch", c.shaders_with_reads_in_branch.load()},
+            {"reads", c.reads.load()},
+            {"moved", c.moved.load()},
+            {"ops_moved", c.ops_moved.load()},
+            {"in_uniform_branch_only", c.in_uniform_branch.load()},
+            {"outside_any_branch", c.outside_branches.load()},
+            {"kept_in_per_pixel_branch", kept},
+            {"shaders", shaders}};
+}
+
 nlohmann::json Report() {
     const u64 compiled = c_compiled.load(), draws = c_draws.load();
     nlohmann::json fails = nlohmann::json::object();
@@ -2462,6 +2505,7 @@ nlohmann::json Report() {
             {"variant_find_us_mean", draws ? static_cast<double>(c_variant_find_ns.load()) / 1e3 / static_cast<double>(draws) : 0.0},
             {"lookups", Core::Vkb::LookupReport()},
             {"aa", Core::Vkb::Aa::Report()},
+            {"reads_out_of_branch", ReadsOutOfBranchReport()},
             {"recorder_job_us_mean", c_job_n.load() ? static_cast<double>(c_job_ns.load()) / 1e3 / static_cast<double>(c_job_n.load()) : 0.0},
             {"new_passes", c_new_passes.load()},
             {"indirect_recorded", c_indirect_recorded.load()},

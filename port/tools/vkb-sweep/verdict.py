@@ -38,12 +38,20 @@ def load_list(path=LIST):
     return out
 
 
+# Not renderer faults: shader-build warnings come only when a shader is built (so they follow the shader cache, not
+# the renderer), and the K2 counter line with every count 0 is a stats line. A line not starting at a log prefix
+# is two writers mixed into one line (seen on Windows) and cannot be read as one kind.
+SKIP = re.compile(r"lower_wave64_pass\.cpp|emit_spirv\.cpp:\d+ operator\(\): Float\d+ denorm"
+                  r"|K2 readback passes: \d+ reader starts, AABB pass not run \(counts set to 0\) 0, third pass not run 0$")
+START = re.compile(r"^(GPU )?\[[\w.]+\] <")
+
+
 def kinds(path):
     """Set of line kinds (Error/Critical/Warning) in one game log."""
     found = set()
     if path and os.path.exists(path):
         for l in open(path, errors="replace"):
-            if KIND.search(l):
+            if KIND.search(l) and START.match(l) and not SKIP.search(l.strip()):
                 found.add(re.sub(r"0x[0-9a-fA-F]+|[0-9a-fA-F]{8,}|\d+", "N", l.strip())[:200])
     return found
 
