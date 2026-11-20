@@ -143,6 +143,7 @@ IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Inf
     if (info.sw_stage == SwStage::Fragment && profile.needs_integer_interpolation_fix) {
         VkbShader::Optimization::InterpolatedIntegerPass(program);
     }
+    VkbShader::Optimization::ReadsOutOfBranchPass(program, profile.reads_out_of_branch); // tlg issue 75
     VkbShader::Optimization::CollectShaderInfoPass(program, profile);
     VkbShader::IR::DumpProgram(program, info);
 

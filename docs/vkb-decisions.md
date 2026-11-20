@@ -32,6 +32,67 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-20 - Texture reads out of per-pixel branches in the new engine's translator (not yet merged)
+
+- **Problem:** with forced 16x AF the new engine drew horizontal stripes in the sky of one scene (issue 75). The cloud
+  shader reads the cloud picture inside a per-pixel "if" (made from a console region where pixels are switched off); a
+  read with automatic level choice looks at its 2x2 neighbours, and neighbours that skipped the "if" bring leftover
+  values, so the level and direction are undefined at the edge of the "if". That holds for every pixel shader with
+  such a read, not only this one.
+- **Considered:** (1) in the translator, move each such read, with the plain arithmetic its coordinates need, to the
+  block before the outermost per-pixel "if"; reads have no side effects, so the values inside stay the same; reads
+  that need anything else stay and are counted with a reason; (2) let the whole 2x2 group enter the "if" and keep the
+  per-pixel condition for results and writes: covers every derivative, but needs quad operations (an optional driver
+  feature, a second path) and a bigger change to how branches are built; (3) forced AF off for samplers read inside
+  such an "if": hides the fault, the level stays undefined, the player loses sharpness.
+- **Choice:** 1, chosen in the design note on issue 75 and built as planned. Plain SPIR-V, so every machine (principle
+  6); one rule for all pixel shaders (10); the right picture first, the cost is stated in the pull request (11).
+  Widened on the way: a constant buffer read at an address that is the same for every pixel may move with the read (on
+  the console it is a scalar load that runs for the whole wave anyway; out of range it reads zero). Narrowed after the
+  second read: a constant read by raw address does not move, and a shader that writes memory is left as it is (a read
+  must not pass a write); both are counted. The normal renderer has the same fault in its own
+  translation and keeps it (principle 8). Way 2 stays the fallback if a sweep shows a wrong picture from a read that
+  way 1 keeps. Switch `TLG_VKB_READS_OUT_OF_BRANCH` (`=0` the old translation).
+- **Who:** box (rule 14).
+- **Links:** issue 75 (https://github.com/tabnul/tlg-vkb-work/issues/75); pull request for branch
+  `fix/vkb-reads-out-of-branch`.
+
+## 2026-11-19 - The AA's shift: a second pass of a mesh is known by its index data, as in the normal renderer (not yet merged)
+
+- **Problem:** with an anti-aliasing on (FSR 3.1 by default since pull request 51), the stained-glass window of the first room
+  lost most of its lit glass, so the metal frames behind it showed as extra dark lines (issue 54). The cause is the small
+  per-frame picture shift (jitter) the AA needs: a surface that is drawn a second time over its own depth must get the same
+  shift as its first draw, or its depth test fails on part of it. The new engine had that rule, but it knew a mesh by its
+  draw counts and its vertex shader, so a second pass with another vertex shader never matched (0 matches in every take).
+- **Considered:** (A) know a mesh by its index data (address of the first index and the index count), as the normal
+  renderer does; (B) shift every draw that tests a shifted depth (the normal renderer's debug mode "follow"): also shifts
+  lights and fog volumes, which the normal renderer does not do; (C) no shift after the scene geometry, or a mesh table
+  kept across frames: other behaviour than the normal renderer, more special paths. Two quick tries before the note did
+  not help and were dropped: FSR 3.1 reading the cleaned motion vectors, and keeping the frame's shift after the AA's step.
+- **Choice:** A. The same rule as the normal renderer, no card feature, it replaces the old key. Switch
+  `TLG_VKB_AA_MESH_KEY` (`=0` the old key). Proof: window 0.0% / 3.1% off (old key 20.2% / 19.2%), garden unchanged.
+- **Who:** box (rule 14).
+- **Links:** issue 54 (https://github.com/tabnul/tlg-vkb-work/issues/54), design note
+  https://github.com/tabnul/tlg-vkb-work/issues/54#issuecomment-7024036618 ; pull request for branch `fix/vkb-aa-mesh-key`.
+
+## 2026-11-19 - TAA in the new engine: the normal renderer's own TAA shader (not yet merged)
+
+- **Problem:** a player who chose TAA (in-game menu or launcher) got, in the new engine, an error line "the new engine has no
+  TAA yet" and FSR 3.1 instead (pull request 58). That line is a fault until TAA runs (rule 24).
+- **Considered:** (A) run the normal renderer's TAA shader itself: it is already compiled into the same library, so the
+  new engine loads that compiled shader as it is, with the inputs its anti-aliasing step already collects (scene colour,
+  depth, motion in pixels, the jitter) and its own two history images; the sharpening is the passes the new engine already
+  has (as for DLAA). (B) a copy of the TAA shader in the new engine's shader folder: two copies that can drift apart.
+  (C) keep FSR 3.1 for a TAA choice: the fault stays.
+- **Choice:** A. One TAA in the code base instead of two; the same picture rule as the normal renderer by construction; a
+  plain compute shader, so no card feature is involved. With this, every anti-aliasing the game's settings can load has
+  its own path in the new engine (off, FSR 3.1, FSR 4, DLAA, TAA). The TAA's depth test wants the game's camera; the new
+  engine reads none, and the normal renderer finds none in this game either, so both give it zeros (the same test).
+  Giving TAA a camera would change both renderers: the owner's call. Switch `TLG_VKB_TAA` (`=0` the old way: fault line
+  and FSR 3.1).
+- **Who:** box (rule 14).
+- **Links:** issue 57 (https://github.com/tabnul/tlg-vkb-work/issues/57); pull request for branch `fix/vkb-taa`.
+
 ## 2026-11-19 - The frame ring is mapped below 40 bits with a placed mapping (not yet merged)
 
 - **Problem:** On this box (AMD, Linux) the frame ring never moves into graphics memory (R3a): the driver picks an

@@ -17,7 +17,7 @@ class Instance;
 /// The motion pass (pixel shader 5fce13a4) gives the scene colour (target 0), the game's motion vectors (target 2) and the scene depth; right before the
 /// post-processing combine (compute 252f2091) the AA runs and writes its result back into the scene colour, so the game's post, tonemap and interface go on
 /// unchanged; the game's SMAA (vertex shader 0a449aef) is cleared instead of drawn while it runs. TLG_VKB_AA turns it on (off by default): fsr3, fsr4 (FSR 4,
-/// native_vkb_fsr4.h), dlaa, or auto (the launcher on a fresh launch: DLAA if DLSS is installed, else FSR 4 on an RDNA 4 card, else FSR 3.1).
+/// native_vkb_fsr4.h), dlaa, taa (issue 57: the normal renderer's TAA shader, native size; TLG_VKB_TAA=0 the old way: a fault line and FSR 3.1), or auto (the launcher on a fresh launch: DLAA if DLSS is installed, else FSR 4 on an RDNA 4 card, else FSR 3.1).
 namespace Core::Vkb::Aa {
 
 constexpr u64 MotionPassPs = 0x5fce13a4, CombineCs = 0x252f2091, SmaaVs = 0x0a449aef;
@@ -46,6 +46,9 @@ void NoteSceneDepth(u64 depth_view_id);
 /// passes test without writing: unjittered they flickered against the jittered depth, owner play 2026-11-16), except volumes that sample a scene depth (decals,
 /// lights rebuild positions from it); a redraw of a mesh drawn jittered with depth writes takes the shift too.
 [[nodiscard]] bool DrawJitter(u64 depth_view_id, bool depth_write, bool geometry, bool samples_depth, u64 mesh_key, std::array<float, 2>& jitter);
+/// Issue 54: the redraw rule above knows a mesh by its index data (the first index's address and the index count), as the normal renderer; switch
+/// TLG_VKB_AA_MESH_KEY (=0: the old key, the counts and the vertex shader)
+[[nodiscard]] bool MeshKeySwitch();
 [[nodiscard]] std::array<float, 2> OnCombineQueued();
 [[nodiscard]] nlohmann::json Report();
 
@@ -55,6 +58,7 @@ struct FgInputs {
     vk::ImageView depth_view{}, motion_view{};
     vk::Format depth_format{};
     u32 width{}, height{};
+    float jitter_x{}, jitter_y{}; ///< the offset this frame's geometry had (render pixels, FSR's sign convention)
     bool reset{};
 };
 bool TakeFgInputs(FgInputs& out);

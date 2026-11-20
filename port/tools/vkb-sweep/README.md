@@ -103,7 +103,7 @@ take is a fresh game start with the GPU memory guard and the fixed recipe above.
   short line on the screen. Per take: status, picture path, blank yes/no, crash yes/no (the game process
   ended by itself before `shot.py` closed it, at any step; `shot.py` then prints `game ended by itself before
   the take was done (exit code N)`), log counts (`<Error>`/`<Critical>` lines, `<Warning>` lines,
-  `Fault: exception` lines), the new engine's skip and fail counters (left out when the game does not report
+  `Fault: exception` lines, and `late_results`: the author's fix A timeouts, late query results dropped after its 50 ms limit; 0 where the build has no fix A), the new engine's skip and fail counters (left out when the game does not report
   them; the normal renderer reports none), peak GTT (empty where the guard is not active). With 2 or more good takes: `noise`, take 1 against
   take 2 of the same renderer (mean, share of pixels above 8, 16, 32, largest; the same numbers as `compare.py`).
 - Resumable: a scene with a result line is not run again. Takes that ended (their line is in
@@ -196,3 +196,8 @@ Outside the mask the normal renderer still differs from itself a little (median 
 limit. No code in the sweep judges a picture against a limit yet, so `own-limit` is data for the report step.
 No scene needs log only because of noise any more: the 15 scenes that the solid-blob rule had moved to `log-only.txt` are
 back in the picture check. Switch: remove `moving` from an entry's CAUSES (2-photo mask) or the whole line.
+
+## Speed in results and reports (owner 2026-11-20)
+
+`sweep.py` reads the last `Frame stats: <x> FPS, worst frame <y> ms` line of every take's game log into the result line (`fps`, `worst_frame_ms` per take; `null` when the line is missing).
+`python3 -I speed.py BEFORE AFTER` (two `results-vkb*.jsonl` or their folders; old results work, it reads the take logs) prints a speed column per scene: average FPS before and after, the change, the worst frame. A scene is flagged `slower` only when FPS drops 15% or more on both takes. The box runs at ~15 FPS, so smaller changes are noise. Speed alone never makes a change unsafe; box numbers are relative only, real speed numbers come from the owner's Nvidia PC.

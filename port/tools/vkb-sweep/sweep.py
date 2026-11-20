@@ -80,13 +80,34 @@ def counters(path):
     return out
 
 
+LATE_RESULT = "anim query order: timeout on thread"
+
+
+FRAME_STATS = re.compile(r"Frame stats: ([\d.]+) FPS, worst frame ([\d.]+) ms")
+
+
+def frame_stats(path):
+    """(fps, worst_frame_ms) of the LAST 'Frame stats' line of a take's game log; (None, None) when there is none."""
+    last = None
+    try:
+        for line in open(path, errors="replace"):
+            m = FRAME_STATS.search(line)
+            if m:
+                last = (float(m[1]), float(m[2]))
+    except OSError:
+        pass
+    return last or (None, None)
+
+
 def log_counts(path):
     if not os.path.exists(path):
         return None
     lines = open(path, errors="replace").read().splitlines()
     return {"errors": sum(1 for l in lines if "<Error>" in l or "<Critical>" in l),
             "warnings": sum(1 for l in lines if "<Warning>" in l),
-            "faults": sum(1 for l in lines if "Fault: exception" in l)}
+            "faults": sum(1 for l in lines if "Fault: exception" in l),
+            # late query results dropped after the 50 ms limit (the author's fix A, one log line per timeout)
+            "late_results": sum(1 for l in lines if LATE_RESULT in l)}
 
 
 def ended_takes(folder, vkb):
@@ -116,7 +137,9 @@ def result(folder, stage, scene, vkb, takes):
         status, seconds, peak, crash = ended[n]
         stem = os.path.join(folder, f"vkb{vkb}_take{n}")
         pic = next((stem + e for e in (".png", ".blank.png") if os.path.exists(stem + e)), None)
+        fps, worst = frame_stats(stem + ".log")
         row["takes"].append({
+            "fps": fps, "worst_frame_ms": worst,
             "take": n, "ok": status.startswith("ok "), "status": status, "seconds": seconds,
             "picture": pic, "blank": bool(pic and pic.endswith(".blank.png")),
             # the game ended by itself before the take was done (a crash or an exit), as shot.py saw it
@@ -174,6 +197,14 @@ def summary(row):
 STOP = []
 
 
+def pid_alive(pid):
+    """Is process pid running (the lock check; /proc on Linux, tasklist on Windows: issue 89)."""
+    if os.name != "nt":
+        return os.path.exists(f"/proc/{pid}")
+    out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True).stdout
+    return str(pid) in out
+
+
 def main():
     args = sys.argv[1:]
     scenes_file = None
@@ -201,7 +232,7 @@ def main():
     lock = os.path.join(root, f"sweep-vkb{vkb}.pid")
     if os.path.exists(lock):
         pid = int(open(lock).read().strip() or 0)
-        if pid and os.path.exists(f"/proc/{pid}"):
+        if pid and pid_alive(pid):
             sys.exit(f"a sweep is already running in {root} (pid {pid})")
     with open(lock, "w") as f:
         f.write(f"{os.getpid()}\n")
@@ -213,7 +244,8 @@ def main():
 
     def stop(sig, frame):
         STOP.append(sig)
-        if child and child[0].poll() is None:
+        # Windows: Ctrl+C already reaches shot.py (same console); send_signal(SIGINT) is not supported there
+        if child and child[0].poll() is None and os.name != "nt":
             child[0].send_signal(signal.SIGINT)  # shot.py ends its take, puts the save back, closes its screen
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)

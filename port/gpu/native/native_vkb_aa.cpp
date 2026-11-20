@@ -33,6 +33,9 @@
 #include "native/shadps4/video_core/renderer_vulkan/vk_instance.h"
 #include "tlg_overlay.h"
 #include "tlg_settings.h"
+#include "tlg_toggles.h"
+// issue 57: the normal renderer's own TAA shader (compiled from their taa.comp in this build; only read, never changed)
+#include "video_core/host_shaders/taa_comp.h"
 
 namespace {
 /// a device-wide wait: every queue must be left alone meanwhile (Vulkan), so the backend's recording and upload threads wait at the queue lock, as the
@@ -46,7 +49,7 @@ void IdleDevice(vk::Device device) {
 namespace Core::Vkb::Aa {
 namespace {
 
-enum class Kind : u32 { Off, Fsr3, Dlaa, Fsr4 };
+enum class Kind : u32 { Off, Fsr3, Dlaa, Fsr4, Taa };
 
 } // namespace
 
@@ -62,6 +65,14 @@ bool PicturePart(char part) {
 bool Fsr4Switch() {
     static const bool on = [] {
         const char* e = std::getenv("TLG_VKB_FSR4");
+        return e == nullptr || e[0] != '0';
+    }();
+    return on;
+}
+
+bool TaaSwitch() {
+    static const bool on = [] {
+        const char* e = std::getenv("TLG_VKB_TAA");
         return e == nullptr || e[0] != '0';
     }();
     return on;
@@ -113,7 +124,7 @@ Kind ChoiceFault(const std::string& why) {
 /// TLG_VKB_AA: fsr3 (or 1), fsr4, dlaa, off, taa, auto (the launcher on a fresh launch: the player chose nothing). The launcher passes every choice the game's
 /// own settings can hold (tlg_run.backend_aa_env, the rule of TlgSettings::Load). The owner's rules (pull request 51): a choice is used as is (DLAA without
 /// DLSS is FSR 3.1, their DlssFallback); the fresh-launch default is DLSS if present, else FSR 4 on an RDNA 4 card, else FSR 3.1; never without AA, so a
-/// choice this engine has no AA for (taa, an unknown value) is a fault and FSR 3.1 runs. Not set at all (a tool that starts the engine without the
+/// choice this engine has no AA for (an unknown value; taa with TLG_VKB_TAA=0) is a fault and FSR 3.1 runs. Not set at all (a tool that starts the engine without the
 /// launcher): off, with an info line. TLG_VKB_FSR4=0: the old way for FSR 4 (fsr4 runs as FSR 3.1, auto as dlaa); TLG_VKB_AA_CHOICE=0: the old way for
 /// taa and unknown values (off, no line).
 Kind Resolve(const VkbVulkan::Instance& inst) {
@@ -163,7 +174,10 @@ Kind Resolve(const VkbVulkan::Instance& inst) {
         return Kind::Off; // the old way
     }
     if (v == "taa") {
-        return ChoiceFault("TAA was chosen, but the new engine has no TAA yet");
+        if (TaaSwitch()) {
+            return Kind::Taa; // issue 57: the normal renderer's TAA (their taa.comp), native size
+        }
+        return ChoiceFault("TAA was chosen, but the new engine has no TAA yet (TLG_VKB_TAA=0)"); // the old way
     }
     return ChoiceFault(fmt::format("anti-aliasing '{}' is not a choice the new engine knows", v));
 }
@@ -207,6 +221,20 @@ vk::PipelineLayout rcas_layout{};
 vk::Pipeline rcas_pipeline{};
 bool rcas_broken = false; ///< the pipeline could not be made (logged once, in the report): the AA's own sharpening only
 std::atomic<bool> frame_cut{false}; ///< K4: the engine's camera-cut flag of the frame being recorded (render thread)
+
+// Issue 57: TAA, the normal renderer's (their TemporalUpscaler::RecordTaa with taa.comp): two histories (scene colour and depth, RGBA32F) alternate
+// between read and write; its result goes to `output`, its sharpening is the RCAS passes after it (as DLAA: an AA without RCAS of its own)
+std::array<VkImage, 2> taa_hist{};
+std::array<VmaAllocation, 2> taa_hist_allocs{};
+std::array<vk::ImageView, 2> taa_hist_views{};
+u32 taa_next = 0; ///< the history written this frame (the other one is read)
+vk::DescriptorSetLayout taa_set_layout{};
+vk::PipelineLayout taa_layout{};
+vk::Pipeline taa_pipeline{};
+vk::Sampler taa_sampler{};
+std::mutex taa_fault_mutex;
+std::string taa_fault; ///< why a chosen TAA could not run (empty: no fault; under taa_fault_mutex, the report reads it)
+std::atomic<u64> c_taa_runs{0}, c_taa_faults{0};
 
 bool Facts(vk::Image image, Input& out) {
     out.image = image;
@@ -372,7 +400,7 @@ bool EnsureDepthCopies(u32 w, u32 h, vk::Format format) {
                                .arrayLayers = 1,
                                .samples = VK_SAMPLE_COUNT_1_BIT,
                                .tiling = VK_IMAGE_TILING_OPTIMAL,
-                               .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                               .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, // source: FSR's depth copy
                                .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
                                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
     const VmaAllocationCreateInfo alloc{.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
@@ -451,7 +479,8 @@ bool EnsureDlaa(u32 w, u32 h) {
 }
 
 void DestroyContext() {
-    if (context != nullptr || fsr4_made) {
+    // every image below may still be in use by frames already sent (the output and TAA's histories too: second read of issue 57)
+    if (context != nullptr || fsr4_made || output != VK_NULL_HANDLE || taa_hist[0] != VK_NULL_HANDLE) {
         IdleDevice(instance->GetDevice());
     }
     if (context != nullptr) {
@@ -463,6 +492,13 @@ void DestroyContext() {
         fsr4_made = false;
     }
     DestroyFsr4Inputs();
+    for (u32 i = 0; i < taa_hist.size(); ++i) {
+        if (taa_hist[i] != VK_NULL_HANDLE) {
+            instance->GetDevice().destroyImageView(taa_hist_views[i]);
+            vmaDestroyImage(instance->GetAllocator(), taa_hist[i], taa_hist_allocs[i]);
+            taa_hist[i] = VK_NULL_HANDLE, taa_hist_allocs[i] = nullptr, taa_hist_views[i] = vk::ImageView{};
+        }
+    }
     if (output != VK_NULL_HANDLE) {
         if (output_view) {
             instance->GetDevice().destroyImageView(output_view);
@@ -492,6 +528,91 @@ void Fsr4Fault(const std::string& why) {
     active.store(Kind::Fsr3, std::memory_order_relaxed);
 }
 
+/// A chosen TAA that cannot be made: a fault, said in the log and on screen (no quiet switch, rule 5); FSR 3.1 native AA runs so the game keeps its
+/// anti-aliasing (the same reading as a chosen FSR 4 that fails, issue 55)
+void TaaFault(const std::string& why) {
+    c_taa_faults.fetch_add(1, std::memory_order_relaxed);
+    {
+        std::scoped_lock lock{taa_fault_mutex};
+        taa_fault = why;
+    }
+    LOG_ERROR(Render_Vulkan, "vkb aa: TAA could not run: {}. FSR 3.1 native AA runs instead", why);
+    TlgOverlay::Notice("TAA could not start (" + why + "). FSR 3.1 is used instead.", 15.0f);
+    active.store(Kind::Fsr3, std::memory_order_relaxed);
+}
+
+/// TAA's pipeline (once; their layout: 4 sampled inputs with a nearest sampler, 3 storage outputs, 64 bytes of push constants) and its two histories at
+/// this size (made after DestroyContext, so the first frame is a reset). False: `why` says what failed.
+bool EnsureTaa(u32 w, u32 h, std::string& why) {
+    const vk::Device device = instance->GetDevice();
+    if (!taa_pipeline) {
+        std::array<vk::DescriptorSetLayoutBinding, 7> bindings{};
+        for (u32 i = 0; i < bindings.size(); ++i) {
+            bindings[i] = {.binding = i, .descriptorType = i < 4 ? vk::DescriptorType::eCombinedImageSampler : vk::DescriptorType::eStorageImage,
+                           .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute};
+        }
+        // each part made once; one that failed is tried again on the next call (null)
+        if (!taa_set_layout) {
+            taa_set_layout = device.createDescriptorSetLayout({.flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+                                                               .bindingCount = static_cast<u32>(bindings.size()), .pBindings = bindings.data()}).value;
+        }
+        if (taa_set_layout && !taa_layout) {
+            const vk::PushConstantRange range{.stageFlags = vk::ShaderStageFlagBits::eCompute, .offset = 0, .size = 64};
+            taa_layout = device.createPipelineLayout({.setLayoutCount = 1, .pSetLayouts = &taa_set_layout, .pushConstantRangeCount = 1, .pPushConstantRanges = &range}).value;
+        }
+        if (!taa_sampler) {
+            taa_sampler = device.createSampler({.magFilter = vk::Filter::eNearest, .minFilter = vk::Filter::eNearest, .mipmapMode = vk::SamplerMipmapMode::eNearest,
+                                                .addressModeU = vk::SamplerAddressMode::eClampToEdge, .addressModeV = vk::SamplerAddressMode::eClampToEdge,
+                                                .addressModeW = vk::SamplerAddressMode::eClampToEdge}).value;
+        }
+        if (!taa_set_layout || !taa_layout || !taa_sampler) {
+            why = "its pipeline layout could not be made";
+            return false;
+        }
+        const std::span<const u32> code{TAA_COMP};
+        const auto [mr, module] = device.createShaderModule({.codeSize = code.size_bytes(), .pCode = code.data()});
+        if (mr != vk::Result::eSuccess) {
+            why = "its shader could not be loaded";
+            return false;
+        }
+        const auto [r, pipeline] = device.createComputePipeline({}, {.stage = {.stage = vk::ShaderStageFlagBits::eCompute, .module = module, .pName = "main"}, .layout = taa_layout});
+        device.destroyShaderModule(module);
+        if (r != vk::Result::eSuccess) {
+            why = "its pipeline could not be made";
+            return false;
+        }
+        taa_pipeline = pipeline;
+    }
+    const VkImageCreateInfo ci{.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                               .imageType = VK_IMAGE_TYPE_2D,
+                               .format = VK_FORMAT_R32G32B32A32_SFLOAT,
+                               .extent = {w, h, 1},
+                               .mipLevels = 1,
+                               .arrayLayers = 1,
+                               .samples = VK_SAMPLE_COUNT_1_BIT,
+                               .tiling = VK_IMAGE_TILING_OPTIMAL,
+                               .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                               .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                               .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
+    const VmaAllocationCreateInfo alloc{.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
+    for (u32 i = 0; i < taa_hist.size(); ++i) {
+        if (vmaCreateImage(instance->GetAllocator(), &ci, &alloc, &taa_hist[i], &taa_hist_allocs[i], nullptr) != VK_SUCCESS) {
+            taa_hist[i] = VK_NULL_HANDLE, taa_hist_allocs[i] = nullptr;
+            why = "its history images could not be made";
+            return false;
+        }
+        const auto [vr, view] = device.createImageView({.image = vk::Image{taa_hist[i]}, .viewType = vk::ImageViewType::e2D, .format = vk::Format::eR32G32B32A32Sfloat,
+                                                        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}});
+        if (vr != vk::Result::eSuccess) {
+            why = "its history views could not be made";
+            return false; // the caller's DestroyContext frees the images made so far
+        }
+        taa_hist_views[i] = view;
+    }
+    taa_next = 0;
+    return true;
+}
+
 bool EnsureContext(u32 w, u32 h) {
     if (choice_notice_due.exchange(false, std::memory_order_acquire)) {
         std::scoped_lock lock{choice_fault_mutex};
@@ -499,7 +620,8 @@ bool EnsureContext(u32 w, u32 h) {
         text[0] = char(std::toupper(static_cast<unsigned char>(text[0])));
         TlgOverlay::Notice(text, 15.0f);
     }
-    if ((context != nullptr || (Chosen() == Kind::Dlaa && output != VK_NULL_HANDLE) || (Chosen() == Kind::Fsr4 && fsr4_made)) && ctx_w == w && ctx_h == h) {
+    if ((context != nullptr || (Chosen() == Kind::Dlaa && output != VK_NULL_HANDLE) || (Chosen() == Kind::Fsr4 && fsr4_made) ||
+         (Chosen() == Kind::Taa && taa_hist[0] != VK_NULL_HANDLE)) && ctx_w == w && ctx_h == h) {
         return true;
     }
     DestroyContext();
@@ -516,8 +638,15 @@ bool EnsureContext(u32 w, u32 h) {
             Fsr4Fault(Core::Vkb::Fsr4::Problem());
         }
     }
-    if (Chosen() == Kind::Dlaa || Chosen() == Kind::Fsr4) {
-        goto make_output; // DLAA (DlssGlue) and FSR 4 (native_vkb_fsr4) have their own; only the output image is shared
+    if (Chosen() == Kind::Taa) {
+        std::string why;
+        if (!EnsureTaa(w, h, why)) {
+            DestroyContext(); // a history made before the failure
+            TaaFault(why);
+        }
+    }
+    if (Chosen() == Kind::Dlaa || Chosen() == Kind::Fsr4 || Chosen() == Kind::Taa) {
+        goto make_output; // DLAA (DlssGlue), FSR 4 (native_vkb_fsr4) and TAA (above) have their own; only the output image is shared
     }
     {
     FfxVkPortableDeviceInfo device_info{};
@@ -587,6 +716,8 @@ make_output:
         LOG_INFO(Render_Vulkan, "vkb aa: FSR 3.1 native AA {}x{} on the game's motion vectors", w, h);
     } else if (Chosen() == Kind::Fsr4) {
         LOG_INFO(Render_Vulkan, "vkb aa: FSR 4 native AA {}x{} on the game's motion vectors (in render pixels)", w, h);
+    } else if (Chosen() == Kind::Taa) {
+        LOG_INFO(Render_Vulkan, "vkb aa: TAA {}x{} on the game's motion vectors (in render pixels)", w, h);
     }
     return true;
 }
@@ -656,6 +787,11 @@ bool Running();
 
 bool JitterWanted() {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_AA_JITTER"); return e == nullptr || e[0] != '0'; }();
+    return on;
+}
+
+bool MeshKeySwitch() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_AA_MESH_KEY"); return e == nullptr || e[0] != '0'; }();
     return on;
 }
 
@@ -797,9 +933,10 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter, bool came
         DestroyDepthCopies();
     }
     const bool context_ok = EnsureContext(w, h); // may turn a chosen FSR 4 into FSR 3.1 (missing model files, a fault)
-    // the motion in render pixels, previous - current: what DLSS and FSR 4 read (the normal renderer gives FSR 4 the same), and frame generation
-    const bool want_px = Chosen() == Kind::Dlaa || Chosen() == Kind::Fsr4 || Core::Vkb::DlssGlue::FgWanted();
-    if (!context_ok || (want_px && !EnsureDlaa(w, h)) || (Core::Vkb::DlssGlue::FgWanted() && !EnsureDepthCopies(w, h, d.format))) {
+    // the motion in render pixels, previous - current: what DLSS, FSR 4 and TAA read (the normal renderer gives FSR 4 and TAA the same: their
+    // RecordGameMotion, mode 2 without a camera), and frame generation
+    const bool want_px = Chosen() == Kind::Dlaa || Chosen() == Kind::Fsr4 || Chosen() == Kind::Taa || Core::Vkb::DlssGlue::AnyFgWanted();
+    if (!context_ok || (want_px && !EnsureDlaa(w, h)) || (Core::Vkb::DlssGlue::AnyFgWanted() && !EnsureDepthCopies(w, h, d.format))) {
         failed = true;
         c_failed.fetch_add(1, std::memory_order_relaxed);
         return;
@@ -865,7 +1002,7 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter, bool came
         cmd.pushConstants(motion_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(size), size.data());
         cmd.dispatch((w + 7) / 8, (h + 7) / 8, 1);
         Barrier(cmd);
-        if (Core::Vkb::DlssGlue::FgWanted()) { // F2: this frame's depth (our copy) and motion for the presenter's frame generation
+        if (Core::Vkb::DlssGlue::AnyFgWanted()) { // F2: this frame's depth (our copy) and motion for the presenter's frame generation
             const vk::Image copy{depth_copies[px_index]};
             const vk::ImageMemoryBarrier2 to_dst{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands, .srcAccessMask = vk::AccessFlagBits2::eNone,
                                                  .dstStageMask = vk::PipelineStageFlagBits2::eTransfer, .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
@@ -878,7 +1015,7 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter, bool came
             Barrier(cmd);
             std::scoped_lock fg_lock{fg_mutex};
             fg_slots[px_index] = {.inputs = {.depth = copy, .motion = vk::Image{motion_px}, .depth_view = depth_copy_views[px_index], .motion_view = motion_px_view,
-                                             .depth_format = d.format, .width = w, .height = h, .reset = reset},
+                                             .depth_format = d.format, .width = w, .height = h, .jitter_x = jitter[0], .jitter_y = jitter[1], .reset = reset},
                                   .value = Core::Vkb::Stream::RecordingValue(),
                                   .serial = ++fg_serial};
         }
@@ -929,6 +1066,50 @@ void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter, bool came
             return;
         }
         c_fsr4_runs.fetch_add(1, std::memory_order_relaxed);
+        goto copy_back;
+    }
+    if (Chosen() == Kind::Taa) {
+        // their RecordTaa: the histories alternate between read and write (a reset starts both from nothing; the shader then reads no history)
+        std::array<vk::ImageMemoryBarrier2, 2> hist_barriers{};
+        for (u32 i = 0; i < hist_barriers.size(); ++i) {
+            hist_barriers[i] = {.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                                .srcAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+                                .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                                .dstAccessMask = vk::AccessFlagBits2::eShaderSampledRead | vk::AccessFlagBits2::eShaderStorageWrite,
+                                .oldLayout = reset ? vk::ImageLayout::eUndefined : vk::ImageLayout::eGeneral, .newLayout = vk::ImageLayout::eGeneral,
+                                .image = vk::Image{taa_hist[i]}, .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}};
+        }
+        cmd.pipelineBarrier2({.imageMemoryBarrierCount = static_cast<u32>(hist_barriers.size()), .pImageMemoryBarriers = hist_barriers.data()});
+        // their bindings: colour, depth, motion (pixels), history read; result, history written, diagnostic (their TLG_TAA_DIAGNOSTICS only, never written
+        // here: diagnostics 0, so the output stands in)
+        const std::array<vk::ImageView, 7> views{ViewOf(s.image, s.format, vk::ImageAspectFlagBits::eColor), ViewOf(d.image, d.format, vk::ImageAspectFlagBits::eDepth),
+                                                 motion_px_view, taa_hist_views[1 - taa_next], output_view, taa_hist_views[taa_next], output_view};
+        std::array<vk::DescriptorImageInfo, 7> infos{};
+        std::array<vk::WriteDescriptorSet, 7> writes{};
+        for (u32 i = 0; i < infos.size(); ++i) {
+            infos[i] = {.sampler = i < 4 ? taa_sampler : vk::Sampler{}, .imageView = views[i], .imageLayout = vk::ImageLayout::eGeneral};
+            writes[i] = {.dstBinding = i, .descriptorCount = 1,
+                         .descriptorType = i < 4 ? vk::DescriptorType::eCombinedImageSampler : vk::DescriptorType::eStorageImage, .pImageInfo = &infos[i]};
+        }
+        // their push constants: the jitter, the reset, the A/B toggles (TLG_TOGGLE_FILE bits 51-55, default all off) and the camera for the depth test
+        // (current projection, previous projection, row Z of previous view * inverse view). The new engine reads no camera, and the normal renderer finds
+        // none in this game either (CameraMotion::OnConstants; its logs say "no game camera"): both give zeros, the same depth test
+        struct Params {
+            std::array<float, 2> jitter;
+            u32 reset, pad;
+            std::array<std::array<float, 4>, 3> depth;
+        } params{jitter, reset ? 1u : 0u, 0u, {}};
+        static_assert(sizeof(Params) == 64);
+        params.pad |= (TlgToggle::Disabled(TlgToggle::TaaTonemapBlend) ? 1u << 8 : 0u) | (TlgToggle::Disabled(TlgToggle::TaaClip) ? 2u << 8 : 0u) |
+                      (TlgToggle::Disabled(TlgToggle::TaaVariance) ? 4u << 8 : 0u) | (TlgToggle::Disabled(TlgToggle::TaaFilter) ? 8u << 8 : 0u) |
+                      (TlgToggle::Disabled(TlgToggle::TaaKeepNearerHistory) ? 16u << 8 : 0u);
+        cmd.bindPipeline(vk::PipelineBindPoint::eCompute, taa_pipeline);
+        cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, taa_layout, 0, writes);
+        cmd.pushConstants(taa_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(params), &params);
+        cmd.dispatch((w + 7) / 8, (h + 7) / 8, 1);
+        taa_next = 1 - taa_next;
+        ++frame_id;
+        c_taa_runs.fetch_add(1, std::memory_order_relaxed);
         goto copy_back;
     }
     if (Chosen() == Kind::Dlaa) {
@@ -999,10 +1180,11 @@ copy_back:
     Barrier(cmd);
     VkImage result = output;
     if (setting_sharpen) {
-        // the passes: DLAA's own share first (it has no RCAS of its own), then one per 100% above
+        // the passes: DLAA's and TAA's own share first (they have no RCAS of their own; their RecordTaa runs one RCAS pass at 0..100%), then one per
+        // 100% above
         std::array<float, 5> passes{};
         u32 count = 0;
-        if (Chosen() == Kind::Dlaa && own > 0.0f) {
+        if ((Chosen() == Kind::Dlaa || Chosen() == Kind::Taa) && own > 0.0f) {
             passes[count++] = own;
         }
         for (float extra = wanted - 1.0f; extra > 0.0f && count < passes.size(); extra -= 1.0f) {
@@ -1066,7 +1248,8 @@ SamplerLook LookFor(u32 mrt_mask) {
     // samples with the Lab tab's bias in quarter steps while DLAA or FSR native AA runs. Their bias also has a log2(render / output) term, which is 0
     // here by construction: the new engine's AA is native AA only (its context is made at one size for input and output, EnsureContext), it has no
     // upscaling mode (their TLG_RENDER_RESOLUTION engine upscale and scaled sessions are not part of the new engine)
-    if (PicturePart('b') && std::popcount(mrt_mask & 0xffu) >= 5 && Running()) {
+    // their SceneMipBias is 0 under TAA: no bias then
+    if (PicturePart('b') && std::popcount(mrt_mask & 0xffu) >= 5 && Running() && Chosen() != Kind::Taa) {
         look.bias_q = settings.lod_bias.load();
         if (look.bias_q != 0) {
             c_scene_bias_draws.fetch_add(1, std::memory_order_relaxed);
@@ -1077,12 +1260,15 @@ SamplerLook LookFor(u32 mrt_mask) {
 
 nlohmann::json Report() {
     return {{"on", On()},
-            {"kind", Chosen() == Kind::Fsr3 ? "fsr3" : Chosen() == Kind::Dlaa ? "dlaa" : Chosen() == Kind::Fsr4 ? "fsr4" : "off"},
+            {"kind", Chosen() == Kind::Fsr3 ? "fsr3" : Chosen() == Kind::Dlaa ? "dlaa" : Chosen() == Kind::Fsr4 ? "fsr4" : Chosen() == Kind::Taa ? "taa" : "off"},
             {"asked", asked},
             {"choice", {{"switch", ChoiceSwitch()}, {"faults", c_choice_faults.load()}, {"fault", [] { std::scoped_lock lock{choice_fault_mutex}; return choice_fault; }()}}},
             {"fsr4", {{"switch", Fsr4Switch()}, {"device_supported", instance != nullptr && instance->IsFsr4Int8Supported()},
                       {"rdna4", instance != nullptr && IsRdna4(*instance)}, {"model_missing", fsr4_model_missing.load()}, {"runs", c_fsr4_runs.load()},
                       {"faults", c_fsr4_faults.load()}, {"fault", [] { std::scoped_lock lock{fsr4_fault_mutex}; return fsr4_fault; }()}}},
+            {"taa", {{"switch", TaaSwitch()}, {"runs", c_taa_runs.load()}, {"faults", c_taa_faults.load()},
+                     {"fault", [] { std::scoped_lock lock{taa_fault_mutex}; return taa_fault; }()},
+                     {"camera", false}}}, // no camera for its depth test (the normal renderer finds none in this game either)
             {"size", fmt::format("{}x{}", ctx_w, ctx_h)},
             {"motion_passes", c_motion_passes.load()},
             {"runs", c_runs.load()},
@@ -1094,6 +1280,7 @@ nlohmann::json Report() {
             {"jitter", JitterWanted()},
             {"jittered_draws", c_jittered.load()},
             {"jittered_mesh_redraws", c_jittered_meshes.load()},
+            {"mesh_key_index_data", MeshKeySwitch()}, // issue 54
             {"picture_settings", {{"fallback_fsr3", PicturePart('f')}, {"sharpening", PicturePart('s')}, {"scene_bias", PicturePart('b')}, {"aniso", PicturePart('a')},
                                   {"rcas_passes", c_rcas_passes.load()}, {"rcas_broken", rcas_broken}, {"sharpness_env_ignored", sharpness_env_noted.load()},
                                   {"scene_bias_draws", c_scene_bias_draws.load()}}},
