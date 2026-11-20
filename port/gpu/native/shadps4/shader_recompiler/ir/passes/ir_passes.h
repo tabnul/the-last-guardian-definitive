@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <array>
+#include <atomic>
+#include <vector>
 #include "native/shadps4/shader_recompiler/ir/basic_block.h"
 #include "native/shadps4/shader_recompiler/ir/passes/resource_pass.h"
 #include "native/shadps4/shader_recompiler/ir/program.h"
@@ -44,5 +47,36 @@ void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_in
 void SharedMemorySimplifyPass(IR::Program& program, const Profile& profile);
 void SharedMemoryToStoragePass(IR::Program& program, const RuntimeInfo& runtime_info,
                                const Profile& profile);
+
+/// tlg issue 75: texture reads with automatic level choice out of per-pixel branches (pixel shaders; see the pass file).
+/// Why a read stays inside its branch.
+enum class ReadsOutOfBranchReason : u32 {
+    ConstantRead,     ///< an operand is a constant read inside the branch at a per-pixel address, or the shader writes memory
+    MemoryLoad,       ///< an operand comes from a buffer or shared memory load inside the branch
+    TextureRead,      ///< an operand comes from another kind of texture read (fixed level, gather, fetch, size) inside the branch
+    MergedValue,      ///< an operand is a value merged from two ways through a branch inside
+    LaneExchange,     ///< an operand reads another pixel's value
+    Loop,             ///< the read sits in a loop
+    AfterEarlyReturn, ///< some pixels may have left the shader before the read
+    Other,
+};
+constexpr u32 ReadsOutOfBranchReasonCount = 8;
+constexpr std::array<const char*, ReadsOutOfBranchReasonCount> ReadsOutOfBranchReasonNames{
+    "constant_read", "memory_load", "texture_read", "merged_value", "lane_exchange", "loop", "after_early_return", "other"};
+struct ReadsOutOfBranchStats {
+    std::atomic<u64> pixel_shaders{}, shaders_with_reads_in_branch{}, reads{}, moved{}, ops_moved{}, in_uniform_branch{};
+    std::array<std::atomic<u64>, ReadsOutOfBranchReasonCount> not_moved{};
+};
+struct ReadsOutOfBranchShader {
+    u64 hash{};
+    bool applied{}; ///< moved (switch on) or only counted
+    u32 reads{}, moved{}, ops_moved{}, in_uniform_branch{};
+    std::array<u32, ReadsOutOfBranchReasonCount> not_moved{};
+};
+/// `move` false (switch off): only counts what it would move.
+void ReadsOutOfBranchPass(IR::Program& program, bool move);
+ReadsOutOfBranchStats& ReadsOutOfBranchCounters();
+/// Every pixel shader with a read inside a per-pixel branch, by hash (last translation).
+std::vector<ReadsOutOfBranchShader> ReadsOutOfBranchShaders();
 
 } // namespace VkbShader::Optimization

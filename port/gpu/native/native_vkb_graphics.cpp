@@ -40,6 +40,7 @@
 #include "native/native_vkb_objects.h"
 #include "native/native_vkb_stream.h"
 #include "native/native_vkb_util.h"
+#include "native/shadps4/shader_recompiler/ir/passes/ir_passes.h"
 #include "native/shadps4/shader_recompiler/backend/bindings.h"
 #include "native/shadps4/shader_recompiler/backend/spirv/emit_spirv.h"
 #include "native/shadps4/shader_recompiler/frontend/fetch_shader.h"
@@ -2308,6 +2309,36 @@ nlohmann::json TargetCensusReport() {
     }
     return j;
 }
+/// issue 75: the translator's reads with automatic level choice in per-pixel branches (pixel shaders): moved before the branch, or kept with a reason
+nlohmann::json ReadsOutOfBranchReport() {
+    namespace O = VkbShader::Optimization;
+    const auto& c = O::ReadsOutOfBranchCounters();
+    nlohmann::json kept = nlohmann::json::object();
+    for (u32 i = 0; i < O::ReadsOutOfBranchReasonCount; ++i) {
+        kept[O::ReadsOutOfBranchReasonNames[i]] = c.not_moved[i].load();
+    }
+    nlohmann::json shaders = nlohmann::json::array();
+    for (const auto& s : O::ReadsOutOfBranchShaders()) {
+        nlohmann::json k = nlohmann::json::object();
+        for (u32 i = 0; i < O::ReadsOutOfBranchReasonCount; ++i) {
+            if (s.not_moved[i] != 0) {
+                k[O::ReadsOutOfBranchReasonNames[i]] = s.not_moved[i];
+            }
+        }
+        shaders.push_back({{"ps", fmt::format("{:016x}", s.hash)}, {"applied", s.applied}, {"reads", s.reads}, {"moved", s.moved},
+                           {"ops_moved", s.ops_moved}, {"in_uniform_branch", s.in_uniform_branch}, {"kept", k}});
+    }
+    return {{"on", profile.reads_out_of_branch},
+            {"pixel_shader_translations", c.pixel_shaders.load()},
+            {"translations_with_reads_in_a_branch", c.shaders_with_reads_in_branch.load()},
+            {"reads", c.reads.load()},
+            {"moved", c.moved.load()},
+            {"ops_moved", c.ops_moved.load()},
+            {"in_uniform_branch_only", c.in_uniform_branch.load()},
+            {"kept_in_per_pixel_branch", kept},
+            {"shaders", shaders}};
+}
+
 nlohmann::json Report() {
     const u64 compiled = c_compiled.load(), draws = c_draws.load();
     nlohmann::json fails = nlohmann::json::object();
@@ -2361,6 +2392,7 @@ nlohmann::json Report() {
             {"variant_find_us_mean", draws ? static_cast<double>(c_variant_find_ns.load()) / 1e3 / static_cast<double>(draws) : 0.0},
             {"lookups", Core::Vkb::LookupReport()},
             {"aa", Core::Vkb::Aa::Report()},
+            {"reads_out_of_branch", ReadsOutOfBranchReport()},
             {"recorder_job_us_mean", c_job_n.load() ? static_cast<double>(c_job_ns.load()) / 1e3 / static_cast<double>(c_job_n.load()) : 0.0},
             {"new_passes", c_new_passes.load()},
             {"indirect_recorded", c_indirect_recorded.load()},

@@ -4,6 +4,8 @@
 // without its two old-path switches, indexed_resources and constant_offsets, since the backend binds every resource in its own set).
 #pragma once
 
+#include <cstdlib>
+
 #include "native/shadps4/shader_recompiler/profile.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_instance.h"
 
@@ -55,6 +57,9 @@ inline VkbShader::Profile ProfileFor(const VkbVulkan::Instance& instance) {
         .needs_unorm_fixup = driver == vk::DriverId::eMesaKosmickrisp,
         .needs_clip_distance_emulation = driver == vk::DriverId::eNvidiaProprietary,
         .supports_shader_stencil_export = instance.IsShaderStencilExportSupported(),
+        // issue 75: reads with automatic level choice out of per-pixel branches; TLG_VKB_READS_OUT_OF_BRANCH=0 the old translation. Plain SPIR-V, no driver
+        // feature. Read once at start; there is no translated-shader cache on disk, so nothing translated the other way is reused.
+        .reads_out_of_branch = [] { const char* e = std::getenv("TLG_VKB_READS_OUT_OF_BRANCH"); return e == nullptr || e[0] != '0'; }(),
     };
 }
 
