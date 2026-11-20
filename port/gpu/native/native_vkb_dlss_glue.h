@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <string>
 #include <vector>
 #include "common/types.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
@@ -27,6 +28,8 @@ struct Image {
 [[nodiscard]] bool FsrFgWanted();
 /// F2: either kind of frame generation: the AA keeps the depth and motion for it
 [[nodiscard]] bool AnyFgWanted();
+/// Issue 99: Wanted, and the bridge and NGX came up with our device (their Dlss::Available, known once Initialize ran). False: `why` says what is wrong.
+[[nodiscard]] bool Usable(std::string& why);
 /// Our instance and device creation (only when Wanted): what NGX needs
 void AppendInstanceExtensions(std::vector<const char*>& enabled);
 void AppendDeviceExtensions(vk::Instance instance, vk::PhysicalDevice physical, std::vector<const char*>& enabled);
@@ -34,6 +37,9 @@ void Initialize(vk::Instance instance, vk::PhysicalDevice physical, vk::Device d
 /// DLAA (DLSS at the render size): a feature made on first use or a size change (`device` idles first), then evaluated into `output`. False: failed.
 bool Run(vk::Device device, vk::CommandBuffer cmd, const Image& color, const Image& depth, const Image& motion, const Image& output, float jitter_x, float jitter_y,
          bool reset, float frame_ms, float sharpness);
+
+/// Issue 99: frees the DLAA feature after DLAA handed over to another AA (`device` idles first: submitted work may still use it)
+void Release(vk::Device device);
 
 /// F2: DLSS frame generation: one image between the previous finished frame and `backbuffer` (the finished frame with the interface), from the render depth and the
 /// motion (render pixels, previous - current). FgCreate on the first use and a size or format change (`device` idles first).
