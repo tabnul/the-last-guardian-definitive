@@ -139,7 +139,6 @@ def judge(normal1, normal2, news, tile=TILE, sigma=SIGMA):
     spread = np.abs(np.log((d2 + eps) / (d1 + eps)))
     allow = np.maximum(np.log(1 + MARGIN), SPREAD_K * spread)
     mean_ref = (d1 + d2) / 2
-    ref_lin = mean_ref
     # a tile whose coarse brightness differs more than a still surface should is a moved object, shadow, door,
     # water ring ...: it is judged by compare.py, not here
     low_allow = np.maximum(LOW_MAX, 3 * np.abs(c1 - c2))
@@ -152,7 +151,7 @@ def judge(normal1, normal2, news, tile=TILE, sigma=SIGMA):
         still &= np.abs(cn - (c1 + c2) / 2) <= low_allow
         lr = np.log((dn + eps) / (mean_ref + eps))
         ratios.append(lr)
-        big = np.abs(dn - ref_lin) >= ABS_MIN
+        big = np.abs(dn - mean_ref) >= ABS_MIN
         lost &= (lr < -allow) & big
         added &= (lr > allow) & big
     lost, added = groups(lost & still, FLAG_TILES), groups(added & still, FLAG_TILES)
