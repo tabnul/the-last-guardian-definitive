@@ -30,6 +30,34 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 - **Who:** box (rule 14).
 - **Links:** issue 78 (https://github.com/tabnul/tlg-vkb-work/issues/78); pull request for branch `fix/vkb-scheduler-wake`.
 
+## 2026-11-20 - Author sync: how the four merge conflicts were resolved (not yet merged)
+
+- **Problem:** Merging the author's branch into ours conflicted in four files (`native_draw.cpp`, `native_legacy.h`,
+  `native_vkb_aa.cpp`, `native_vkb_objects.cpp`). The author deleted the guard that stopped the old AABB reader,
+  while our table lock (pull request 52, switch `TLG_AABB_TABLE_LOCK`) is still used by the K2 census check.
+- **Considered:** (1) take the author's side everywhere and drop our lock; (2) keep both: the author's code as it is,
+  and our lock kept only where the census check and the start of recording still use it; (3) put the author's commit
+  aside (not allowed, rule 13).
+- **Choice:** 2. No author commit is left out or changed; our lock stays a switch, used only with `TLG_K2_CENSUS=1`
+  and at the start of recording. Our water fix (mesh key, pull request 72) is untouched by the author and stays on.
+  One restore commit puts back the RCAS declarations next to the author's new K4 counter.
+- **Who chose:** box (rule 13), the owner can overrule at the merge.
+- **Links:** sync pull request of branch `sync/author-2026-11-19`.
+
+---
+
+## 2026-11-20 - 14 scenes where the photo setup crashes the normal renderer: log only (not yet merged)
+
+- **Problem:** in 14 scenes the normal renderer crashes when the photo is set up (7 scenes in both takes, 7 in one take;
+  one of them also gives a blank picture), so there is no usable picture to compare with (issue 20).
+- **Considered:** keep judging them by picture (impossible without a normal picture); fix the normal renderer (not
+  allowed); judge them through the log only, as other confirmed entries.
+- **Choice:** the 14 scenes the owner ticked go into `log-only.txt` as `confirmed`. They still run in every sweep and
+  errors, warnings and crashes in them are fixed as usual. Owner words: "all of the other checked images look good,
+  differences are moving objects or antialiasing"; the cutscene `CH_e01_EndCare_001` he accepts as log only. The scene
+  `FA_a04_OpenGate_002` is not added: he cannot judge it (no normal picture), it stays as it is.
+- **Chosen by:** owner. Issue 20; pull request: this one.
+
 ---
 
 ## 2026-11-20 - Texture reads out of per-pixel branches in the new engine's translator (not yet merged)

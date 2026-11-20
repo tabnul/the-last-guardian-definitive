@@ -456,20 +456,28 @@ bool EmitMidStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_t
     return fits;
 }
 
+/// Hooks that share one address (issue 103): the first one installed patches the game's code; each later one gets its own stub that runs it,
+/// then jumps to the stub that was there before (instead of the game's code, which already starts with that stub's jump). The later one runs first.
+std::unordered_map<u64, const u8*> stub_at_offset;
+
 bool InstallHook(Hook& hook, u8* image_base, u64 image_size) {
     if (hook.offset + 16 > image_size) {
         TLG_LOG(HOOK, Error, "guest hook '{}': offset {:#x} is outside the image", hook.name, hook.offset);
         return false;
     }
     u8* entry = image_base + hook.offset;
+    // shared address: nothing is displaced, and the stub continues in the earlier stub instead of the game's code
+    const auto shared = stub_at_offset.find(hook.offset);
+    const u8* chain_to = shared != stub_at_offset.end() ? shared->second : nullptr;
     std::string why;
     RipFixes fixes;
-    const size_t displaced = DisplacedLength(entry, why, fixes);
-    if (displaced == 0) {
+    const size_t displaced = chain_to != nullptr ? 0 : DisplacedLength(entry, why, fixes);
+    if (displaced == 0 && chain_to == nullptr) {
         TLG_LOG(HOOK, Error, "guest hook '{}' at {:#x} refused: {}", hook.name, hook.offset, why);
         return false;
     }
-    u8 original[MaxDisplacedBytes];
+    const u8* resume = chain_to != nullptr ? chain_to : entry + displaced;
+    u8 original[MaxDisplacedBytes]{};
     std::memcpy(original, entry, displaced);
     LOG_INFO(Core, "guest hook '{}' code bytes {}", hook.name, fmt::format("{:02x}", fmt::join(std::span<const u8>{entry, 8}, "")));
 
@@ -486,12 +494,12 @@ bool InstallHook(Hook& hook, u8* image_base, u64 image_size) {
     const bool emitted = EmitInTrampolineArea(entry, [&](Xbyak::CodeGenerator& c) {
         stub = c.getCurr<const u8*>();
         if (hook.mode == Mode::Call) {
-            fits = EmitCallStub(c, hook, original, displaced, fixes, entry + displaced);
+            fits = EmitCallStub(c, hook, original, displaced, fixes, resume);
             return fits;
         }
         if (hook.mode == Mode::Mid) {
             hook.entry = entry;
-            fits = EmitMidStub(c, hook, original, displaced, fixes, entry + displaced);
+            fits = EmitMidStub(c, hook, original, displaced, fixes, resume);
             return fits;
         }
         if (hook.mode != Mode::Count) {
@@ -500,7 +508,7 @@ bool InstallHook(Hook& hook, u8* image_base, u64 image_size) {
             EmitCountStub(c, hook);
         }
         fits = EmitDisplaced(c, entry, original, displaced, fixes);
-        c.jmp(entry + displaced, Xbyak::CodeGenerator::T_NEAR);
+        c.jmp(resume, Xbyak::CodeGenerator::T_NEAR);
         return fits;
     });
     if (!fits) {
@@ -517,16 +525,19 @@ bool InstallHook(Hook& hook, u8* image_base, u64 image_size) {
         TLG_LOG(HOOK, Error, "guest hook '{}': trampoline is out of near-jump range", hook.name);
         return false;
     }
+    // a shared address already holds the earlier stub's jump and its nops: only the jump's target changes
+    const size_t patched = chain_to != nullptr ? 5 : displaced;
     u8 patch[MaxDisplacedBytes];
     patch[0] = 0xE9;
     const auto rel32 = static_cast<s32>(rel);
     std::memcpy(&patch[1], &rel32, sizeof(rel32));
-    std::memset(&patch[5], 0x90, displaced - 5);
-    std::memcpy(entry, patch, displaced);
+    std::memset(&patch[5], 0x90, patched - 5);
+    std::memcpy(entry, patch, patched);
 #ifdef _WIN32
-    FlushInstructionCache(GetCurrentProcess(), entry, displaced);
+    FlushInstructionCache(GetCurrentProcess(), entry, patched);
 #endif
     hook.entry = entry;
+    stub_at_offset[hook.offset] = stub;
     LOG_INFO(Core, "guest hook '{}' installed at {:#x} ({} bytes displaced, mode {})", hook.name,
              reinterpret_cast<u64>(entry), displaced, hook.mode == Mode::Call   ? "call"
                  : hook.mode == Mode::Mid  ? "mid"
@@ -759,7 +770,17 @@ void InstallForEboot(VAddr base, u64 image_size) {
 
         u32 installed = 0;
         u32 failed = 0;
+        // two passes: the call and mid hooks first, then the observing ones (count, args, snap). On a shared address the one installed last runs
+        // first, so an observer always sees the call even when a call hook then skips the game's function (issue 103).
+        for (int pass = 0; pass < 2; ++pass)
         for (const auto& item : config.at("hooks")) {
+            {
+                const auto mode_name = item.value("mode", std::string("count"));
+                const bool acting = mode_name == "call" || mode_name == "mid";
+                if (acting != (pass == 0)) {
+                    continue;
+                }
+            }
             auto hook = std::make_unique<Hook>();
             hook->name = item.at("name").get<std::string>();
             if (item.contains("ghidra")) {

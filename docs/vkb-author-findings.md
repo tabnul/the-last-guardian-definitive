@@ -76,3 +76,21 @@ picture, crash or log line comes from it after that fix, so it stays advice (rul
 | Commit / area | Principle | What |
 |---|---|---|
 | `native_draw.cpp`, `TagMap` (texture Map, the `MapNative` path) and other old tag paths (`compute_exec` counts 711 in one take of s02_01) | 1, 2 | With the new engine on, these still write old-style tags and records into the game's command buffers, which the new engine never runs (V1b). They are read by nothing. Whether the work behind them reaches the new engine another way was not checked. |
+
+## Sync 2026-11-20, author 1bbd48a (22 commits since the last sync). Second read: PASS WITH REMARKS
+
+Source: sync pull request of branch `sync/author-2026-11-19`, second-read comment. Advice only (rule 19).
+Correction by the box: the reader said the new hook entries have no duplicate address; they do (see the first line).
+
+| Commit / area | Principle | What |
+|---|---|---|
+| b2eff48 T2 count hook on the wet simulation function | 2, 24 | Same address as our `WetSim` hook; the second hook is refused, one error line in every scene. Found by script, not by the reader. |
+| K2 fix A (AnimQueryOrder, now default) | 7, 12, 10 | Always on, no switch, no way back; waits up to 50 ms in a game worker; tied to one object type; a mid hook runs on every scheduler job (cost not measured). |
+| AABB guard deleted | 7, 5 | Old path unreachable; the "0 hits" proof is from the owner's plays, not this box; read counters stop without the census and the report does not say so. |
+| TakePendingDynamicMap | 2, 7 | Draw-time flush of in-place Map writes (the engine's Unmap is empty); no switch; fills, clears and other copy hooks not covered (cannot tell). |
+| native_vkb_objects.cpp formats | 6, 7 | E5B9G9R9 and cube-array view used without a device check; sRGB mapping of formats 90-93 changed, no switch. |
+| sampler mirror fallback | 5 | Fallback to mirrored repeat uses the same counter as the normal case. |
+| TagCopyResource different-format copy | 5, 7 | Skipped like the engine; logged 8 times, not counted, no switch. |
+| W7 GDS init, K4 camera-cut reset | 7 | Default behaviour, no switch (K4 has a counter, W7 none). K4 logs one warning per camera cut. |
+| hard-coded game addresses in handlers (about 8) | 9 | Caller checks fit this one game build only. |
+| always-on checks on the draw path (R3d size, pending-map check) | 13 | Cost not measured. |

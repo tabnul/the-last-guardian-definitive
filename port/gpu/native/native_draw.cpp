@@ -9942,6 +9942,9 @@ void InstallUnmapSlot() {
 
 u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4, u64 size, u64 ret, u64 caller_rsp) {
     static const bool map_census = [] { const char* e = std::getenv("TLG_VKB_MAP_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    if (type == 1 && Core::Vkb::On() && Core::Vkb::R3dTraceSize() != 0 && ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0 && Rd<u32>(resource, 0x124) == 1) {
+        Core::Vkb::R3dTraceMapRead(Rd<u64>(resource, 0x30), Rd<u32>(resource, 0x180), ret - ImageBase() + 0x1000000); // debug R3d trace
+    }
     if (Core::Vkb::On() && Core::Vkb::ContractCensusOn() && ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0) {
         // pointer trace (debug, 2026-11-19): every Map call site by kind, usage and type, so each caller's use of the pointer can be read (does it escape the Unmap?)
         const u32 kind = Rd<u32>(resource, 0x124);
