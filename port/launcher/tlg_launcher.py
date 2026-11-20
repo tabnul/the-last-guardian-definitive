@@ -2867,7 +2867,7 @@ class Launcher:
         problems = tlg_run.check_game(self.settings['game_dir'])
         if problems:
             text = '; '.join(self.t('not_built') if k == 'not_built'
-                             else self.t('old_version').format(version=d) if k == 'old_version'
+                             else self.t('old_version', version=d) if k == 'old_version'
                              else self.t('fps_unsupported') if k == 'fps_unsupported'
                              else f"{self.t('missing')}: {d}" for k, d in problems)
         else:
