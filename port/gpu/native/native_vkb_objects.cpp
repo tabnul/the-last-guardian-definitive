@@ -2808,6 +2808,7 @@ void R3dStaleCheck(const std::string& label) {
         u64 address, bytes, id, first_bind;
         u32 usage, bind, cpu;
         VkBuffer device;
+        bool gpu_written;
     };
     std::vector<Item> items;
     u64 total = 0;
@@ -2815,7 +2816,7 @@ void R3dStaleCheck(const std::string& label) {
         std::scoped_lock lock{mutex};
         for (const auto& [start, w] : watched) {
             if (w.state == Watched::State::Device && w.device != VK_NULL_HANDLE && w.first_bind_submit >= from && total + (w.end - start) <= (1024ull << 20)) {
-                items.push_back({start, w.end - start, w.id, w.first_bind_submit, w.usage, w.bind, w.cpu_access, w.device});
+                items.push_back({start, w.end - start, w.id, w.first_bind_submit, w.usage, w.bind, w.cpu_access, w.device, w.gpu_written});
                 total += w.end - start;
             }
         }
@@ -2847,7 +2848,7 @@ void R3dStaleCheck(const std::string& label) {
         const u64 after = Stream::RecordingValue();
         QueueDump(after, [items, host, allocation, mapped, label, after] {
             Stream::Wait(after);
-            u64 at = 0, stale = 0;
+            u64 at = 0, stale = 0, cpu_side = 0;
             for (const Item& it : items) {
                 const u8* ours = static_cast<const u8*>(mapped) + at;
                 const u8* engine = reinterpret_cast<const u8*>(it.address);
@@ -2859,12 +2860,14 @@ void R3dStaleCheck(const std::string& label) {
                         }
                     }
                     ++stale;
-                    LOG_WARNING(Render_Vulkan, "vkb R3d stale check {}: STALE {:#x} {} B id {} usage {} bind {:#x} cpu {:#x} first bind {}: {} bytes differ (+{:#x}..+{:#x})", label,
-                                it.address, it.bytes, it.id, it.usage, it.bind, it.cpu, it.first_bind, diff, first, last);
+                    // GPU-written: our copy is newer by design (note 94). Not GPU-written: the CPU changed the engine memory after our first-bind copy without an API call (a PS4 habit)
+                    cpu_side += it.gpu_written ? 0 : 1;
+                    LOG_WARNING(Render_Vulkan, "vkb R3d stale check {}: STALE {:#x} {} B id {} usage {} bind {:#x} cpu {:#x} first bind {} {}: {} bytes differ (+{:#x}..+{:#x})", label,
+                                it.address, it.bytes, it.id, it.usage, it.bind, it.cpu, it.first_bind, it.gpu_written ? "gpu-written" : "CPU-SIDE", diff, first, last);
                 }
                 at += it.bytes;
             }
-            LOG_WARNING(Render_Vulkan, "vkb R3d stale check {}: {} of {} copies differ from engine memory", label, stale, items.size());
+            LOG_WARNING(Render_Vulkan, "vkb R3d stale check {}: {} of {} copies differ from engine memory, {} of them not GPU-written (CPU writes outside the API)", label, stale, items.size(), cpu_side);
             vmaDestroyBuffer(instance->GetAllocator(), host, allocation);
         });
     });
