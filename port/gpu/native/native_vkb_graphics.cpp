@@ -1005,6 +1005,12 @@ void DrawDumpLine(const std::string& line) {
 }
 
 std::atomic<u64> c_cb_at_draw{0};
+/// O1 census (debug, TLG_VKB_CB_CENSUS=1): a constant buffer copied at the draw (R7) whose bytes equal what was copied for the same address earlier in the same
+/// graphics submission (a copy a once-per-Map scheme would save)
+bool CbCensusOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_CB_CENSUS"); return e != nullptr && e[0] == '1'; }(); return on; }
+std::atomic<u64> c_cbc_copies{0}, c_cbc_bytes{0}, c_cbc_same{0}, c_cbc_same_bytes{0}, c_cbc_same_address_changed{0};
+thread_local std::unordered_map<u64, u64> t_cbc_seen; ///< address | size << 48 -> hash of the bytes copied last
+thread_local u64 t_cbc_epoch = 0;
 
 /// note 41: descriptor sets for the pipelines whose bindings exceed the push descriptor limit (32 on this GPU; the boy's G-buffer pipeline has 35). Pools are reused once
 /// the stream's timeline passes the last submission that used them. Recording thread only.
@@ -1092,6 +1098,24 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
             b.guest.back() = {address, size};
             b.stageable.resize(b.buffers.size());
             b.stageable.back() = 0;
+            if (CbCensusOn()) {
+                if (const u64 epoch = Core::Vkb::GraphicsSubmits(); epoch != t_cbc_epoch) {
+                    t_cbc_epoch = epoch, t_cbc_seen.clear();
+                }
+                u64 h = 0xcbf29ce484222325ull;
+                for (u64 k = 0; k + 8 <= size; k += 8) {
+                    h = (h ^ Rd<u64>(address, k)) * 0x100000001b3ull;
+                }
+                c_cbc_copies.fetch_add(1, std::memory_order_relaxed), c_cbc_bytes.fetch_add(size, std::memory_order_relaxed);
+                const auto [it, fresh] = t_cbc_seen.try_emplace(address | size << 48, h);
+                if (!fresh) {
+                    if (it->second == h) {
+                        c_cbc_same.fetch_add(1, std::memory_order_relaxed), c_cbc_same_bytes.fetch_add(size, std::memory_order_relaxed);
+                    } else {
+                        c_cbc_same_address_changed.fetch_add(1, std::memory_order_relaxed), it->second = h;
+                    }
+                }
+            }
             if (StageCensusOn()) {
                 StageMix(0, address), StageMix(0, size);
             }
@@ -2377,6 +2401,7 @@ nlohmann::json Report() {
             {"d3_target_check_compares_differences", {c_target_checks.load(), c_target_check_differences.load()}},
             {"d3_target_check_first", [] { std::scoped_lock lock{target_check_mutex}; return nlohmann::json(target_check_lines); }()},
             {"state_filter_sent_skipped_pipelines_vertex_inputs", {c_state_sent.load(), c_state_skipped.load(), c_state_pipelines.load(), c_state_vertex_inputs.load()}},
+            {"cb_census_copies_bytes_same_samebytes_addresschanged", {c_cbc_copies.load(), c_cbc_bytes.load(), c_cbc_same.load(), c_cbc_same_bytes.load(), c_cbc_same_address_changed.load()}},
             {"stage_census_vs_ps_same_changed_buffers_images_samplers_same", {{c_stage_same[0].load(), c_stage_changed[0].load(), c_stage_buffers_same[0].load(), c_stage_images_same[0].load(), c_stage_samplers_same[0].load()},
                                                                                {c_stage_same[1].load(), c_stage_changed[1].load(), c_stage_buffers_same[1].load(), c_stage_images_same[1].load(), c_stage_samplers_same[1].load()}}},
             {"variant_find_us_mean", draws ? static_cast<double>(c_variant_find_ns.load()) / 1e3 / static_cast<double>(draws) : 0.0},
