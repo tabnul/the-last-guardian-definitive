@@ -1003,6 +1003,8 @@ bool GameEdits(std::string& patched, std::string_view name) {
 }
 } // namespace
 
+extern "C" void tlg_pad_timeline(const char* event); // src/runtime_pad.c: the pad timeline (TLG_PAD_RECORD / TLG_PAD_TIMELINE)
+
 extern "C" void tlg_lua_status(uintptr_t loadbuffer) {
     original = reinterpret_cast<LoadFn>(loadbuffer);
 }
@@ -1030,6 +1032,9 @@ extern "C" __attribute__((sysv_abi)) int tlg_lua_load(void* L, void* options, co
                     put("");
                 }).detach();
             }
+        }
+        if (text.starts_with("mission ") || text.starts_with("demo ") || text.starts_with("fade out")) {
+            tlg_pad_timeline(std::string(text).c_str());
         }
         if (text.starts_with("grip ")) {
             static const auto t0 = std::chrono::steady_clock::now();
@@ -1071,6 +1076,25 @@ extern "C" __attribute__((sysv_abi)) int tlg_lua_load(void* L, void* options, co
                                 scene.substr(space + 1).starts_with("sub_");
             if (!helper) {
                 TlgStats::SetScene(scene);
+                // Test injection (debug, 2026-11-19): TLG_LUA_INJECT=<file> runs that Lua file once, when the first scene whose name contains
+                // TLG_LUA_INJECT_SCENE (any scene when unset) is entered: lets a headless run drive a scripted event (e.g. the shield flashback).
+                if (const char* inject = std::getenv("TLG_LUA_INJECT"); inject && *inject) {
+                    static bool injected = false;
+                    const char* want = std::getenv("TLG_LUA_INJECT_SCENE");
+                    if (!injected && (!want || !*want || scene.find(want) != std::string_view::npos)) {
+                        injected = true;
+                        if (FILE* f = std::fopen(inject, "rb")) {
+                            std::string code;
+                            char buf[4096];
+                            for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) code.append(buf, n);
+                            std::fclose(f);
+                            std::printf("Fun: lua inject %s (%zu bytes) at scene %.*s\n", inject, code.size(), int(scene.size()), scene.data());
+                            FunQueue(code);
+                        } else {
+                            std::printf("Fun: lua inject %s: cannot open\n", inject);
+                        }
+                    }
+                }
                 // Tricopilot for a whole run (the launcher's benchmark): every new scene gets its
                 // own Trico and the game's own camera back, so arm the pilot again at each one.
                 // The title screen counts as a scene too, so a run that warps (TLG_START_POINT)

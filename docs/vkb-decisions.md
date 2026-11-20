@@ -26,6 +26,43 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   (AMD Linux); a blank picture, a size difference or too many moved tiles give no verdict instead of a false OK.
 - **Links:** issue 54; pull request of branch `fix/detail-measure-issue54`.
 
+## 2026-11-20 - Fix A's wait keeps the game's job scheduler awake (not yet merged)
+
+- **Problem:** The author's fix A makes the game's query recording wait (up to 50 ms) for the soldiers' animation work
+  of the next game step. In the soldier scenes the limit ran out 6 to 27 times per take at 120 FPS on the owner's PC, each
+  time one frame of 53-56 ms (issue 78). Measured on this box: the waiting worker is counted as busy by the game's job
+  scheduler, which relies on every busy worker coming back soon and signalling. In the timeouts it then sleeps once more
+  after its cycle is finished, or leaves a queued task unrun, so the next step (the one waited for) cannot start.
+- **Considered:** (1) while waiting, give the scheduler's "work available" signal every 0.5 ms, as the game's own enqueue
+  does: an idle worker wakes, runs what is queued and wakes the scheduler; no game memory written, covers both forms;
+  (2) mark the waiting worker as idle in the scheduler's busy count and signal once: no delay, but writes the game's
+  scheduler state, covers only the first form, and is wrong when the recording runs on a thread that is not counted;
+  (3) let the waiting worker run the game's queued jobs itself: covers both, but copies the scheduler's queue logic
+  (three queues, locks, the exclusion check) into the backend; (4) no wait at all, keep late soldier queries for the next
+  recording instead: changes what the game's data means and could bring back what fix A guards against.
+- **Choice:** 1. It removes the cause for every scene that waits (principle 10), uses only the game's own wake path and
+  keeps its order (4), and is CPU side only, the same on every machine (6). Switch `TLG_VKB_SCHEDULER_WAKE` (default on;
+  `=0` the old wait). The 50 ms limit stays as a safety net. Box proof in the pull request; the 120 FPS check on the
+  owner's PC is still to be run.
+- **Who:** box (rule 14).
+- **Links:** issue 78 (https://github.com/tabnul/tlg-vkb-work/issues/78); pull request for branch `fix/vkb-scheduler-wake`.
+
+## 2026-11-20 - Author sync: how the four merge conflicts were resolved (not yet merged)
+
+- **Problem:** Merging the author's branch into ours conflicted in four files (`native_draw.cpp`, `native_legacy.h`,
+  `native_vkb_aa.cpp`, `native_vkb_objects.cpp`). The author deleted the guard that stopped the old AABB reader,
+  while our table lock (pull request 52, switch `TLG_AABB_TABLE_LOCK`) is still used by the K2 census check.
+- **Considered:** (1) take the author's side everywhere and drop our lock; (2) keep both: the author's code as it is,
+  and our lock kept only where the census check and the start of recording still use it; (3) put the author's commit
+  aside (not allowed, rule 13).
+- **Choice:** 2. No author commit is left out or changed; our lock stays a switch, used only with `TLG_K2_CENSUS=1`
+  and at the start of recording. Our water fix (mesh key, pull request 72) is untouched by the author and stays on.
+  One restore commit puts back the RCAS declarations next to the author's new K4 counter.
+- **Who chose:** box (rule 13), the owner can overrule at the merge.
+- **Links:** sync pull request of branch `sync/author-2026-11-19`.
+
+---
+
 ## 2026-11-20 - 14 scenes where the photo setup crashes the normal renderer: log only (not yet merged)
 
 - **Problem:** in 14 scenes the normal renderer crashes when the photo is set up (7 scenes in both takes, 7 in one take;
