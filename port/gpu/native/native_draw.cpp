@@ -11168,12 +11168,18 @@ u64 PS4_SYSV_ABI ZPassEnter(u64 render_device, u64 desc, u64 a2, u64 a3, u64 a4,
         }
     }
     static const bool record_mode = [] { const char* e = std::getenv("TLG_VKB_RECORD"); return e != nullptr && e[0] == '1'; }(); // scene on the GPU R3: the cascades
-    if (static const bool depth_census = [] { const char* e = std::getenv("TLG_VKB_DEPTH_CENSUS"); return e != nullptr && e[0] == '1'; }(); depth_census || record_mode) {
+    if (static const bool depth_census = [] { const char* e = std::getenv("TLG_VKB_DEPTH_CENSUS"); return e != nullptr && e[0] == '1'; }(); depth_census || record_mode || NativeZPassGen::R7CensusOn()) {
         const u32 view = static_cast<u32>(Rd<u64>(desc, 8));
         if (static const u64 original = Core::GuestHooks::OriginalEntry("DrawZPass"); (view == 1 || view == 2) && original != 0) { // note 109 census
+            if (NativeZPassGen::R7CensusOn()) {
+                NativeZPassGen::R7Predict(render_device, desc);
+            }
             Core::Vkb::Graphics::SetDepthPass(true);
             reinterpret_cast<GuestDraw6>(original)(render_device, desc, a2, a3, a4, a5);
             Core::Vkb::Graphics::SetDepthPass(false);
+            if (NativeZPassGen::R7CensusOn()) {
+                NativeZPassGen::R7Finish();
+            }
             Core::Vkb::Graphics::FlushBatch(); // R3b: the pass's batch
             return 0x8000000000000000ull;
         }

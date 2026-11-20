@@ -8,6 +8,7 @@
 #include "native/native_marker.h"
 #include "native/native_vkb_graphics.h"
 #include "native/native_vkb_indexed.h"
+#include "native/native_zpass_gen.h"
 
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
 
@@ -2851,6 +2852,11 @@ void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
     if (!it->second->ok) {
         c_skip_not_compiled.fetch_add(1, std::memory_order_relaxed);
         return;
+    }
+    if (t_depth_pass && Core::NativeZPassGen::R7CensusOn()) { // R7 research census: the prediction of this draw, and our pipeline for it
+        static const bool sized = [] { Core::NativeZPassGen::R7SetFixedBytes(sizeof(VkbVulkan::FixedState)); return true; }();
+        (void)sized;
+        Core::NativeZPassGen::R7Check(ctx, kind, a1, a2, it->second.get(), fixed);
     }
     if (t_depth_pass && RecordOn() && (kind == 0 || kind == 2) && Core::Vkb::Indexed::On()) { // R2 / R3: the cascades' indexed draws through their record-mode twin when it exists
         auto [rit, rfresh] = record_variants.try_emplace(key);

@@ -4403,6 +4403,214 @@ void ZPassCensus(u64 render_device, u64 desc, const std::function<std::pair<u64,
     }
 }
 
+
+// ------------------------------------------------------------------------------------------------------------------------------- R7 research census
+// Scene on the GPU R7 census (debug, TLG_VKB_R7_CENSUS=1, shadow cascades = Z pass views 1, 2): before the engine's loop runs, the generator's scan predicts each draw
+// (in order: the batch's vertex view = ctx + 0x580, its table = ctx + 0x6c0 + 8 j, the per-object constant buffer = ctx + 0x288, the index view = ctx + 0x58, the material's
+// constant slot = ctx + 0x290, count / first index); each draw the engine then makes is compared field by field. And: does one (engine variant, raster flag, view) always come
+// to the same pipeline variant and fixed state of ours? What a submitter that writes rows from the scan's data, without the engine's context, relies on.
+namespace {
+struct Prediction {
+    u64 record{}, material{}, srv0{}, cb1{}, index_view{}, cb2{};
+    u32 count{}, first{}, view{}, ntable{};
+    bool group{};
+    std::array<std::pair<u32, u64>, 16> table{};
+};
+thread_local std::vector<Prediction> t_pred;
+thread_local size_t t_pred_at = 0;
+thread_local bool t_pred_on = false;
+struct R7Stats {
+    std::atomic<u64> passes{0}, scan_faults{0}, predicted{0}, drawn{0}, extra{0}, missing{0}, kind_diff{0}, srv0_diff{0}, table_diff{0}, cb1_diff{0}, index_diff{0}, cb2_diff{0},
+        args_diff{0}, all_equal{0}, map_keys{0}, map_ambiguous{0}, map_checked{0}, map_variant_diff{0}, map_fixed_diff{0}, cb2_same_at_draw{0}, record_key_ambiguous{0}, record_keys{0};
+};
+R7Stats r7;
+std::mutex r7_map_mutex;
+std::unordered_map<u64, std::pair<const void*, const void*>> r7_map; // (engine variant, raster flag, view) -> (our variant, our fixed state)
+u64 MaterialSlot(u64 material) {
+    const u64 object = R<u64>(material + 0x38);
+    const u64 index = (R<u64>(object + 0x440) & 0xffffffffull) * 0xb0;
+    return R<u64>(object + 0xc0 + index);
+}
+} // namespace
+
+u32 R7FixedBytes = 0; // the size of our fixed state (set by the backend)
+void R7SetFixedBytes(u32 bytes) {
+    R7FixedBytes = bytes;
+}
+bool R7CensusOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_R7_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+
+void R7Predict(u64 render_device, u64 desc) {
+    t_pred.clear();
+    t_pred_at = 0;
+    t_pred_on = false;
+    Plan plan;
+    ScanArgs args{&plan, render_device, desc, &zc_empty_table};
+    r7.passes.fetch_add(1, std::memory_order_relaxed);
+    if (!NativeDraw::GuardedCall([](void* p) { ScanImpl(*static_cast<ScanArgs*>(p)); }, &args)) {
+        r7.scan_faults.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    struct BuildArgs {
+        Plan* plan;
+    } build{&plan};
+    const bool ok = NativeDraw::GuardedCall([](void* p) {
+        Plan& pl = *static_cast<BuildArgs*>(p)->plan;
+        for (const BatchLevel& level : pl.batches) {
+            if (level.only_580) {
+                continue;
+            }
+            for (u32 s = level.first_step; s < level.first_step + level.step_count; ++s) {
+                const Step& step = pl.steps[s];
+                if (level.visibility) {
+                    if (const u64 node = VisibilityNode(pl.visibility_owner, step.record); node != 0 && R<s32>(node + 8) == 2) {
+                        continue; // culled: the loop sets the state and draws nothing
+                    }
+                }
+                Prediction pr;
+                pr.record = step.record;
+                pr.material = step.material;
+                pr.srv0 = level.value_580;
+                pr.cb1 = level.pass_object_288;
+                pr.index_view = level.view_58;
+                pr.cb2 = MaterialSlot(step.material);
+                pr.count = static_cast<u32>(R<s32>(step.record + 0x14) * 3);
+                pr.first = R<u32>(step.record + 0x10);
+                pr.view = pl.view_type;
+                pr.group = level.group;
+                pr.ntable = level.table_count;
+                for (u32 i = 0; i < level.table_count; ++i) {
+                    pr.table[i] = level.table[i];
+                }
+                t_pred.push_back(pr);
+            }
+        }
+    }, &build);
+    if (!ok) {
+        r7.scan_faults.fetch_add(1, std::memory_order_relaxed);
+        t_pred.clear();
+        return;
+    }
+    r7.predicted.fetch_add(t_pred.size(), std::memory_order_relaxed);
+    t_pred_on = true;
+}
+
+void R7Check(u64 ctx, u32 kind, u64 a1, u64 a2, const void* our_variant, const void* our_fixed) {
+    if (!t_pred_on) {
+        return;
+    }
+    r7.drawn.fetch_add(1, std::memory_order_relaxed);
+    if (t_pred_at >= t_pred.size()) {
+        r7.extra.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    const Prediction& p = t_pred[t_pred_at++];
+    bool all = true;
+    const auto diff = [&](bool d, std::atomic<u64>& counter) {
+        if (d) {
+            counter.fetch_add(1, std::memory_order_relaxed);
+            all = false;
+        }
+    };
+    diff(kind != (p.group ? 1u : 0u) && kind != (p.group ? 2u : 0u), r7.kind_diff);
+    diff(R<u64>(ctx + 0x580) != p.srv0, r7.srv0_diff);
+    bool table_same = true;
+    for (u32 i = 0; i < p.ntable; ++i) {
+        table_same = table_same && R<u64>(ctx + 0x6c0 + p.table[i].first * 8) == p.table[i].second;
+    }
+    diff(!table_same, r7.table_diff);
+    diff(R<u64>(ctx + 0x288) != p.cb1, r7.cb1_diff);
+    diff(R<u64>(ctx + 0x58) != p.index_view, r7.index_diff);
+    diff(R<u64>(ctx + 0x290) != p.cb2, r7.cb2_diff);
+    if (R<u64>(ctx + 0x290) != p.cb2 && R<u64>(ctx + 0x290) == MaterialSlot(p.material)) {
+        r7.cb2_same_at_draw.fetch_add(1, std::memory_order_relaxed); // the material's slot word changed between the scan and the draw (read at draw time it is the same)
+    }
+    if (R<u64>(ctx + 0x290) != p.cb2 && R<u64>(ctx + 0x290) != MaterialSlot(p.material)) {
+        static std::atomic<u32> shown{0};
+        if (shown.fetch_add(1, std::memory_order_relaxed) < 8) {
+            const u64 object = R<u64>(p.material + 0x38);
+            LOG_WARNING(Render_Vulkan, "R7 census cb2: material {:#x} kind {:#x} flags d4 {:#x} d5 {:#x} object {:#x} index word {:#x}: predicted {:#x}, ctx 0x290 {:#x} 0x298 {:#x} 0x310 {:#x}",
+                        p.material, R<u64>(p.material + 0x18), R<u32>(p.material + 0xd4), R<u8>(p.material + 0xd5), object, R<u64>(object + 0x440), p.cb2,
+                        R<u64>(ctx + 0x290), R<u64>(ctx + 0x298), R<u64>(ctx + 0x310));
+        }
+    }
+    if (!p.group) {
+        diff(static_cast<u32>(a1) != p.count || static_cast<u32>(a2) != p.first, r7.args_diff);
+    }
+    if (all) {
+        r7.all_equal.fetch_add(1, std::memory_order_relaxed);
+    }
+    // the pipeline map
+    const u64 data = R<u64>(p.record + 0x28);
+    const u64 engine_variant = data != 0 ? R<u64>(data + 0x48) : 0;
+    const bool raster = (R<u32>(p.material + 0xd4) & 0x2e) != 0;
+    const u64 key = engine_variant ^ (u64{raster} << 60) ^ (u64{p.view} << 61) ^ (u64{p.group} << 63);
+    std::scoped_lock lock{r7_map_mutex};
+    {
+        static std::unordered_map<u64, std::pair<const void*, const void*>> by_record;
+        const u64 rkey = p.record ^ (u64{p.view} << 61) ^ (u64{p.group} << 63) ^ (u64{raster} << 60);
+        auto [rit, rfresh] = by_record.try_emplace(rkey, our_variant, our_fixed);
+        if (rfresh) {
+            r7.record_keys.fetch_add(1, std::memory_order_relaxed);
+        } else if (rit->second.first != our_variant || rit->second.second != our_fixed) {
+            r7.record_key_ambiguous.fetch_add(1, std::memory_order_relaxed);
+            rit->second = {our_variant, our_fixed};
+        }
+    }
+    r7.map_checked.fetch_add(1, std::memory_order_relaxed);
+    auto [it, fresh] = r7_map.try_emplace(key, our_variant, our_fixed);
+    if (fresh) {
+        r7.map_keys.fetch_add(1, std::memory_order_relaxed);
+    } else if (it->second.first != our_variant || it->second.second != our_fixed) {
+        r7.map_ambiguous.fetch_add(1, std::memory_order_relaxed);
+        if (it->second.first != our_variant) {
+            r7.map_variant_diff.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (it->second.second != our_fixed) {
+            r7.map_fixed_diff.fetch_add(1, std::memory_order_relaxed);
+            static std::atomic<u32> shown{0};
+            if (shown.fetch_add(1, std::memory_order_relaxed) < 6) {
+                // which bytes of the interned fixed state differ (offset ranges)
+                const u8* x = static_cast<const u8*>(it->second.second);
+                const u8* y = static_cast<const u8*>(our_fixed);
+                std::string where;
+                u32 shown_ranges = 0;
+                for (u32 i = 0; i < R7FixedBytes && shown_ranges < 12; ++i) {
+                    if (x[i] != y[i]) {
+                        u32 j = i;
+                        while (j + 1 < R7FixedBytes && x[j + 1] != y[j + 1]) {
+                            ++j;
+                        }
+                        where += fmt::format(" +{:#x}..{:#x}", i, j);
+                        i = j;
+                        ++shown_ranges;
+                    }
+                }
+                LOG_WARNING(Render_Vulkan, "R7 census fixed differs: view {} raster {} group {} engine variant {:#x}: bytes{}", p.view, raster ? 1 : 0, p.group ? 1 : 0, engine_variant, where);
+            }
+        }
+        it->second = {our_variant, our_fixed};
+    }
+}
+
+void R7Finish() {
+    if (t_pred_on && t_pred_at < t_pred.size()) {
+        r7.missing.fetch_add(t_pred.size() - t_pred_at, std::memory_order_relaxed);
+    }
+    t_pred_on = false;
+    static std::atomic<u32> n{0};
+    if ((n.fetch_add(1, std::memory_order_relaxed) & 15) == 0) {
+        DebugServer::Publish("r7_census", {{"passes", r7.passes.load()}, {"scan_faults", r7.scan_faults.load()}, {"predicted", r7.predicted.load()}, {"drawn", r7.drawn.load()},
+                                           {"extra_draws", r7.extra.load()}, {"missing_draws", r7.missing.load()}, {"all_fields_equal", r7.all_equal.load()},
+                                           {"diff_kind", r7.kind_diff.load()}, {"diff_srv0", r7.srv0_diff.load()}, {"diff_table", r7.table_diff.load()},
+                                           {"diff_cb1", r7.cb1_diff.load()}, {"diff_index_view", r7.index_diff.load()}, {"diff_cb2", r7.cb2_diff.load()},
+                                           {"diff_args", r7.args_diff.load()}, {"map_keys", r7.map_keys.load()}, {"map_ambiguous", r7.map_ambiguous.load()},
+                                           {"map_checked", r7.map_checked.load()}, {"map_variant_diff", r7.map_variant_diff.load()}, {"map_fixed_diff", r7.map_fixed_diff.load()}, {"cb2_same_at_draw", r7.cb2_same_at_draw.load()}, {"record_keys", r7.record_keys.load()}, {"record_key_ambiguous", r7.record_key_ambiguous.load()}});
+    }
+}
+
 bool HandlePass(u64 render_device, u64 desc, u64 original_loop) {
     const Config& cfg = Cfg();
     if (!cfg.on || original_loop == 0) {
