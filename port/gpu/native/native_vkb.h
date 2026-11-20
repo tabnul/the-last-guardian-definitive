@@ -89,6 +89,10 @@ u64 PS4_SYSV_ABI OcclusionBeginHook(u64 ctx, u64 address, u64 a2, u64 a3, u64 a4
 u64 PS4_SYSV_ABI OcclusionEndHook(u64 ctx, u64 address, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret);
 /// V4g: the GPU has done graphics submit `index` (counted from 1; false while it is not submitted yet)
 [[nodiscard]] bool GraphicsSubmitDone(u64 index);
+/// Note 103 (the free hold's GPU rule): the graphics submits handed to the GPU so far, and how many of them the GPU has finished (every submit up to that number is done).
+/// The work the engine thread recorded since the last submit goes with submit GraphicsSubmits() + 1.
+[[nodiscard]] u64 GraphicsSubmitted();
+[[nodiscard]] u64 GraphicsSubmitsDone();
 
 /// /stats `vkb_sync`
 void Publish();

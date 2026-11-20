@@ -711,6 +711,28 @@ bool GraphicsSubmitDone(u64 index) {
     return Stream::CompletedValue() >= submit_values[index % SubmitValueRing].load(std::memory_order_acquire);
 }
 
+u64 GraphicsSubmitted() {
+    if (!OverlapOn() || !Stream::Ready()) {
+        const u64 n = c_submits[0].load(std::memory_order_acquire);
+        return n != 0 ? n - 1 : 0; // the newest may still be waiting for its work on the engine thread
+    }
+    return submitted_index.load(std::memory_order_acquire);
+}
+
+u64 GraphicsSubmitsDone() {
+    if (!OverlapOn() || !Stream::Ready()) {
+        return GraphicsSubmitted(); // every submit before the newest waited for its work
+    }
+    const u64 last = submitted_index.load(std::memory_order_acquire);
+    const u64 completed = Stream::CompletedValue();
+    for (u64 i = last; i != 0 && last - i < SubmitValueRing; --i) {
+        if (completed >= submit_values[i % SubmitValueRing].load(std::memory_order_acquire)) {
+            return i; // the queue finishes in order: everything up to i is done
+        }
+    }
+    return last >= SubmitValueRing ? last - SubmitValueRing + 1 : 0;
+}
+
 // note 44, debugger mode (Shift+F5 recording): every graphics submit snapshots all of the backend's counters (graphics, compute with the stream, upload, objects);
 // the freeze writes the per-frame changes into the frame walk folder (vkb_frames.json), on the thumbnails' clock, so a bad frame can be read against its neighbours
 struct FrameSnap {

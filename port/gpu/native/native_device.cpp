@@ -33,6 +33,7 @@
 #include "native/native_invariant.h"
 #include "native/native_image_desc.h"
 #include "native/native_device.h"
+#include "native/native_debug_server.h"
 #include "native/native_vkb.h"
 #include "native/native_vkb_objects.h"
 #include "native/native_vkb_side_census.h"
@@ -1189,14 +1190,20 @@ bool FreeHoldMidOn() {
     return on;
 }
 
-/// The raster rule of the free hold (a block waits until the raster thread has finished the submission that could read it). Not with the engine-to-Vulkan backend (TLG_VKB=1): no
-/// raster thread runs and no submission is counted; our frame's GPU work is finished inside the engine's submit (`Vkb::SubmitGraphics` waits for it), so the frame rule alone
-/// (3 engine frames) covers what was recorded before the free.
+/// The GPU rule of the free hold: a block waits until the GPU has finished the submission that could read it. The engine frees memory as a D3D11 application releases an object (at
+/// once, or by its own frame count), and a D3D11 driver keeps the memory until the GPU is done with it: that is our part of the contract. With the engine-to-Vulkan backend
+/// (TLG_VKB=1, note 103) the clock is our graphics submits: what the engine thread recorded before the free goes with submit `GraphicsSubmits() + 1`, and the block goes back
+/// to the heap when the GPU has finished that submit (before note 103 the frame rule alone stood for it: safe only while the GPU lagged less than 3 frames). Without the
+/// backend: the raster thread's submissions (the old path).
 bool RasterRule() {
     return !Core::Vkb::On();
 }
 u64 RasterNeed() {
-    return RasterRule() ? u64{Core::NativeContent::SubmitCount()} + 1 : 0;
+    return RasterRule() ? u64{Core::NativeContent::SubmitCount()} + 1 : Core::Vkb::GraphicsSubmits() + 1;
+}
+/// The submissions the GPU (backend) or the raster thread (old path) has finished
+u64 HoldDone() {
+    return RasterRule() ? u64{Core::NativeContent::RasterDoneSubmissions()} : Core::Vkb::GraphicsSubmitsDone();
 }
 
 bool FreeHoldOn() {
@@ -1210,7 +1217,7 @@ void ReleaseHeld(bool all, bool ignore_frames = false) {
     if (original == 0) {
         return;
     }
-    const u64 done = Core::NativeContent::RasterDoneSubmissions();
+    const u64 done = HoldDone();
     std::vector<HeldFree> due;
     u64 early_blocks = 0, early_bytes = 0; // blocks handed back before the game's own frame rule said so (the heap was dry)
     s64 early_max_frames = 0;
@@ -1452,7 +1459,7 @@ nlohmann::json FreeHoldReport() {
             {"max_pending", hold_max_pending.load()},
             {"max_pending_bytes", hold_max_bytes.load()},
             {"oldest_pending_needs_submission", oldest_need},
-            {"raster_done_floor", Core::NativeContent::RasterDoneSubmissions()},
+            {"raster_done_floor", HoldDone()},
             {"allocation_failed_with_frees_held", hold_alloc_failed.load()},
             {"allocation_failed_again_after_release", hold_alloc_failed_twice.load()},
             {"mid_step_on", FreeHoldMidOn()},
@@ -1487,7 +1494,7 @@ void HoldTraceSample() {
     static const u64 start_ns = now_ns;
     last_ns = now_ns;
     const s64 frame = EngineFrame();
-    const u64 done = Core::NativeContent::RasterDoneSubmissions();
+    const u64 done = HoldDone();
     u64 blocks = 0, bytes = 0, w_frame = 0, w_arm = 0, w_raster = 0, ready = 0, largest = 0;
     s64 oldest = 0;
     {
@@ -1535,6 +1542,10 @@ u64 PS4_SYSV_ABI BeginFrameTick(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, 
     if (FreeHoldOn()) {
         ReleaseHeld(false);
         HoldTraceSample();
+        static std::atomic<u32> frames{0};
+        if ((frames.fetch_add(1, std::memory_order_relaxed) & 255) == 0) {
+            Core::DebugServer::Publish("free_hold", FreeHoldReport()); // /stats key free_hold (note 103)
+        }
     }
     return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
 }
@@ -1550,12 +1561,29 @@ u64 PS4_SYSV_ABI GomallocAlloc(u64 heap, u64 size, u64 alignment, u64 type, u64 
     }
     u64 result = reinterpret_cast<GuestFunction6>(original)(heap, size, alignment, type, a4, a5);
     if (result == 0 && hold && !RasterRule()) {
-        // TLG_VKB=1: nothing to wait for (every submitted frame is finished on the GPU); the heap is dry, so the frame rule is dropped for what is held
+        // TLG_VKB=1: the heap is dry. First the frame rule is dropped for what is held (the GPU rule stays); then this thread waits (2 s at most) for the GPU to finish the newest
+        // submit a held block needs, of those already handed to the GPU (never one not submitted yet: this thread may be the one that submits it); last, everything goes (counted unsafe)
         hold_alloc_failed.fetch_add(1, std::memory_order_relaxed);
         ReleaseHeld(false, true);
         result = reinterpret_cast<GuestFunction6>(original)(heap, size, alignment, type, a4, a5);
         if (result == 0) {
+            u64 newest = 0;
+            {
+                std::scoped_lock lock{deferred_mutex};
+                newest = held_frees.empty() ? 0 : held_frees.back().need;
+            }
+            newest = std::min<u64>(newest, Core::Vkb::GraphicsSubmitted());
+            const auto t0 = std::chrono::steady_clock::now();
+            while (newest != 0 && !Core::Vkb::GraphicsSubmitDone(newest) && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2)) {
+                std::this_thread::sleep_for(std::chrono::microseconds(100));
+            }
+            ReleaseHeld(false, true);
+            result = reinterpret_cast<GuestFunction6>(original)(heap, size, alignment, type, a4, a5);
+        }
+        if (result == 0) {
             hold_alloc_failed_twice.fetch_add(1, std::memory_order_relaxed);
+            ReleaseHeld(true);
+            result = reinterpret_cast<GuestFunction6>(original)(heap, size, alignment, type, a4, a5);
         }
     } else if (result == 0 && hold) {
         // the heap ran dry while blocks are held: wait for the raster thread to pass the newest held free (2 s limit), release, retry; then release everything and retry once more
@@ -1669,7 +1697,7 @@ u64 PS4_SYSV_ABI GomallocFree(u64 heap, u64 address, u64 a2, u64 a3, u64 a4, u64
             }
         }
         const u64 need = RasterNeed();
-        if (FreeHoldFrames() == 0 && Core::NativeContent::RasterDoneSubmissions() >= need) {
+        if (FreeHoldFrames() == 0 && HoldDone() >= need) {
             hold_at_once.fetch_add(1, std::memory_order_relaxed);
             return 0; // the original runs
         }
