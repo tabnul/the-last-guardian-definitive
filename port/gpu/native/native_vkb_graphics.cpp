@@ -3038,6 +3038,13 @@ void FlushBatch() {
     FlushBatchHere();
 }
 void Draw(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
+    // GPU-driven bound, kill experiment only (TLG_VKB_TEST_NO_CAPTURE=1, nothing is drawn): every draw returns before our capture, so the render thread runs the
+    // engine alone: the fps ceiling of moving all per-draw work off the CPU
+    static const bool no_capture = [] { const char* e = std::getenv("TLG_VKB_TEST_NO_CAPTURE"); return e != nullptr && e[0] == '1'; }();
+    if (no_capture) {
+        c_draws.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
     if (t_depth_pass && DepthCensusOn()) {
         const u64 t0 = NowNs();
         DrawImpl(ctx, kind, a1, a2, a3);
