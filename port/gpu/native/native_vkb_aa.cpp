@@ -789,6 +789,11 @@ bool JitterWanted() {
     return on;
 }
 
+bool MeshKeySwitch() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_AA_MESH_KEY"); return e == nullptr || e[0] != '0'; }();
+    return on;
+}
+
 // F1c state: the game's render thread only
 u64 scene_depth_view = 0;
 std::array<float, 2> frame_jitter{};
@@ -1255,6 +1260,7 @@ nlohmann::json Report() {
             {"jitter", JitterWanted()},
             {"jittered_draws", c_jittered.load()},
             {"jittered_mesh_redraws", c_jittered_meshes.load()},
+            {"mesh_key_index_data", MeshKeySwitch()}, // issue 54
             {"picture_settings", {{"fallback_fsr3", PicturePart('f')}, {"sharpening", PicturePart('s')}, {"scene_bias", PicturePart('b')}, {"aniso", PicturePart('a')},
                                   {"rcas_passes", c_rcas_passes.load()}, {"rcas_broken", rcas_broken}, {"sharpness_env_ignored", sharpness_env_noted.load()},
                                   {"scene_bias_draws", c_scene_bias_draws.load()}}},
