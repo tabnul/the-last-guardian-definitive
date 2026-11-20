@@ -21,7 +21,8 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 - **Choice:** 1, as a proposal. It changes no limit and nothing calls it (off costs nothing). Tiles whose coarse
   brightness also differs are treated as moved things and left out, and it only flags 10 touching tiles or more, so
   a boy's pose or a door that moves does not count. Box choice; the owner decides by merging. The verdict it adds
-  (LOST / ADDED) is not part of the limits.
+  (LOST / ADDED / LOST+ADDED) is not part of the limits. The numbers were set on stored pictures of this box only
+  (AMD Linux); a blank picture, a size difference or too many moved tiles give no verdict instead of a false OK.
 - **Links:** issue 54; pull request of branch `fix/detail-measure-issue54`.
 
 ---

@@ -146,11 +146,16 @@ It needs numpy and Pillow (the box's `diag/venv` has both). Per tile of 64x64 pi
 standard deviation of (grey picture minus a copy blurred with sigma 4). The detail of the new picture is divided
 by that of the normal renderer. The normal renderer's own two takes give the self spread of every tile (mist,
 water and things that move change between takes, so those tiles get a wider allowance by themselves).
-A tile is off when its ratio differs by more than max(20%, 3 x self spread), it holds real detail (at least 0.8
-grey levels in the normal pictures), and every new-engine take agrees. At least 10 touching tiles make the
-scene `LOST` (less detail) or `ADDED` (more). Tiles going both ways = `MOVED` (shape or place changed), not
-flagged. The numbers can be changed with `DETAIL_MARGIN`, `DETAIL_SPREAD_K`, `DETAIL_MIN`, `DETAIL_FLAG_TILES`.
-`--map` writes the new picture with the off tiles tinted: red = lost, blue = added.
+A tile whose coarse brightness (blur of about 12 pixels) also differs by more than 4 levels (or 3 x the normal
+self difference) is a moved thing (a door, a shadow, a creature, water rings, a video) and is left out: those are
+for `compare.py`. A tile is off when its ratio differs by more than max(20%, 3 x self spread), it holds real detail
+(at least 0.8 grey levels in the normal pictures), and every new-engine take agrees. At least 10 touching tiles
+(8 neighbours) make the scene `LOST` (less detail), `ADDED` (more) or `LOST+ADDED` (both kinds of group; nothing
+is hidden). When more than half of the tiles with detail are left out as moved, the verdict is `UNJUDGED`, never
+`OK`. A blank picture or a size difference is refused (exit 2). The strip at the right and bottom edge that does
+not fill a whole tile is not judged. The numbers can be changed with `DETAIL_MARGIN`, `DETAIL_SPREAD_K`,
+`DETAIL_MIN`, `DETAIL_LOW_MAX`, `DETAIL_FLAG_TILES`. `--map` writes the new picture with the off tiles tinted:
+red = lost, blue = added. The numbers were set on pictures of this box only (AMD Linux): untested elsewhere.
 
 ## Log only group and the log verdict (verdict.py)
 
