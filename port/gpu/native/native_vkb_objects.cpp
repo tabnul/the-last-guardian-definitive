@@ -2216,6 +2216,9 @@ void BumpViewEpoch() {
     g_view_epoch.fetch_add(1, std::memory_order_release);
     c_memo_bumps[1].fetch_add(1, std::memory_order_relaxed);
 }
+u64 ViewEpoch() {
+    return g_view_epoch.load(std::memory_order_acquire);
+}
 /// note 45: time in our object lookups (views, buffers, samplers, attachments), by lookup kind, on any thread
 std::atomic<u64> g_lookup_ns[4]{}, g_lookup_n[4]{};
 bool LookupTimesOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_TIMES"); return e != nullptr && e[0] == '1'; }(); return on; } ///< TLG_VKB_TIMES=1 only
