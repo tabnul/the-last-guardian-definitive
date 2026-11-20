@@ -6,6 +6,7 @@ STAGE/SCENE -> wait until the load overlay ended -> 8 s -> hide Trico -> own cam
 set every tick -> game speed 0.001 -> 4 s -> picture of the game window on the virtual screen.
 SHOT_TRICO=show (environment) leaves out the "hide Trico" step only; the default is SHOT_TRICO=hide.
 SHOT_LEAVEOUT=camera,pose,speed,tick leaves out those photo steps (active camera, camera pose once, game speed, camera tick).
+SHOT_PLAY_S=N lets the game play N seconds after the load, before the photo steps (measurement runs; default 0).
 
 Usage: shot.py OUT STAGE SCENE VKB TAKES [--cam "X Y Z PITCH YAW"] [NAME=VALUE ...]
   OUT   folder for the pictures and logs (outside the repo). Pictures: OUT/STAGE__SCENE/vkbV_takeN.png
@@ -30,6 +31,7 @@ if WIN and not os.path.isfile(os.path.join(INSTALL, "Play The Last Guardian.exe"
 USER = os.path.join(INSTALL, "user") if WIN else os.environ.get("TLG_USER_DIR", os.path.expanduser("~/tlgrun/user"))
 DISPLAY = os.environ.get("SHOT_DISPLAY", ":93")
 TITLE_S, LOAD_S, WAIT_S, SETTLE_S = 400, 240, 8, 4
+PLAY_S = float(os.environ.get("SHOT_PLAY_S", "0"))
 GB = 1 << 30
 JOURNAL = os.environ.get("SHOT_JOURNAL", "/home/runner/loop/journal.md")
 
@@ -458,6 +460,11 @@ def steps(game, send, out, tag, stage, scene, env, cam_file, cam_arg):
     if not game.wait(LOAD_S, loaded):
         return "no load" if game.ended() is None else "ended during load"
     game.wait(WAIT_S)
+    if PLAY_S > 0:
+        print(f"  playing {PLAY_S:.0f} s before the photo (SHOT_PLAY_S)", flush=True)
+        game.wait(PLAY_S)
+        if game.proc.poll() is not None:
+            return "ended while playing"
     cam = cam_arg or (open(cam_file).read().split() if os.path.exists(cam_file) else None)
     if not cam:
         mark = len(game.lines())

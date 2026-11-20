@@ -1577,6 +1577,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_input_timing(segments, ns);
     if (gpu_enabled) install_bind_guard(segments, ns);
     if (gpu_enabled) install_reinit_lock(segments, ns);
+    if (gpu_enabled) tlggpu_set_game_sema_signal(runtime_sema_signal); /* VKB: a backend wait keeps the game's job scheduler awake (issue 78) */
     if (gpu_enabled) tlggpu_install_hooks((uintptr_t)image, size); /* VKB: the engine-to-Vulkan backend's hooks (TLG_VKB=1 only) */
     runtime_pad_set_image((uintptr_t)image, size); /* VKB: TLG_AUTO_START */
 #ifdef _WIN32
