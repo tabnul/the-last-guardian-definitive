@@ -2601,6 +2601,19 @@ bool LeanAppend(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kin
         return false;
     }
     const u64 serial = t_batch->serial;
+    // step E bound, kill experiment only (TLG_VKB_TEST_LEAN_FREE=1, the picture is wrong): the draw reuses the previous draw's row and index buffer (no row, no lookups)
+    static const bool lean_free = [] { const char* e = std::getenv("TLG_VKB_TEST_LEAN_FREE"); return e != nullptr && e[0] == '1'; }();
+    if (lean_free && !t_batch->draws.empty()) {
+        BatchDraw d = t_batch->draws.back();
+        d.pipeline = v.pipeline->Handle();
+        d.layout = v.pipeline->GetLayout();
+        d.fixed = &fixed;
+        if (kind == 0) {
+            d.count = static_cast<u32>(a1), d.first = static_cast<u32>(a2), d.vertex_offset = static_cast<s32>(static_cast<u32>(a3)), d.args_buffer = vk::Buffer{};
+        }
+        t_batch->draws.push_back(d);
+        return true;
+    }
     BatchDraw d{};
     d.pipeline = v.pipeline->Handle();
     d.layout = v.pipeline->GetLayout();
