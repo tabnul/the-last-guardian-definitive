@@ -1359,6 +1359,29 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
 /// Binds and records one draw of a compiled variant into the frame stream (mutex held)
 /// note 45 (R2 design): Record's phases on the engine thread (0 views + attachments, 1 stage bindings, 2 vertex + index, 3 the rest + the job hand-over) and the job on the recorder
 std::atomic<u64> c_phase_ns[4]{}, c_job_ns{0}, c_job_n{0}, c_fixed_ns{0}, c_variant_find_ns{0};
+/// issue 82 point 2 (TLG_VKB_TARGET_MEMO, default on, =0 off): most draws use the same targets as the draw before them on the same thread. Each thread keeps the
+/// attachments it found for its last draw and reuses them while the draw's target set (view ids, formats, slots in use) is the same and the view epoch has not
+/// moved (a view or an image went, note 46): then neither the first-use view check nor the attachment lookups run again, and the shared objects lock is not taken
+/// for them. Not used with the late images (R2b part 2b, resolved on the recorder) or the contract census (it notes every draw's targets).
+bool TargetMemoOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_TARGET_MEMO"); return e == nullptr || e[0] != '0'; }(); return on; }
+std::atomic<u64> c_target_memo_hits{0}, c_target_memo_misses{0};
+struct TargetSet {
+    u64 epoch{~0ull};
+    std::array<u64, 8> ids{};            ///< engine view id per colour slot (0: no view)
+    std::array<vk::Format, 8> formats{}; ///< the pipeline's format per colour slot
+    u64 depth_id{};                      ///< engine view id of the depth target (0: none)
+    u32 color_count{}, mrt_mask{};
+    bool depth{}, stencil{};
+    bool operator==(const TargetSet&) const = default;
+};
+struct TargetMemo {
+    TargetSet key{}; ///< epoch ~0: nothing kept
+    std::array<vk::ImageView, 8> colors{};
+    vk::ImageView depth{};
+    bool depth_has_stencil{};
+    u32 width{}, height{}, layers{};
+    boost::container::small_vector<Stream::Use, 9> uses;
+};
 bool TimesOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_TIMES"); return e != nullptr && e[0] == '1'; }(); return on; } ///< note 45: these timers only with TLG_VKB_TIMES=1
 void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u64 a1, u64 a2, u64 a3) {
     if (Core::Vkb::FillReadersOn() || Core::Vkb::R3dTraceSize() != 0) {
@@ -1387,6 +1410,27 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     // views the engine made through a path its view-creation hooks do not see are noted at their first use (their description is kept at + 0x40)
     // R2b part 2b: a view id seen with a format is never checked again on this thread (ids are never reused); the check itself stays here (it reads the engine view)
     thread_local std::array<u64, 1024> known_views{};
+    // issue 82 point 2: this draw's target set against the one of the last draw on this thread (the epoch is read before any lookup: a change during them marks it stale)
+    thread_local TargetMemo t_targets;
+    const bool target_memo = TargetMemoOn() && !LateImagesOn() && !Core::Vkb::ContractCensusOn();
+    TargetSet target_key{};
+    bool targets_reused = false, targets_keep = target_memo;
+    if (target_memo) {
+        target_key.epoch = Core::Vkb::ViewEpoch();
+        const auto targets = TargetViews(ctx);
+        target_key.color_count = std::min<u32>(v.key.num_color_attachments, 8);
+        target_key.mrt_mask = v.key.mrt_mask;
+        for (u32 cb = 0; cb < target_key.color_count; ++cb) {
+            target_key.ids[cb] = targets[cb] != 0 ? Rd<u64>(targets[cb], 0x10) : 0;
+            target_key.formats[cb] = v.color_formats[cb];
+        }
+        const u64 dsv = Rd<u64>(ctx, CtxDepthStencilView);
+        target_key.depth_id = dsv != 0 ? Rd<u64>(dsv, 0x10) : 0;
+        target_key.depth = v.key.z_format != Core::NativeTarget::DepthTarget::ZFormat::Invalid;
+        target_key.stencil = v.key.stencil_format != Core::NativeTarget::DepthTarget::StencilFormat::Invalid;
+        targets_reused = target_key == t_targets.key;
+        (targets_reused ? c_target_memo_hits : c_target_memo_misses).fetch_add(1, std::memory_order_relaxed);
+    }
     const auto view_known = [](u64 id) {
         if (!LateImagesOn()) {
             return false;
@@ -1401,17 +1445,19 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         slot = id;
         return true;
     };
-    {
+    if (!targets_reused) { // issue 82: a reused target set had every view known at the last draw, and none has gone since (the epoch)
         const auto targets = TargetViews(ctx);
         for (u32 cb = 0; cb < v.key.num_color_attachments; ++cb) {
             if (targets[cb] != 0 && !view_known(Rd<u64>(targets[cb], 0x10)) && Core::Vkb::ViewFormat(Rd<u64>(targets[cb], 0x10)) == vk::Format::eUndefined) {
                 Core::NativeDevice::NoteView(Core::NativeDevice::Kind::RenderTargetView, targets[cb], targets[cb] + 0x40);
                 c_late_views.fetch_add(1, std::memory_order_relaxed);
+                targets_keep = false; // noted just now: the next draw checks again
             }
         }
         if (const u64 dsv = Rd<u64>(ctx, CtxDepthStencilView); dsv != 0 && !view_known(Rd<u64>(dsv, 0x10)) && Core::Vkb::ViewFormat(Rd<u64>(dsv, 0x10)) == vk::Format::eUndefined) {
             Core::NativeDevice::NoteView(Core::NativeDevice::Kind::DepthStencilView, dsv, dsv + 0x40);
             c_late_views.fetch_add(1, std::memory_order_relaxed);
+            targets_keep = false;
         }
     }
     u64 ph = TimesOn() ? NowNs() : 0;
@@ -1466,7 +1512,14 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
                                    fmt::format("C10 draw in target-7 mode: target 7 {}, target 0 {}, pixel shader writes target 7 {}, uconfig gradient mode {}", describe(t7),
                                                describe(Rd<u64>(ctx, 0x4488)), (v.key.mrt_mask >> 7) & 1, Rd<u8>(ctx, 0x44c8)));
     }
-    for (u32 cb = 0; !late_images && cb < pass.color_count; ++cb) {
+    if (targets_reused) { // issue 82 point 2: the last draw's attachments (same views, formats and slots; nothing gone since)
+        pass.colors = t_targets.colors;
+        pass.depth = t_targets.depth;
+        pass.depth_has_stencil = t_targets.depth_has_stencil;
+        attachment_uses = t_targets.uses;
+        width = t_targets.width, height = t_targets.height, layers = t_targets.layers;
+    }
+    for (u32 cb = 0; !late_images && !targets_reused && cb < pass.color_count; ++cb) {
         if ((v.key.mrt_mask & (1u << cb)) == 0 || v.color_formats[cb] == vk::Format::eUndefined || views[cb] == 0) {
             continue;
         }
@@ -1495,7 +1548,7 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         attachment_uses.push_back(Stream::ImageUse(a.image, true));
         width = std::min(width, a.extent.width), height = std::min(height, a.extent.height), layers = std::min(layers, a.layers);
     }
-    if (!late_images && v.key.z_format != Core::NativeTarget::DepthTarget::ZFormat::Invalid) {
+    if (!late_images && !targets_reused && v.key.z_format != Core::NativeTarget::DepthTarget::ZFormat::Invalid) {
         const u64 dsv = Rd<u64>(ctx, CtxDepthStencilView);
         Core::Vkb::Attachment a;
         if (dsv == 0 || !Core::Vkb::AttachmentFor(Rd<u64>(dsv, 0x10), vk::Format::eUndefined, cmd, a)) {
@@ -1517,6 +1570,14 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     pass.extent = vk::Extent2D{width, height};
 #endif
     pass.layers = layers;
+    if (targets_keep && !targets_reused) { // issue 82: found in full; kept for the next draw on this thread
+        t_targets.key = target_key;
+        t_targets.colors = pass.colors;
+        t_targets.depth = pass.depth;
+        t_targets.depth_has_stencil = pass.depth_has_stencil;
+        t_targets.uses = attachment_uses;
+        t_targets.width = width, t_targets.height = height, t_targets.layers = layers;
+    }
     phase(0);
     // the resources of both stages, pixel first (the pipeline layout's order)
     VkbShader::PushData& push = job->push;
@@ -2494,6 +2555,7 @@ nlohmann::json Report() {
             {"fixed_state_us_mean", draws ? static_cast<double>(c_fixed_ns.load()) / 1e3 / static_cast<double>(draws) : 0.0},
             {"r2b_on_late_buffers_failed", {ResolveOnRecorder(), c_late_buffers.load(), c_late_failed.load()}},
             {"r2b2b_on_late_targets_images", {LateImagesOn(), c_late_targets.load(), c_late_images.load()}},
+            {"target_memo_on_hits_misses", {TargetMemoOn(), c_target_memo_hits.load(), c_target_memo_misses.load()}}, // issue 82 point 2
             {"target_census", TargetCensusReport()},
             {"flat_census", Core::Vkb::FlatCensus::Report()},
             {"d3_targets_engine_unmapped", {c_targets_engine.load(), c_targets_unmapped.load()}},
