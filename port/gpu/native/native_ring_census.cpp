@@ -15,7 +15,6 @@
 #include <tuple>
 #include "native/native_content.h"
 #include "native/native_ring_census.h"
-#include "native/native_updates.h"
 #include "native/native_untracked_ring.h"
 
 namespace Core::RingCensus {
@@ -283,9 +282,6 @@ void NoteUse(Site site, u64 address, u64 size) {
         if (silent != 0) {
             u64 run_lo = 0, run_hi = 0;
             const auto flush = [&] {
-                if (run_hi > run_lo && Core::NativeUpdates::OpenMapOverlaps(run_lo, run_hi - run_lo)) {
-                    silent_open += run_hi - run_lo;
-                }
                 run_lo = run_hi = 0;
             };
             for (u64 g = first; g <= last; ++g) {

@@ -58,7 +58,6 @@
 #include "native/native_resources.h"
 #include "native/native_target_desc.h"
 #include "native/native_content.h"
-#include "native/native_updates.h"
 #include "native/native_texture_version.h"
 #include "native/native_sync.h"
 #include "native/native_vkb.h"
@@ -7316,13 +7315,7 @@ u64 PS4_SYSV_ABI DynTextureFill(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, 
         }
         return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
     }
-    if (original == 0 || !Core::NativeUpdates::enabled.load(std::memory_order_relaxed)) {
-        return 0;
-    }
-    const u64 serial = Core::NativeUpdates::OpenMapSerial();
-    const u64 result = reinterpret_cast<GuestDraw6>(original)(a0, a1, a2, a3, a4, a5);
-    Core::NativeUpdates::FlushOpenMapsSince(serial);
-    return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
+    return 0;
 }
 
 /// `TLG_LIGHT_RING=1`: the frame allocator (`JsDevice_AllocFrameGarlic`, Ghidra 0x2476350) bumps its offset (`allocator + 4`) with plain reads and writes: the engine only calls it from the render thread.
@@ -8825,7 +8818,6 @@ u64 PS4_SYSV_ABI InstanceLoop(u64 holder, u64 scene, u64 a2, u64 a3, u64 a4, u64
     return 0;
 }
 
-void SkinWritesAnnounce(u64 ring, u64 scene);
 
 // ---- TLG_SKIN_RING=1 (memory-ownership-plan, dev loop table: skin matrices as a copy, not a wait) ---------------------------------------------------------------------
 // The skinning pass (FUN_01c93730, render thread, two passes per frame) picks matrix slot (ring+0x40 + 1) & 3, copies the bone matrices into the slot buffer's memory
@@ -8924,9 +8916,6 @@ u64 PS4_SYSV_ABI SkinWrites(u64 ring, u64 scene, u64 flag, u64 a3, u64 a4, u64 a
         static const u64 loop_entry = Core::GuestHooks::OriginalEntry("SkinWrites");
         if (work && loop_entry != 0) {
             const SkinRename renamed = SkinRingRename(ring, scene);
-            if (Core::NativeUpdates::enabled.load(std::memory_order_relaxed)) {
-                SkinWritesAnnounce(ring, scene);
-            }
             if (!(NativeZPassGen::SkinEnabled() && NativeZPassGen::HandleSkin(ring, scene, flag, loop_entry))) {
                 reinterpret_cast<void(PS4_SYSV_ABI*)(u64, u64, u64)>(loop_entry)(ring, scene, flag);
             }
@@ -8935,43 +8924,14 @@ u64 PS4_SYSV_ABI SkinWrites(u64 ring, u64 scene, u64 flag, u64 a3, u64 a4, u64 a
         }
     }
     if (NativeZPassGen::SkinEnabled() && IsHeapPointer(ring) && IsHeapPointer(scene)) {
-        // B3: the loop is generated; the announcement of its writes stays (it reads the same objects)
+        // B3: the loop is generated
         static const u64 loop_entry = Core::GuestHooks::OriginalEntry("SkinWrites");
-        if (Core::NativeUpdates::enabled.load(std::memory_order_relaxed)) {
-            SkinWritesAnnounce(ring, scene);
-        }
         if (NativeZPassGen::HandleSkin(ring, scene, flag, loop_entry)) {
             return 1;
         }
         return 0;
     }
-    if (!Core::NativeUpdates::enabled.load(std::memory_order_relaxed) || !IsHeapPointer(ring) || !IsHeapPointer(scene)) {
-        return 0;
-    }
-    SkinWritesAnnounce(ring, scene);
     return 0;
-}
-
-void SkinWritesAnnounce(u64 ring, u64 scene) {
-    Guarded([&]() -> u64 {
-        const u64 first = Rd<u64>(scene, 0x29e00);
-        if (first == 0) {
-            return 0;
-        }
-        const u32 index = (Rd<u32>(ring, 0x40) + 1) & 3;
-        const u64 buffer = Rd<u64>(ring, index * 8);
-        if (!IsHeapPointer(buffer)) {
-            return 0;
-        }
-        const u64 memory = Rd<u64>(buffer, 0x30);
-        u64 matrices = 0;
-        u32 jobs = 0;
-        for (u64 node = first; node != 0 && jobs < 100000; node = Rd<u64>(node, 0), ++jobs) {
-            matrices += Rd<u32>(node, 0x50);
-        }
-        Core::NativeUpdates::NoteWriterRange(1, memory, matrices * 64, "skinning matrices", false, Rd<u64>(buffer, 0x10));
-        return 0;
-    });
 }
 
 /// N5b: `FUN_01eeb610(object, source)` fills a 160 byte light constant structure from the source (colour, position, ...) straight into the memory of a buffer of a ring of
@@ -8979,19 +8939,6 @@ void SkinWritesAnnounce(u64 ring, u64 scene) {
 /// after its increment modulo 3; memory pointer at buffer + 0x30), no Map. Announced before the function runs.
 u64 PS4_SYSV_ABI LightWrites(u64 object, u64 source, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret, u64 caller_rsp) {
     (void)a2, (void)a3, (void)a4, (void)a5, (void)ret, (void)caller_rsp;
-    if (!Core::NativeUpdates::enabled.load(std::memory_order_relaxed) || !IsHeapPointer(object)) {
-        return 0;
-    }
-    Guarded([&]() -> u64 {
-        const u32 index = (Rd<u32>(object, 0x440) + 1) % 3;
-        for (const u64 base : {u64{0xc0}, u64{0x2d0}}) {
-            const u64 buffer = Rd<u64>(object, base + index * 0xb0ull);
-            if (IsHeapPointer(buffer)) {
-                Core::NativeUpdates::NoteWriterRange(2, Rd<u64>(buffer, 0x30), 0xa0, "light constants", false, Rd<u64>(buffer, 0x10));
-            }
-        }
-        return 0;
-    });
     // native-v3-writers (TLG_LIGHT_RING=1): the light constants sit in a ring of three buffers that the game rewrites 4 submissions (about 2 frames) after a draw recorded them, while the raster thread
     // may still read them with the game two frames ahead (late read samples, 2026-11-04: record submit 597, slot rewritten at 601). The game runs here; the 160 bytes it wrote are then copied into a
     // fresh block of the frame ring (64 MB, lapped after about 50 frames) and the buffer's descriptor is pointed at the block, the way the game's UpdateSubresource does it for a dynamic constant buffer.
@@ -9602,46 +9549,11 @@ u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64
     if (Core::Vkb::On() && Core::Vkb::ContractCensusOn()) { // api-contract.md Y6 (debug): BeginRecording returns at once when its third argument is 0
         Core::Vkb::ContractNote(fmt::format("Y6 BeginRecording called, record flag {}, frameData+0x31e50 {}", a2 & 0xff, IsHeapPointer(a1) ? Rd<u32>(a1, 0x31e50) : 0xffffffffu));
     }
-    if (!Core::NativeUpdates::enabled.load(std::memory_order_relaxed) || !IsHeapPointer(device)) {
+    if (!IsHeapPointer(device)) {
         return 0;
     }
-    Core::NativeUpdates::NoteRenderThread();
+    NativeDevice::DrainDeferredFrees(); // the frees the engine asked for some frames ago (was reached through the writer announcements' frame start until 2026-11-20)
     InstallUnmapSlot();
-    Guarded([&]() -> u64 {
-        // W1 diagnostic (2026-11-04): which resources hold the staging buffers and the async copy pairs of BeginRecording (writers doc section 19)
-        static std::atomic<int> logged{0};
-        if (logged.load(std::memory_order_relaxed) < 3 && (logged.fetch_add(1) < 3)) {
-            for (const u64 field : {u64{0x2820}, u64{0x2830}, u64{0x2838}, u64{0x2840}, u64{0x2860}, u64{0x2868}, u64{0x2880}, u64{0x2888}, u64{0x28a0}, u64{0x28a8}, u64{0x26e0}, u64{0x26e8}, u64{0x26f0}}) {
-                const u64 res = Rd<u64>(device, field);
-                if (!IsHeapPointer(res)) {
-                    TLG_LOG(CP, Warn, "BeginRecording diag: dev {:#x} +{:#x} = {:#x} (not a heap pointer)", device, field, res);
-                    continue;
-                }
-                TLG_LOG(CP, Warn,
-                        "BeginRecording diag: dev {:#x} +{:#x} = {:#x} mem[+0x30] {:#x} kind[+0x124] {} width[+0x180] {} V#[+0x60,+0x64,+0x68,+0x6c] {:#x} {:#x} {:#x} {:#x} stamp[+0x2c] {}",
-                        device, field, res, Rd<u64>(res, 0x30), Rd<u32>(res, 0x124), Rd<u32>(res, 0x180), Rd<u32>(res, 0x60), Rd<u32>(res, 0x64), Rd<u32>(res, 0x68),
-                        Rd<u32>(res, 0x6c), Rd<u32>(res, 0x2c));
-            }
-        }
-        // F1 class 2 (design review section 33): the third buffer BeginRecording fills through AsyncMap, at this + 0x2790 (the loop at 0x1c4a5b0: up to 32 records of 32 bytes,
-        // 1 KB), was never announced; the census found its bytes changing every frame with no announcement (`TLG_ANNOUNCE_RECORDING_2790=1`, default off)
-        static const bool announce_2790 = [] {
-            const char* e = std::getenv("TLG_ANNOUNCE_RECORDING_2790");
-            const char* s = std::getenv("TLG_STATIC_ROWS"); // (static rows default on since 2026-11-10: the announcement with them; TLG_STATIC_ROWS=0 alone leaves it off)
-            return (e != nullptr && e[0] == '1') || s == nullptr || s[0] == 0 || s[0] != '0';
-        }();
-        for (const u64 field : {u64{0x2830}, u64{0x26e0}, u64{0x2790}}) {
-            if (field == 0x2790 && !announce_2790) {
-                continue;
-            }
-            const u64 buffer = Rd<u64>(device, field);
-            const u64 width = IsHeapPointer(buffer) ? Rd<u32>(buffer, 0x180) : 0;
-            if (width != 0 && width <= (1u << 24)) {
-                Core::NativeUpdates::NoteWriterRange(4, Rd<u64>(buffer, 0x30), width, "BeginRecording buffers", false, Rd<u64>(buffer, 0x10));
-            }
-        }
-        return 0;
-    });
     // TLG_RECORDING_RING=1 (memory-ownership-plan writer table): the two buffers BeginRecording fills by plain stores (+0x2830 through AsyncMap, which returns the V# address,
     // and +0x26e0) are one buffer each; the async dispatches of the frame read them through their views. Rename for the call: the memory pointer, the buffer's V# and the
     // V# of every view of it point at a fresh frame-ring block, the original runs, then the memory pointer is put back (the V#s keep the block until the next frame).
@@ -9759,14 +9671,6 @@ u64 PS4_SYSV_ABI UnmapSlot(u64 ctx, u64 resource, u64 subresource) {
         Core::Vkb::DynamicUnmapped(t_dyn_map.memory, t_dyn_map.bytes); // R3b: the in-place Map's writes into our device buffer
         t_dyn_map = {};
         ::tlg_ptrtrace_pending_caller = 0;
-    }
-    if (Core::NativeUpdates::enabled.load(std::memory_order_relaxed) && IsHeapPointer(resource) && (resource & 7) == 0) {
-        Guarded([&]() -> u64 {
-            if (const u32 kind = Rd<u32>(resource, 0x124); kind == 1 || kind == 3) { // F2.2: textures too (dynamic texture maps, see TagMap)
-                Core::NativeUpdates::NoteUnmap(Rd<u64>(resource, 0x10));
-            }
-            return 0;
-        });
     }
     return 0;
 }
@@ -9914,8 +9818,8 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
         Core::NativeContent::CountMap(map_kind, static_cast<u32>(type), path);
         Core::RingCensus::NoteMapPath(census_kind, subresource, static_cast<u32>(type), path); // TLG_RING_CENSUS (counters only)
     };
-    if (Core::NativeUpdates::enabled.load(std::memory_order_relaxed) && ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0 && Rd<u32>(resource, 0x124) == 1) {
-        // N5a: a Map of a buffer is announced to the update audit; the game's function runs here and its result is returned
+    if (ctx != 0 && IsHeapPointer(resource) && (resource & 7) == 0 && Rd<u32>(resource, 0x124) == 1) {
+        // a Map of a buffer: the game's function runs here and its result is returned
         const u64 original_map = Core::GuestHooks::OriginalEntry("Map");
         const u64 out_map = Rd<u64>(caller_rsp, 0);
         if (original_map != 0 && out_map != 0 && (out_map & 7) == 0) {
@@ -9934,8 +9838,6 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
             if (versions) {
                 Core::HookDiff::BumpVersion(Rd<u64>(resource, 0x10));
             }
-            Core::NativeUpdates::NoteMap(Rd<u64>(resource, 0x10), Core::NativeResources::ResourceUsage(resource), static_cast<u32>(type), Rd<u64>(out_map, 0),
-                                         Rd<u32>(out_map, 8), Rd<u64>(resource, 0x30), ret, size, Rd<u32>(ctx, 0x47ac), Rd<u32>(resource, 0x2c), Rd<u32>(resource, 0x188));
             Core::NativeDevice::NoteMapped(Rd<u64>(resource, 0x10), Rd<u64>(out_map, 0), Rd<u32>(out_map, 8), static_cast<u32>(type));
             count_map(0);
             return 0x8000000000000000ull | (result & 0x7fffffffffffffffull);
@@ -9985,22 +9887,6 @@ u64 PS4_SYSV_ABI TagMap(u64 ctx, u64 resource, u64 subresource, u64 type, u64 a4
     const u64 base_before = Rd<u64>(writer, 0x0);
     const u64 value = 0x8000000000000000ull | (reinterpret_cast<GuestMap7>(original)(ctx, resource, subresource, type, a4, size, out) & 0x7fffffffffffffffull);
     live.map_tried.fetch_add(1, std::memory_order_relaxed);
-    if (Core::NativeUpdates::enabled.load(std::memory_order_relaxed) && type != 1) {
-        // F2.2: a texture mapped for writing (dynamic textures: Map discard hands out a new version in the frame ring and the T# follows) is written by the caller after this
-        // returns; the Unmap announces the window like a buffer's (the 2026-11-02 shadow found 6.7k such uploads per 100 s of the default scene whose bytes nothing announced)
-        Guarded([&]() -> u64 {
-            const u64 pointer = Rd<u64>(out, 0);
-            const u64 bytes = Rd<u64>(resource, 0x38);
-            if (pointer != 0 && bytes != 0 && bytes <= (1ull << 28)) {
-                Core::NativeContent::NoteTextureMap(Rd<u64>(resource, 0x10), pointer, bytes, Rd<u32>(out, 8), Rd<u32>(out, 0xc), static_cast<u32>(type));
-                const u64 announce = Core::NativeContent::MapAnnounceBytes(pointer, bytes);
-                Core::NativeUpdates::MarkNextMapTexture();
-                Core::NativeUpdates::NoteMap(Rd<u64>(resource, 0x10), Core::NativeResources::ResourceUsage(resource), static_cast<u32>(type), pointer, static_cast<u32>(announce),
-                                             Rd<u64>(resource, 0x30), ret, 0);
-            }
-            return 0;
-        });
-    }
     const u64 span_begin = tag_address + TagDwords * sizeof(u32);
     const u64 span_end = Rd<u64>(writer, 0x10);
     const u64 scratch = Rd<u64>(out, 0);
@@ -11133,18 +11019,6 @@ u64 PS4_SYSV_ABI ResourceBufferCreated(u64 device, u64 description, u64 initial,
                 Core::Vkb::NotePoolConstantBuffer(created);
             }
         }
-        if (NativeUpdates::enabled.load(std::memory_order_relaxed)) {
-            // N5b: a buffer created with initial data: the engine copied the data into the new memory before returning (announced after the write).
-            // C4: also without initial data (the argument is 0 at the creation sites seen in the update audit): the creation still writes into the new memory (a host memset / copy inside the call)
-            Guarded([&]() -> u64 {
-                const u64 width = Rd<u32>(created, 0x180);
-                if (width != 0 && width <= (1ull << 30)) {
-                    NativeUpdates::NoteWriterRange(5, Rd<u64>(created, 0x30), width, "CreateBuffer");
-                    NativeContent::SilentProbeNew(0, Rd<u64>(created, 0x30), width); // note 126 probe (off by default)
-                }
-                return 0;
-            });
-        }
     }
     return 1;
 }
@@ -11170,9 +11044,6 @@ template <u32 Kind>
 u64 PS4_SYSV_ABI ResourceTextureInitAnnounced(u64 object, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
     NativeResources::NoteTextureObject(object);
     NativeRegistry::NoteTextureInitializing(object);
-    if (!NativeUpdates::enabled.load(std::memory_order_relaxed)) {
-        return 0;
-    }
     static constexpr const char* Names[3] = {"ResourceTexture1D", "ResourceTexture2D", "ResourceTexture3D"};
     const u64 original = Core::GuestHooks::OriginalEntry(Names[Kind]);
     if (original == 0) {
@@ -11187,7 +11058,6 @@ u64 PS4_SYSV_ABI ResourceTextureInitAnnounced(u64 object, u64 a1, u64 a2, u64 a3
             NativeDevice::NoteTextureCreated(texture); // note 114 (before its initial data is announced)
             const u64 memory = texture != 0 ? Rd<u64>(texture, 0x30) : 0;
             if (memory != 0 && memory == t_last_garlic_address && t_last_garlic_size != 0) {
-                NativeUpdates::NoteWriterRange(6, memory, t_last_garlic_size, "texture 1D/3D creation");
                 Core::TextureVersion::Bump(Rd<u64>(texture, 0x10)); // note 100
             }
             return 0;
@@ -11200,7 +11070,6 @@ u64 PS4_SYSV_ABI ResourceTextureInitAnnounced(u64 object, u64 a1, u64 a2, u64 a3
         const u64 memory = Rd<u64>(object, 0x30);
         const u64 size = Rd<u64>(object, 0x38);
         if (memory != 0 && size != 0 && size <= (1ull << 32)) {
-            NativeUpdates::NoteWriterRange(6, memory, size, "texture 2D initialization");
             NativeContent::SilentProbeNew(1, memory, size); // note 126 probe (off by default)
             Core::TextureVersion::Bump(Rd<u64>(object, 0x10)); // note 100
         }
@@ -11295,101 +11164,9 @@ u64 PS4_SYSV_ABI ZPassEnter(u64 render_device, u64 desc, u64 a2, u64 a3, u64 a4,
 /// C4: the scene's per object constant slots. `FUN_01e05330(float, frameData, ...)` takes the next slot of a ring (`DAT_069b1630`, three groups of 8192 slot objects, the group
 /// in `DAT_069b1678`; the consumed count is `frameData + 0x31ea4`) and writes the object's constants straight into the slot's buffer memory (`slot + 0x130` is the D3D buffer,
 /// its `+0x30` the memory, 0x130 bytes, the stamp at `+0xd0` is the write the update audit saw first), with no Map in between. The buffers' memory is one block, 0x140 bytes apart
-/// and descending. The function takes a float in xmm0, so it is not wrapped: this entry only sees the count the earlier calls consumed (their writes are complete) and
-/// announces those slots as one range (writer 4, direct stores); `FlushSceneSlotAnnouncements` (frame start) announces the tail of the last call.
+/// and descending. (Its announcement to the old update audit was deleted on 2026-11-20, backend note 102; the slot ring below uses the same globals.)
 namespace {
-std::atomic<u64> scene_slot_frame{0};
-std::atomic<u32> scene_slot_announced{0};
-std::atomic<u32> scene_slot_group{0};
-std::atomic<u32> scene_slot_group_seen{~0u};
 constexpr u64 SceneSlotRingGhidra = 0x69b1630, SceneSlotGroupGhidra = 0x69b1678;
-constexpr u64 SceneSlotStride = 0x140, SceneSlotBytes = 0x130;
-
-void AnnounceSceneSlotRange(u64 frame, u32 upto, bool remember_group) {
-    if (!Core::NativeUpdates::enabled.load(std::memory_order_relaxed)) {
-        return;
-    }
-    const VAddr base = image_base.load(std::memory_order_relaxed);
-    if (base == 0) {
-        return;
-    }
-    // the group variable is written at two places of the frame (FUN_01d169b0, FUN_01cf7a40): the remembered group of the last call was tried and left more faults uncovered than the current one
-    u32 group = 3;
-    Guarded([&]() -> u64 {
-        group = Rd<u32>(base + SceneSlotGroupGhidra - 0x1000000, 0);
-        return 0;
-    });
-    if (group >= 3) {
-        return;
-    }
-    u32 first = scene_slot_announced.load(std::memory_order_relaxed);
-    if (group != scene_slot_group_seen.load(std::memory_order_relaxed)) {
-        // a new ring group: the slots announced so far were the other group's (the announcement runs one slot ahead, so at the first call of a frame it can see the old group)
-        first = 0;
-        scene_slot_group_seen.store(group, std::memory_order_relaxed);
-        scene_slot_announced.store(0, std::memory_order_relaxed);
-    } else if (upto < first) {
-        first = 0; // the ring was reset: a new frame
-        scene_slot_announced.store(0, std::memory_order_relaxed);
-    }
-    if (upto <= first || upto > 8192) {
-        return;
-    }
-    Guarded([&]() -> u64 {
-        const u64 ring_globals = base + SceneSlotRingGhidra - 0x1000000;
-        if (remember_group) {
-            scene_slot_group.store(group, std::memory_order_relaxed);
-        }
-        const u64 ring = Rd<u64>(ring_globals, static_cast<u64>(group) * 0x18);
-        if (!IsHeapPointer(ring)) {
-            return 0;
-        }
-        const auto memory_of = [&](u32 i) -> u64 {
-            const u64 slot = Rd<u64>(ring, static_cast<u64>(i) * 8);
-            if (!IsHeapPointer(slot)) {
-                return 0;
-            }
-            const u64 buffer = Rd<u64>(slot, 0x130);
-            return IsHeapPointer(buffer) ? Rd<u64>(buffer, 0x30) : 0;
-        };
-        const u64 first_memory = memory_of(first);
-        const u64 last_memory = memory_of(upto - 1);
-        if (first_memory == 0 || last_memory == 0) {
-            return 0;
-        }
-        {
-            // diagnostic: where the three groups' slot memory sits (are they three separate blocks?)
-            static std::atomic<u32> noted_mask{0};
-            const u32 bit = 1u << group;
-            if ((noted_mask.fetch_or(bit) & bit) == 0) {
-                Core::RareEvents::Note(fmt::format("scene_slot_group_{}_memory", group), fmt::format("group {}: slot {} memory {:#x}, slot {} memory {:#x}, slot 0 memory {:#x}, slot 8191 memory {:#x}", group, first, first_memory, upto - 1, last_memory, memory_of(0), memory_of(8191)));
-            }
-        }
-        if (Core::NativeUpdates::IdMarksMode() != 0) {
-            // F1 class 2 marks by id (TLG_ID_MARKS): each slot names its engine buffer (id at buffer + 0x10), so the raster thread applies it by id, not as a block by address
-            for (u32 i = first; i < upto; ++i) {
-                const u64 slot = Rd<u64>(ring, static_cast<u64>(i) * 8);
-                const u64 buffer = IsHeapPointer(slot) ? Rd<u64>(slot, 0x130) : 0;
-                if (!IsHeapPointer(buffer)) {
-                    continue;
-                }
-                if (const u64 memory = Rd<u64>(buffer, 0x30)) {
-                    Core::NativeUpdates::NoteWriterRange(4, memory, SceneSlotBytes, nullptr, false, Rd<u64>(buffer, 0x10));
-                }
-            }
-        } else if (first_memory - last_memory == static_cast<u64>(upto - 1 - first) * SceneSlotStride) {
-            Core::NativeUpdates::NoteWriterRange(4, last_memory, first_memory - last_memory + SceneSlotBytes, nullptr, false, Core::NativeUpdates::kBuffersOnly); // one block
-        } else {
-            for (u32 i = first; i < upto; ++i) {
-                if (const u64 memory = memory_of(i)) {
-                    Core::NativeUpdates::NoteWriterRange(4, memory, SceneSlotBytes, nullptr, false, Core::NativeUpdates::kBuffersOnly);
-                }
-            }
-        }
-        scene_slot_announced.store(upto, std::memory_order_relaxed);
-        return 0;
-    });
-}
 } // namespace
 
 // ---- TLG_SLOT_RING=1 (memory-ownership-plan 0b, slot groups at the root) ------------------------------------------------------------------------------------------------
@@ -11537,14 +11314,6 @@ u64 PS4_SYSV_ABI SceneGroupAdvanceHook(Core::GuestHooks::MidContext* ctx) {
 
 u64 PS4_SYSV_ABI SceneSlotWrites(u64 frame, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
     (void)a1, (void)a2, (void)a3, (void)a4, (void)a5, (void)ret;
-    if (Core::NativeUpdates::enabled.load(std::memory_order_relaxed) && IsHeapPointer(frame)) {
-        scene_slot_frame.store(frame, std::memory_order_relaxed);
-        Guarded([&]() -> u64 {
-            // the slots the earlier calls consumed, and the one this call is about to take and write (announced before its first store)
-            AnnounceSceneSlotRange(frame, std::min<u32>(Rd<u32>(frame, 0x31ea4) + 1, 8192), true);
-            return 0;
-        });
-    }
     if (SlotRingRun("SceneSlotWrites", frame, a1, a2, a3, a4, a5)) {
         return 0x8000000000000000ull;
     }
@@ -11563,13 +11332,6 @@ u64 PS4_SYSV_ABI SceneSlotWritesMatrices(u64 frame, u64 kind, u64 a1, u64 a2, u6
     }
     if ((n & 255) == 1) {
         Core::DebugServer::Publish("scene_slot_matrix_writer", {{"calls", n}, {"calls_that_take_a_slot", slot_calls.load()}, {"note", "FUN_01e07330, announced before it runs (L3)"}});
-    }
-    if ((kind & 0xffffffffull) != 0x14 && Core::NativeUpdates::enabled.load(std::memory_order_relaxed) && IsHeapPointer(frame)) {
-        scene_slot_frame.store(frame, std::memory_order_relaxed);
-        Guarded([&]() -> u64 {
-            AnnounceSceneSlotRange(frame, std::min<u32>(Rd<u32>(frame, 0x31ea4) + 1, 8192), true);
-            return 0;
-        });
     }
     if ((kind & 0xffffffffull) != 0x14 && SlotRingRun("SceneSlotWritesMatrices", frame, kind, a1, a2, a3, a4)) {
         return 0x8000000000000000ull;
@@ -11745,10 +11507,9 @@ u64 PS4_SYSV_ABI TextureUpdateSubresource(u64 context, u64 resource, u64 subreso
         }
         return 0;
     }
-    // F2.2: the function copies `data` into the texture memory after this hook point; the announcement has to come after the copy (the announced content store takes the bytes
-    // when it is announced), so with the announcements on the original runs here (5 arguments, no result) and the guest function is skipped
+    // F2.2: the original runs here (5 arguments, no result) and the guest function is skipped, so what follows sees the copy done
     u64 ran = 0;
-    if (Core::NativeUpdates::enabled.load(std::memory_order_relaxed) && IsHeapPointer(resource)) {
+    if (IsHeapPointer(resource)) {
         if (const u64 original = Core::GuestHooks::OriginalEntry("TextureUpdateSubresource"); original != 0) {
             reinterpret_cast<GuestFunction6>(original)(context, resource, subresource, box, data, 0);
             ran = 1ull << 63;
@@ -11772,23 +11533,15 @@ u64 PS4_SYSV_ABI TextureUpdateSubresource(u64 context, u64 resource, u64 subreso
                 // F2.2: the new version of a constant buffer is copied into the frame ring (V# base at +0x60 and +0x64); nothing announces it, the shadow remembers the range as a mark
                 const u64 version = static_cast<u64>(Rd<u32>(resource, 0x60)) | (static_cast<u64>(Rd<u32>(resource, 0x64) & 0xfffu) << 32);
                 Core::NativeContent::NoteMark(3, version, width);
-                // N2: found by the ring mirror shadow (the writer probe saw this memcpy): the copy is finished here, so it is announced as every other ring write
-                static const bool cbuf_announce = [] { const char* e = std::getenv("TLG_CBUF_ANNOUNCE"); return e == nullptr || *e != '0'; }();
-                if (cbuf_announce && Core::NativeUpdates::enabled.load(std::memory_order_relaxed)) {
-                    Core::NativeUpdates::NoteWriterRange(3, version, width, "UpdateSubresource constant buffer", true);
-                }
             }
-            if ((bind & 0x4) == 0 && Core::NativeUpdates::enabled.load(std::memory_order_relaxed) && memory != 0 && width != 0 && width < (1u << 30)) {
-                Core::NativeUpdates::NoteWriterRange(5, memory, width, "UpdateSubresource non-constant buffer");
-            }
+            (void)memory;
             return 0;
         }
         const u64 memory = Rd<u64>(resource, 0x30);
         const u64 size = Rd<u64>(resource, 0x38);
         const u64 n = calls.fetch_add(1, std::memory_order_relaxed) + 1;
         bytes.fetch_add(size, std::memory_order_relaxed);
-        if (Core::NativeUpdates::enabled.load(std::memory_order_relaxed) && memory != 0 && size != 0 && size < (1ull << 32)) {
-            Core::NativeUpdates::NoteWriterRange(6, memory, size, "UpdateSubresource texture");
+        if (memory != 0 && size != 0 && size < (1ull << 32)) {
             Core::TextureVersion::Bump(Rd<u64>(resource, 0x10)); // note 100 (the original ran above)
             announced.fetch_add(1, std::memory_order_relaxed);
         }
@@ -11848,7 +11601,7 @@ u64 PS4_SYSV_ABI ComputeUpdateSubresource(u64 context, u64 resource, u64 subreso
         return 0;
     }
     u64 ran = 0;
-    if (Core::NativeUpdates::enabled.load(std::memory_order_relaxed) && IsHeapPointer(resource)) {
+    if (IsHeapPointer(resource)) {
         if (const u64 original = Core::GuestHooks::OriginalEntry("ComputeUpdateSubresource"); original != 0) {
             reinterpret_cast<GuestFunction6>(original)(context, resource, subresource, box, data, 0);
             ran = 1ull << 63;
@@ -11859,14 +11612,12 @@ u64 PS4_SYSV_ABI ComputeUpdateSubresource(u64 context, u64 resource, u64 subreso
             if (Rd<u32>(resource, 0x124) == 1) {
                 const u32 width = Rd<u32>(resource, 0x180);
                 const u32 bind = Rd<u32>(resource, 0x188);
-                static const bool cbuf_announce = [] { const char* e = std::getenv("TLG_CBUF_ANNOUNCE"); return e == nullptr || *e != '0'; }();
-                if (cbuf_announce && (bind & 0x4) != 0 && width != 0 && width < (1u << 20)) {
+                if ((bind & 0x4) != 0 && width != 0 && width < (1u << 20)) {
                     const u64 version = static_cast<u64>(Rd<u32>(resource, 0x60)) | (static_cast<u64>(Rd<u32>(resource, 0x64) & 0xfffu) << 32);
                     if (Core::NativeContent::ComputeConstRingMode() != 0 && IsHeapPointer(context) && Rd<u8>(context, 0x2310) == 0 && !Core::NativeContent::InRing(version, width)) {
                         // note 138: the copy went into the context's own command buffer (the NOP packet payload), not into a frame ring block: register its allocation
                         Core::NativeContent::CmdConstNote(version, width);
                     }
-                    Core::NativeUpdates::NoteWriterRange(3, version, width, "UpdateSubresource constant buffer (compute)", true);
                 }
             }
             return 0;
@@ -11886,11 +11637,6 @@ u64 PS4_SYSV_ABI GpuAlloc(u64 device, u64 size, u64 alignment, u64 type, u64 a4,
         return 0;
     }
     const u64 result = reinterpret_cast<GuestDraw6>(original)(device, size, alignment, type, a4, a5);
-    if (result != 0 && Core::NativeUpdates::enabled.load(std::memory_order_relaxed)) {
-        if (const u64 bytes = size & 0xffffffffull; bytes != 0) {
-            Core::NativeUpdates::NoteWriterRange(5, result, bytes, Which == 0 ? "AllocGarlicMemory" : "AllocOnionMemory");
-        }
-    }
     if (result != 0) {
         Core::NativeContent::NoteGpuAllocation(result, size & 0xffffffffull);
     }
@@ -11966,17 +11712,6 @@ u64 PS4_SYSV_ABI MidProbeB7(Core::GuestHooks::MidContext* ctx) {
         samples.push_back(std::move(sample));
     }
     return 0;
-}
-
-void FlushSceneSlotAnnouncements() {
-    NativeDevice::DrainDeferredFrees();
-    const u64 frame = scene_slot_frame.load(std::memory_order_relaxed);
-    if (frame != 0 && Core::NativeUpdates::enabled.load(std::memory_order_relaxed)) {
-        Guarded([&]() -> u64 {
-            AnnounceSceneSlotRange(frame, Rd<u32>(frame, 0x31ea4), false);
-            return 0;
-        });
-    }
 }
 
 /// B1: names of the engine's shader programs. The shader loader (`FUN_01c872e0`) builds, per shader class, a description (index at +8, file name at +0x10, entry point at +0x18, the
@@ -12148,7 +11883,7 @@ bool IsShaderEntry(u64 program, const char* file, const char* entry) {
 /// function runs (writer 7 of the update list). The uploader is `*(group + 0xf0)`, null for a group without per frame data.
 u64 PS4_SYSV_ABI InstanceGroupBind(u64 inner, u64 group, u64 view, u64 a3, u64 a4, u64 a5, u64 ret) {
     (void)inner, (void)view, (void)a3, (void)a4, (void)a5, (void)ret;
-    if (!Core::NativeUpdates::enabled.load(std::memory_order_relaxed) || !IsHeapPointer(group)) {
+    if (!IsHeapPointer(group)) {
         return 0;
     }
     Guarded([&]() -> u64 {
@@ -12162,7 +11897,6 @@ u64 PS4_SYSV_ABI InstanceGroupBind(u64 inner, u64 group, u64 view, u64 a3, u64 a
             return 0;
         }
         Core::NativeContent::ScratchNote(Rd<u64>(uploader, 0x18), Rd<u64>(uploader, 0x20), static_cast<u64>(bytes)); // note 133 (off by default)
-        Core::NativeUpdates::NoteWriterRange(7, Rd<u64>(uploader, 0x18 + static_cast<u64>(index) * 8), static_cast<u32>(bytes), "instance group staging");
         return 0;
     });
     return 0;
@@ -12889,15 +12623,12 @@ void DrawSiteCensusRead(nlohmann::json& out) {
     out["sites"] = std::move(list);
 }
 
-void L6WriterTimes(u64& ns, u64& n); // native_updates.cpp
 void NativeListRead(nlohmann::json& out) {
     if (L6Timers::On()) {
-        u64 wns = 0, wn = 0;
-        L6WriterTimes(wns, wn);
         out["l6_timers_ms_total"] = {{"issue_indexed_draw", g_l6_draw_ns.load() / 1e6}, {"issue_indexed_draw_calls", g_l6_draw_n.load()},
                                      {"issue_dispatch", g_l6_dispatch_ns.load() / 1e6}, {"issue_dispatch_calls", g_l6_dispatch_n.load()},
                                      {"tag", g_l6_tag_ns.load() / 1e6}, {"tag_calls", g_l6_tag_n.load()}, {"make_record", g_l6_make_ns.load() / 1e6},
-                                     {"make_record_calls", g_l6_make_n.load()}, {"writer_notes", wns / 1e6}, {"writer_note_calls", wn}};
+                                     {"make_record_calls", g_l6_make_n.load()}};
     }
     out["enabled"] = NativeListOn();
     out["records_with_a_state"] = nl_records.load();

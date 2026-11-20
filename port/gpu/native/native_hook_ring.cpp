@@ -24,7 +24,6 @@ static nlohmann::json TlgPublishedPlanReport() { return nullptr; }
 static nlohmann::json TlgHookPlanSamples() { return nullptr; }
 static nlohmann::json TlgCrossWaitReport() { return nullptr; }
 #include "native/native_ring_mirror.h"
-#include "native/native_updates.h"
 #include "native/native_untracked_ring.h"
 
 namespace Core::HookRing {
@@ -843,7 +842,7 @@ void CompareWide(u64 address, u64 size, bool probe) {
                          static_cast<unsigned long long>(have_bc ? bc.program : 0), static_cast<unsigned long long>(prefix), static_cast<unsigned long long>(at),
                          static_cast<unsigned long long>(at - base), g_fill_writer[g].load(std::memory_order_relaxed),
                          static_cast<u32>(Core::NativeDraw::NextSeq()) - g_fill_seq[g].load(std::memory_order_relaxed), t.how, t.caller, static_cast<unsigned long long>(t.resource), t.map_type,
-                         Core::NativeUpdates::OpenMapOverlaps(at, 1) ? 1 : 0, (filled[g].load(std::memory_order_relaxed) & 2) != 0 ? 1 : 0,
+                         0, (filled[g].load(std::memory_order_relaxed) & 2) != 0 ? 1 : 0,
                          Core::NativeDevice::MapsCovering(at).c_str());
         }
     }
@@ -950,8 +949,6 @@ u64 CompareRaster(u32 cls, u64 address, u64 size, bool gpu_written, bool bound) 
         }
         if (landed) {
             c_why_landed.fetch_add(1, std::memory_order_relaxed);
-        } else if (Core::NativeUpdates::OpenMapOverlaps(lo, hi - lo)) {
-            c_why_open_map.fetch_add(1, std::memory_order_relaxed);
         } else if (gpu_written) {
             c_why_gpu_written.fetch_add(1, std::memory_order_relaxed);
         } else {

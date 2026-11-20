@@ -41,7 +41,6 @@
 #include "native/native_resources.h"
 #include "native/native_ring_mirror.h"
 #include "native/native_tsharp_watch.h"
-#include "native/native_updates.h"
 
 #include "native/native_vkb.h"
 
@@ -3536,8 +3535,6 @@ void NoteLateRead(LateKind kind, u64 address, u64 size, u64 seq) {
         if (c_check_record_seen.load(std::memory_order_relaxed) != 0) {
             c_check_no_record_after_a_record.fetch_add(1, std::memory_order_relaxed); // a read on a thread that never draws (the presenter) or after the first draw of its thread
         }
-    } else if (Core::NativeUpdates::OpenMapOverlaps(address, size)) {
-        cls = CheckOpenMap;
     } else {
         c_check_record_seen.store(1, std::memory_order_relaxed);
         {
@@ -3695,11 +3692,6 @@ void OverlayImage(u64 address, u64 size, u8* staged) {
     const u64 seq = Core::NativeRegistry::CurrentDrawSeq();
     if (seq == 0) {
         c_ov_skipped_no_seq.fetch_add(1, std::memory_order_relaxed);
-        return;
-    }
-    if (Core::NativeUpdates::OpenMapOverlaps(address, size)) {
-        // a Map of this memory has not been announced yet (its writer has not finished or has not unmapped): the newest entry may be an older one, the memory is what is left
-        c_ov_skipped_open_map.fetch_add(1, std::memory_order_relaxed);
         return;
     }
     std::scoped_lock lock{g_mutex};
@@ -3989,8 +3981,7 @@ void CompareImage(const ImageUpload& upload) {
             ++g_uploads_by_main_writer[main];
         }
     }
-    // a Map of this memory still open (not unmapped, not yet flushed at a frame start): its writer's announcement has not been made, so a differing upload there only says the store lags
-    const bool map_open = Core::NativeUpdates::OpenMapOverlaps(upload.address, upload.size);
+    const bool map_open = false; // (open Maps were the writer announcements' state, deleted 2026-11-20)
     (map_open ? c_cmp_open : c_cmp_closed).fetch_add(1, std::memory_order_relaxed);
     if (differing != 0) {
         (map_open ? c_cmp_open_differs : c_cmp_closed_differs).fetch_add(1, std::memory_order_relaxed);

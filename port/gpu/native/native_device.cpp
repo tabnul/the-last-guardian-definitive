@@ -152,11 +152,6 @@ bool ReadResourceObject(u64 object, Object& out) {
 
 void Insert(const Object& object) {
     std::unique_lock lock{table_mutex};
-    if (!by_id.contains(object.id) && object.kind >= Kind::Texture1D && object.kind <= Kind::Texture3D && object.address != 0 && object.bytes != 0) {
-        Core::NativeUpdates::NoteEngineCreate(object.id, object.address, object.bytes); // B8.4: the memory's older images are unlisted, in order with the GPU work
-    } else if (!by_id.contains(object.id) && object.kind == Kind::Buffer && object.address != 0) {
-        Core::NativeUpdates::NoteEngineBufferCreate(object.id, object.address, std::max<u64>(object.bytes, 1), object.usage, object.cpu_access); // B9.4
-    }
     if (const auto it = by_id.find(object.id); it != by_id.end()) {
         if (it->second.alive) {
             live_by_kind[static_cast<u32>(it->second.kind)].fetch_sub(1, std::memory_order_relaxed);
@@ -441,12 +436,8 @@ void NoteDelete(u64 object) {
             if (alias) {
                 Core::NativeUpdates::NoteB8(Core::NativeUpdates::B8TextureAliasKept);
             }
-            Core::NativeUpdates::NoteEngineDelete(gone.id, gone.address, gone.bytes, alias ? 3u : 1u);
-        } else if (gone.kind == Kind::ShaderResourceView || gone.kind == Kind::UnorderedAccessView) {
-            Core::NativeUpdates::NoteEngineDelete(gone.id, gone.address, gone.bytes, 0u);
         } else if (gone.kind == Kind::Buffer && gone.address != 0) {
             Core::HookOwned::BufferGone(gone.id); // note 90
-            Core::NativeUpdates::NoteEngineDelete(gone.id, gone.address, gone.bytes, 4u); // B9.2
         }
     }
     id_by_object.erase(it);

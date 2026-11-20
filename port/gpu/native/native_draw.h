@@ -133,8 +133,6 @@ void LifeDeleted(u64 object, s64 age);
 void LifeBound(u64 object, u64 id, bool by_plan_handle);
 /// Census: a record's plan handle named `dead_object`, which the game deleted before the raster thread used it (stale bind). `address_found_other`: the lookup by address now finds another live engine buffer there (the memory was reused: the draw would read the new buffer's content).
 void LifeStaleBind(u64 dead_object, bool address_found_other);
-/// C4 (update audit): announces the scene's per object constant slots the engine wrote since the last call (see `SceneSlotWrites`); called at the start of a frame.
-void FlushSceneSlotAnnouncements();
 /// True on a thread that is running a guarded record build: a fault there is handled by the builder, not fatal.
 bool IsGuarded();
 /// N6.3i: runs `fn(argument)` with the same fault guard as the record builder; false when it faulted.
