@@ -854,7 +854,11 @@ u32 SplitJobs() {
 }
 } // namespace
 
+extern std::atomic<void (*)(u32)> g_before_enqueue; // R3b (defined at Enqueue)
 u64 Submit() {
+    if (auto* hook = g_before_enqueue.load(std::memory_order_acquire)) {
+        hook(~0u); // R3b: the open batch belongs to this submission
+    }
     if (Recorders() > 1 && on_recorder && t_rec == &shared_rec) {
         return CloseSubmission(); // R4a: on the resolver (the engine's submit job)
     }
@@ -1247,7 +1251,17 @@ bool JobPoolOn() {
     return on;
 }
 void EnqueueImpl(std::unique_ptr<Job> job);
+std::atomic<void (*)(u32)> g_before_enqueue{nullptr};
+void SetBeforeEnqueue(void (*hook)(u32)) {
+    g_before_enqueue.store(hook, std::memory_order_release);
+}
+void EnqueueNoHook(std::unique_ptr<Job> job) {
+    EnqueueImpl(std::move(job));
+}
 void Enqueue(std::unique_ptr<Job> job) {
+    if (auto* hook = g_before_enqueue.load(std::memory_order_acquire)) {
+        hook(static_cast<u32>(job->work));
+    }
     if (!RecTimesOn()) {
         EnqueueImpl(std::move(job));
         return;
@@ -1327,6 +1341,10 @@ void Wait(u64 value) {
     c_wait_us_total.fetch_add(us, std::memory_order_relaxed);
 }
 
+std::atomic<u64> g_ring_generation{0};
+u64 HostRingGeneration() {
+    return g_ring_generation.load(std::memory_order_acquire);
+}
 Slice HostRing(u64 size, u64 alignment) {
     std::scoped_lock lock{ring_mutex};
     alignment = std::max<u64>(alignment, 16);
@@ -1334,6 +1352,7 @@ Slice HostRing(u64 size, u64 alignment) {
     if (at + size > RingBytes) {
         at = 0;
         c_ring_wraps.fetch_add(1, std::memory_order_relaxed);
+        g_ring_generation.fetch_add(1, std::memory_order_release); // R3c: per-thread chunks taken before the wrap are not used further
         Wait(last_value.load(std::memory_order_relaxed)); // V4f: frames may still be on the GPU; the ring's start is reused only after they are done (a wrap is rare)
     }
     frame_ring_bytes += size;

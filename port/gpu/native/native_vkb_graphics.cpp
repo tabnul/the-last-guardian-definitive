@@ -1409,6 +1409,27 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
     return true;
 }
 
+/// R3c: per-thread chunks of the host ring for rows and copied constants (one ring lock per chunk, not two per draw). A chunk is taken in stream order like any slice;
+/// what it holds is used by work enqueued after the chunk was taken.
+Stream::Slice RowSlice(u64 size) {
+    constexpr u64 Chunk = 256 * 1024;
+    thread_local Stream::Slice chunk{};
+    thread_local u64 used = Chunk;
+    thread_local u64 generation = ~0ull;
+    size = (size + 255) & ~u64{255}; // (256: the storage buffer offset alignment of every device)
+    if (size > Chunk) {
+        return Stream::HostRing(size, 256);
+    }
+    if (used + size > Chunk || generation != Stream::HostRingGeneration()) {
+        chunk = Stream::HostRing(Chunk, 256);
+        used = 0;
+        generation = Stream::HostRingGeneration();
+    }
+    Stream::Slice out{chunk.buffer, chunk.offset + used, static_cast<u8*>(chunk.data) + used};
+    used += size;
+    return out;
+}
+
 /// R3: a record-mode stage's entries of the draw's row (slots, a read-only guest buffer's byte offset and size, image and sampler slots), in the order the recompiler's
 /// indexed mode assigned them (buffers, images, samplers); the hazards into `uses`. False: the draw cannot go this way (it then takes the plain path).
 bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<Stream::Use, 64>& uses) {
@@ -1442,7 +1463,7 @@ bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector
                     if (Core::Vkb::ConstantInRing(address, size, w)) {
                         ok = true;
                     } else if (size <= 65536) { // R7: copied at the draw (a D3D11 driver's per-draw version)
-                        const Stream::Slice slice = Stream::HostRing(size, alignment);
+                        const Stream::Slice slice = RowSlice(size);
                         std::memcpy(slice.data, reinterpret_cast<const void*>(address), size);
                         w.buffer = slice.buffer, w.offset = slice.offset, w.device = false;
                         ok = true;
@@ -1609,6 +1630,8 @@ void DcCensus(u64 ctx, const Variant& v, const VkbVulkan::FixedState* fixed, u32
 /// note 45 (R2 design): Record's phases on the engine thread (0 views + attachments, 1 stage bindings, 2 vertex + index, 3 the rest + the job hand-over) and the job on the recorder
 std::atomic<u64> c_phase_ns[4]{}, c_job_ns{0}, c_job_n{0}, c_fixed_ns{0}, c_variant_find_ns{0};
 bool TimesOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_TIMES"); return e != nullptr && e[0] == '1'; }(); return on || (t_depth_pass && DepthCensusOn()); } // note 109 census: the cascade draws timed alone ///< note 45: these timers only with TLG_VKB_TIMES=1
+bool BatchOn();
+bool JoinBatch(DrawJob& job);
 void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u64 a1, u64 a2, u64 a3) {
     if (Core::Vkb::FillReadersOn() || Core::Vkb::R3dTraceSize() != 0) {
         Core::Vkb::CensusTag((v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0x10000000000ull) | (v.vs.info ? u64{v.vs.info->pgm_hash} << 32 : 0)); // note 49 census: a draw, its pixel shader (debug R3d trace: vertex shader above)
@@ -1772,14 +1795,14 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     Bound& b = job->b;
     Ranges& ranges = job->ranges;
     u32 buffer_index = 0;
-    LateList* const late = ResolveOnRecorder() ? &job->late : nullptr; // R2b (note 64)
+    LateList* const late = ResolveOnRecorder() && !(v.record && BatchOn()) ? &job->late : nullptr; // R2b (note 64); R3b: a batched draw's index buffer is found now
     LateImages* const late_imgs = late_images ? &job->late_images : nullptr; // R2b part 2b
     const bool dc = t_depth_pass && DepthCensusOn();
     const u64 dc_b0 = dc ? NowNs() : 0;
     const u64 dc_c0 = t_dc_copies;
     if (v.record) {
         // R3: the draw's row in the host ring (the row table); the shaders read every resource through it
-        const Stream::Slice slice = Stream::HostRing(std::max<u32>(v.row_dwords, 1) * 4, 16);
+        const Stream::Slice slice = RowSlice(std::max<u32>(v.row_dwords, 1) * 4);
         u32* row = reinterpret_cast<u32*>(slice.data);
         if ((v.has_ps && !BuildRow(ctx, v.ps, row, uses)) || !BuildRow(ctx, v.vs, row, uses)) {
             c_rec_row_fail.fetch_add(1, std::memory_order_relaxed);
@@ -2157,6 +2180,11 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         }
     }
     job->work = Stream::Work::Draw;
+    if (job->record && BatchOn() && JoinBatch(*job)) { // R3b
+        phase(3);
+        c_recorded.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
     Stream::Enqueue(std::move(job));
     phase(3);
     c_recorded.fetch_add(1, std::memory_order_relaxed);
@@ -2279,143 +2307,30 @@ bool DrawJob::ResolveLate() {
     return true;
 }
 
-void DrawJob::Run(vk::CommandBuffer cmd) {
-    const VkbVulkan::FixedState& fixed = *fixed_state;
-    struct JobTime {
-        u64 t0;
-        ~JobTime() {
-            if (t0 != 0) {
-                c_job_ns.fetch_add(NowNs() - t0, std::memory_order_relaxed);
-                c_job_n.fetch_add(1, std::memory_order_relaxed);
-            }
-        }
-    } job_time{TimesOn() ? NowNs() : 0};
-    if (prepared ? !prepared_ok : (AnyLate() && !ResolveLate())) { // R2b (note 64): a buffer not found: the draw is skipped, as at the capture before
-        return;
-    }
-    // note 65 bound, kill experiment only (TLG_VKB_TEST_NO_DRAW_COMMANDS=1, nothing is drawn): the draw job resolves, then records nothing (no barrier, no pass,
-    // no state, no draw): what the recording thread's own work for draws costs the frame
-    static const bool no_commands = [] { const char* e = std::getenv("TLG_VKB_TEST_NO_DRAW_COMMANDS"); return e != nullptr && e[0] == '1'; }();
-    if (no_commands) {
-        return;
-    }
-    // V4h: engine memory read in place gets a copy in our device ring in front of the submission
-    for (u32 i = 0; i < b.buffers.size() && i < b.stageable.size(); ++i) {
-        if (b.stageable[i] != 0) {
-            (void)Stream::StageRead(b.buffers[i].buffer, b.buffers[i].offset, b.buffers[i].range);
-        }
-    }
-    for (u32 i = 0; i < vertex_buffers.size() && i < vertex_sizes.size(); ++i) {
-        if (vertex_sizes[i] != 0) {
-            (void)Stream::StageRead(vertex_buffers[i], vertex_offsets[i], vertex_sizes[i]);
-        }
-    }
-    if (index_size != 0 && index_buffer) {
-        (void)Stream::StageRead(index_buffer, index_offset, index_size);
-    }
-    // V4d: a barrier only when this draw reads what earlier work since the last barrier wrote (that ends the open pass; it begins again below), or its pass's attachments need one
-    static const bool no_draw_barrier = [] { const char* e = std::getenv("TLG_VKB_NO_DRAW_BARRIER"); return e != nullptr && e[0] == '1'; }(); // R5 kill-experiment (note 32)
-    if (!Stream::LegacyBarriersOn() && !no_draw_barrier) {
-        Stream::SetHazardTag(ps_hash);
-        (void)Stream::Hazard(cmd, std::span<const Stream::Use>{uses.data(), uses.size()});
-    }
-    if (Core::Vkb::Aa::On() && ps_hash == Core::Vkb::Aa::MotionPassPs) [[unlikely]] { // F1: the scene colour, the game's motion and the depth of this frame
-        boost::container::small_vector<vk::Image, 9> images;
-        for (const Stream::Use& u : attachment_uses) {
-            images.push_back(vk::Image{reinterpret_cast<VkImage>(u.handle)});
-        }
-        Core::Vkb::Aa::NoteMotionPass(std::span<const vk::Image>{images.data(), images.size()}, pass.color_count, pass.depth ? true : false);
-    }
-    if (Stream::UsePass(cmd, pass, std::span<const Stream::Use>{attachment_uses.data(), attachment_uses.size()})) {
-        c_new_passes.fetch_add(1, std::memory_order_relaxed);
-    }
-    // note 60: what this recording already holds (a D3D11 driver's redundant-state filter): the pipeline, the dynamic state, the vertex input, the vertex and index
-    // buffers are sent only when they differ from the previous draw's in the same command buffer. TLG_VKB_ALL_STATE=1 sends everything every draw, as before.
-    struct DrawStateCache {
-        u64 generation{~0ull};
-        VkCommandBuffer cmd{};
-        VkPipeline pipeline{};
-        bool jittered{};
-        std::array<float, 2> jitter{};
-        const VkbVulkan::FixedState* fixed{};
-        u64 pass_key{~0ull};
-        std::array<vk::ColorComponentFlags, VkbAmdGpu::NUM_COLOR_BUFFERS> masks{};
-        boost::container::small_vector<vk::VertexInputBindingDescription2EXT, 16> bindings;
-        boost::container::small_vector<vk::VertexInputAttributeDescription2EXT, 16> attributes;
-        bool vertex_input{};
-        boost::container::small_vector<vk::Buffer, 16> vertex_buffers;
-        boost::container::small_vector<vk::DeviceSize, 16> vertex_offsets;
-        VkBuffer index_buffer{};
-        u64 index_offset{~0ull};
-        vk::IndexType index_type{};
-    };
-    thread_local DrawStateCache state;
-    static const bool all_state = [] { const char* e = std::getenv("TLG_VKB_ALL_STATE"); return e != nullptr && e[0] == '1'; }();
-    if (all_state || state.generation != Stream::RecordingGeneration() || state.cmd != static_cast<VkCommandBuffer>(cmd)) {
-        state = {};
-        state.generation = Stream::RecordingGeneration();
-        state.cmd = static_cast<VkCommandBuffer>(cmd);
-    }
-    if (state.pipeline != static_cast<VkPipeline>(pipeline)) {
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-        state.pipeline = static_cast<VkPipeline>(pipeline);
-        c_state_pipelines.fetch_add(1, std::memory_order_relaxed);
-    }
-    // R3: a record-mode draw binds the global set (once while the command buffer's set 0 is it) and only pushes its row base
-    thread_local VkCommandBuffer t_global_cmd{};
-    thread_local u64 t_global_generation{~0ull};
-    if (record) {
-        if (t_global_cmd != static_cast<VkCommandBuffer>(cmd) || t_global_generation != Stream::RecordingGeneration()) {
-            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, Core::Vkb::Indexed::Set(), {});
-            t_global_cmd = static_cast<VkCommandBuffer>(cmd), t_global_generation = Stream::RecordingGeneration();
-        }
-    }
-    // A2 (note 46): the descriptor writes are made here, on the recording thread, in its own reused list (they were 4 KB of every draw's job)
-    thread_local boost::container::small_vector<vk::WriteDescriptorSet, 64> writes;
-    writes.clear();
-    u32 binding = 0;
-    for (u32 r = 0; r < ranges.size(); r += 3) {
-        for (u32 k = 0; k < ranges[r].second; ++k) {
-            writes.push_back({.dstBinding = binding++, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &b.buffers[ranges[r].first + k]});
-        }
-        for (u32 k = 0; k < ranges[r + 1].second; ++k) {
-            writes.push_back({.dstBinding = binding++, .descriptorCount = 1,
-                                .descriptorType = image_types[ranges[r + 1].first + k],
-                                .pImageInfo = &b.images[ranges[r + 1].first + k]});
-        }
-        for (u32 k = 0; k < ranges[r + 2].second; ++k) {
-            writes.push_back({.dstBinding = binding++, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eSampler, .pImageInfo = &b.samplers[ranges[r + 2].first + k]});
-        }
-    }
-    if (!writes.empty() && push_descriptors) {
-        cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, layout, 0, writes);
-        t_global_cmd = {}; // (set 0 is a push set now: the next record-mode draw binds the global set again)
-    } else if (!writes.empty()) {
-        // note 41: more bindings than push descriptors allow (the layout is a plain one, as the old path's): a descriptor set of ours, written now
-        const vk::DescriptorSet set = BigDescriptorSet(set_layout);
-        if (set) {
-            for (auto& write : writes) {
-                write.dstSet = set;
-            }
-            instance->GetDevice().updateDescriptorSets(writes, {});
-            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, set, {});
-            t_global_cmd = {};
-        }
-    }
-    cmd.pushConstants(layout, VkbVulkan::Vkb::AllGraphicsStageBits, 0, sizeof(push), &push);
-    // note 59 bound, kill experiment only (TLG_VKB_TEST_STATE_ONCE=1, the picture is wrong): the dynamic state sent once per command buffer, not every draw
-    static const bool state_once = [] { const char* e = std::getenv("TLG_VKB_TEST_STATE_ONCE"); return e != nullptr && e[0] == '1'; }();
-    thread_local VkCommandBuffer t_state_cmd{};
-    const bool first_in_cmd = t_state_cmd != static_cast<VkCommandBuffer>(cmd);
-    t_state_cmd = static_cast<VkCommandBuffer>(cmd);
-    // note 60: the dynamic state comes from the interned fixed state, the pass's depth / stencil / colour count and the write masks (the two note 41 test switches
-    // aside): when all of them equal the previous draw's in this recording, nothing is sent
-    const u64 pass_key = (pass.depth ? 1ull : 0ull) | (pass.depth_has_stencil ? 2ull : 0ull) | static_cast<u64>(pass.color_count) << 2; // (the note 41 test switches need TLG_VKB_ALL_STATE=1)
-    const bool same_state = state.fixed == fixed_state && state.pass_key == pass_key && state.masks == masks && state.jittered == jittered && state.jitter == jitter;
-    const bool send_state = state_once ? first_in_cmd : (!same_state || !Stream::StampsLean());
-    state.fixed = fixed_state, state.pass_key = pass_key, state.masks = masks, state.jittered = jittered, state.jitter = jitter;
-    (same_state ? c_state_skipped : c_state_sent).fetch_add(1, std::memory_order_relaxed);
-    if (send_state) {
+struct DrawStateCache {
+    u64 generation{~0ull};
+    VkCommandBuffer cmd{};
+    VkPipeline pipeline{};
+    bool jittered{};
+    std::array<float, 2> jitter{};
+    const VkbVulkan::FixedState* fixed{};
+    u64 pass_key{~0ull};
+    std::array<vk::ColorComponentFlags, VkbAmdGpu::NUM_COLOR_BUFFERS> masks{};
+    boost::container::small_vector<vk::VertexInputBindingDescription2EXT, 16> bindings;
+    boost::container::small_vector<vk::VertexInputAttributeDescription2EXT, 16> attributes;
+    bool vertex_input{};
+    boost::container::small_vector<vk::Buffer, 16> vertex_buffers;
+    boost::container::small_vector<vk::DeviceSize, 16> vertex_offsets;
+    VkBuffer index_buffer{};
+    u64 index_offset{~0ull};
+    vk::IndexType index_type{};
+};
+thread_local DrawStateCache t_draw_state; ///< R3b: namespace scope (a batch job resets it)
+thread_local VkCommandBuffer t_global_cmd{};
+thread_local u64 t_global_generation{~0ull};
+/// R3b: the dynamic state a draw's pipeline declares (from the interned fixed state, the pass, the write masks); shared by the draw job and the batch job
+void SendDynamicState(vk::CommandBuffer cmd, const VkbVulkan::FixedState& fixed, const Stream::Pass& pass, const std::array<vk::ColorComponentFlags, VkbAmdGpu::NUM_COLOR_BUFFERS>& masks,
+                      bool jittered, const std::array<float, 2>& jitter, u64 ps_hash, u32 color_format0) {
     // the dynamic state the pipeline declares, all of it, every draw
     boost::container::small_vector<vk::Viewport, 16> viewports;
     boost::container::small_vector<vk::Rect2D, 16> scissors;
@@ -2497,6 +2412,260 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
     if (instance->IsDynamicColorWriteMaskSupported() && pass.color_count != 0) {
         cmd.setColorWriteMaskEXT(0, std::span<const vk::ColorComponentFlags>{masks.data(), pass.color_count});
     }
+    }
+
+/// R3b: the record-mode draws of one pass, recorded together: the hazards of all and the pass once, then per draw only what changed (pipeline, dynamic state,
+/// index buffer), the push constants (the row base) and the draw.
+struct BatchDraw {
+    vk::Pipeline pipeline{};
+    vk::PipelineLayout layout{};
+    const VkbVulkan::FixedState* fixed{};
+    std::array<vk::ColorComponentFlags, VkbAmdGpu::NUM_COLOR_BUFFERS> masks{};
+    VkbShader::PushData push{};
+    vk::Buffer index_buffer{};
+    u64 index_offset{};
+    vk::IndexType index_type{};
+    u64 index_size{}; ///< in place (staged by the recorder), 0 on a device copy
+    vk::Buffer args_buffer{}; ///< an indirect draw's arguments (else null)
+    u64 args_offset{};
+    u32 count{}, first{}, instances{1};
+    s32 vertex_offset{};
+    u64 ps_hash{};
+    u32 color_format0{};
+    bool jittered{};
+    std::array<float, 2> jitter{};
+};
+std::atomic<u64> c_batches{0}, c_batch_draws{0};
+std::atomic<u64> c_flush_by[3]{}; ///< R3b: batches cut by another job / submit (0), by a pass change (1), at the pass's end (2)
+thread_local u32 t_flush_reason = 0;
+struct BatchJob final : Stream::Job {
+    Stream::Pass pass{};
+    boost::container::small_vector<Stream::Use, 9> attachment_uses;
+    std::vector<Stream::Use> uses;
+    std::vector<BatchDraw> draws;
+    void Run(vk::CommandBuffer cmd) override {
+        for (BatchDraw& d : draws) { // V4h: an index buffer read in place gets its copy in front of the submission
+            if (d.index_size != 0) {
+                (void)Stream::StageRead(d.index_buffer, d.index_offset, d.index_size);
+            }
+        }
+        if (!Stream::LegacyBarriersOn()) {
+            (void)Stream::Hazard(cmd, std::span<const Stream::Use>{uses.data(), uses.size()});
+        }
+        if (Stream::UsePass(cmd, pass, std::span<const Stream::Use>{attachment_uses.data(), attachment_uses.size()})) {
+            c_new_passes.fetch_add(1, std::memory_order_relaxed);
+        }
+        t_draw_state = {}; // the plain draws after the batch send their state again
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draws.front().layout, 0, Core::Vkb::Indexed::Set(), {});
+        t_global_cmd = static_cast<VkCommandBuffer>(cmd), t_global_generation = Stream::RecordingGeneration();
+        cmd.setVertexInputEXT({}, {}); // the cascades' vertex shaders fetch their vertices themselves (no attributes)
+        vk::Pipeline pipeline{};
+        const VkbVulkan::FixedState* fixed{};
+        const std::array<vk::ColorComponentFlags, VkbAmdGpu::NUM_COLOR_BUFFERS>* masks{};
+        bool jittered{};
+        std::array<float, 2> jitter{};
+        vk::Buffer index_buffer{};
+        u64 index_offset{~0ull};
+        vk::IndexType index_type{};
+        for (const BatchDraw& d : draws) {
+            if (d.pipeline != pipeline) {
+                cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, d.pipeline);
+                pipeline = d.pipeline;
+            }
+            if (d.fixed != fixed || masks == nullptr || *masks != d.masks || d.jittered != jittered || d.jitter != jitter) {
+                SendDynamicState(cmd, *d.fixed, pass, d.masks, d.jittered, d.jitter, d.ps_hash, d.color_format0);
+                fixed = d.fixed, masks = &d.masks, jittered = d.jittered, jitter = d.jitter;
+            }
+            cmd.pushConstants(d.layout, VkbVulkan::Vkb::AllGraphicsStageBits, 0, sizeof(d.push), &d.push);
+            if (d.index_buffer != index_buffer || d.index_offset != index_offset || d.index_type != index_type) {
+                cmd.bindIndexBuffer(d.index_buffer, d.index_offset, d.index_type);
+                index_buffer = d.index_buffer, index_offset = d.index_offset, index_type = d.index_type;
+            }
+            if (d.args_buffer) {
+                cmd.drawIndexedIndirect(d.args_buffer, d.args_offset, 1, 20);
+            } else {
+                cmd.drawIndexed(d.count, d.instances, d.first, d.vertex_offset, 0);
+            }
+        }
+        t_draw_state = {};
+        c_batches.fetch_add(1, std::memory_order_relaxed);
+        c_batch_draws.fetch_add(draws.size(), std::memory_order_relaxed);
+    }
+};
+thread_local std::unique_ptr<BatchJob> t_batch;
+thread_local bool t_batch_flushing = false;
+std::atomic<u64> c_cut_by_work[16]{};
+void FlushBatchHere();
+void FlushBeforeJob(u32 work) {
+    if (t_batch && !t_batch->draws.empty() && !t_batch_flushing) {
+        c_cut_by_work[std::min<u32>(work, 15)].fetch_add(1, std::memory_order_relaxed);
+    }
+    FlushBatchHere();
+}
+void FlushBatchHere() {
+    if (t_batch_flushing || !t_batch || t_batch->draws.empty()) {
+        return;
+    }
+    t_batch_flushing = true;
+    c_flush_by[std::min<u32>(t_flush_reason, 2)].fetch_add(1, std::memory_order_relaxed);
+    t_flush_reason = 0;
+    t_batch->work = Stream::Work::Draw;
+    Stream::EnqueueNoHook(std::move(t_batch));
+    t_batch_flushing = false;
+}
+bool BatchOn() {
+    static const bool on = [] {
+        const char* e = std::getenv("TLG_VKB_RECORD_BATCH");
+        const bool want = e == nullptr || e[0] != '0';
+        if (want) {
+            Stream::SetBeforeEnqueue(&FlushBeforeJob);
+        }
+        return want;
+    }();
+    return on;
+}
+/// The draw job of a record-mode indexed draw joins the open batch (false: it goes alone)
+bool JoinBatch(DrawJob& job) {
+    if ((job.kind != 0 && (job.kind != 2 || !job.args_buffer)) || !job.dump_views.empty() || job.debug_id != 0 || job.vs_hash == Core::Vkb::Aa::SmaaVs || !job.index_buffer) {
+        return false;
+    }
+    if (t_batch && !(t_batch->pass == job.pass)) {
+        t_flush_reason = 1;
+        FlushBatchHere();
+    }
+    if (!t_batch) {
+        t_batch.reset(new BatchJob);
+        t_batch->pass = job.pass;
+        t_batch->attachment_uses = job.attachment_uses;
+        t_batch->draws.reserve(1024);
+        t_batch->uses.reserve(2048);
+    }
+    t_batch->uses.insert(t_batch->uses.end(), job.uses.begin(), job.uses.end());
+    t_batch->draws.push_back({.pipeline = job.pipeline, .layout = job.layout, .fixed = job.fixed_state, .masks = job.masks, .push = job.push,
+                              .index_buffer = job.index_buffer, .index_offset = job.index_offset, .index_type = job.index_type, .index_size = job.index_size, .args_buffer = job.kind == 2 ? job.args_buffer : vk::Buffer{}, .args_offset = job.args_offset, .count = static_cast<u32>(job.a1),
+                              .first = static_cast<u32>(job.a2), .instances = job.instances, .vertex_offset = static_cast<s32>(static_cast<u32>(job.a3)), .ps_hash = job.ps_hash,
+                              .color_format0 = job.color_format0, .jittered = job.jittered, .jitter = job.jitter});
+    return true;
+}
+
+void DrawJob::Run(vk::CommandBuffer cmd) {
+    const VkbVulkan::FixedState& fixed = *fixed_state;
+    struct JobTime {
+        u64 t0;
+        ~JobTime() {
+            if (t0 != 0) {
+                c_job_ns.fetch_add(NowNs() - t0, std::memory_order_relaxed);
+                c_job_n.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    } job_time{TimesOn() ? NowNs() : 0};
+    if (prepared ? !prepared_ok : (AnyLate() && !ResolveLate())) { // R2b (note 64): a buffer not found: the draw is skipped, as at the capture before
+        return;
+    }
+    // note 65 bound, kill experiment only (TLG_VKB_TEST_NO_DRAW_COMMANDS=1, nothing is drawn): the draw job resolves, then records nothing (no barrier, no pass,
+    // no state, no draw): what the recording thread's own work for draws costs the frame
+    static const bool no_commands = [] { const char* e = std::getenv("TLG_VKB_TEST_NO_DRAW_COMMANDS"); return e != nullptr && e[0] == '1'; }();
+    if (no_commands) {
+        return;
+    }
+    // V4h: engine memory read in place gets a copy in our device ring in front of the submission
+    for (u32 i = 0; i < b.buffers.size() && i < b.stageable.size(); ++i) {
+        if (b.stageable[i] != 0) {
+            (void)Stream::StageRead(b.buffers[i].buffer, b.buffers[i].offset, b.buffers[i].range);
+        }
+    }
+    for (u32 i = 0; i < vertex_buffers.size() && i < vertex_sizes.size(); ++i) {
+        if (vertex_sizes[i] != 0) {
+            (void)Stream::StageRead(vertex_buffers[i], vertex_offsets[i], vertex_sizes[i]);
+        }
+    }
+    if (index_size != 0 && index_buffer) {
+        (void)Stream::StageRead(index_buffer, index_offset, index_size);
+    }
+    // V4d: a barrier only when this draw reads what earlier work since the last barrier wrote (that ends the open pass; it begins again below), or its pass's attachments need one
+    static const bool no_draw_barrier = [] { const char* e = std::getenv("TLG_VKB_NO_DRAW_BARRIER"); return e != nullptr && e[0] == '1'; }(); // R5 kill-experiment (note 32)
+    if (!Stream::LegacyBarriersOn() && !no_draw_barrier) {
+        Stream::SetHazardTag(ps_hash);
+        (void)Stream::Hazard(cmd, std::span<const Stream::Use>{uses.data(), uses.size()});
+    }
+    if (Core::Vkb::Aa::On() && ps_hash == Core::Vkb::Aa::MotionPassPs) [[unlikely]] { // F1: the scene colour, the game's motion and the depth of this frame
+        boost::container::small_vector<vk::Image, 9> images;
+        for (const Stream::Use& u : attachment_uses) {
+            images.push_back(vk::Image{reinterpret_cast<VkImage>(u.handle)});
+        }
+        Core::Vkb::Aa::NoteMotionPass(std::span<const vk::Image>{images.data(), images.size()}, pass.color_count, pass.depth ? true : false);
+    }
+    if (Stream::UsePass(cmd, pass, std::span<const Stream::Use>{attachment_uses.data(), attachment_uses.size()})) {
+        c_new_passes.fetch_add(1, std::memory_order_relaxed);
+    }
+    // note 60: what this recording already holds (a D3D11 driver's redundant-state filter): the pipeline, the dynamic state, the vertex input, the vertex and index
+    // buffers are sent only when they differ from the previous draw's in the same command buffer. TLG_VKB_ALL_STATE=1 sends everything every draw, as before.
+    DrawStateCache& state = t_draw_state;
+    static const bool all_state = [] { const char* e = std::getenv("TLG_VKB_ALL_STATE"); return e != nullptr && e[0] == '1'; }();
+    if (all_state || state.generation != Stream::RecordingGeneration() || state.cmd != static_cast<VkCommandBuffer>(cmd)) {
+        state = {};
+        state.generation = Stream::RecordingGeneration();
+        state.cmd = static_cast<VkCommandBuffer>(cmd);
+    }
+    if (state.pipeline != static_cast<VkPipeline>(pipeline)) {
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+        state.pipeline = static_cast<VkPipeline>(pipeline);
+        c_state_pipelines.fetch_add(1, std::memory_order_relaxed);
+    }
+    // R3: a record-mode draw binds the global set (once while the command buffer's set 0 is it) and only pushes its row base
+    if (record) {
+        if (t_global_cmd != static_cast<VkCommandBuffer>(cmd) || t_global_generation != Stream::RecordingGeneration()) {
+            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, Core::Vkb::Indexed::Set(), {});
+            t_global_cmd = static_cast<VkCommandBuffer>(cmd), t_global_generation = Stream::RecordingGeneration();
+        }
+    }
+    // A2 (note 46): the descriptor writes are made here, on the recording thread, in its own reused list (they were 4 KB of every draw's job)
+    thread_local boost::container::small_vector<vk::WriteDescriptorSet, 64> writes;
+    writes.clear();
+    u32 binding = 0;
+    for (u32 r = 0; r < ranges.size(); r += 3) {
+        for (u32 k = 0; k < ranges[r].second; ++k) {
+            writes.push_back({.dstBinding = binding++, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &b.buffers[ranges[r].first + k]});
+        }
+        for (u32 k = 0; k < ranges[r + 1].second; ++k) {
+            writes.push_back({.dstBinding = binding++, .descriptorCount = 1,
+                                .descriptorType = image_types[ranges[r + 1].first + k],
+                                .pImageInfo = &b.images[ranges[r + 1].first + k]});
+        }
+        for (u32 k = 0; k < ranges[r + 2].second; ++k) {
+            writes.push_back({.dstBinding = binding++, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eSampler, .pImageInfo = &b.samplers[ranges[r + 2].first + k]});
+        }
+    }
+    if (!writes.empty() && push_descriptors) {
+        cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, layout, 0, writes);
+        t_global_cmd = {}; // (set 0 is a push set now: the next record-mode draw binds the global set again)
+    } else if (!writes.empty()) {
+        // note 41: more bindings than push descriptors allow (the layout is a plain one, as the old path's): a descriptor set of ours, written now
+        const vk::DescriptorSet set = BigDescriptorSet(set_layout);
+        if (set) {
+            for (auto& write : writes) {
+                write.dstSet = set;
+            }
+            instance->GetDevice().updateDescriptorSets(writes, {});
+            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, set, {});
+            t_global_cmd = {};
+        }
+    }
+    cmd.pushConstants(layout, VkbVulkan::Vkb::AllGraphicsStageBits, 0, sizeof(push), &push);
+    // note 59 bound, kill experiment only (TLG_VKB_TEST_STATE_ONCE=1, the picture is wrong): the dynamic state sent once per command buffer, not every draw
+    static const bool state_once = [] { const char* e = std::getenv("TLG_VKB_TEST_STATE_ONCE"); return e != nullptr && e[0] == '1'; }();
+    thread_local VkCommandBuffer t_state_cmd{};
+    const bool first_in_cmd = t_state_cmd != static_cast<VkCommandBuffer>(cmd);
+    t_state_cmd = static_cast<VkCommandBuffer>(cmd);
+    // note 60: the dynamic state comes from the interned fixed state, the pass's depth / stencil / colour count and the write masks (the two note 41 test switches
+    // aside): when all of them equal the previous draw's in this recording, nothing is sent
+    const u64 pass_key = (pass.depth ? 1ull : 0ull) | (pass.depth_has_stencil ? 2ull : 0ull) | static_cast<u64>(pass.color_count) << 2; // (the note 41 test switches need TLG_VKB_ALL_STATE=1)
+    const bool same_state = state.fixed == fixed_state && state.pass_key == pass_key && state.masks == masks && state.jittered == jittered && state.jitter == jitter;
+    const bool send_state = state_once ? first_in_cmd : (!same_state || !Stream::StampsLean());
+    state.fixed = fixed_state, state.pass_key = pass_key, state.masks = masks, state.jittered = jittered, state.jitter = jitter;
+    (same_state ? c_state_skipped : c_state_sent).fetch_add(1, std::memory_order_relaxed);
+    if (send_state) {
+        SendDynamicState(cmd, fixed, pass, masks, jittered, jitter, ps_hash, color_format0);
     }
     const auto same_span = [](const auto& a, const auto& b) { return a.size() == b.size() && std::memcmp(a.data(), b.data(), a.size() * sizeof(a[0])) == 0; };
     if (!state.vertex_input || !same_span(state.bindings, input_bindings) || !same_span(state.attributes, input_attributes)) {
@@ -2607,6 +2776,10 @@ void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3);
 void SetDepthPass(bool on) {
     t_depth_pass = on;
 }
+void FlushBatch() {
+    t_flush_reason = 2;
+    FlushBatchHere();
+}
 void Draw(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
     if (t_depth_pass && DepthCensusOn()) {
         const u64 t0 = NowNs();
@@ -2679,11 +2852,11 @@ void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
         c_skip_not_compiled.fetch_add(1, std::memory_order_relaxed);
         return;
     }
-    if (t_depth_pass && RecordOn() && kind == 0 && Core::Vkb::Indexed::On()) { // R2 / R3: the cascades' indexed draws through their record-mode twin when it exists
+    if (t_depth_pass && RecordOn() && (kind == 0 || kind == 2) && Core::Vkb::Indexed::On()) { // R2 / R3: the cascades' indexed draws through their record-mode twin when it exists
         auto [rit, rfresh] = record_variants.try_emplace(key);
         if (rfresh) {
             rit->second = std::make_unique<Variant>();
-            Compile(ctx, vs, ps, fetch, *fixed, *rit->second, false, true);
+            Compile(ctx, vs, ps, fetch, *fixed, *rit->second, kind == 2, true);
         }
         if (rit->second->ok) {
             t_row_failed = false;
@@ -2735,7 +2908,7 @@ nlohmann::json Report() {
                              }
                              return j;
                          }()},
-                         {"draws", c_rec_draws.load()}, {"fallback_draws", c_rec_fallback.load()}, {"row_failures", c_rec_row_fail.load()}, {"global_set", Core::Vkb::Indexed::Report()}}},
+                         {"draws", c_rec_draws.load()}, {"batches_draws", {c_batches.load(), c_batch_draws.load()}}, {"flush_by_job_pass_end", {c_flush_by[0].load(), c_flush_by[1].load(), c_flush_by[2].load()}}, {"cut_by_work_kind", [] { nlohmann::json j = nlohmann::json::object(); for (u32 i = 0; i < 16; ++i) { if (c_cut_by_work[i].load() != 0) { j[std::to_string(i)] = c_cut_by_work[i].load(); } } return j; }()}, {"fallback_draws", c_rec_fallback.load()}, {"row_failures", c_rec_row_fail.load()}, {"global_set", Core::Vkb::Indexed::Report()}}},
             {"depth_census", {{"draws", c_dc_draws.load()}, {"variant_same", c_dc_variant_same.load()}, {"vs_n_same_samebutcb", {c_dc_stage_n[0].load(), c_dc_stage_same[0].load(), c_dc_same_but_cb[0].load()}},
                               {"ps_n_same_samebutcb", {c_dc_stage_n[1].load(), c_dc_stage_same[1].load(), c_dc_same_but_cb[1].load()}}, {"draw_same", c_dc_draw_same.load()},
                               {"shapes", [] {

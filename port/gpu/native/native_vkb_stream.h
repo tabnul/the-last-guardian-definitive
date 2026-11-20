@@ -110,6 +110,10 @@ struct FnJob final : Job {
     F f;
 };
 void Enqueue(std::unique_ptr<Job> job);
+/// R3b: called (on the enqueuing thread) before any job is enqueued or a submission is made: the caller's open batch of draws goes first (API order)
+void SetBeforeEnqueue(void (*hook)(u32 work)); ///< (`work`: the job's Work kind, ~0u at a submission)
+/// R3b: enqueue without calling the hook (the batch itself)
+void EnqueueNoHook(std::unique_ptr<Job> job);
 template <class F>
 void Defer(Work work, F&& f) {
     auto job = std::make_unique<FnJob<std::decay_t<F>>>(std::decay_t<F>(std::forward<F>(f)));
@@ -228,6 +232,8 @@ struct Slice {
 [[nodiscard]] Slice HostRing(u64 size, u64 alignment);
 /// Scene on the GPU R1: the host ring's buffer (the record-mode row table)
 vk::Buffer HostRingBuffer();
+/// R3c: changes when the host ring wraps (a per-thread chunk taken before is not used further)
+u64 HostRingGeneration();
 /// The GDS stand-in (64 KiB, device local), a 64 KiB zero-initialised buffer for empty buffer slots, and a 1x1 image view in the general layout for empty image slots
 [[nodiscard]] vk::Buffer GdsBuffer();
 /// Kill-experiment TLG_VKB_HOST_SCRATCH=1 (wrong picture, fps bound only): a 256 MiB zeroed device-local buffer that stands in for every engine buffer read in place

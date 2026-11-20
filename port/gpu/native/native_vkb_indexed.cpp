@@ -49,6 +49,19 @@ struct State {
 
 std::mutex mutex;
 State* state = nullptr;
+/// R3c: a per-thread memo of handle -> slot per table (no lock in the common case); any freed slot changes the epoch and empties every memo
+std::atomic<u64> g_epoch{1};
+struct MemoEntry {
+    u64 handle{}, epoch{};
+    u32 slot{};
+};
+constexpr u32 MemoSize = 512;
+thread_local std::array<std::array<MemoEntry, MemoSize>, 3> t_memo{}; // buffers, samplers, images (the image key folded into the handle's hash)
+inline MemoEntry& MemoFor(u32 kind, u64 handle, u32 key) {
+    const u64 h = (handle ^ (u64{key} * 0x9e3779b97f4a7c15ull)) * 0xff51afd7ed558ccdull;
+    return t_memo[kind][static_cast<u32>(h >> 55) & (MemoSize - 1)];
+}
+std::atomic<u64> c_memo_hits{0};
 
 bool Requested() {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_RECORD"); return e != nullptr && e[0] == '1'; }();
@@ -215,6 +228,7 @@ void Forget(u32 first, u32 last, u64 handle) {
             t.free.push_back(it->second);
             t.map.erase(it);
             s->freed.fetch_add(1, std::memory_order_relaxed);
+            g_epoch.fetch_add(1, std::memory_order_release);
         }
     }
 }
@@ -237,10 +251,24 @@ vk::DescriptorSet Set() {
     return s != nullptr ? s->set : vk::DescriptorSet{};
 }
 
+u32 BufferSlotLocked(vk::Buffer buffer);
 u32 BufferSlot(vk::Buffer buffer) {
     if (!buffer) {
         return 0;
     }
+    const u64 handle = reinterpret_cast<u64>(static_cast<VkBuffer>(buffer));
+    const u64 epoch = g_epoch.load(std::memory_order_acquire);
+    MemoEntry& m = MemoFor(0, handle, 0);
+    if (m.handle == handle && m.epoch == epoch) {
+        return m.slot;
+    }
+    const u32 slot = BufferSlotLocked(buffer);
+    if (slot != 0) {
+        m = {handle, epoch, slot};
+    }
+    return slot;
+}
+u32 BufferSlotLocked(vk::Buffer buffer) {
     std::scoped_lock lock{mutex};
     State* s = Live();
     if (s == nullptr) {
@@ -255,10 +283,24 @@ u32 BufferSlot(vk::Buffer buffer) {
     return slot;
 }
 
+u32 ImageSlotLocked(u32 key, vk::ImageView view);
 u32 ImageSlot(u32 key, vk::ImageView view) {
     if (!view || key >= I::NumImageArrays) {
         return 0;
     }
+    const u64 handle = reinterpret_cast<u64>(static_cast<VkImageView>(view)) ^ (u64{key} << 56);
+    const u64 epoch = g_epoch.load(std::memory_order_acquire);
+    MemoEntry& m = MemoFor(2, handle, key);
+    if (m.handle == handle && m.epoch == epoch) {
+        return m.slot;
+    }
+    const u32 slot = ImageSlotLocked(key, view);
+    if (slot != 0) {
+        m = {handle, epoch, slot};
+    }
+    return slot;
+}
+u32 ImageSlotLocked(u32 key, vk::ImageView view) {
     std::scoped_lock lock{mutex};
     State* s = Live();
     if (s == nullptr) {
@@ -274,10 +316,24 @@ u32 ImageSlot(u32 key, vk::ImageView view) {
     return slot;
 }
 
+u32 SamplerSlotLocked(vk::Sampler sampler);
 u32 SamplerSlot(vk::Sampler sampler) {
     if (!sampler) {
         return 0;
     }
+    const u64 handle = reinterpret_cast<u64>(static_cast<VkSampler>(sampler));
+    const u64 epoch = g_epoch.load(std::memory_order_acquire);
+    MemoEntry& m = MemoFor(1, handle, 0);
+    if (m.handle == handle && m.epoch == epoch) {
+        return m.slot;
+    }
+    const u32 slot = SamplerSlotLocked(sampler);
+    if (slot != 0) {
+        m = {handle, epoch, slot};
+    }
+    return slot;
+}
+u32 SamplerSlotLocked(vk::Sampler sampler) {
     std::scoped_lock lock{mutex};
     State* s = Live();
     if (s == nullptr) {

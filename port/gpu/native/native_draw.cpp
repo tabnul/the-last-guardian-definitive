@@ -11174,6 +11174,7 @@ u64 PS4_SYSV_ABI ZPassEnter(u64 render_device, u64 desc, u64 a2, u64 a3, u64 a4,
             Core::Vkb::Graphics::SetDepthPass(true);
             reinterpret_cast<GuestDraw6>(original)(render_device, desc, a2, a3, a4, a5);
             Core::Vkb::Graphics::SetDepthPass(false);
+            Core::Vkb::Graphics::FlushBatch(); // R3b: the pass's batch
             return 0x8000000000000000ull;
         }
     }
