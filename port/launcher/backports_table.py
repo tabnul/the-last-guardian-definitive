@@ -156,7 +156,7 @@ MENU = [
                    ('2', 'As the developers planned'))),
     _menu('Fun', 'trico_fur', 'int', '100', 'Trico fur and feather density',
           "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.",
-          lo=50, hi=250, unit='%'),
+          lo=0, hi=500, unit='%'),
     # Mods (launcher Mods page, in-game Fun tab; tlg_lua.cpp Treasures / Horns). Same text as tlg_overlay.cpp.
     _menu('Fun', 'mod_treasures', 'bool', '0', 'All treasures',
           'Unlocks every treasure (outfits, Trico\'s feathers) and the Treasures entry in the options menu, '

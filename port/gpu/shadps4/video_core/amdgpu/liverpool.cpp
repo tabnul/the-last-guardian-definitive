@@ -1419,9 +1419,52 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
     FIBER_EXIT;
 }
 
+// tlg #93/#94: compute work whose result reaches the game 10-15 s late can name a pool the game
+// has already freed. Always on and silent in normal play: logs only work that takes over a second
+// from submit to its fence (ReleaseMem), and memory waits (WaitRegMem) over a second.
+static s64 ComputeNowUs() {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+static void ComputeLateNote(const char* what, u32 vqid, s64 us, u64 addr) {
+    static std::atomic<s64> count{0};
+    const s64 n = ++count;
+    if (n <= 10 || !(n & (n - 1)))
+        std::printf("Compute late: %s, queue %u, %.2f s, address %#llx (%lld so far)\n", what, vqid,
+                    us / 1e6, static_cast<unsigned long long>(addr), static_cast<long long>(n));
+}
+static constexpr s64 ComputeLateUs = 1'000'000;
+// Once a minute: the slowest submit-to-fence time and the slowest memory wait, plus how many
+// went over 100 ms. Printed only when something went over 100 ms. "t" is the same clock as the
+// "Async guard" lines, so the two can be matched up.
+static void ComputeTimingSample(bool is_wait, s64 us) {
+    static constexpr s64 SlowUs = 100'000, WindowUs = 60'000'000;
+    static std::mutex m;
+    static s64 window_start = 0, worst_fence = 0, worst_wait = 0, slow = 0, samples = 0;
+    const s64 now = ComputeNowUs();
+    std::scoped_lock lk{m};
+    if (window_start == 0) window_start = now;
+    s64& worst = is_wait ? worst_wait : worst_fence;
+    worst = std::max(worst, us);
+    slow += us > SlowUs;
+    ++samples;
+    if (now - window_start < WindowUs) return;
+    if (slow > 0)
+        std::printf("Compute timing: t=%.3f s, slowest fence %.3f s, slowest wait %.3f s, "
+                    "%lld of %lld over 0.1 s (last minute)\n",
+                    now / 1e6, worst_fence / 1e6, worst_wait / 1e6,
+                    static_cast<long long>(slow), static_cast<long long>(samples));
+    window_start = now;
+    worst_fence = worst_wait = slow = samples = 0;
+}
+
 template <bool is_indirect>
-Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
+Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid, s64 submit_us) {
     FIBER_ENTER(acb_task_name[vqid]);
+    if (submit_us < 0) {
+        submit_us = ComputeNowUs();
+    }
     auto& queue = asc_queues[{vqid}];
 
     struct IndirectPatch {
@@ -1489,7 +1532,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         case PM4ItOpcode::IndirectBuffer: {
             const auto* indirect_buffer = reinterpret_cast<const PM4CmdIndirectBuffer*>(header);
             auto task = ProcessCompute<true>(
-                {indirect_buffer->Address<const u32>(), indirect_buffer->ib_size}, vqid);
+                {indirect_buffer->Address<const u32>(), indirect_buffer->ib_size}, vqid, submit_us);
             RESUME_ASC(task, vqid);
 
             while (!task.handle.done()) {
@@ -1664,12 +1707,26 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         case PM4ItOpcode::WaitRegMem: {
             const auto* wait_reg_mem = reinterpret_cast<const PM4CmdWaitRegMem*>(header);
             ASSERT(wait_reg_mem->engine.Value() == PM4CmdWaitRegMem::Engine::Me);
-            while (!wait_reg_mem->Test(regs.reg_array)) {
-                YIELD_ASC(vqid);
+            if (!wait_reg_mem->Test(regs.reg_array)) {
+                const s64 wait_start = ComputeNowUs();
+                while (!wait_reg_mem->Test(regs.reg_array)) {
+                    YIELD_ASC(vqid);
+                }
+                const s64 waited = ComputeNowUs() - wait_start;
+                ComputeTimingSample(true, waited);
+                if (waited > ComputeLateUs) {
+                    ComputeLateNote("memory wait", vqid, waited, wait_reg_mem->Address<u64>());
+                }
             }
             break;
         }
         case PM4ItOpcode::ReleaseMem: {
+            const s64 took = ComputeNowUs() - submit_us;
+            ComputeTimingSample(false, took);
+            if (took > ComputeLateUs) {
+                ComputeLateNote("work fenced after submit", vqid, took,
+                                reinterpret_cast<const PM4CmdReleaseMem*>(header)->Address<u64>());
+            }
             // tlg: copies deferred to the recording thread precede writes the guest sees, and
             // so do graphics fences deferred to it (the pipe was drained before this packet).
             if (rasterizer) {
@@ -1778,7 +1835,8 @@ void Liverpool::SubmitAsc(u32 gnm_vqid, std::span<const u32> acb) {
     auto& queue = mapped_queues[gnm_vqid];
 
     const auto vqid = gnm_vqid - 1;
-    const auto& task = ProcessCompute(acb, vqid);
+    // Taken here, not in the task: the task body first runs when the GPU thread picks it up.
+    const auto& task = ProcessCompute(acb, vqid, ComputeNowUs());
     {
         std::scoped_lock lock{queue.m_access};
         queue.submits.emplace(task.handle);
