@@ -1323,6 +1323,13 @@
       "expect": "c4413857c0c5f828"
     },
     {
+      "name": "GameTimeContinuousStep",
+      "ghidra": "0x1d16670",
+      "mode": "mid",
+      "handler": "continuous_step",
+      "expect": "c5fa11879c010000"
+    },
+    {
       "name": "LuaDumpLoadBuffer",
       "ghidra": "0x1e7e430",
       "mode": "mid",

@@ -79,6 +79,30 @@ float Factor() {
     return factor;
 }
 
+/// Frame pacing (2026-11-21, parallel-passes-research.md section 14): TLG_GAME_STEP=raw makes the game move its world by the real frame time. FUN_01d16480 first
+/// stores the unsmoothed step at clock + 0x19c (raw frame time, clamped, times the time scales; 0 when paused), then overrides it with a smoothed step cut to
+/// 1/360 s (the filter object at clock + 0xb0). The hook sits on the override's store (0x01d16670, VMOVSS [RDI + 0x19c], XMM0, where both branches meet) and puts
+/// the unsmoothed step back into XMM0 (and into the filter's copy, + 0x39c); the catch-up term after it then stays near zero. Measured: speed per frame
+/// sd 0.175 -> 0.121, frames off by > 20 % 23 -> 8 % (the step against the frames' screen time, owner capture).
+bool ContinuousStepOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_GAME_STEP"); return e != nullptr && std::string_view{e} == "raw"; }();
+    return on;
+}
+std::atomic<u64> c_continuous{0};
+u64 PS4_SYSV_ABI ContinuousStep(GuestHooks::MidContext* context) {
+    if (!ContinuousStepOn()) {
+        return 0;
+    }
+    float step;
+    std::memcpy(&step, reinterpret_cast<const void*>(context->rdi + 0x19c), sizeof(step)); // (not yet overwritten: the hooked store writes it)
+    std::memcpy(context->ymm[0], &step, sizeof(step));
+    if (context->rax != 0) {
+        std::memcpy(reinterpret_cast<void*>(context->rax + 0x39c), &step, sizeof(step));
+    }
+    c_continuous.fetch_add(1, std::memory_order_relaxed);
+    return 0;
+}
+
 template <u32 Site, u32 Reg>
 u64 PS4_SYSV_ABI ScaleRegister(GuestHooks::MidContext* context) {
     const u64 n = calls[Site].fetch_add(1, std::memory_order_relaxed);
@@ -126,6 +150,9 @@ u64 FindHandler(const char* name) {
     if (n == "particle_dt_c") {
         return reinterpret_cast<u64>(&ScaleRegister<3, 6>);
     }
+    if (n == "continuous_step") {
+        return reinterpret_cast<u64>(&ContinuousStep);
+    }
     return 0;
 }
 
@@ -146,6 +173,7 @@ void Report() {
                                        {"factor_min", f(min_factor_bits.load())},
                                        {"factor_max", f(max_factor_bits.load())},
                                        {"unreadable_or_implausible_frame_time", fallbacks.load()},
+                                       {"continuous_step", {{"on", ContinuousStepOn()}, {"frames", c_continuous.load()}}},
                                        {"note", "factor = raw frame time * 30; 1 at 30 fps, 0.25 at 120 fps"}});
 }
 
