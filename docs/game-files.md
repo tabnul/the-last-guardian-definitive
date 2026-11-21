@@ -4,7 +4,7 @@ None of it is in the download; you need your own copy. Use **The Last Guardian C
 
 | File | From | Size | Purpose |
 |---|---|---|---|
-| `eboot.bin` | update 01.03 | 89 MB | the game code (must be the 1.03 one) |
+| `eboot.bin` | update 01.03 | 89 MB | the game code (must be the 1.03 one; any other build or an already patched one runs at 30 FPS, the launcher warns) |
 | `sce_module/libc.prx`, `sce_module/libSceFios2.prx` | update 01.03 | 1.5 MB | the game's own libraries |
 | `sce_sys/` (`param.sfo`, `playgo-chunk.dat`, `icon0.png`, `pic0.png`, `pic1.png`) | base + update | ~5 MB | metadata, install info and the launcher art |
 | `trico_boot.psarc`, `trico_001.psarc`, `trico_002.psarc`, `trico_003.psarc` | base game | 2.8 + 5.8 + 5.4 + 6.8 GB | main content |

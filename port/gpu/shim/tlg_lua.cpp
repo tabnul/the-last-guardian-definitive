@@ -52,8 +52,9 @@ end end) end
 )";
 
 // Shared by every TLGSET chunk: Scale keeps the game's own value per object property and
-// writes it times pct/100, or plus add when given (vectors: the listed components). A value differing from our last
-// write was set by the game (cutscene, area change): it becomes the new base. Feature turns a
+// writes it times pct/100, or plus add when given (vectors: the listed components; set: fixed
+// values for some of them, e.g. {-1} for the first). A value differing from our last write was
+// set by the game (cutscene, area change): it becomes the new base. Feature turns a
 // pass off at 0% (it costs nothing then) and back on when the game had it.
 constexpr std::string_view Prelude = R"(
 local ls=loadstring or load
@@ -61,7 +62,7 @@ local function L(s) local f=ls('--TLGLOG '..s) if f then f() end end
 _TLGB=_TLGB or {}
 local B=_TLGB
 local function Parts(v) local t={} for n in tostring(v):gmatch('%S+') do t[#t+1]=tonumber(n) or 0 end return t end
-local function Scale(o,key,prop,pct,parts,add)
+local function Scale(o,key,prop,pct,parts,add,set)
   if not o then return end
   local cur=o[prop]
   local s=tostring(cur)
@@ -71,6 +72,7 @@ local function Scale(o,key,prop,pct,parts,add)
     if type(cur)~='userdata' then return end
     local t={} for i=1,4 do t[i]=e.b[i] or 0 end
     for _,i in ipairs(parts) do t[i]=add and t[i]+add or t[i]*pct/100 end
+    if set then for i,x in pairs(set) do t[i]=x end end
     local n=Vector(t[1],t[2],t[3],t[4])
     if tostring(n)~=s then o[prop]=n end
   else
@@ -126,6 +128,15 @@ local function Feathers(pct)
     for _,k in ipairs(INF) do Scale(o,'sw|'..n..'|'..k,k,pct,XYZ) end
   end
   B.swd=pct~=100
+end
+-- Trico's coat: the x and y of furScale on his FurTypes (one per model part) set its length.
+-- At the default nothing runs once restored.
+local function Fur(pct)
+  if pct==100 and not B.fud or not Due('fua',pct) then return end
+  for _,n in ipairs(Each('ful','FurType','_fur')) do
+    Scale(FindObject(n),'fu|'..n,'furScale',pct,XY)
+  end
+  B.fud=pct~=100
 end
 -- Trico's drool (tlg.ini trico_drool): the game's own drool code (Ai2.Condor.Slaver,
 -- condorcommonslaver.lua) stops before it shows the drool ("we were asked to remove the drool for
@@ -241,6 +252,52 @@ local function Treasures(on)
   if (pd.treasurePoint or 0)<999 then pd.treasurePoint=999 end
   if SavePerpetual then SavePerpetual() end
 end
+-- Button icons: Xbox (issue #61). The game draws every button hint from one picture of the pad and
+-- puts a glow on the button to press, at the places in GuideSystem._Const.BUTTON. The picture is
+-- swapped on the PC side (vk_texture_pack.cpp); here the glow moves to the same button on our Xbox
+-- drawing (table from scripts/make_xbox_pad.py), and the hints are rebuilt with the game's own
+-- RegenerationGuide so they pick the new places up. Idea from SulphurS16/TLG-Port (pc_prompts).
+local XBOXPAD={R1={158.0,7.7},R2={159.4,-1.1},L1={66.0,7.7},L2={64.6,-1.1},Left={82.1,56.9},
+  Right={99.6,56.9},Up={90.8,48.2},Down={90.8,65.6},Square={142.4,33.0},Cross={152.5,43.1},
+  Circle={162.6,33.0},Triangle={152.5,22.9},StickBaseL={71.5,33.0},StickBaseR={133.2,56.9},
+  Push={100.0,33.0},PS={112.0,21.0},Select={100.0,33.0},Start={124.0,33.0}}
+-- wide: screen shape / 16:9 (1 up to 16:9). The game draws the glow that much wider, from its left
+-- edge (the glow sheet has 32 pixels a button), so its place moves left by half the extra width.
+-- The PlayStation places get the same move under names of their own ('Ps'..name), wider than 16:9.
+local function ButtonIcons(xbox,wide)
+  local G=GuideSystem local B=G and G._Const and G._Const.BUTTON
+  if not B or not B.Cross or Loading() then return end
+  if not Guide_SetButtonData or not Guide_SetButtonParam then return end
+  -- The engine keeps the first place it was given for a button name, so the Xbox places go in
+  -- under names of their own ('Xb'..name) and the hints ask for those while Xbox icons are on.
+  local shift=16*((wide or 1)-1)
+  _TLGPADPS=shift>0.05
+  local function Names()
+    for k,v in pairs(XBOXPAD) do local d=B[k]
+      if d then Guide_SetButtonData('Xb'..k,d.uv[1],d.uv[2],d.uv[3],d.uv[4],v[1]-shift,v[2]) end
+    end
+    if _TLGPADPS then for k,d in pairs(B) do
+      if d.uv and d.offsetX then Guide_SetButtonData('Ps'..k,d.uv[1],d.uv[2],d.uv[3],d.uv[4],d.offsetX-shift,d.offsetY) end
+    end end
+  end
+  if not _TLGPADSET then
+    _TLGPADSET=Guide_SetButtonParam
+    Guide_SetButtonParam=function(n,id,...)
+      if _TLGPADXB and XBOXPAD[id] then id='Xb'..id
+      elseif not _TLGPADXB and _TLGPADPS and type(id)=='string' and B[id] then id='Ps'..id end
+      return _TLGPADSET(n,id,...)
+    end
+  end
+  if not G._tlgCreate then
+    G._tlgCreate=G.CreateObject
+    G.CreateObject=function(self,...) pcall(Names) return G._tlgCreate(self,...) end
+  end
+  -- The first run regenerates too when the PlayStation places move (hints made before the hook).
+  if (_TLGPADXB or false)==xbox and (_TLGPADXB~=nil or not _TLGPADPS) then return end
+  _TLGPADXB=xbox
+  if G.isCreateObj then pcall(G.RegenerationGuide,G) end
+end
+
 -- Mods > ICO horns (tlg.ini mod_horns 1): the boy wears horns on his head bone, a nod to Ico. Own
 -- models (bone white, black tip) from the horn archive the launcher builds; without that archive
 -- the load fails and nothing shows (tried again after the next stage load). A stage load removes
@@ -365,6 +422,9 @@ std::atomic<float> trico_size{1.0f};
 std::string cam_pending; // the latest free camera wish, under fun_mutex
 std::atomic<bool> free_cam{false};
 std::atomic<bool> photo{false};
+std::atomic<bool> photo_frozen{true}; // photo mode: world frozen (Freeze world on / off button)
+std::atomic<bool> photo_sticks_boy{false}; // photo mode: the sticks drive the boy, not the camera
+std::atomic<uint32_t> photo_sticks{0x80808080u}; // the last raw sticks lx|ly<<8|rx<<16|ry<<24 (pad thread)
 std::atomic<TlgFun::PhotoFreeze> photo_freeze{TlgFun::PhotoFreeze::Pause};
 std::atomic<bool> pilot{false}; // Tricopilot (TlgFun::Tricopilot)
 // Which camera watches him (TlgFun::PilotCam). Middle is what autoTrico() picks itself, so that
@@ -605,6 +665,16 @@ int SubtitleShift() {
     return (ui_width - 1920) / 2;
 }
 
+// Screen shape over 16:9, 1 up to 16:9: how much wider the game draws the button-hint glow.
+double WideFactor() {
+    const char* resolution = std::getenv("TLG_RESOLUTION_PATCH");
+    int width = 0, height = 0;
+    if (!resolution || std::sscanf(resolution, "%dx%d", &width, &height) != 2 || height <= 0 ||
+        width * 9 <= height * 16)
+        return 1.0;
+    return (width * 9.0) / (height * 16.0);
+}
+
 // Copies the saves to savedata_backups/<time>-<tag> (the game runs in the user folder), where the
 // launcher's save manager lists them and can restore one. A failed copy only logs.
 void BackupSaves(const char* tag) {
@@ -667,19 +737,25 @@ std::string SetChunk() {
                   "Scale(pp,'sharp','sharpenScale',%d)\n"
                   "Scale(pp,'fogd','fogParam',%d,XY)\n"
                   "Scale(pp,'lvca','lightVolumeChromaticAberration',%d,X)\n"
-                  "Feathers(%d) Fov(%d) Grass(%s) BoyWind(%d) TreeWind(%d)\n",
+                  "Scale(cs,'shd','splitDistances',%d,ALL,nil,%s)\n"
+                  "Feathers(%d) Fur(%d) Fov(%d) Grass(%s) BoyWind(%d) TreeWind(%d)\n",
                   s.bloom.load(), s.bloom.load(), s.ssao.load(), s.ssao.load(), s.ssr.load(),
                   s.ssr.load(), s.motion_blur.load(), s.motion_blur.load(),
                   s.vignette.load() * 0.01, std::min(s.game_sharpen.load(), 100),
-                  s.fog_distance.load(), s.haze_fringe.load(), s.trico_feathers.load(), s.fov.load(),
+                  s.fog_distance.load(), s.haze_fringe.load(),
+                  std::clamp(s.shadow_distance.load(), 10, 100),
+                  s.shadow_lite.load() ? "{-1}" : "nil", s.trico_feathers.load(),
+                  std::clamp(s.trico_fur.load(), 0, 500), s.fov.load(),
                   s.grass_smooth.load() ? "true" : "false", s.boy_wind.load(), s.tree_wind.load());
     code += line;
     code += "Drool(" + std::to_string(std::clamp(s.trico_drool.load(), 0, 2)) + ")\n";
     code += std::string("Plays(") + (s.mod_plays.load() ? "true" : "false") + ") ThrowUp(" +
             std::to_string(s.mod_throw_up.load() ? 1 : 0) + ") _TLGHINTS=" +
-            (s.mod_hints.load() ? "true" : "false") + "\n";
+            (s.mod_hints.load() ? "true" : "false") + " _TLGHIDEHINTS=" +
+            (s.hide_hints.load() ? "true" : "false") + "\n";
     code += std::string("Treasures(") + (s.mod_treasures.load() ? "true" : "false") + ") Horns(" +
-            (s.mod_horns.load() ? "true" : "false") +")\n";
+            (s.mod_horns.load() ? "true" : "false") + ") ButtonIcons(" +
+            (s.XboxIcons() ? "true" : "false") + "," + std::to_string(WideFactor()) + ")\n";
     if (subtitle_shift) {
         // Re-applied every tick: SubtitleSystem:Initialize resets it to (0, -OFFSET_Y).
         std::snprintf(line, sizeof(line),
@@ -768,10 +844,25 @@ bool CutHints(std::string& patched, std::string_view name) {
         patched.replace(c, 2, On);
         return true;
     };
+    // False when the line holding `at` sits where Lua takes no statement: the code line above it ends
+    // in '{' or ','. s09 lists its lines as notes at the top of a state table, before the real call.
+    const auto statement = [&](size_t at) {
+        size_t line = patched.rfind('\n', at) + 1;
+        while (line > 0) {
+            const size_t prev = line >= 2 ? patched.rfind('\n', line - 2) + 1 : 0;
+            std::string_view text(patched.data() + prev, line - 1 - prev);
+            text = text.substr(0, text.find("--"));
+            const size_t last = text.find_last_not_of(" \t\r");
+            if (last != std::string_view::npos) return text[last] != '{' && text[last] != ',';
+            line = prev;
+        }
+        return true;
+    };
     int done = 0;
     for (const std::string_view id : Ids) {
         size_t at = patched.find(id);
-        while (at != std::string::npos && (at == 0 || (patched[at - 1] != '"' && patched[at - 1] != '\''))) {
+        while (at != std::string::npos &&
+               (at == 0 || (patched[at - 1] != '"' && patched[at - 1] != '\'') || !statement(at))) {
             at = patched.find(id, at + 1);
         }
         if (at == std::string::npos) continue;
@@ -859,9 +950,26 @@ bool GameEdits(std::string& patched, std::string_view name) {
         static constexpr std::string_view Late =
             " if self.isCreateObj and not self.tlgRegen then self.tlgRegen = true"
             " DelayExec(function() self.tlgRegen = nil GuideSystem:RegenerationGuide() end) end";
+        // Hide button hints (tlg.ini hide_hints, issue #84): the engine asks checkDisp each frame
+        // whether a hint box may show, but only for hints with a ViewCond of their own (58 of 74).
+        // Every hint asks now; one without a ViewCond gets "yes" as before, and while _TLGHIDEHINTS
+        // is set (settings tick) all get "no". Their tutorial logic (AchieveCond, norma) runs on.
+        static constexpr std::string_view AskSet =
+            "if data.Condition.ViewCond ~= nil then sysData.isCallViewCond = true end";
+        static constexpr std::string_view Ask = "return sys.Condition.ViewCond(sys.Condition";
+        bool hide_done = false;
+        if (const size_t k = patched.find(AskSet); k != std::string::npos) {
+            if (const size_t a = patched.find(Ask); a != std::string::npos && a > k) {
+                patched.insert(a, "if _TLGHIDEHINTS then return false end"
+                                  " if sys.Condition.ViewCond == nil then return true end ");
+                patched.replace(k, AskSet.size(), "sysData.isCallViewCond = true");
+                hide_done = true;
+            }
+        }
+        if (!hide_done) std::printf("Lua: hide hints: GuideSystem.lua not as expected, left out\n");
         size_t at = patched.find(Anchor);
         if (at == std::string::npos) {
-            return false;
+            return hide_done;
         }
         int done = 0;
         for (std::string_view set : {std::string_view("data.sysParam.titleTex = tex or FindObject('_error_texture')"),
@@ -872,7 +980,7 @@ bool GameEdits(std::string& patched, std::string_view name) {
                 ++done;
             }
         }
-        return done == 2;
+        return done == 2 || hide_done;
     }
     if (s.level_select && name == "data_trico/game/scripts/stages/s01_Opening/missionScript.lua") {
         // Only the test guarding the L1 level select, not the press build's other changes.
@@ -1135,6 +1243,11 @@ extern "C" __attribute__((sysv_abi)) int tlg_lua_load(void* L, void* options, co
         TlgLab::Report(std::string_view(buffer + 9, size - 9));
         return original(L, options, Empty.data(), Empty.size(), name);
     }
+    if (StartsWith(buffer, size, "--TLGPAD")) { // photo camera sticks, every frame (PhotoPadChunk)
+        static std::string pad; // game thread only
+        pad = TlgFun::PhotoPadChunk();
+        return original(L, options, pad.data(), pad.size(), name);
+    }
     if (StartsWith(buffer, size, "--TLGPAUSE")) {
         TlgOverlay::SetPauseMenu(size > 10 && buffer[10] == '1');
         return original(L, options, Empty.data(), Empty.size(), name);
@@ -1246,25 +1359,58 @@ void RemoveTricos() {
 }
 
 // One action at a time (_TLG_ACT, a coroutine on the game's tick; a new pick stops the last one).
-// Tested live 2026-11-04: "stand" does not get him up from sitting, sit_end does (then c_stand plays);
-// lying: sit first, then lie_down. Ticks run at the frame rate, so the waits count ticks (os.time
-// does not move inside a tick).
+// The way of the live check of 2026-11-15 (all 60 moves, s04 _110_WatersideGarden_001):
+//  - Poses: sit_end never gets him up from sitting, the reset does (c_boot, then c_stand the next
+//    frame). Sit: sit, then ext_c_sit_loop. Lie: from that sit loop lie_down, then ext_c_lie_down.
+//    Excited: stand_to_excite_stand. Photo: EX_photo, then its loop. Sitting and playing: sit_plays,
+//    then ext_c_sit_plays_loop.
+//  - His loops end about one frame after they start, so the next command goes out in the same frame
+//    (upto() returns in the frame it sees the loop, no yield before the send).
+//  - The move counts as started when its key shows in his animation or in his animation layers
+//    (playingAdditiveAnimList: the small moves, a sneeze or a wink, play there).
+//  - Some moves the game itself sends every frame (hold): Excited head shake, Sit and peck.
+//  - Not started within 2.5 s: reset him and try once more (11 of the 60 needed that), never in a
+//    story event, a jump or a climb (control mode EVENT, JUMP, COLUMN).
+// Waits are in game seconds (currentInfo.dt; os.time does not move inside a tick).
 constexpr std::string_view ActLua =
     "if _TLG_ACT then pcall(UnRegisterTick,_TLG_ACT) _TLG_ACT=nil end\n"
-    "local function anim() local ok,a=pcall(function() return tostring(Ai2.Utils.GetAIProps('Condor').currentInfo.mainPlayingAnim) end) "
-    "return ok and a:lower() or '?' end\n"
-    "local function cmd(c) pcall(function() Ai2.Utils.ReqCtrlCmd(Ai2.Utils.GetAIProps('Condor').currentInfo.ai2Ext,'ControlCommand_C_'..c) end) end\n"
-    "local function wait(n) for _=1,n do coroutine.yield() end end\n"
-    "local function waitfor(p,n) for _=1,n do if anim():find(p,1,true) then return true end coroutine.yield() end return false end\n"
+    "local function ci() return Ai2.Utils.GetAIProps('Condor').currentInfo end\n"
+    "local function dt() local ok,d=pcall(function() return ci().dt end) return (ok and type(d)=='number' and d>0 and d<1) and d or 1/60 end\n"
+    "local function anim() local ok,a=pcall(function() return tostring(ci().mainPlayingAnim) end) return ok and a:lower() or '?' end\n"
+    "local function adds() local ok,s=pcall(function() local t,o=ci().playingAdditiveAnimList,{} for i=1,#t do o[#o+1]=tostring(t[i]) end return table.concat(o,',') end) return ok and s:lower() or '' end\n"
+    "local function cmd(c) pcall(function() Ai2.Utils.ReqCtrlCmd(ci().ai2Ext,'ControlCommand_C_'..c) end) end\n"
+    "local function mode() local ok,m=pcall(function() return tostring(ci().controlMode) end) return ok and m or '?' end\n"
+    "local function canreset() local m=mode() return m~='EVENT' and m~='JUMP' and m~='COLUMN' and m~='?' end\n"
+    "local function upto(s,test) local t=0 while t<s do if test(anim()) then return true end t=t+dt() coroutine.yield() end return false end\n"
+    "local function has(p) return function(a) return a:find(p,1,true)~=nil end end\n"
+    "local function is(p) return function(a) return a==p end end\n"
+    "local function seen() return anim():find(key,1,true) or adds():find(key,1,true) end\n"
     "local function getpose(p) local a=anim()\n"
-    " if p=='stand' then if a:find('sit_',1,true) or a:find('lie',1,true) then cmd('sit_end') waitfor('c_stand',540) end cmd('stand') wait(90)\n"
-    " elseif p=='sit' then if not a:find('sit_loop',1,true) then cmd('sit') waitfor('sit_loop',540) end\n"
-    " elseif p=='lie' then if not a:find('lie',1,true) then getpose('sit') cmd('lie_down') waitfor('lie_down',540) wait(180) end end end\n"
+    " if p=='stand' then if a=='c_stand' then return true end\n"
+    "  if (a:find('sit',1,true) or a:find('lie',1,true)) and canreset() then cmd('Restart') if upto(1,is('c_stand')) then return true end end\n"
+    "  cmd('stand') return upto(4,is('c_stand'))\n"
+    " elseif p=='sit' then if a=='ext_c_sit_loop' then return true end\n"
+    "  if not getpose('stand') then return false end cmd('sit') return upto(6,is('ext_c_sit_loop'))\n"
+    " elseif p=='lie' then if a=='ext_c_lie_down' then return true end\n"
+    "  if not getpose('sit') then return false end cmd('lie_down') return upto(8,is('ext_c_lie_down'))\n"
+    " elseif p=='excite' then if not getpose('stand') then return false end\n"
+    "  cmd('stand_to_excite_stand') return upto(3,has('excite_stand'))\n"
+    " elseif p=='photo' then if a:find('photo_loop',1,true) then return true end\n"
+    "  if not getpose('stand') then return false end cmd('EX_photo') return upto(8,has('photo_loop'))\n"
+    " elseif p=='sitplay' then if a=='ext_c_sit_plays_loop' then return true end\n"
+    "  if not getpose('sit') then return false end cmd('sit_plays') return upto(6,is('ext_c_sit_plays_loop')) end\n"
+    " return true end\n"
+    "local function try(wait) if pose~='' and not getpose(pose) then return false end\n"
+    " cmd(act) local t,hit=0,false\n"
+    " if hold>0 then while t<hold do if seen() then hit=true end cmd(act) t=t+dt() coroutine.yield() end return hit end\n"
+    " while t<wait do if seen() then return true end t=t+dt() coroutine.yield() end return false end\n"
     "local co=coroutine.create(function()\n"
     " if not pose then cmd(act) L('fun act '..act..' sent') return end\n"
-    " for try=1,3 do if pose~='' then getpose(pose) end cmd(act)\n"
-    "  if waitfor(key,450) then L('fun act '..act..' ok, try '..try) return end end\n"
-    " L('fun act '..act..' did not play') end)\n"
+    " if try(2.5) then L('fun act '..act..' ok') return end\n"
+    " if not canreset() then L('fun act '..act..' did not play, no reset in mode '..mode()) return end\n"
+    " cmd('Restart') upto(1,is('c_stand'))\n"
+    " if try(6) then L('fun act '..act..' ok after reset') return end\n"
+    " L('fun act '..act..' did not play (now '..anim()..')') end)\n"
     "_TLG_ACT=function() local ok,e=coroutine.resume(co) if not ok then L('fun act error: '..tostring(e)) end\n"
     " if coroutine.status(co)=='dead' then UnRegisterTick(_TLG_ACT) _TLG_ACT=nil end end\n"
     "RegisterTick(_TLG_ACT)\n";
@@ -1301,8 +1447,10 @@ void Act(const char* command) {
     if (std::string_view(command) == "tlg_throw_up") return FunQueue(std::string(ThrowUpLua));
     std::string key(action->key ? action->key : command);
     for (auto& c : key) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    FunQueue(std::string("local act,key,pose='") + command + "','" + key + "'," +
-             (action->pose ? std::string("'") + action->pose + "'" : std::string("nil")) + "\n" +
+    char hold[32];
+    std::snprintf(hold, sizeof(hold), "%.2f", action->hold);
+    FunQueue(std::string("local act,key,pose,hold='") + command + "','" + key + "'," +
+             (action->pose ? std::string("'") + action->pose + "'" : std::string("nil")) + "," + hold + "\n" +
              std::string(ActLua));
 }
 
@@ -1405,7 +1553,9 @@ bool FreeCameraOn() {
 // Photo mode (tlg_fun.h). Our own fly camera: the developers' editor camera (_default_camera,
 // the one their PC editor flies with WASD), placed where the game camera was and moved by our tick
 // from the pad: left stick flies in the look direction, right stick looks around, L2/R2 down/up,
-// R1 fast, L1 slow. The engine's FixCamera (the Free camera above) could not turn and kept the boy
+// R1 fast, L1 slow (defaults: the buttons are settings, tlg.ini pad_photo_*; tlg_overlay.cpp reads
+// them and sends the held state through PhotoPad, so the tick reads p.up/dn/fast/slow/inv, no
+// fixed PadButton). The engine's FixCamera (the Free camera above) could not turn and kept the boy
 // as its target (user test 2026-11-14). The editor camera does not read the pad itself.
 // Angles are degrees (the game's scripts compare ToEuler() values with 90 and 180), X = pitch,
 // Y = yaw. Moves set the camera position directly in world space (EntityMove went
@@ -1414,6 +1564,9 @@ bool FreeCameraOn() {
 // keyboard camera does (camera/camerasetup.lua DbgCamConfig).
 // The world is frozen as before. Ticks keep running during the game's pause (the developers' QA
 // menu relies on the same), so our camera and leaving both work while paused.
+// Freeze world on / off (PhotoWorldToggle) lets the world run under the photo camera, or freezes it
+// again. While frozen, the tick freezes again when something else let the world run: the game's
+// pause menu resumes the game when it closes (user 2026-11-16), so it checks every 30 ticks.
 // _TLG_PHOTO remembers what we changed, so leaving undoes only that: a pause we did not make
 // (the pause menu) stays, and the scene's own slow motion comes back at its own speed.
 // The first test (2026-11-14) logged paused=false right after "trico pause" and the boy kept
@@ -1426,27 +1579,34 @@ constexpr std::string_view PhotoOnLua =
     " CameraManager:SetActiveCamera('default')\n"
     " P.name='_default_camera' local cam=FindObject(P.name)\n"
     " P.x,P.y,P.z=pos.X,pos.Y,pos.Z cam.position=pos P.pitch=rot.X P.yaw=rot.Y cam.rotation=Vector(P.pitch,P.yaw,0)\n"
-    " if %STOPTIME% then P.speed=MS.GetGameSpeed() MS.SetGameSpeed(0.001,0)\n"
-    " elseif not TricoGame_IsGamePause() then luaCommand('trico pause') P.paused=true end\n"
-    " P.n=0\n"
+    " P.stop=%STOPTIME% P.frozen=true P.try=0\n"
+    " P.freeze=function(p) if p.stop then if not p.speed then p.speed=MS.GetGameSpeed() end MS.SetGameSpeed(0.001,0)\n"
+    "  elseif not TricoGame_IsGamePause() then luaCommand('trico pause') p.paused=true end end\n"
+    " P.thaw=function(p) if p.paused then luaCommand('trico resume') p.paused=nil end\n"
+    "  if p.speed then MS.SetGameSpeed(p.speed,0) p.speed=nil end end\n"
+    " P.ls=loadstring or load\n"
+    " P.n=0 P:freeze()\n"
     " P.tick=function(dt,edt)\n"
     "  local p=_TLG_PHOTO if not p or p.dead then return end\n"
     "  local ok,e=pcall(function()\n"
     "   local t=edt if type(t)~='number' or t<=0 or t>0.25 then t=1/60 end\n"
     "   p.n=p.n+1\n"
+    "   if p.frozen and p.n>=p.try then p.try=p.n+30\n"
+    "    if p.stop then if MS.GetGameSpeed()>0.01 then p:freeze() end\n"
+    "    elseif not TricoGame_IsGamePause() then p:freeze() L('fun photo re-freeze') end end\n"
     "   if p.n==30 then L('fun photo tick dt='..tostring(dt)..' edt='..tostring(edt)..' paused='"
     "..tostring(TricoGame_IsGamePause())..' speed='..tostring(MS.GetGameSpeed())..' cam='"
     "..tostring(w.activeCamera:GetName())) end\n"
     "   local c=FindObject(p.name) if not c then return end\n"
-    "   local pd=Input.pad1\n"
-    "   local function dz(v) if math.abs(v)<0.15 then return 0 end return v end\n"
-    "   local lx,ly=dz(pd.LX*pd.LMag),dz(pd.LY*pd.LMag)\n"
-    "   local rx,ry=dz(pd.RX*pd.RMag),dz(pd.RY*pd.RMag)\n"
+    "   local f=p.ls('--TLGPAD') local sx,sy,sz,sw=0,0,0,0 if f then sx,sy,sz,sw=f() end\n"
+    "   local function dz(v) if type(v)~='number' or math.abs(v)<0.15 then return 0 end return v end\n"
+    "   local lx,ly,rx,ry=dz(sx),dz(sy),dz(sz),dz(sw)\n"
     "   if not p.said and (math.abs(ly)>0.8 or math.abs(ry)>0.8) then p.said=true "
     "L('fun photo stick ly='..tostring(ly)..' ry='..tostring(ry)) end\n"
-    "   local sp=3 if MS.PadGetHold(PadButton.R1) then sp=12 elseif MS.PadGetHold(PadButton.L1) then sp=0.6 end\n"
+    "   local sp=3 if p.fast then sp=12 elseif p.slow then sp=0.6 end\n"
     "   p.yaw=p.yaw-rx*100*t\n"
-    "   p.pitch=math.max(-85,math.min(85,p.pitch-ry*70*t))\n"
+    "   local iy=1 if p.inv then iy=-1 end\n"
+    "   p.pitch=math.max(-85,math.min(85,p.pitch-iy*ry*70*t))\n"
     "   c.rotation=Vector(p.pitch,p.yaw,0)\n"
     "   local d=sp*t\n"
     "   if lx~=0 or ly~=0 then local y=math.rad(p.yaw) local cy,sy=math.cos(y),math.sin(y)\n"
@@ -1455,12 +1615,7 @@ constexpr std::string_view PhotoOnLua =
     "   if p.lq and (p.logs or 0)<40 and p.n%15==0 and (lx~=0 or ly~=0) then p.logs=(p.logs or 0)+1 "
     "L('fun photo move yaw='..tostring(p.yaw)..' euler='..tostring(e.X)..','..tostring(e.Y)..','..tostring(e.Z)..' lx='..tostring(lx)..' ly='..tostring(ly)..' dx='..tostring(q.X-p.lq.X)..' dz='..tostring(q.Z-p.lq.Z)) end\n"
     "   p.lq=q\n"
-    "   local function held(b) local ok,v=pcall(MS.PadGetHold,b) return ok and v and true or false end\n"
-    "   local function trig(k) local ok,v=pcall(function() return pd[k] end) if ok and type(v)=='number' then return v end return 0 end\n"
-    "   local r2,l2=held(PadButton.R2),held(PadButton.L2) local tr,tl=trig('R2'),trig('L2')\n"
-    "   if (r2 or l2 or tr>0.3 or tl>0.3 or held(PadButton.R1)) and (p.tlogs or 0)<5 and p.n%15==0 then p.tlogs=(p.tlogs or 0)+1 "
-    "L('fun photo trig R2='..tostring(r2)..' L2='..tostring(l2)..' aR2='..tostring(tr)..' aL2='..tostring(tl)) end\n"
-    "   local up=0 if r2 or tr>0.3 then up=up+1 end if l2 or tl>0.3 then up=up-1 end\n"
+    "   local up=0 if p.up then up=up+1 end if p.dn then up=up-1 end\n"
     "   p.y=p.y+up*d c.position=Vector(p.x,p.y,p.z)\n"
     "  end)\n"
     "  if not ok then p.dead=true L('fun photo tick error: '..tostring(e)) end\n"
@@ -1480,6 +1635,8 @@ constexpr std::string_view PhotoOffLua =
 
 void PhotoMode(bool on) {
     photo = on;
+    photo_frozen = true;
+    photo_sticks_boy = false;
     std::printf("Fun: photo mode %s\n", on ? "on" : "off");
     std::string code(on ? PhotoOnLua : PhotoOffLua);
     if (on) {
@@ -1493,8 +1650,60 @@ void PhotoMode(bool on) {
              "end) if not ok then L('fun error: '..tostring(e)) end end\n");
 }
 
+void PhotoPad(bool up, bool down, bool fast, bool slow, bool invert_y) {
+    const auto b = [](bool v) { return v ? "true" : "false"; };
+    FunQueue(std::string("local p=_TLG_PHOTO if p then p.up=") + b(up) + " p.dn=" + b(down) + " p.fast=" + b(fast) +
+             " p.slow=" + b(slow) + " p.inv=" + b(invert_y) + " end");
+}
+
 bool PhotoModeOn() {
     return photo;
+}
+
+void PhotoWorldToggle() {
+    if (!photo) return;
+    photo_frozen = !photo_frozen;
+    std::printf("Fun: photo mode world %s\n", photo_frozen ? "frozen" : "running");
+    // Frozen, the boy cannot move: the sticks go back to the camera (the switch to the boy is
+    // blocked while frozen, see PhotoPadSync).
+    if (photo_frozen && photo_sticks_boy.exchange(false)) {
+        std::printf("Fun: photo mode sticks on the camera (world frozen)\n");
+    }
+    FunQueue(std::string("local p=_TLG_PHOTO if p then p.frozen=") + (photo_frozen ? "true p:freeze()" : "false p:thaw()") +
+             " L('fun photo world frozen='..tostring(p.frozen)) end");
+}
+
+bool PhotoWorldFrozen() {
+    return photo_frozen;
+}
+
+void PhotoSticksToggle() {
+    if (!photo) return;
+    photo_sticks_boy = !photo_sticks_boy;
+    std::printf("Fun: photo mode sticks on the %s\n", photo_sticks_boy ? "boy" : "camera");
+}
+
+bool PhotoSticksBoy() {
+    return photo_sticks_boy;
+}
+
+bool PhotoTakesPad(uint8_t lx, uint8_t ly, uint8_t rx, uint8_t ry) {
+    photo_sticks = uint32_t(lx) | uint32_t(ly) << 8 | uint32_t(rx) << 16 | uint32_t(ry) << 24;
+    return photo && !photo_sticks_boy && !TlgOverlay::PauseMenuOpen();
+}
+
+std::string PhotoPadChunk() {
+    if (!photo || photo_sticks_boy || TlgOverlay::PauseMenuOpen()) return "return 0,0,0,0";
+    const uint32_t v = photo_sticks;
+    // 0 = left / up on the PS4 pad; the camera wants up = +, like the game's Input.pad1.
+    const auto axis = [](uint32_t b, bool flip) {
+        const float f = std::clamp((float(b & 0xff) - 128.0f) / 127.0f, -1.0f, 1.0f);
+        return flip ? -f : f;
+    };
+    char line[96];
+    std::snprintf(line, sizeof(line), "return %.3f,%.3f,%.3f,%.3f", axis(v, false), axis(v >> 8, true),
+                  axis(v >> 16, false), axis(v >> 24, true));
+    return line;
 }
 
 void PhotoModeFreeze(TlgFun::PhotoFreeze how) {

@@ -35,7 +35,7 @@ constexpr std::pair<const char*, Effect> EffectKeys[] = {
     {"game_sharpen", &Values::game_sharpen}, {"shadow_distance", &Values::shadow_distance},
     {"trico_feathers", &Values::trico_feathers}, {"boy_wind", &Values::boy_wind}, {"tree_wind", &Values::tree_wind},
     {"fog_distance", &Values::fog_distance}, {"haze_fringe", &Values::haze_fringe},
-    {"grass_smooth", &Values::grass_smooth}};
+    {"grass_smooth", &Values::grass_smooth}, {"shadow_lite", &Values::shadow_lite}};
 
 std::atomic<int>* EffectSetting(Values& v, const std::string& key) {
     for (const auto& [name, member] : EffectKeys)
@@ -129,6 +129,27 @@ void Set(Values& v, const std::string& key, const std::string& value) {
                       : key == "pad_combo_qa"   ? v.combo_qa
                                                 : v.combo_photo;
         target = ParseCombo(value, target.load());
+        return;
+    }
+    if (key == "quit_key") {
+        uint32_t mods = 0, code = 0;
+        if (ParseQuitKey(value, mods, code)) {
+            v.quit_key_mods = mods;
+            v.quit_key = code;
+        }
+        return;
+    }
+    if (key.rfind("pad_photo_", 0) == 0) {
+        auto* target = key == "pad_photo_shot" ? &v.photo_shot : key == "pad_photo_up" ? &v.photo_up
+                     : key == "pad_photo_down" ? &v.photo_down : key == "pad_photo_fast" ? &v.photo_fast
+                     : key == "pad_photo_slow" ? &v.photo_slow : key == "pad_photo_help" ? &v.photo_help
+                     : key == "pad_photo_world" ? &v.photo_world : key == "pad_photo_sticks" ? &v.photo_sticks
+                                               : nullptr;
+        if (target) target->store(ParseCombo(value, target->load()));
+        return;
+    }
+    if (key == "photo_invert_y") {
+        v.photo_invert_y = std::atoi(value.c_str()) != 0;
         return;
     }
     if (key == "audio_surround") {
@@ -227,8 +248,18 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.credits_fps = i == 0 ? 0 : i == 60 ? 60 : 30;
     } else if (key == "slow_motion") {
         v.slow_motion = i == 1 ? 1 : 0;
+    } else if (key == "trico_fur") {
+        v.trico_fur = std::clamp(i, 0, 500);
     } else if (key == "trico_drool") {
         v.trico_drool = i == 1 || i == 2 ? i : 0;
+    } else if (key == "button_icons") {
+        v.button_icons = value == "playstation" ? 1 : value == "xbox" ? 2 : i == 1 || i == 2 ? i : 0;
+    } else if (key == "hide_hints") {
+        v.hide_hints = i != 0;
+    } else if (key == "trico_favourites") {
+        v.trico_favourites = value;
+    } else if (key == "trico_bar_group") {
+        v.trico_bar_group = std::max(i, 0);
     } else if (key == "mod_treasures") {
         v.mod_treasures = i != 0;
     } else if (key == "mod_horns") {
@@ -289,13 +320,17 @@ void Set(Values& v, const std::string& key, const std::string& value) {
 } // namespace
 
 namespace {
-struct ComboName { uint32_t bit; const char* key; const char* label; };
+// label: PlayStation name; xbox: the same button on an Xbox pad (as the launcher's XBOX_LABEL).
+struct ComboName { uint32_t bit; const char* key; const char* label; const char* xbox; };
 constexpr ComboName ComboNames[] = {
-    {PadCross, "cross", "Cross"}, {PadCircle, "circle", "Circle"}, {PadSquare, "square", "Square"},
-    {PadTriangle, "triangle", "Triangle"}, {PadL1, "l1", "L1"}, {PadR1, "r1", "R1"}, {PadL2, "l2", "L2"},
-    {PadR2, "r2", "R2"}, {PadL3, "l3", "L3"}, {PadR3, "r3", "R3"}, {PadShare, "share", "Share"},
-    {PadOptions, "options", "Options"}, {PadTouchpad, "touchpad", "Touchpad"}, {PadPs, "ps", "PS"},
-    {PadUp, "up", "Up"}, {PadDown, "down", "Down"}, {PadLeft, "left", "Left"}, {PadRight, "right", "Right"},
+    {PadCross, "cross", "Cross", "A"}, {PadCircle, "circle", "Circle", "B"},
+    {PadSquare, "square", "Square", "X"}, {PadTriangle, "triangle", "Triangle", "Y"},
+    {PadL1, "l1", "L1", "LB"}, {PadR1, "r1", "R1", "RB"}, {PadL2, "l2", "L2", "LT"},
+    {PadR2, "r2", "R2", "RT"}, {PadL3, "l3", "L3", "LS"}, {PadR3, "r3", "R3", "RS"},
+    {PadShare, "share", "Share", "View"}, {PadOptions, "options", "Options", "Menu"},
+    {PadTouchpad, "touchpad", "Touchpad", "Touchpad"}, {PadPs, "ps", "PS", "Xbox"},
+    {PadUp, "up", "Up", "Up"}, {PadDown, "down", "Down", "Down"}, {PadLeft, "left", "Left", "Left"},
+    {PadRight, "right", "Right", "Right"},
 };
 } // namespace
 
@@ -314,17 +349,70 @@ uint32_t ParseCombo(const std::string& text, uint32_t fallback) {
     return bits ? bits : fallback;
 }
 
-static std::string ComboJoin(uint32_t bits, bool label) {
+static std::string ComboJoin(uint32_t bits, bool label, bool xbox = false) {
     std::string out;
     for (const auto& n : ComboNames) {
         if (!(bits & n.bit)) continue;
         if (!out.empty()) out += label ? " + " : "+";
-        out += label ? n.label : n.key;
+        out += !label ? n.key : xbox ? n.xbox : n.label;
     }
     return out;
 }
 std::string ComboText(uint32_t bits) { return ComboJoin(bits, false); }
-std::string ComboLabel(uint32_t bits) { return ComboJoin(bits, true); }
+
+bool QuitKeyAllowed(uint32_t mods, uint32_t key) {
+    if (key >= QuitKeyF1 + 1 && key <= QuitKeyF1 + 12) {
+        return (key != QuitKeyF1 + 9 && key != QuitKeyF1 + 10) || mods;
+    }
+    const bool plain = (key >= 'a' && key <= 'z') || (key >= '0' && key <= '9');
+    return plain && (mods & (QuitModCtrl | QuitModAlt));
+}
+
+bool ParseQuitKey(const std::string& text, uint32_t& mods, uint32_t& key) {
+    std::string t;
+    for (char c : text) {
+        if (c != ' ') t += char(std::tolower(static_cast<unsigned char>(c)));
+    }
+    if (t == "off" || t == "none") {
+        mods = 0;
+        key = 0;
+        return true;
+    }
+    uint32_t m = 0, k = 0;
+    size_t start = 0;
+    while (start <= t.size()) {
+        size_t end = t.find('+', start);
+        if (end == std::string::npos) end = t.size();
+        const std::string part = t.substr(start, end - start);
+        start = end + 1;
+        if (part == "ctrl" || part == "control") m |= QuitModCtrl;
+        else if (part == "alt") m |= QuitModAlt;
+        else if (part == "shift") m |= QuitModShift;
+        else if (k) return false;  // two keys
+        else if (part.size() == 1) k = uint32_t(static_cast<unsigned char>(part[0]));
+        else if (part.size() <= 3 && part[0] == 'f' && std::isdigit(static_cast<unsigned char>(part[1])))
+            k = QuitKeyF1 + uint32_t(std::atoi(part.c_str() + 1));
+        else return false;
+    }
+    if (!QuitKeyAllowed(m, k)) return false;
+    mods = m;
+    key = k;
+    return true;
+}
+
+static std::string QuitKeyJoin(uint32_t mods, uint32_t key, bool label) {
+    if (!key) return label ? "" : "off";
+    std::string out;
+    if (mods & QuitModCtrl) out += label ? "Ctrl+" : "ctrl+";
+    if (mods & QuitModAlt) out += label ? "Alt+" : "alt+";
+    if (mods & QuitModShift) out += label ? "Shift+" : "shift+";
+    if (key > QuitKeyF1) out += (label ? "F" : "f") + std::to_string(key - QuitKeyF1);
+    else out += char(label ? std::toupper(int(key)) : int(key));
+    return out;
+}
+std::string QuitKeyText(uint32_t mods, uint32_t key) { return QuitKeyJoin(mods, key, false); }
+std::string QuitKeyLabel(uint32_t mods, uint32_t key) { return QuitKeyJoin(mods, key, true); }
+std::string ComboLabel(uint32_t bits) { return ComboJoin(bits, true, Get().XboxIcons()); }
 
 Values& Get() {
     static Values values;
@@ -431,12 +519,15 @@ void Load() {
         {"TLG_MOUSE_ACCEL", "mouse_accel"},          {"TLG_MOUSE_DEADZONE", "mouse_deadzone"},
         {"TLG_SMAA", "smaa"},                        {"TLG_DLAA", "dlaa"},
         {"TLG_LEVEL_SELECT", "level_select"},       {"TLG_TRICO_DROOL", "trico_drool"},
+        {"TLG_BUTTON_ICONS", "button_icons"},
+        {"TLG_HIDE_HINTS", "hide_hints"},
         {"TLG_MOD_TREASURES", "mod_treasures"},     {"TLG_MOD_HORNS", "mod_horns"},
         {"TLG_MOD_PLAYS", "mod_plays"},             {"TLG_MOD_THROW_UP", "mod_throw_up"},
         {"TLG_MOD_HINTS", "mod_hints"},
         {"TLG_CAS", "cas"},                          {"TLG_COLOR_ADJUST", "color_adjust"},
         {"TLG_HDR", "hdr"},                          {"TLG_FG", "frame_generation"},
         {"TLG_ARENA_RELEASE", "arena_release"},      {"TLG_GC_LIVE_BUDGET", "gc_live_budget"},
+        {"TLG_SHADOW_DISTANCE", "shadow_distance"}, {"TLG_SHADOW_LITE", "shadow_lite"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -749,7 +840,20 @@ void Save() {
     std::fprintf(file, "pad_combo_quit=%s\npad_combo_menu=%s\npad_combo_qa=%s\npad_combo_photo=%s\n",
                  ComboText(v.combo_quit).c_str(), ComboText(v.combo_menu).c_str(), ComboText(v.combo_qa).c_str(),
                  ComboText(v.combo_photo).c_str());
+    std::fprintf(file, "quit_key=%s\n", QuitKeyText(v.quit_key_mods, v.quit_key).c_str());
+    std::fprintf(file,
+                 "pad_photo_shot=%s\npad_photo_up=%s\npad_photo_down=%s\npad_photo_fast=%s\npad_photo_slow=%s\n"
+                 "pad_photo_help=%s\npad_photo_world=%s\npad_photo_sticks=%s\nphoto_invert_y=%d\n",
+                 ComboText(v.photo_shot).c_str(), ComboText(v.photo_up).c_str(), ComboText(v.photo_down).c_str(),
+                 ComboText(v.photo_fast).c_str(), ComboText(v.photo_slow).c_str(), ComboText(v.photo_help).c_str(),
+                 ComboText(v.photo_world).c_str(), ComboText(v.photo_sticks).c_str(),
+                 int(v.photo_invert_y.load()));
     std::fprintf(file, "trico_drool=%d\n", v.trico_drool.load());
+    std::fprintf(file, "trico_fur=%d\n", v.trico_fur.load());
+    std::fprintf(file, "button_icons=%d\nhide_hints=%d\n", v.button_icons.load(),
+                 int(v.hide_hints.load()));
+    std::fprintf(file, "trico_favourites=%s\ntrico_bar_group=%d\n", v.trico_favourites.c_str(),
+                 v.trico_bar_group.load());
     std::fprintf(file, "mod_treasures=%d\nmod_horns=%d\n", int(v.mod_treasures.load()),
                  int(v.mod_horns.load()));
     std::fprintf(file, "mod_plays=%d\nmod_throw_up=%d\nmod_hints=%d\n", int(v.mod_plays.load()),
@@ -839,7 +943,11 @@ struct GraphicsPreset {
 };
 
 std::vector<GraphicsPreset> ReadPresets() {
-    std::vector<GraphicsPreset> list{{"Stock", Normalized(StockLines)}, {"Recommended", Normalized("")}};
+    // Low-end PC (#85, #75): Stock with shadows at 50% distance and Lite shadows (launcher
+    // preset_share GAME_LOWEND).
+    std::vector<GraphicsPreset> list{{"Stock", Normalized(StockLines)},
+                                     {"Recommended", Normalized("")},
+                                     {"Low-end PC", Normalized(std::string(StockLines) + "shadow_distance=50\nshadow_lite=1\n")}};
     std::vector<std::filesystem::path> files;
     std::error_code error;
     for (const auto& entry : std::filesystem::directory_iterator(PresetDir(), error)) {
@@ -892,7 +1000,9 @@ int SaveGraphicsPreset(const std::string& name) {
     }
     clean.erase(0, clean.find_first_not_of(' '));
     clean.erase(clean.find_last_not_of(' ') + 1);
-    if (clean.empty() || clean == "Stock" || clean == "Recommended") return -1;
+    if (clean.empty() || clean == "Stock" || clean == "Recommended" || clean == "Low-end PC" ||
+        clean == "Steam Deck")
+        return -1;
     std::error_code error;
     std::filesystem::create_directories(PresetDir(), error);
     std::ofstream out{PresetDir() / (clean + ".ini")};
@@ -905,7 +1015,7 @@ int SaveGraphicsPreset(const std::string& name) {
 }
 
 void DeleteGraphicsPreset(int index) {
-    if (index < 2 || index >= int(Presets().size())) return;
+    if (index < BuiltInPresets || index >= int(Presets().size())) return;
     std::error_code error;
     std::filesystem::remove(PresetDir() / (Presets()[index].name + ".ini"), error);
     Presets() = ReadPresets();

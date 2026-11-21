@@ -38,6 +38,11 @@ public:
         WriteTimestamp(key);
     }
 
+    /// One draw in the open segment: the report then also says how many draws each pass holds.
+    void CountDraw() {
+        ++totals[current].draws;
+    }
+
     /// The label of the open segment, for Resume after a nested segment (transfers).
     [[nodiscard]] u64 Current() const noexcept {
         return current;
@@ -77,10 +82,12 @@ private:
     struct Total {
         double ms = 0;
         u64 segments = 0;
+        u64 draws = 0;
     };
     std::unordered_map<u64, Total> totals;
     u64 frames = 0;
     u64 current = 0;
+    bool counts_only = false; ///< TLG_GPU_PROFILE=2: draws per pass only, no GPU timestamps
     std::chrono::steady_clock::time_point window = std::chrono::steady_clock::now();
 };
 

@@ -79,7 +79,9 @@ cp packaging/linux/install_desktop.sh "$dest/"
 # The release name (vYYYY.MM.DD-<commit> or the pushed v* tag, as the CI publishes it): the launcher
 # shows it and compares it with the latest release.
 if [[ ${GITHUB_REF:-} == refs/tags/v* ]]; then echo "$GITHUB_REF_NAME" > "$dest/VERSION"
-elif [[ -n ${GITHUB_SHA:-} ]]; then printf 'v%s-%s\n' "$(date -u +%Y.%m.%d)" "${GITHUB_SHA::7}" > "$dest/VERSION"; fi
+elif [[ -n ${GITHUB_SHA:-} ]]; then printf 'v%s-%s\n' "$(date -u +%Y.%m.%d)" "${GITHUB_SHA::7}" > "$dest/VERSION"
+elif sha=$(git rev-parse --short=7 HEAD 2>/dev/null); then printf 'v%s-%s
+' "$(date -u +%Y.%m.%d)" "$sha" > "$dest/VERSION"; fi
 # Line 2: the full commit, printed at the top of every game log (tlg_run.build_info).
 commit=${GITHUB_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}
 if [[ -f "$dest/VERSION" && -n $commit ]]; then echo "commit $commit" >> "$dest/VERSION"; fi

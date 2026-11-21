@@ -499,6 +499,21 @@ private:
     u64 gc_floor_skips = 0;
     std::chrono::steady_clock::time_point small_sweep_time{};
     u64 small_swept = 0, small_sweep_walked = 0;
+    /// tlg (#89, random wrong-colour blocks): what RefreshImage re-uploads and where the bytes
+    /// come from, printed by ReportMemory every 5 s. Big = 1 MiB and more (light probe arrays,
+    /// streamed atlases); a GPU-written image whose upload came from RAM is logged by itself.
+    struct RefreshRecord {
+        VAddr addr{};
+        u32 size{};
+        vk::Format format{};
+        u32 width{}, height{}, layers{}, mips{};
+        u32 count{}, gpu_dirty{}, cpu_dirty{}, from_ram{};
+    };
+    void NoteRefresh(const Image& image, bool gpu_modified, bool gpu_dirty);
+    std::mutex refresh_log_mutex;
+    std::array<RefreshRecord, 8> big_refreshes{};
+    u32 num_big_refreshes = 0, big_refreshes_dropped = 0;
+    u64 gpu_written_refreshes = 0, gpu_written_from_ram = 0, gpu_written_from_ram_logged = 0;
     Common::LeastRecentlyUsedCache<ImageId, u64> lru_cache;
     Common::LeastRecentlyUsedCache<u64, u64> sampler_lru_cache;
     const bool readback_linear_images;
