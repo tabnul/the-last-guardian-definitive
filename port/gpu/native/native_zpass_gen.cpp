@@ -4881,6 +4881,17 @@ struct ParState {
     std::array<std::vector<u8>, ParSlots> rd_snapshots; ///< the render device at the hand-over (ParRdBytes)
     std::array<std::array<u8, 0x200>, ParSlots> rs_objects{}; ///< the resource set's buffer object at the hand-over
     std::array<u32, ParSlots> rs_stage_bytes{};
+    // the pass's draw list as the hand-over left it: the engine may rebuild or reuse the list once its loop has returned (a cascade scanned late missed 34 or 58 casters:
+    // the sun's shadow map wrong for two frames, owner play 2026-11-21). desc (0x40 bytes) -> list header (0x20) -> the batch pointer array, copied; the batches are the
+    // engine's objects (read in place)
+    struct ListCopy {
+        std::array<u8, 0x40> desc{};
+        std::array<u8, 0x20> list{};
+        std::vector<u64> batches;
+        u64 live_list{}; ///< the engine's list (census: changed by the time the worker reads it?)
+    };
+    std::array<ListCopy, ParSlots> lists;
+    std::atomic<u64> list_changed{0}, list_checked{0};
     std::array<std::atomic<bool>, ParSlots> busy{};
     std::array<std::atomic<bool>, 16> serial_next{}, view_off{};
     std::array<std::atomic<u64>, 16> need{};
@@ -4964,6 +4975,7 @@ void ParDone(const Target& t, const ParTask& task, u64 steps) {
     ps.rs_fail.fetch_add(t.rs_fail, std::memory_order_relaxed);
     ps.group_fail.fetch_add(t.group_fail, std::memory_order_relaxed);
 }
+u64 ParListFor(u32 slot, bool desc);
 void ParWorkG(ParTask& task, u32 index) {
     ParState& ps = PS();
     GPlan plan;
@@ -4971,7 +4983,7 @@ void ParWorkG(ParTask& task, u32 index) {
     plan.flags = static_cast<u32>(task.flags);
     plan.query_mode = static_cast<u32>(task.query_mode);
     const u64 rd = reinterpret_cast<u64>(ps.rd_snapshots[task.slot].data()); // the render device as the hand-over left it
-    GScanArgs scan_args{&plan, rd, task.list, task.args, true};
+    GScanArgs scan_args{&plan, rd, ParListFor(task.slot, false), task.args, true};
     if (!NativeDraw::GuardedCall([](void* p) { ScanGBuffer(*static_cast<GScanArgs*>(p)); }, &scan_args)) {
         plan.scanned = false;
     }
@@ -5024,7 +5036,7 @@ void ParWork(ParTask& task, u32 index) {
     State& s = S();
     Plan plan;
     const u64 rd = reinterpret_cast<u64>(ps.rd_snapshots[task.slot].data()); // the render device as the hand-over left it
-    ScanArgs scan_args{&plan, rd, task.desc, &s.table, true};
+    ScanArgs scan_args{&plan, rd, ParListFor(task.slot, true), &s.table, true};
     {
         std::scoped_lock lock{s.mutex};
         CacheArgs cache_args{&s, rd};
@@ -5106,7 +5118,7 @@ void ParPublish() {
         }
     }
     nlohmann::json out = {{"calls", ps.calls.load()}, {"passes", ps.passes.load()}, {"no_slot", ps.no_slot.load()}, {"copy_faults", ps.copy_faults.load()},
-                          {"scan_faults", ps.scan_faults.load()}, {"worker_faults", ps.worker_faults.load()}, {"learn_frames", ps.learn_frames.load()},
+                          {"scan_faults", ps.scan_faults.load()}, {"worker_faults", ps.worker_faults.load()}, {"learn_frames", ps.learn_frames.load()}, {"list_checked", ps.list_checked.load()}, {"list_changed", ps.list_changed.load()},
                           {"views_off", ps.views_off.load()}, {"steps", ps.steps.load()}, {"drawn", ps.drawn.load()}, {"refused", ps.refused.load()},
                           {"unlearned", ps.unlearned.load()}, {"rs_fail", ps.rs_fail.load()}, {"group_fail", ps.group_fail.load()}, {"arena_short", ps.arena_short.load()},
                           {"worker_ms", static_cast<double>(ps.worker_ns.load()) / 1e6}, {"reasons", reasons},
@@ -5227,6 +5239,78 @@ u32 ParSnapshot(u64 ctx, u64 rd) {
     }
     return slot;
 }
+/// Copies the pass's draw list into the slot (the engine's thread, at the hand-over). `desc` 0: a G-buffer pass (only the list). False: unreadable (no hand-over).
+bool ParCopyList(u32 slot, u64 desc, u64 list) {
+    ParState::ListCopy& c = PS().lists[slot];
+    struct Args {
+        ParState::ListCopy* c;
+        u64 desc, list;
+        bool ok;
+    } a{&c, desc, list, false};
+    (void)NativeDraw::GuardedCall(
+        [](void* p) {
+            auto* a = static_cast<Args*>(p);
+            ParState::ListCopy& c = *a->c;
+            if (a->desc != 0) {
+                std::memcpy(c.desc.data(), reinterpret_cast<const void*>(a->desc), c.desc.size());
+                a->list = R<u64>(a->desc);
+            }
+            c.live_list = a->list;
+            if (a->list == 0) {
+                a->ok = true; // (the scan declines it)
+                return;
+            }
+            std::memcpy(c.list.data(), reinterpret_cast<const void*>(a->list), c.list.size());
+            const u64 array = R<u64>(a->list);
+            const u32 count = R<u32>(a->list + 8);
+            if (array == 0 || count > 100000) {
+                a->ok = true; // (the scan declines it)
+                return;
+            }
+            c.batches.resize(count);
+            std::memcpy(c.batches.data(), reinterpret_cast<const void*>(array), u64{count} * 8);
+            const u64 copied = reinterpret_cast<u64>(c.batches.data());
+            std::memcpy(c.list.data(), &copied, 8);
+            a->ok = true;
+        },
+        &a);
+    if (!a.ok) {
+        return false;
+    }
+    if (desc != 0) {
+        const u64 list_copy = c.live_list != 0 ? reinterpret_cast<u64>(c.list.data()) : 0;
+        std::memcpy(c.desc.data(), &list_copy, 8);
+    }
+    return true;
+}
+/// The worker: the copied desc / list for the scan; counts whether the engine's list changed since the hand-over
+u64 ParListFor(u32 slot, bool desc) {
+    ParState& ps = PS();
+    ParState::ListCopy& c = ps.lists[slot];
+    struct Args {
+        ParState::ListCopy* c;
+        bool changed;
+    } a{&c, false};
+    if (c.live_list != 0 && NativeDraw::GuardedCall(
+                                [](void* p) {
+                                    auto* a = static_cast<Args*>(p);
+                                    const ParState::ListCopy& c = *a->c;
+                                    const u64 array = R<u64>(c.live_list);
+                                    const u32 count = R<u32>(c.live_list + 8);
+                                    a->changed = count != c.batches.size() ||
+                                                 (array != 0 && count <= 100000 && std::memcmp(reinterpret_cast<const void*>(array), c.batches.data(), u64{count} * 8) != 0);
+                                },
+                                &a)) {
+        ps.list_checked.fetch_add(1, std::memory_order_relaxed);
+        if (a.changed) {
+            ps.list_changed.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    if (desc) {
+        return reinterpret_cast<u64>(c.desc.data());
+    }
+    return c.live_list != 0 ? reinterpret_cast<u64>(c.list.data()) : 0;
+}
 /// The shared tail of a hand-over: the counters of the worker's earlier passes, its ring block, the placeholder, the task
 void ParSend(ParTask task) {
     ParState& ps = PS();
@@ -5329,6 +5413,10 @@ bool ParKickG(u64 rd, u64 mode, u64 list, u64 args, u64 flags, u64 query_mode) {
     if (slot == ParSlots) {
         return false;
     }
+    if (!ParCopyList(slot, 0, list)) {
+        PS().busy[slot].store(false, std::memory_order_release);
+        return false;
+    }
     NativeDraw::HandOverTargets(ctx);
     ParPublishGroups(list, R<u32>(ctx + 0x47ac));
     if (R<u32>(ctx + 0x4480) != 4) {
@@ -5423,6 +5511,10 @@ bool ParKick(u64 rd, u64 desc, u32 view) {
     }
     const u32 slot = ParSnapshot(head.ctx, rd);
     if (slot == ParSlots) {
+        return false;
+    }
+    if (!ParCopyList(slot, desc, 0)) {
+        PS().busy[slot].store(false, std::memory_order_release);
         return false;
     }
     NativeDraw::HandOverTargets(head.ctx);
