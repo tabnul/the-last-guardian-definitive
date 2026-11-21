@@ -8,6 +8,7 @@
 #include "native/native_marker.h"
 #include "native/native_vkb_graphics.h"
 #include "native/native_vkb_indexed.h"
+#include "native/native_vkb_compute.h"
 #include "native/native_zpass_gen.h"
 
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
@@ -590,7 +591,7 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
                         break;
                     }
                     list.push_back(h);
-                    p = *end == ',' ? end + 1 : end;
+                    p = (*end == ',' || *end == '+') ? end + 1 : end;
                 }
             }
             return list;
@@ -3764,6 +3765,27 @@ void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
     }
     if (GdCensusOn()) {
         GdCensus(ctx, *it->second, kind);
+    }
+    if (Core::Vkb::Compute::LanternCensusActive()) { // lantern census: does this draw read the lantern particle state?
+        const Variant& lv = *it->second;
+        for (const Stage* st : {&lv.vs, &lv.ps}) {
+            if (st == &lv.ps && !lv.has_ps) {
+                continue;
+            }
+            for (const Source& src : st->buffers) {
+                const u64 object = src.cls == Source::Class::Slot && src.kind == 1 ? SlotObject(ctx, st->index, 1, src.slot) : 0;
+                if (object == 0 || (Rd<u32>(object, 0x44) != 1 && Rd<u32>(object, 0x44) != 0xb)) {
+                    continue;
+                }
+                const u64 buffer = Rd<u64>(object, 0x30);
+                const u64 bytes = buffer != 0 ? Rd<u32>(buffer, 0x180) : 0;
+                u64 offset = 0, size = bytes;
+                Core::Vkb::ViewRange(object, true, buffer, bytes, offset, size);
+                if (bytes != 0) {
+                    Core::Vkb::Compute::LanternDrawRead(Rd<u64>(buffer, 0x30) + offset, size, lv.vs.info ? lv.vs.info->pgm_hash : 0, lv.has_ps && lv.ps.info ? lv.ps.info->pgm_hash : 0, st->index, src.slot);
+                }
+            }
+        }
     }
     if (t_depth_pass && Core::NativeZPassGen::R7CensusOn()) { // R7 research census: the prediction of this draw, and our pipeline for it
         static const bool sized = [] { Core::NativeZPassGen::R7SetFixedBytes(sizeof(VkbVulkan::FixedState)); return true; }();

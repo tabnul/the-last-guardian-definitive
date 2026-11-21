@@ -26,4 +26,6 @@ void FrameDone();
 
 [[nodiscard]] nlohmann::json Report();
 
+bool LanternCensusActive();
+void LanternDrawRead(u64 address, u64 size, u64 vs_hash, u64 ps_hash, u32 stage, u32 slot);
 } // namespace Core::Vkb::Compute

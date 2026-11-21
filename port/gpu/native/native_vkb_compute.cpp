@@ -312,7 +312,7 @@ void Compile(u64 ctx, u64 shader, Variant& v) {
                         break;
                     }
                     out.push_back(h);
-                    p = *end == ',' ? end + 1 : end;
+                    p = (*end == ',' || *end == '+') ? end + 1 : end;
                 }
             }
             return out;
@@ -534,6 +534,18 @@ struct WrittenRange {
 std::vector<WrittenRange> lantern_written; ///< ranges compute dispatches wrote (any shader), newest last, kept 8 submits
 u64 lantern_dispatches = 0, lantern_dumped = 0, lantern_bytes = 0;
 std::set<std::pair<u64, u64>> lantern_snaps; ///< (submit, address) already written
+std::vector<std::pair<u64, u64>> lantern_state; ///< the ranges the lantern shaders write (their particle state)
+std::map<std::string, u64> lantern_readers; ///< other shaders that read those ranges: 'cs <hash> b<binding>' / 'draw vs <hash> ps <hash> s<stage> slot <n>'
+u64 lantern_hit_base = 0; ///< the state range the last hit fell in
+bool LanternStateHit(u64 address, u64 size) {
+    for (const auto& [b, e] : lantern_state) {
+        if (b < address + size && address < e) {
+            lantern_hit_base = b;
+            return true;
+        }
+    }
+    return false;
+}
 std::FILE* lantern_file = nullptr;
 void LanternNote(u64 hash, const Variant& v, const boost::container::small_vector<std::pair<u64, u64>, 16>& guest_of, u32 x, u32 y, u32 z) {
     const u64 submit = Core::Vkb::GraphicsSubmits();
@@ -550,6 +562,9 @@ void LanternNote(u64 hash, const Variant& v, const boost::container::small_vecto
         for (u32 i = 0; i < guest_of.size() && i < v.info->buffers.size(); ++i) {
             if (v.info->buffers[i].is_written && guest_of[i].first != 0) {
                 lantern_written.push_back({guest_of[i].first, guest_of[i].first + guest_of[i].second, submit});
+            }
+            if (guest_of[i].first != 0 && LanternStateHit(guest_of[i].first, guest_of[i].second)) {
+                ++lantern_readers[fmt::format("cs {:#x} b{}{} reads {:#x}+{:#x} (state {:#x})", hash, i, v.info->buffers[i].is_written ? " W" : "", guest_of[i].first, guest_of[i].second, lantern_hit_base)];
             }
         }
         return;
@@ -601,6 +616,9 @@ void LanternNote(u64 hash, const Variant& v, const boost::container::small_vecto
         s.cpu_readable += readable ? 1 : 0;
         if (written && address != 0) {
             lantern_written.push_back({address, address + size, submit});
+            if (std::find(lantern_state.begin(), lantern_state.end(), std::pair<u64, u64>{address, address + size}) == lantern_state.end()) {
+                lantern_state.push_back({address, address + size});
+            }
         }
     }
     if (dump) {
@@ -655,10 +673,20 @@ void LanternNote(u64 hash, const Variant& v, const boost::container::small_vecto
             text += fmt::format(" | {:#x} b{} k{} s{}: binds {} written {} device {} gpu_written {} cpu_readable {} max {}B", key.first, key.second, s.kind, s.slot, s.binds,
                                 s.written, s.on_device, s.gpu_written, s.cpu_readable, s.size_max);
         }
+        for (const auto& [name, n] : lantern_readers) {
+            text += fmt::format(" || reader {}: {}", name, n);
+        }
         LOG_WARNING(Render_Vulkan, "lantern census: {} dispatches, {} dumped{}", lantern_dispatches, lantern_dumped, text);
     }
 }
 } // namespace
+/// Lantern census: a draw's buffer view reads the lantern shaders' particle state (called by the graphics side)
+void LanternDrawReadImpl(u64 address, u64 size, u64 vs_hash, u64 ps_hash, u32 stage, u32 slot) {
+    std::scoped_lock lock{lantern_mutex};
+    if (LanternStateHit(address, size)) {
+        ++lantern_readers[fmt::format("draw vs {:#x} ps {:#x} s{} slot {} reads {:#x}+{:#x} (state {:#x})", vs_hash, ps_hash, stage, slot, address, size, lantern_hit_base)];
+    }
+}
 void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_address) {
     if (Core::Vkb::FillReadersOn() || Core::Vkb::R3dTraceSize() != 0) {
         Core::Vkb::CensusTag((1ull << 63) | shader); // note 49 census: compute, the engine's shader id
@@ -1307,4 +1335,10 @@ nlohmann::json Report() {
             {"gpu_time", GpuTimeReport()}};
 }
 
+bool LanternCensusActive() {
+    return LanternCensusOn();
+}
+void LanternDrawRead(u64 address, u64 size, u64 vs_hash, u64 ps_hash, u32 stage, u32 slot) {
+    LanternDrawReadImpl(address, size, vs_hash, ps_hash, stage, slot);
+}
 } // namespace Core::Vkb::Compute
