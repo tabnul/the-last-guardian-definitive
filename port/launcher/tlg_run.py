@@ -414,6 +414,12 @@ def load_settings():
         if settings.get('vram_budget_mb') == 5000:
             settings['vram_budget_mb'] = DEFAULT_SETTINGS['vram_budget_mb']
         settings['budget_default_2026_11'] = True
+    # Once (2026-11-21): the old 'unlocked' (held at the display refresh, at most 120) becomes the
+    # stable 120 FPS mode; 'unlocked' is now the experimental mode without a limit, picked anew.
+    if not settings.get('frame_rate_2026_11'):
+        if settings.get('frame_rate') == 'unlocked':
+            settings['frame_rate'] = '120'
+        settings['frame_rate_2026_11'] = True
     # The in-game menu may have changed the mouse since: tlg.ini wins for those keys.
     ini = read_ini(user_dir() / 'tlg.ini')
     try:
@@ -1061,13 +1067,15 @@ def build_env(settings, extra=None):
     icon = window_icon()
     if icon:
         env.setdefault('TLG_WINDOW_ICON', str(icon))
-    # The present limiter never lets more frames through than the patched engine rate; unlocked
-    # flips as soon as a frame is ready (480 Hz vblank) up to the display refresh or the menu limit.
-    env['TLG_ENGINE_FPS'] = {'30': '30', '60': '60', '120': '120'}.get(applied_frame_rate, '240')
-    # 30/60: a 240 Hz vblank shows a late frame ~4 ms late instead of a whole 60 Hz vblank later
+    # The present limiter never lets more frames through than the patched engine rate. Unlocked
+    # (experimental, 2026-11-21) has no ceiling: engine rate 1000 and a 1000 Hz vblank, so only the
+    # menu limit or vsync holds it (the game rounds its frame time to 1/360 s, so above 120 FPS game
+    # time may run slow: not measured yet).
+    env['TLG_ENGINE_FPS'] = {'30': '30', '60': '60', '120': '120'}.get(applied_frame_rate, '1000')
+    # 30/60/120: a 240 Hz vblank shows a late frame ~4 ms late instead of a whole 60 Hz vblank later
     # (bench 2026-10-25: frames over 1.5x median 360 -> 13 in the garden); the limiter keeps the
     # flips at the engine rate (driver.cpp PresentThread).
-    env.setdefault('TLG_VBLANK_HZ', '0' if applied_frame_rate == 'unlocked' else '240')
+    env.setdefault('TLG_VBLANK_HZ', '1000' if applied_frame_rate == 'unlocked' else '240')
     # The game renders natively at the patched size: the upscaler stays off (vk_temporal_upscaler).
     if applied_resolution:
         env['TLG_RESOLUTION_PATCH'] = applied_resolution

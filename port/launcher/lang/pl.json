@@ -145,7 +145,7 @@
     "launcher.fps_30": "30 FPS (jak na PS4)",
     "launcher.deck_preset": "Steam Deck (eksperymentalne)",
     "launcher.fps_60": "60 FPS",
-    "launcher.fps_unlocked": "Odblokowane (do możliwości ekranu)",
+    "launcher.fps_unlocked": "Odblokowane (eksperymentalne, bez limitu)",
     "launcher.fps_hint": "Łatka 60/odblokowane dla eboot 1.03 w pamięci. Odblokowane obniża bazową liczbę klatek o około 10 FPS względem 60 w tym samym miejscu; wybierz 60, chyba że twój PC działa wyraźnie powyżej 60",
     "launcher.skip_logos": "Pomiń logo startowe",
     "launcher.horns_built": "Modele rogów zostały zbudowane na tym PC.",

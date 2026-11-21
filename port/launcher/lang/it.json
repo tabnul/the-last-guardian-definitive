@@ -145,7 +145,7 @@
     "launcher.fps_30": "30 FPS (come su PS4)",
     "launcher.deck_preset": "Steam Deck (sperimentale)",
     "launcher.fps_60": "60 FPS",
-    "launcher.fps_unlocked": "Sbloccato (fino allo schermo)",
+    "launcher.fps_unlocked": "Sbloccato (sperimentale, nessun limite)",
     "launcher.fps_hint": "60/sbloccato modificano in memoria l'eboot 1.03. Sbloccato abbassa il frame rate di base di circa 10 FPS rispetto a 60 nello stesso punto; scegli 60 a meno che il tuo PC non vada ben oltre i 60",
     "launcher.skip_logos": "Salta i loghi iniziali",
     "launcher.horns_built": "I modelli delle corna sono stati creati su questo PC.",
