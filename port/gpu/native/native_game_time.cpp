@@ -84,14 +84,51 @@ float Factor() {
 /// 1/360 s (the filter object at clock + 0xb0). The hook sits on the override's store (0x01d16670, VMOVSS [RDI + 0x19c], XMM0, where both branches meet) and puts
 /// the unsmoothed step back into XMM0 (and into the filter's copy, + 0x39c); the catch-up term after it then stays near zero. Measured: speed per frame
 /// sd 0.175 -> 0.121, frames off by > 20 % 23 -> 8 % (the step against the frames' screen time, owner capture).
-bool ContinuousStepOn() {
-    static const bool on = [] { const char* e = std::getenv("TLG_GAME_STEP"); return e != nullptr && std::string_view{e} == "raw"; }();
-    return on;
+/// TLG_GAME_STEP=raw: always the real frame time. =auto (the launcher's 120 mode): the game's own step while it holds its frame rate (the step is then an exact
+/// 3/360 s and the limiter paces the presents: steadier than the raw time's +-1 ms), the real frame time while it runs below (dips: the rounded step alternates 3
+/// and 4 units and the error term corrects in jumps). Below = the game's smoothed frame time (the filter, + 0x3a0) over 1.05 x the target (1 / TLG_ENGINE_FPS),
+/// back above at 1.02 x. Heaviest save at 4224x2376, 120 mode (~110 fps): frames whose motion is off by > 20 % 33.5 -> 10.0 % (raw, with the 1000 Hz tick).
+enum class StepMode { Game, Raw, Auto };
+StepMode Mode() {
+    static const StepMode mode = [] {
+        const char* e = std::getenv("TLG_GAME_STEP");
+        const std::string_view v = e != nullptr ? e : "";
+        return v == "raw" ? StepMode::Raw : v == "auto" ? StepMode::Auto : StepMode::Game;
+    }();
+    return mode;
 }
-std::atomic<u64> c_continuous{0};
+bool ContinuousStepOn() {
+    return Mode() != StepMode::Game;
+}
+float TargetFrameTime() {
+    static const float t = [] {
+        const char* e = std::getenv("TLG_ENGINE_FPS");
+        const int fps = e != nullptr ? std::atoi(e) : 0;
+        return fps > 0 ? 1.0f / static_cast<float>(fps) : 0.0f;
+    }();
+    return t;
+}
+std::atomic<u64> c_continuous{0}, c_auto_raw_frames{0}, c_auto_switches{0};
+bool auto_raw = false; // (the game's main thread only)
 u64 PS4_SYSV_ABI ContinuousStep(GuestHooks::MidContext* context) {
     if (!ContinuousStepOn()) {
         return 0;
+    }
+    if (Mode() == StepMode::Auto) {
+        const float target = TargetFrameTime();
+        float smooth = 0.0f;
+        if (context->rax != 0) {
+            std::memcpy(&smooth, reinterpret_cast<const void*>(context->rax + 0x3a0), sizeof(smooth));
+        }
+        const bool was = auto_raw;
+        auto_raw = target > 0.0f && (auto_raw ? smooth > target * 1.02f : smooth > target * 1.05f);
+        if (auto_raw != was) {
+            c_auto_switches.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (!auto_raw) {
+            return 0; // the game's step
+        }
+        c_auto_raw_frames.fetch_add(1, std::memory_order_relaxed);
     }
     float step;
     std::memcpy(&step, reinterpret_cast<const void*>(context->rdi + 0x19c), sizeof(step)); // (not yet overwritten: the hooked store writes it)
@@ -173,7 +210,8 @@ void Report() {
                                        {"factor_min", f(min_factor_bits.load())},
                                        {"factor_max", f(max_factor_bits.load())},
                                        {"unreadable_or_implausible_frame_time", fallbacks.load()},
-                                       {"continuous_step", {{"on", ContinuousStepOn()}, {"frames", c_continuous.load()}}},
+                                       {"continuous_step", {{"on", ContinuousStepOn()}, {"auto", Mode() == StepMode::Auto}, {"frames", c_continuous.load()},
+                                                            {"auto_raw_frames", c_auto_raw_frames.load()}, {"auto_switches", c_auto_switches.load()}}},
                                        {"note", "factor = raw frame time * 30; 1 at 30 fps, 0.25 at 120 fps"}});
 }
 

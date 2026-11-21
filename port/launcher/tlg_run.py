@@ -1073,6 +1073,10 @@ def build_env(settings, extra=None):
     env.setdefault('TLG_VBLANK_HZ', '1000' if applied_frame_rate == 'unlocked' else '240')
     if applied_frame_rate == 'unlocked':
         env.setdefault('TLG_GAME_STEP', 'raw')
+    elif applied_frame_rate == '120':
+        # 120 (2026-11-21): the game's own step while it holds 120, the real frame time while it runs below (TLG_GAME_STEP=auto); the 240 Hz
+        # tick stays (its slots match 120 exactly). Heaviest save, frames below 120: off by > 20 % 26.6 -> 11.7 %; at 120 the same.
+        env.setdefault('TLG_GAME_STEP', 'auto')
     # The game renders natively at the patched size: the upscaler stays off (vk_temporal_upscaler).
     if applied_resolution:
         env['TLG_RESOLUTION_PATCH'] = applied_resolution
