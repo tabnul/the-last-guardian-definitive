@@ -247,7 +247,7 @@ int tlggpu_quit_requested(void);
 void tlggpu_flush_cache(void);
 static ABI int32_t load_exec(const char *path,char *const *argv) {
     if (tlggpu_quit_requested()) {
-        /* The player asked to quit (Alt+Q, window close, quit combo): close
+        /* The player asked to quit (Ctrl+X, window close, quit combo): close
            instead of the restart the ending needs. */
         printf("Runtime: sceSystemServiceLoadExec after player quit -> closing\n");
         fflush(NULL);

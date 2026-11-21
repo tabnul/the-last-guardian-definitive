@@ -43,6 +43,12 @@ enum PadCombo : uint32_t {
     PadComboQuit = PadShare | PadOptions, PadComboMenu = PadR3 | PadL2, PadComboQa = PadL1 | PadL3,
     PadComboPhoto = PadL3 | PadR3,
 };
+/// Keyboard quit key (tlg.ini quit_key, "ctrl+x"): modifier bits, and the key as 'a'..'z',
+/// '0'..'9' or QuitKeyF1 + n (F1..F12); key 0 = off.
+enum QuitKey : uint32_t {
+    QuitModCtrl = 1u << 0, QuitModAlt = 1u << 1, QuitModShift = 1u << 2, QuitKeyF1 = 0x100,
+    QuitKeyDefaultMods = QuitModCtrl, QuitKeyDefaultKey = 'x',
+};
 
 struct Values {
     std::atomic<int> upscaler{UpscalerFsr3};
@@ -80,6 +86,9 @@ struct Values {
         boy_wind{100}, tree_wind{100}, fog_distance{100}, haze_fringe{0};
     /// Grass animated every frame (1, default) or every 4th frame as shipped (0); tlg_lua.cpp.
     std::atomic<int> grass_smooth{1};
+    /// Lite shadows (1) or as shipped (0): the closest of the sun's four shadow layers left out
+    /// (first split distance -1), as the game's own *_Lite cascade presets do; tlg_lua.cpp.
+    std::atomic<int> shadow_lite{0};
     /// Lab tab (menu, live; tuning tests): texture LOD bias under DLAA in quarter steps (-4 =
     /// -1.0, the DLSS guide value), anisotropic filtering forced on mipmapped textures (0 = the
     /// game's own), the half-resolution effect targets drawn at 2x (fog, particles, AO;
@@ -147,6 +156,28 @@ struct Values {
     /// tlg.ini trico_drool, env TLG_TRICO_DROOL wins): 0 = off as shipped, 1 = always,
     /// 2 = as the developers planned (only while he wants a smell pot or the boy's smell bottle).
     std::atomic<int> trico_drool{0};
+    /// Trico's coat (Fun tab, live; tlg.ini trico_fur): percent of the game's own fur and feather
+    /// length, 0..500, written into his FurTypes through Lua (tlg_lua.cpp Fur). 100 = as shipped.
+    std::atomic<int> trico_fur{100};
+    /// Button icons in the game's hints (issue #61; tlg.ini button_icons, env TLG_BUTTON_ICONS wins):
+    /// 0 = automatic (follows the controller used last), 1 = PlayStation (the game's own), 2 = Xbox.
+    /// See XboxIcons().
+    std::atomic<int> button_icons{0};
+    /// Hide the game's button hints (issue #84; tlg.ini hide_hints, env TLG_HIDE_HINTS wins): the
+    /// hint boxes are never shown, the game's tutorial logic runs on (tlg_lua.cpp HideHints). Live.
+    std::atomic<bool> hide_hints{false};
+    /// Not a setting: the controller used last is an Xbox-style one (runtime_pad.c, tlggpu_pad_kind).
+    std::atomic<bool> pad_is_xbox{false};
+    /// The hints show an Xbox pad: picture swapped in vk_texture_pack.cpp, glow moved in tlg_lua.cpp.
+    bool XboxIcons() const {
+        const int icons = button_icons.load();
+        return icons == 2 || (icons == 0 && pad_is_xbox.load());
+    }
+    /// Trico's moves bar (Trico Tricks tab and the F12 bar, in game only): the favourite moves
+    /// (tlg.ini trico_favourites, control command names, comma separated, at most 16; the menu
+    /// thread only) and the last group shown (trico_bar_group: 0 = favourites, then the groups).
+    std::string trico_favourites;
+    std::atomic<int> trico_bar_group{0};
     /// Mods > All treasures (tlg.ini mod_treasures, env TLG_MOD_TREASURES wins): owns every treasure
     /// and opens the Treasures menu. Written to the save: turning it off takes nothing back.
     std::atomic<bool> mod_treasures{false};
@@ -216,6 +247,17 @@ struct Values {
     /// QA menu of level_select (tlg_lua.cpp) and photo mode on/off (tlg_overlay.cpp). Defaults are the combos the port always used.
     std::atomic<uint32_t> combo_quit{PadComboQuit}, combo_menu{PadComboMenu}, combo_qa{PadComboQa},
         combo_photo{PadComboPhoto};
+    /// Keyboard quit (Controls tab + launcher Controller page, tlg.ini quit_key; tlg_overlay.cpp):
+    /// QuitKey modifier bits and key, key 0 = off. Default Ctrl+X (issue #86: the old fixed Alt+Q
+    /// clashed with the RTSS overlay key).
+    std::atomic<uint32_t> quit_key_mods{QuitKeyDefaultMods}, quit_key{QuitKeyDefaultKey};
+    /// Photo mode buttons (Controls tab + launcher Controller page, tlg.ini pad_photo_*): one
+    /// button each (PadCombo bit). Read by tlg_overlay.cpp, which hands the held state to the
+    /// photo camera tick (TlgFun::PhotoPad). photo_invert_y: pushing the right stick forward
+    /// looks down (default on, user 2026-11-16).
+    std::atomic<uint32_t> photo_shot{PadCross}, photo_up{PadR2}, photo_down{PadL2}, photo_fast{PadR1},
+        photo_slow{PadL1}, photo_help{PadUp}, photo_world{PadDown}, photo_sticks{PadLeft};
+    std::atomic<bool> photo_invert_y{true};
 
     /// Startup settings for the explicit TLG_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;
@@ -230,8 +272,16 @@ Values& Get();
 /// "share+options" (tlg.ini) <-> PadCombo bits; unknown names are skipped, an empty result keeps `fallback`.
 uint32_t ParseCombo(const std::string& text, uint32_t fallback);
 std::string ComboText(uint32_t bits);
-/// "Share + Options" for the menus.
+/// "Share + Options" for the menus; Xbox names ("View + Menu") while the game shows Xbox icons.
 std::string ComboLabel(uint32_t bits);
+/// "ctrl+x" / "alt+f4" / "off" (tlg.ini) <-> quit key; false (nothing changed) on unknown or not
+/// allowed text. Allowed: a letter or a number with Ctrl or Alt, or F1..F12 (F9/F10 only with a
+/// modifier: the port uses them alone). Same rule as the launcher (pad_page.py quit_key_allowed).
+bool ParseQuitKey(const std::string& text, uint32_t& mods, uint32_t& key);
+bool QuitKeyAllowed(uint32_t mods, uint32_t key);
+std::string QuitKeyText(uint32_t mods, uint32_t key);
+/// "Ctrl+X" for the menus, empty when off.
+std::string QuitKeyLabel(uint32_t mods, uint32_t key);
 
 /// Pack folders with an index.txt under TLG_TEXPACK_DIR (default "texpack"), sorted; read once.
 const std::vector<std::string>& TexturePackNames();
@@ -239,8 +289,10 @@ const std::vector<std::string>& TexturePackNames();
 std::string TexturePackDir(int index);
 
 /// Graphics presets: the look settings (Image tab, texture rows of the Lab tab) as one set.
-/// 0 = Stock (the game as shipped), 1 = Recommended (the defaults), then the files
-/// presets/<name>.ini next to tlg.ini, sorted. The launcher uses the same files.
+/// 0 = Stock (the game as shipped), 1 = Recommended (the defaults), 2 = Low-end PC (Stock with
+/// shadows at 50% distance and Lite shadows), then the files presets/<name>.ini next to tlg.ini, sorted. The
+/// launcher uses the same files.
+constexpr int BuiltInPresets = 3;
 std::vector<std::string> GraphicsPresetNames();
 /// Sets the preset's values (live; the caller saves tlg.ini).
 void ApplyGraphicsPreset(int index);
@@ -248,7 +300,7 @@ void ApplyGraphicsPreset(int index);
 int MatchingGraphicsPreset();
 /// Writes presets/<name>.ini from the current values; returns its index, or -1.
 int SaveGraphicsPreset(const std::string& name);
-/// Removes a saved preset (index 2 and up).
+/// Removes a saved preset (index BuiltInPresets and up).
 void DeleteGraphicsPreset(int index);
 
 /// Reads the file, then the environment overrides. Called once at start.

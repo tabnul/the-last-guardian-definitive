@@ -135,10 +135,16 @@ def scan_menu(port_dir):
         src = (port_dir / name).read_text(encoding='utf-8')
         for m in re.finditer(r'\bTR\(', src):
             args = _call_args(src, m.end()).strip()
-            ref = re.fullmatch(r'TlgFun::(\w+)(?:\[(\d+)\])?', args)
+            ref = re.fullmatch(r'TlgFun::(\w+)(?:\[(\w+)\])?', args)
             if ref:
                 value = constants[ref.group(1)]
-                texts = [value[int(ref.group(2))]] if ref.group(2) else [value]
+                index = ref.group(2)
+                if index is None:
+                    texts = [value]
+                elif index.isdigit():
+                    texts = [value[int(index)]]
+                else:
+                    texts = list(value)   # TR(TlgFun::Names[i]) in a loop: every entry
             elif _LITERAL.sub('', args).strip() == '' and _LITERAL.search(args):
                 texts = [''.join(_c_string(body) for body in _LITERAL.findall(args))]
             else:

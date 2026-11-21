@@ -60,11 +60,30 @@ class FrameRatePatchTests(unittest.TestCase):
         self.assertEqual(applied, '30')
         self.assertTrue(any(line.startswith('Frame rate: cannot read the SELF') for line in lines))
 
-    def test_plain_elf_with_another_hash_stays_at_30(self):
-        # Unchanged: a plain ELF is only patched when it is the checked 1.03 dump.
-        applied, lines, _ = self.prepare(plain_elf(text_with(t.MODES['60'])), '60')
+    def test_plain_elf_with_another_hash_gets_the_patches(self):
+        # #87: a US CUSA03627 1.03 dump (PS5 dump tool) has another sha256 than the EU dump but
+        # the same code; the expected bytes decide, not the file hash.
+        applied, lines, blob = self.prepare(plain_elf(text_with(t.MODES['60'])), '60')
+        self.assertEqual(applied, '60')
+        self.assertIn('Frame rate: 60 FPS mode, 5 patch writes', lines)
+        self.assertEqual(struct.unpack_from('<8sQQ', blob), (b'TLGPATCH', 0, 5))
+
+    def test_plain_elf_of_another_build_stays_at_30(self):
+        applied, lines, blob = self.prepare(plain_elf(text_with(t.MODES['60'], expected=False)), '60')
         self.assertEqual(applied, '30')
-        self.assertTrue(any('is not v1.03' in line for line in lines))
+        self.assertTrue(any('is not the 1.03 game code' in line for line in lines))
+        self.assertEqual(struct.unpack_from('<8sQQ', blob), (b'TLGPATCH', 0, 0))
+
+    def test_not_an_executable_stays_at_30(self):
+        applied, lines, _ = self.prepare(b'junk' * 100, 'unlocked')
+        self.assertEqual(applied, '30')
+        self.assertTrue(any('is not a game executable' in line for line in lines))
+
+    def test_fps_patches_fit(self):
+        every = sorted({name for names in t.MODES.values() for name in names})
+        self.assertTrue(t.fps_patches_fit(plain_elf(text_with(every))))
+        self.assertFalse(t.fps_patches_fit(plain_elf(text_with(every, expected=False))))
+        self.assertFalse(t.fps_patches_fit(None))
 
     def test_30_writes_an_empty_patch_file(self):
         applied, lines, blob = self.prepare(b'', '30')

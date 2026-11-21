@@ -99,11 +99,19 @@ MENU = [
     _menu('Effects', 'fog_distance', 'int', '100', 'Fog distance',
           'Where the fog starts and reaches full strength. Default 100% is as shipped; lower brings the fog closer.',
           lo=25, hi=400, unit='%'),
+    _menu('Effects', 'shadow_distance', 'int', '100', 'Shadow distance',
+          ('How far away objects still get sharp shadows. Default 100% is as shipped. 50% gives a few to 10% '
+           'more FPS on older CPUs and the Steam Deck; far shadows get softer, near ones stay the same.'),
+          lo=10, hi=100, unit='%'),
     _menu('Effects', 'haze_fringe', 'int', '0', 'Haze color fringe',
           ("The game's chromatic aberration on the light haze: yellow and blue edges around objects against fog, "
            'strongest toward the screen edges. Sharp anti-aliasing (DLAA, DLSS) makes it stand out more. '
            'Default 0% gives clean edges; 100% is as shipped.'),
           lo=0, hi=100, unit='%'),
+    _menu('Effects', 'shadow_lite', 'bool', '0', 'Lite shadows',
+          ("Leaves out the closest of the game's four shadow layers, as the game itself does in some areas. "
+           'A few % more FPS on older CPUs and the Steam Deck; shadows close to the camera get a little softer. '
+           'Off is as shipped.')),
     _menu('Effects', 'grass_smooth', 'bool', '1', 'Grass animated every frame',
           'The game moves most grass only every 4th frame. On (default) moves it every frame; off is as shipped.'),
     _menu('Effects', 'boy_wind', 'int', '100', 'Boy wind (hair + clothing)',
@@ -146,6 +154,9 @@ MENU = [
           "A feature the developers built and then switched off just before release: Trico drools. Always: a string of drool hangs from his beak the whole time. As the developers planned: it slowly grows while Trico smells something he wants, a smell-pot cart (s04_FirstAntenna and s10_Pit), and fades away when he loses interest (the boy's smell bottle was cut, so the carts are the only trigger). Stays on through jumps, new stages and extra Tricos, and is kept for the next start.",
           choices=(('0', 'Off (as released)'), ('1', 'Always'),
                    ('2', 'As the developers planned'))),
+    _menu('Fun', 'trico_fur', 'int', '100', 'Trico fur and feather density',
+          "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.",
+          lo=0, hi=500, unit='%'),
     # Mods (launcher Mods page, in-game Fun tab; tlg_lua.cpp Treasures / Horns). Same text as tlg_overlay.cpp.
     _menu('Fun', 'mod_treasures', 'bool', '0', 'All treasures',
           'Unlocks every treasure (outfits, Trico\'s feathers) and the Treasures entry in the options menu, '

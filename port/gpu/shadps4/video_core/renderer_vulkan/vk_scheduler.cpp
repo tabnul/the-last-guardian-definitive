@@ -29,9 +29,7 @@ std::mutex Scheduler::submit_mutex;
 
 Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
     : instance{instance}, work_semaphore{instance}, command_pool{instance, &work_semaphore} {
-    // tlg: TLG_VK_RECORD_THREAD=0 records on the calling thread.
-    const char* env = std::getenv("TLG_VK_RECORD_THREAD");
-    if (threaded_recording && !(env && env[0] == '0')) {
+    if (threaded_recording) {
         record_chunk = AcquireChunk();
         recorder_thread = std::jthread([this](std::stop_token st) { RecorderThread(st); });
         recording_threaded = true;
