@@ -1026,7 +1026,7 @@ void RunJob(Job& job) {
             MarkWork(cmd, job.work);
             t_rec->current_has_work = true;
             job.Run(cmd);
-            if (const u32 split = SplitJobs(); shared && split != 0 && ++t_rec->jobs_in_cmd >= split && !t_rec->query_open) {
+            if (const u32 split = SplitJobs(); shared && split != 0 && (t_rec->jobs_in_cmd += job.weight) >= split && !t_rec->query_open) {
                 (void)SubmitLocked(); // its records (none: the engine's fences go with the engine's submits) need nothing
                 c_splits.fetch_add(1, std::memory_order_relaxed);
             }
@@ -1111,9 +1111,10 @@ void AddToSubmission(std::unique_ptr<Job> job) {
         open_query = job->query > 0;
     }
     const bool counts = job->locked;
+    const u32 weight = job->weight;
     batch.push_back({job.release(), open_value});
     c_r4a_jobs.fetch_add(1, std::memory_order_relaxed);
-    if (const u32 split = SplitJobs(); counts && split != 0 && ++open_jobs >= split && !open_query) {
+    if (const u32 split = SplitJobs(); counts && split != 0 && (open_jobs += weight) >= split && !open_query) {
         (void)CloseSubmission();
         c_splits.fetch_add(1, std::memory_order_relaxed);
     } else if (batch.size() >= 32) {

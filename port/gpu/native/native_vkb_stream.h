@@ -51,6 +51,7 @@ struct Job {
     Work work{Work::Other};
     bool locked{true};
     s8 query{}; ///< R4a: +1 opens an occlusion query, -1 ends it (no submission is cut inside one)
+    u32 weight{1}; ///< G2: the jobs it stands for in the submission split (a batch: its draws)
     std::vector<Transition> transitions;
     std::atomic<Job*> queue_next{nullptr}; ///< note 60: the lock-free hand-over queue's link
 };

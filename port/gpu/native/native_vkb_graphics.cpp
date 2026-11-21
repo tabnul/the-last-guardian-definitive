@@ -915,7 +915,10 @@ void Compile(u64 ctx, u64 vs, u64 ps, u64 fetch_object, const VkbVulkan::FixedSt
                                                           vk::FormatFeatureFlagBits2::eColorAttachment);
     }
     if (record) { // R2: every resource of both stages through the global set, or no record twin
-        if (!RecordEligible(v.vs) || (v.has_ps && !RecordEligible(v.ps))) {
+        if (!v.attributes.empty()) {
+            c_rec_refused_by[7].fetch_add(1, std::memory_order_relaxed);
+        }
+        if (!v.attributes.empty() || !RecordEligible(v.vs) || (v.has_ps && !RecordEligible(v.ps))) {
             c_rec_refused.fetch_add(1, std::memory_order_relaxed);
             c_failed.fetch_add(1, std::memory_order_relaxed);
             return;
@@ -1727,6 +1730,19 @@ bool TimesOn() { static const bool on = [] { const char* e = std::getenv("TLG_VK
 bool BatchOn();
 bool JoinBatch(DrawJob& job);
 thread_local u64 t_join_dsv = 0, t_join_rtv0 = 0; ///< R7 step C: the engine views of the draw joining (set by Record)
+thread_local u64 t_join_rtvs = 0; ///< G2: all colour targets of the draw joining
+/// G2 (TLG_VKB_RECORD_ALL=1, with TLG_VKB_RECORD=1): record mode, batches and the lean path for the indexed draws of every pass, not only the shadow cascades
+bool RecordAll() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RECORD_ALL"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+inline u64 RtvHash(u64 ctx) {
+    u64 h = 0xcbf29ce484222325ull ^ Rd<u32>(ctx, CtxRenderTargetCount);
+    for (u32 i = 0; i < 8; ++i) {
+        h = (h ^ Rd<u64>(ctx, CtxRenderTargets + i * 8)) * 0x100000001b3ull;
+    }
+    return h;
+}
 void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u64 a1, u64 a2, u64 a3) {
     if (Core::Vkb::FillReadersOn() || Core::Vkb::R3dTraceSize() != 0) {
         Core::Vkb::CensusTag((v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0x10000000000ull) | (v.vs.info ? u64{v.vs.info->pgm_hash} << 32 : 0)); // note 49 census: a draw, its pixel shader (debug R3d trace: vertex shader above)
@@ -2275,7 +2291,7 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         }
     }
     job->work = Stream::Work::Draw;
-    t_join_dsv = Rd<u64>(ctx, CtxDepthStencilView), t_join_rtv0 = Rd<u64>(ctx, CtxRenderTargets);
+    t_join_dsv = Rd<u64>(ctx, CtxDepthStencilView), t_join_rtv0 = Rd<u64>(ctx, CtxRenderTargets), t_join_rtvs = RtvHash(ctx);
     if (job->record && BatchOn() && JoinBatch(*job)) { // R3b
         phase(3);
         c_recorded.fetch_add(1, std::memory_order_relaxed);
@@ -2537,6 +2553,7 @@ thread_local u32 t_flush_reason = 0;
 struct BatchJob final : Stream::Job {
     Stream::Pass pass{};
     u64 engine_dsv{}, engine_rtv0{}; ///< R7 step C: the engine views the pass was made from
+    u64 engine_rtvs{}; ///< G2: all its colour targets
     u64 serial{};
     boost::container::small_vector<Stream::Use, 9> attachment_uses;
     std::vector<Stream::Use> uses;
@@ -2593,7 +2610,7 @@ struct BatchJob final : Stream::Job {
 thread_local BatchJob* t_batch = nullptr; ///< R7 step D: a plain pointer (owned; enqueued at the flush)
 bool BatchMatches(u64 ctx) {
     return t_batch && !t_batch->draws.empty() && t_batch->engine_dsv == Rd<u64>(ctx, CtxDepthStencilView) && t_batch->engine_rtv0 == Rd<u64>(ctx, CtxRenderTargets) &&
-           t_batch->engine_dsv != 0;
+           t_batch->engine_dsv != 0 && (!RecordAll() || t_batch->engine_rtvs == RtvHash(ctx));
 }
 u64 CurrentBatchSerial() {
     return t_batch ? t_batch->serial : 0;
@@ -2848,8 +2865,18 @@ bool FastIndex(u64 view, u64 index_range, Core::Vkb::BufferWindow& w, boost::con
     }
     return true;
 }
+void FlushBatchHere();
+/// G2: a batch is cut after this many draws (TLG_VKB_BATCH_MAX, default 128; 0 = only at the pass's end) so the recording thread starts on a pass while the engine still
+/// draws it: a whole pass in one batch reaches the GPU late, and the engine waits for the GPU after every dispatch (note 33)
+inline void BatchCutIfFull() {
+    static const u32 max = [] { const char* e = std::getenv("TLG_VKB_BATCH_MAX"); return e != nullptr ? static_cast<u32>(std::strtoul(e, nullptr, 10)) : 128u; }();
+    if (max != 0 && t_batch != nullptr && t_batch->draws.size() >= max) {
+        t_flush_reason = 1;
+        FlushBatchHere();
+    }
+}
 bool LeanAppend(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u64 a1, u64 a2, u64 a3) {
-    if (!BatchMatches(ctx) || v.key.num_color_attachments != 0 || Core::Vkb::Aa::On() || (kind != 0 && kind != 2)) {
+    if (!BatchMatches(ctx) || (v.key.num_color_attachments != 0 && !RecordAll()) || Core::Vkb::Aa::On() || (kind != 0 && kind != 2)) {
         return false;
     }
     const u64 serial = t_batch->serial;
@@ -2993,6 +3020,7 @@ bool LeanAppend(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kin
     t_batch->uses.insert(t_batch->uses.end(), uses.begin(), uses.end());
     t_batch->draws.push_back(d);
     c_lean.fetch_add(1, std::memory_order_relaxed);
+    BatchCutIfFull();
     return true;
 }
 thread_local bool t_batch_flushing = false;
@@ -3012,6 +3040,7 @@ void FlushBatchHere() {
     c_flush_by[std::min<u32>(t_flush_reason, 2)].fetch_add(1, std::memory_order_relaxed);
     t_flush_reason = 0;
     t_batch->work = Stream::Work::Draw;
+    t_batch->weight = static_cast<u32>(std::max<size_t>(t_batch->draws.size(), 1)); // G2: a batch counts as its draws in the submission split
     std::unique_ptr<Stream::Job> job{t_batch};
     t_batch = nullptr;
     Stream::EnqueueNoHook(std::move(job));
@@ -3041,7 +3070,7 @@ bool JoinBatch(DrawJob& job) {
         static std::atomic<u64> serials{1};
         t_batch = new BatchJob;
         t_batch->serial = serials.fetch_add(1, std::memory_order_relaxed);
-        t_batch->engine_dsv = t_join_dsv, t_batch->engine_rtv0 = t_join_rtv0;
+        t_batch->engine_dsv = t_join_dsv, t_batch->engine_rtv0 = t_join_rtv0, t_batch->engine_rtvs = t_join_rtvs;
         t_batch->pass = job.pass;
         t_batch->attachment_uses = job.attachment_uses;
         t_batch->draws.reserve(1024);
@@ -3646,7 +3675,7 @@ void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
     // the variant key read (state objects and their ids, shaders, input layout, targets, viewport, blend factor, stencil reference, topology, the objects in the
     // shader slots the stages use); a hit is the slow path's answer by construction (TLG_VKB_R7_VERIFY=1 checks it)
     t_pipe_pending = false;
-    if (t_depth_pass && RecordOn() && (kind == 0 || kind == 2) && BatchMatches(ctx) && Ready()) {
+    if ((t_depth_pass || RecordAll()) && RecordOn() && (kind == 0 || kind == 2) && BatchMatches(ctx) && Ready()) {
         static const bool lean_times = [] { const char* e = std::getenv("TLG_VKB_LEAN_TIMES"); return e != nullptr && e[0] == '1'; }();
         const u64 lt0 = lean_times ? NowNs() : 0;
         struct LeanTimer {
@@ -3741,7 +3770,7 @@ void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
         (void)sized;
         Core::NativeZPassGen::R7Check(ctx, kind, a1, a2, it->second.get(), fixed);
     }
-    if (t_depth_pass && RecordOn() && (kind == 0 || kind == 2) && Core::Vkb::Indexed::On()) { // R2 / R3: the cascades' indexed draws through their record-mode twin when it exists
+    if ((t_depth_pass || RecordAll()) && RecordOn() && (kind == 0 || kind == 2) && Core::Vkb::Indexed::On()) { // R2 / R3: the cascades' indexed draws through their record-mode twin when it exists
         auto [rit, rfresh] = record_variants.try_emplace(key);
         if (rfresh) {
             rit->second = std::make_unique<Variant>();
