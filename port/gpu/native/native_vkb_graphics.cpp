@@ -133,7 +133,7 @@ thread_local std::array<u64, 24> t_pipe_words16{}; ///< R7 step D: the key of a 
 thread_local u64 t_pipe_hash = 0;
 thread_local bool t_pipe_pending = false; ///< R3: the record-mode draw could not build its row (it is drawn the plain way)
 bool RecordOn() {
-    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RECORD"); return e != nullptr && e[0] == '1'; }();
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RECORD"); return e == nullptr || e[0] != '0'; }();
     return on;
 }
 const VkbVulkan::Instance* instance = nullptr;
@@ -1822,9 +1822,9 @@ bool BatchOn();
 bool JoinBatch(DrawJob& job);
 thread_local u64 t_join_dsv = 0, t_join_rtv0 = 0; ///< R7 step C: the engine views of the draw joining (set by Record)
 thread_local u64 t_join_rtvs = 0; ///< G2: all colour targets of the draw joining
-/// G2 (TLG_VKB_RECORD_ALL=1, with TLG_VKB_RECORD=1): record mode, batches and the lean path for the indexed draws of every pass, not only the shadow cascades
+/// G2 (TLG_VKB_RECORD_ALL, with TLG_VKB_RECORD; both default on since 2026-11-21, =0 off): record mode, batches and the lean path for the indexed draws of every pass, not only the shadow cascades
 bool RecordAll() {
-    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RECORD_ALL"); return e != nullptr && e[0] == '1'; }();
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RECORD_ALL"); return e == nullptr || e[0] != '0'; }();
     return on;
 }
 inline u64 RtvHash(u64 ctx) {
@@ -2775,7 +2775,7 @@ u64 CurrentBatchSerial() {
 /// object is deleted, and our answer for an id (its device buffer and window, its view, its sampler, their global-set slots) changes only when that object is deleted;
 /// so an entry checked by (id, object pointer, the memory word it was made from) holds for the object's life, without the global memo epochs (which bump ~1.5 times a
 /// frame). Only device answers are kept (ring windows move every submission: by arithmetic per draw). Hazards once per object per batch; no shared counters per draw.
-/// Switches: TLG_VKB_FAST_ROW=1 (off by default), TLG_VKB_FAST_ROW_VERIFY=1 (both rows made, the old one drawn, differences counted).
+/// Switches: TLG_VKB_FAST_ROW (default on since 2026-11-21, =0 off), TLG_VKB_FAST_ROW_VERIFY=1 (both rows made, the old one drawn, differences counted).
 struct FastBuf {
     u64 id{}, object{}, buffer{}, memory{};
     vk::Buffer vk_buffer{};
@@ -2814,7 +2814,7 @@ inline u32 FastHash(u64 id, u64 extra = 0) {
     return static_cast<u32>(((id ^ (extra * 0x9e3779b97f4a7c15ull)) * 0xff51afd7ed558ccdull) >> 40);
 }
 bool FastRowOn() {
-    static const bool on = [] { const char* e = std::getenv("TLG_VKB_FAST_ROW"); return e != nullptr && e[0] == '1'; }();
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_FAST_ROW"); return e == nullptr || e[0] != '0'; }();
     return on;
 }
 bool FastRowVerify() {

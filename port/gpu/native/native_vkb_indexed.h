@@ -4,7 +4,7 @@
 // (the layout the recompiler's indexed mode declares, shader_recompiler/resource.h Indexed). A slot stands for one of our Vulkan objects: a whole buffer (a read-only guest
 // buffer's offset and size are in the row), an image view of an array key, a sampler. Slots are made at first use and written at once (update after bind, unused while pending);
 // a slot is freed when its object is destroyed, which happens only after the GPU is done with every submission that could name it.
-// Switch: TLG_VKB_RECORD=1 (off by default).
+// Switch: TLG_VKB_RECORD (default on since 2026-11-21; =0 off).
 #pragma once
 
 #include <nlohmann/json_fwd.hpp>

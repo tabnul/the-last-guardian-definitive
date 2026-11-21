@@ -64,7 +64,7 @@ inline MemoEntry& MemoFor(u32 kind, u64 handle, u32 key) {
 std::atomic<u64> c_memo_hits{0};
 
 bool Requested() {
-    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RECORD"); return e != nullptr && e[0] == '1'; }();
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RECORD"); return e == nullptr || e[0] != '0'; }();
     return on;
 }
 

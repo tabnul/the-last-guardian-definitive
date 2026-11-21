@@ -11294,7 +11294,7 @@ u64 RunZPassHook(u64 render_device, u64 desc, u64 a2, u64 a3, u64 a4, u64 a5) {
     if (NativeZPassGen::Enabled()) {
         static const u64 loop_entry = Core::GuestHooks::OriginalEntry("DrawZPass");
         // R7 step A: the generator's cascade passes in record mode too (its draws reach our handler directly), batched per pass
-        static const bool record_mode_gen = [] { const char* e = std::getenv("TLG_VKB_RECORD"); return e != nullptr && e[0] == '1'; }();
+        static const bool record_mode_gen = [] { const char* e = std::getenv("TLG_VKB_RECORD"); return e == nullptr || e[0] != '0'; }();
         const u32 gen_view = static_cast<u32>(Rd<u64>(desc, 8));
         const bool mark = record_mode_gen && (gen_view == 1 || gen_view == 2);
         if (mark) {
@@ -11322,7 +11322,7 @@ u64 RunZPassHook(u64 render_device, u64 desc, u64 a2, u64 a3, u64 a4, u64 a5) {
             return 0x8000000000000000ull;
         }
     }
-    static const bool record_mode = [] { const char* e = std::getenv("TLG_VKB_RECORD"); return e != nullptr && e[0] == '1'; }(); // scene on the GPU R3: the cascades
+    static const bool record_mode = [] { const char* e = std::getenv("TLG_VKB_RECORD"); return e == nullptr || e[0] != '0'; }(); // scene on the GPU R3: the cascades
     if (static const bool depth_census = [] { const char* e = std::getenv("TLG_VKB_DEPTH_CENSUS"); return e != nullptr && e[0] == '1'; }(); depth_census || record_mode || NativeZPassGen::R7CensusOn()) {
         const u32 view = static_cast<u32>(Rd<u64>(desc, 8));
         if (static const u64 original = Core::GuestHooks::OriginalEntry("DrawZPass"); (view == 1 || view == 2) && original != 0) { // note 109 census

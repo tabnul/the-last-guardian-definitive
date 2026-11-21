@@ -1,17 +1,14 @@
 # Batched draws (record mode): the per-draw CPU path rebuilt
 
-Status: built, **off by default**, measured on the heaviest save (2026-11-21). Owner play pending.
-
-```
-TLG_VKB_RECORD=1  TLG_VKB_RECORD_ALL=1  TLG_VKB_FAST_ROW=1
-```
+Status: **default on since 2026-11-21** (owner play OK on the heaviest save). Each part can be turned off: `TLG_VKB_RECORD=0` (all of it), `TLG_VKB_RECORD_ALL=0`
+(shadow cascades only), `TLG_VKB_FAST_ROW=0` (rows by the old lookups).
 
 Heaviest save, 4K, headless, AA / FG off, uncapped (`TLG_FPS=unlocked`, `TLG_FPS_LIMIT=0`), one round of 5 readings:
 
 | | fps (median) | readings | render thread busy |
 |---|---|---|---|
 | base | 83.7 | 79-95 | 98 % |
-| the three switches | **102.2** | 98-103 | 89 % |
+| batched draws (now the default) | **102.2** | 98-103 | 89 % |
 
 ## Why
 
