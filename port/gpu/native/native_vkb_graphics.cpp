@@ -61,6 +61,8 @@
 #include "native/vkb_core/sampler.h"
 
 
+extern "C" int runtime_memory_read_backing(uintptr_t address, void* data, uint64_t size);
+
 namespace Core::Vkb::Graphics {
 
 namespace {
@@ -2978,6 +2980,169 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
 
 } // namespace
 
+
+/// GPU-driven research census (debug, TLG_VKB_GD_CENSUS=1, every draw): (1) could the draw's shaders take resources from a GPU-written row (the record-mode rules),
+/// by the first reason they cannot; (2) what its resources are (constant buffers in the frame ring / copied at the draw, views, samplers, fixed-function vertex
+/// input); (3) do the engine object fields a GPU translation would read still hold at the next graphics submit (when the GPU starts), and do the bytes of constant
+/// buffers that are copied at the draw.
+bool GdCensusOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_GD_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+u32 GdWhy(const Stage& st) {
+    using BT = VkbShader::BufferType;
+    for (const auto& b : st.info->buffers) {
+        if (b.buffer_type == BT::Flatbuf) return 0;
+        if (b.buffer_type == BT::BdaPagetable || b.buffer_type == BT::FaultBuffer) return 3;
+        if (!VkbShader::Indexed::IsIndexedBufferType(b.buffer_type)) return 2;
+        if (b.buffer_type == BT::Guest && b.is_written) return 1;
+        if (b.buffer_type == BT::SharedMemory) return 7;
+    }
+    for (const auto& image : st.info->images) {
+        if (!VkbShader::Indexed::IsIndexedImage(image) || image.mip_fallback_mode == VkbShader::MipStorageFallbackMode::DynamicIndex) return 4;
+    }
+    return 8;
+}
+std::atomic<u64> gd_draws{0}, gd_why[9]{}, gd_depth_n{0}, gd_depth_ok{0}, gd_kind_n[3]{}, gd_kind_ok[3]{}, gd_attr{0}, gd_attr_ok{0}, gd_cb_ring{0}, gd_cb_copy{0},
+    gd_cb_other{0}, gd_res{0}, gd_samplers{0}, gd_special{0}, gd_progconst{0}, gd_unmapped{0}, gd_snap_n{0}, gd_snap_changed{0}, gd_cb_hash_n{0}, gd_cb_hash_changed{0},
+    gd_checks{0}, gd_variants{0};
+std::mutex gd_mutex;
+std::unordered_map<const void*, u32> gd_variant_why;
+struct GdSnap {
+    u64 object, word, address;
+    u32 size;
+    u64 hash;
+};
+thread_local std::vector<GdSnap> t_gd_snaps;
+thread_local u64 t_gd_submit = 0;
+u64 GdWord(u32 kind, u64 object) {
+    if (kind == 3) {
+        return Rd<u64>(object, 0x60) ^ (u64{Rd<u32>(object, 0x180)} << 40);
+    }
+    const u64 r = Rd<u64>(object, 0x30);
+    return r ^ (u64{Rd<u32>(object, 0x44)} << 56) ^ (r != 0 && IsHeapPointer(r) ? Rd<u64>(r, 0x30) * 0x9e3779b97f4a7c15ull : 0);
+}
+u64 GdHash(u64 address, u32 size) {
+    std::array<u8, 256> bytes{};
+    const u32 n = std::min<u32>(size, 256);
+    if (!runtime_memory_read_backing(address, bytes.data(), n)) {
+        return 0;
+    }
+    u64 h = 0xcbf29ce484222325ull;
+    for (u32 i = 0; i < n; ++i) {
+        h = (h ^ bytes[i]) * 0x100000001b3ull;
+    }
+    return h;
+}
+void GdSources(u64 ctx, const Stage& st) {
+    for (const auto* list : {&st.buffers, &st.images, &st.samplers}) {
+        for (const Source& src : *list) {
+            if (src.cls == Source::Class::Special) {
+                gd_special.fetch_add(1, std::memory_order_relaxed);
+                continue;
+            }
+            if (src.cls == Source::Class::ProgramConstant) {
+                gd_progconst.fetch_add(1, std::memory_order_relaxed);
+                continue;
+            }
+            if (src.cls == Source::Class::Unmapped) {
+                gd_unmapped.fetch_add(1, std::memory_order_relaxed);
+                continue;
+            }
+            if (src.kind == 2) {
+                gd_samplers.fetch_add(1, std::memory_order_relaxed);
+                continue;
+            }
+            const u64 object = SlotObject(ctx, st.index, src.kind, src.slot);
+            if (object == 0) {
+                continue;
+            }
+            GdSnap s{object, GdWord(src.kind == 3 ? 3 : 1, object), 0, 0, 0};
+            if (src.kind == 3) {
+                const u64 address = static_cast<u64>(Rd<u32>(object, 0x60)) | static_cast<u64>(Rd<u32>(object, 0x64) & 0xffu) << 32;
+                const u32 size = Rd<u32>(object, 0x180);
+                Core::Vkb::BufferWindow w;
+                if (address == 0 || size == 0) {
+                    gd_cb_other.fetch_add(1, std::memory_order_relaxed);
+                } else if (Core::Vkb::ConstantInRing(address, size, w)) {
+                    gd_cb_ring.fetch_add(1, std::memory_order_relaxed);
+                } else {
+                    gd_cb_copy.fetch_add(1, std::memory_order_relaxed);
+                    s.address = address, s.size = size, s.hash = GdHash(address, size);
+                }
+            } else {
+                gd_res.fetch_add(1, std::memory_order_relaxed);
+            }
+            if (t_gd_snaps.size() < 65536) {
+                t_gd_snaps.push_back(s);
+            }
+        }
+    }
+}
+void GdCensus(u64 ctx, const Variant& v, u32 kind) {
+    const u64 submit = Core::Vkb::GraphicsSubmits();
+    if (submit != t_gd_submit) { // the GPU has started the work these draws went with: do the objects still say the same?
+        for (const GdSnap& s : t_gd_snaps) {
+            gd_snap_n.fetch_add(1, std::memory_order_relaxed);
+            if (GdWord(s.address != 0 ? 3 : 1, s.object) != s.word) {
+                gd_snap_changed.fetch_add(1, std::memory_order_relaxed);
+            }
+            if (s.address != 0) {
+                gd_cb_hash_n.fetch_add(1, std::memory_order_relaxed);
+                if (GdHash(s.address, s.size) != s.hash) {
+                    gd_cb_hash_changed.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+        }
+        gd_checks.fetch_add(1, std::memory_order_relaxed);
+        t_gd_snaps.clear();
+        t_gd_submit = submit;
+    }
+    u32 why = 8;
+    {
+        std::scoped_lock lock{gd_mutex};
+        auto [it, fresh] = gd_variant_why.try_emplace(&v, 8u);
+        if (fresh) {
+            gd_variants.fetch_add(1, std::memory_order_relaxed);
+            it->second = GdWhy(v.vs);
+            if (it->second == 8 && v.has_ps) {
+                it->second = GdWhy(v.ps);
+            }
+        }
+        why = it->second;
+    }
+    const bool ok = why == 8;
+    gd_draws.fetch_add(1, std::memory_order_relaxed);
+    gd_why[why].fetch_add(1, std::memory_order_relaxed);
+    gd_kind_n[std::min<u32>(kind, 2)].fetch_add(1, std::memory_order_relaxed);
+    gd_kind_ok[std::min<u32>(kind, 2)].fetch_add(ok ? 1 : 0, std::memory_order_relaxed);
+    if (t_depth_pass) {
+        gd_depth_n.fetch_add(1, std::memory_order_relaxed);
+        gd_depth_ok.fetch_add(ok ? 1 : 0, std::memory_order_relaxed);
+    }
+    if (!v.attributes.empty()) {
+        gd_attr.fetch_add(1, std::memory_order_relaxed);
+        gd_attr_ok.fetch_add(ok ? 1 : 0, std::memory_order_relaxed);
+    }
+    GdSources(ctx, v.vs);
+    if (v.has_ps) {
+        GdSources(ctx, v.ps);
+    }
+}
+nlohmann::json GdReport() {
+    nlohmann::json by = nlohmann::json::object();
+    for (u32 i = 0; i < 8; ++i) {
+        by[RecRefusedNames[i]] = gd_why[i].load();
+    }
+    by["eligible"] = gd_why[8].load();
+    return {{"draws", gd_draws.load()}, {"variants", gd_variants.load()}, {"by_why", by},
+            {"depth_pass_n_ok", {gd_depth_n.load(), gd_depth_ok.load()}},
+            {"kind_n_ok", {gd_kind_n[0].load(), gd_kind_ok[0].load(), gd_kind_n[1].load(), gd_kind_ok[1].load(), gd_kind_n[2].load(), gd_kind_ok[2].load()}},
+            {"vertex_attributes_n_ok", {gd_attr.load(), gd_attr_ok.load()}}, {"cb_ring_copy_other", {gd_cb_ring.load(), gd_cb_copy.load(), gd_cb_other.load()}},
+            {"resources_samplers_special_progconst_unmapped", {gd_res.load(), gd_samplers.load(), gd_special.load(), gd_progconst.load(), gd_unmapped.load()}},
+            {"object_words_checked_changed", {gd_snap_n.load(), gd_snap_changed.load()}},
+            {"copied_cb_bytes_checked_changed", {gd_cb_hash_n.load(), gd_cb_hash_changed.load()}}, {"submit_checks", gd_checks.load()}};
+}
 void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3);
 /// R7 step B: the generator's hint and the per-thread pipeline cache of record-mode draws. Its key holds every context word the fixed state and the variant key read
 /// in a cascade pass (shaders, input layout, state objects, depth target, viewport, the batch's views, the material and its render object), so a hit is exactly the slow
@@ -3165,6 +3330,9 @@ void DrawImpl(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
         c_skip_not_compiled.fetch_add(1, std::memory_order_relaxed);
         return;
     }
+    if (GdCensusOn()) {
+        GdCensus(ctx, *it->second, kind);
+    }
     if (t_depth_pass && Core::NativeZPassGen::R7CensusOn()) { // R7 research census: the prediction of this draw, and our pipeline for it
         static const bool sized = [] { Core::NativeZPassGen::R7SetFixedBytes(sizeof(VkbVulkan::FixedState)); return true; }();
         (void)sized;
@@ -3224,6 +3392,7 @@ nlohmann::json Report() {
                               {"samplers", {c_src[stage][2][0].load(), c_src[stage][2][1].load()}}};
     };
     return {{"draws", draws},
+            {"gd_census", GdReport()},
             {"record", {{"compiled", c_rec_compiled.load()}, {"refused", c_rec_refused.load()}, {"refused_by", [] {
                              nlohmann::json j = nlohmann::json::object();
                              for (u32 i = 0; i < RecRefusedNames.size(); ++i) {
