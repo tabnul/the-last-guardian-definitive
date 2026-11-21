@@ -28,6 +28,17 @@ enum class EngineCall : u32 { ClearRtv, ClearDsv, CopyTexture, TargetEliminate, 
 void NoteEngineCallSkipped(EngineCall call);
 [[nodiscard]] nlohmann::json EngineCallsSkipped();
 
+/// Developer dumps (issue 36, log cause C): one-time notes and value dumps that print state for the developer at warning or error level (the scene slot groups'
+/// memory, the bindings of each new compute shader, staging read values, copies into staging textures, BeginRecording's device fields, the first AABB read check).
+/// None of them reports a skipped, failed or missing step. Under the new engine they are a test tool, off by default: `TLG_VKB_DEV_LOG=1` writes them again, at info level (to see info lines: `TLG_GPU_LOG=info` for the engine log, `TLG_LOG=CP:info` for the BeginRecording and AABB lines).
+/// With the new engine off they are written, at info level and only when those filters allow it. Read once. What each dump is about is counted always (one counter per kind, `vkb.dev_log` in the stats).
+namespace DevLog {
+[[nodiscard]] bool On();
+enum class Kind : u32 { SceneSlotGroupMemory, ComputeShaderBindings, StagingRead, CopyIntoStagingTexture, BeginRecordingDevice, AabbReadCheckGuardOn, AabbReadCheckGuardOff, Count };
+void Count(Kind kind);
+[[nodiscard]] nlohmann::json Report();
+} // namespace DevLog
+
 /// Queue numbers: 0 the graphics queue, otherwise the Gnm virtual queue id of a compute queue (1..64, the value sceGnmMapComputeQueue returned)
 constexpr u32 GraphicsQueue = 0;
 
@@ -70,6 +81,8 @@ bool FrameRingInPlace(u64& buffer_handle, u64& begin, u64& end);
 /// R3a (TLG_VKB_RING_VRAM, default on; =0 off): the engine's frame allocator ring (`JsDevice_AllocFrameGarlic`, VolatileGarlic: CPU write only, as Garlic on the console) is moved into
 /// device-local, CPU-visible memory of our own (resizable BAR): the allocator's base (`allocator + 0x18`) points at our mapping, so every frame block is GPU memory the
 /// engine writes directly; nothing is staged or read over the bus. Once, at the first allocation (blocks handed out before stay where they are). False when off or not possible.
+/// The mapping must be below 40 bits (the engine's buffer descriptions): with VK_EXT_map_memory_placed (Linux, TLG_VKB_RING_PLACED, default on) it is placed in the runtime's
+/// low memory; else the driver's own address is used and the ring stays in place when that is above 40 bits.
 bool PlaceFrameRing(u64 allocator);
 /// R3a: once the frame ring is in device memory, its old window in guest memory (host memory the CPU reads at full speed) for our own ring redirects (slot, skin,
 /// light): the game reads what they copy back on the CPU, so it stays there. False before or without the move.

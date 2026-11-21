@@ -27,6 +27,10 @@
 #include <sys/stat.h>
 #ifdef _WIN32
 #include <windows.h> /* VKB: VirtualQuery (auto start) */
+#else
+#include <sys/uio.h> /* VKB: process_vm_readv (auto start, Linux) */
+#include <unistd.h>
+#include <errno.h>
 #endif
 
 #define ERR_INVALID_ARG ((int32_t)0x80920001)
@@ -191,6 +195,11 @@ static SDL_Gamepad *current_gamepad(void) {
         if (gamepads[i] && gamepads[i]!=gamepad && gamepad_allowed(gamepads[i]) && (!gamepad || gamepad_active(gamepads[i]))) {
             if (gamepad) printf("Runtime: gamepad in use: %s\n",SDL_GetGamepadName(gamepads[i]));
             gamepad=gamepads[i];
+            /* Button icons: Automatic (issue #61). Xbox pads and unknown ones (Xbox layout on a
+             * PC, as on the launcher's Controller page) get the Xbox hint picture. */
+            const SDL_GamepadType type=SDL_GetGamepadType(gamepad);
+            tlggpu_pad_kind(type==SDL_GAMEPAD_TYPE_XBOX360 || type==SDL_GAMEPAD_TYPE_XBOXONE ||
+                            type==SDL_GAMEPAD_TYPE_STANDARD || type==SDL_GAMEPAD_TYPE_UNKNOWN);
             break;
         }
     return gamepad;
@@ -203,7 +212,8 @@ static SDL_Gamepad *current_gamepad(void) {
  * map also takes the mouse: Mouse Left/Middle/Right/X1/X2, Wheel Up/Down/Left/Right.
  * touchpad_left (alias touchpad) and touchpad_right are the two sides of the touchpad click:
  * photo mode and the pause menu. Back/View (Share on a DualSense) is the right click, and with
- * L1 held the left one. Sticks, triggers, the real touchpad click and the overlay shortcuts are
+ * L1 held the left one; misc1 (Share on Xbox Series pads, Mute on a DualSense) is the left one too.
+ * Sticks, triggers, the real touchpad click and the overlay shortcuts are
  * not remapped. */
 static const struct { const char *name; uint32_t ps; } ps_names[]={
     {"cross",BTN_CROSS}, {"circle",BTN_CIRCLE}, {"square",BTN_SQUARE}, {"triangle",BTN_TRIANGLE},
@@ -227,11 +237,11 @@ static ButtonMap pad_map={{
     {SDL_GAMEPAD_BUTTON_WEST,BTN_SQUARE}, {SDL_GAMEPAD_BUTTON_NORTH,BTN_TRIANGLE},
     {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,BTN_L1}, {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,BTN_R1},
     {SDL_GAMEPAD_BUTTON_LEFT_STICK,BTN_L3}, {SDL_GAMEPAD_BUTTON_RIGHT_STICK,BTN_R3},
-    {SDL_GAMEPAD_BUTTON_START,BTN_OPTIONS}, {SDL_GAMEPAD_BUTTON_BACK,CLICK_RIGHT},
+    {SDL_GAMEPAD_BUTTON_START,BTN_OPTIONS}, {SDL_GAMEPAD_BUTTON_MISC1,CLICK_LEFT}, {SDL_GAMEPAD_BUTTON_BACK,CLICK_RIGHT},
     {SDL_GAMEPAD_BUTTON_TOUCHPAD,BTN_TOUCHPAD},
     {SDL_GAMEPAD_BUTTON_DPAD_UP,BTN_UP}, {SDL_GAMEPAD_BUTTON_DPAD_DOWN,BTN_DOWN},
     {SDL_GAMEPAD_BUTTON_DPAD_LEFT,BTN_LEFT}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT,BTN_RIGHT},
-},15};
+},16};
 static ButtonMap key_map={{
     {SDL_SCANCODE_SPACE,BTN_CROSS}, {SDL_SCANCODE_LSHIFT,BTN_CIRCLE}, {SDL_SCANCODE_E,BTN_SQUARE},
     {SDL_SCANCODE_Q,BTN_TRIANGLE}, {SDL_SCANCODE_1,BTN_L1}, {SDL_SCANCODE_3,BTN_R1},
@@ -602,6 +612,23 @@ static int auto_readable(uint64_t address, size_t size) {
         if (!VirtualQuery((const void *)(uintptr_t)at,&info,sizeof(info)) || info.State!=MEM_COMMIT || (info.Protect&(PAGE_NOACCESS|PAGE_GUARD))) return 0;
         at=(uint64_t)(uintptr_t)info.BaseAddress+info.RegionSize;
     }
+#else
+    /* Linux: the kernel copies the range from this process; EFAULT when a page of it is not mapped or not readable
+     * (the counterpart of the VirtualQuery test above, without touching the memory from this thread). */
+    unsigned char copy[64];
+    for (uint64_t at=address; at<address+size;) {
+        size_t n=(size_t)(address+size-at); if (n>sizeof(copy)) n=sizeof(copy);
+        struct iovec local={copy,n}, remote={(void *)(uintptr_t)at,n};
+        const ssize_t got=process_vm_readv(getpid(),&local,1,&remote,1,0);
+        if (got!=(ssize_t)n) { /* short count: the range ends in a page that is not readable */
+            /* EFAULT is the answer "not readable"; any other error means the test itself cannot run here
+             * (ptrace policy, seccomp): said once, the auto start then never presses anything. */
+            static int told;
+            if (got<0 && errno!=EFAULT && !told) { told=1; fprintf(stderr,"TLG_AUTO_START: readability test unavailable (process_vm_readv: errno %d), auto start presses nothing\n",errno); }
+            return 0;
+        }
+        at+=n;
+    }
 #endif
     return 1;
 }
@@ -845,7 +872,7 @@ static void replay_sample(PadData *d) {
 static int hold_after_capture;
 static void sample(PadData *d) {
     sample_host(d);
-    if (tlggpu_overlay_captures_input()) { hold_after_capture=1; click.side=-1; return; }
+    if (tlggpu_overlay_captures_input()) { hold_after_capture=1; click.side=-1; tlggpu_pad_game_buttons(0); return; }
     record_sample(d); /* the click sources as they are: a replay plays them again */
     read_inject();
     replay_sample(d);
@@ -859,6 +886,15 @@ static void sample(PadData *d) {
     if (hold_after_capture) {
         if (d->buttons) d->buttons=0;
         else hold_after_capture=0;
+    }
+    tlggpu_pad_game_buttons(d->buttons);
+    /* Photo mode with the world running and the sticks on the camera: the camera takes the
+     * sticks, the boy gets none of the controller (only Options and the touchpad: pause, photo
+     * mode). The photo buttons were read above (game buttons). */
+    if (tlggpu_photo_takes_pad(d->left_x,d->left_y,d->right_x,d->right_y)) {
+        d->left_x=d->left_y=d->right_x=d->right_y=128;
+        d->l2=d->r2=0;
+        d->buttons&=BTN_OPTIONS|BTN_TOUCHPAD;
     }
 }
 

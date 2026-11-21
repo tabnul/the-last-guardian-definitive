@@ -1,0 +1,87 @@
+# Scenes left out of the PICTURE comparison. They still run in every sweep and are judged through the log (verdict.py).
+# Line: STATUS STAGE SCENE REASON      STATUS = proposed | confirmed. Only the owner confirms (issue "Ignore list:
+# entries to confirm"); the tools honour only `confirmed`, a `proposed` scene is judged by picture as before.
+# Scenes without a usable normal-renderer picture (fewer than 2 good takes) fall back to log only by themselves.
+# --- cutscene: the game moves camera and characters; take 1 and take 2 show different moments of the sequence
+confirmed s08_LargeTower s08_02d_DemoMirrorFall_001 cutscene: ladder, cart and mirror in different places in take 1 and take 2
+confirmed s16_SoldiersDen SD_a01_Start cutscene: soldier and boy in different poses and places, camera differs between the takes
+confirmed s17_SentinelTower ST_030_TricoBattle cutscene: Trico and the sentinels in different positions between the takes
+confirmed s17_SentinelTower ST_050_GrabOnEnemyCondor cutscene: bird and boy in different positions between the takes
+confirmed s17_SentinelTower ST_060_LandingRoof cutscene: bird and boy in different positions between the takes
+confirmed s17_SentinelTower ST_070_PickUpTrigger cutscene: bird and boy in different positions between the takes
+confirmed s17_SentinelTower ST_080_BreakingTail cutscene: sentinels in different positions between the takes
+confirmed s17_SentinelTower ST_081_Tale cutscene: Trico, sentinels and boy in different places between the takes
+# --- ending: all scenes of stage s18_Ending (owner's list: they are cutscenes)
+confirmed s18_Ending _010_Ending_C ending cutscene: lit sphere animates between the takes
+confirmed s18_Ending _020_Ending_D ending cutscene (owner's list): scripted sequence
+confirmed s18_Ending _030_Ending_StaffRoll ending cutscene: staff roll, the picture runs on between the takes
+confirmed s18_Ending _050_Ending_TimeLapse ending cutscene (owner's list): normal renderer gives only a flat dark picture
+confirmed s18_Ending _060_Ending_E ending cutscene: birds fly through the picture, different places between the takes
+confirmed s18_Ending _070_Ending_Owari ending cutscene (owner's list): normal renderer gives only a flat dark picture
+# --- noise: too much of the picture moves between two normal takes, or the scene is alive with action (proposed, issue "Ignore list: entries to confirm")
+confirmed s03_Canyon CA_c01_SteppingStone_001 too much of the picture moves between takes (59% would have to be left out, limit 25%)
+confirmed s03_Canyon CA_g01_ApproachAntenna_001 too much of the picture moves between takes (74% would have to be left out, limit 25%)
+confirmed s06_FallingBridge FB_f01_GoalTerrace_001 too much of the picture moves between takes (35% would have to be left out, limit 25%)
+confirmed s07_Alone AL_b01_YajirobeMirror_01 too much of the picture moves between takes (39% would have to be left out, limit 25%)
+confirmed s08_LargeTower s08_02_arrive_at_LT_001 too much of the picture moves between takes (35% would have to be left out, limit 25%)
+confirmed s08_LargeTower s08_02_wireHang_001 too much of the picture moves between takes (28% would have to be left out, limit 25%)
+confirmed s08_LargeTower s08_03_LeaningYajirobe_001 too much of the picture moves between takes (38% would have to be left out, limit 25%)
+confirmed s08_LargeTower s08_05_SmallMirror_001 too much of the picture moves between takes (31% would have to be left out, limit 25%)
+confirmed s10_Pit s10_05_Bar_Gate_001 too much of the picture moves between takes (39% would have to be left out, limit 25%)
+confirmed s12_TheNest s12_10_Elevator_Station_Again_001 too much of the picture moves between takes (56% would have to be left out, limit 25%)
+confirmed s13_FirstFlight FF_a01_EnterCliff too much of the picture moves between takes (44% would have to be left out, limit 25%)
+confirmed s13_FirstFlight FF_e01_Bridge_Arrival too much of the picture moves between takes (31% would have to be left out, limit 25%)
+confirmed s13_FirstFlight FF_i01_Celling1 alive with action (characters/enemies/debris in motion)
+confirmed s17_SentinelTower ST_021_TricoOnTheRoof alive with action (characters/enemies/debris in motion)
+confirmed s17_SentinelTower ST_090_ShootingBrain alive with action (characters/enemies/debris in motion)
+# --- need a look: nothing moves, the normal renderer itself is lighter or darker between photos (owner 2026-11-18, issue 27; see issues 12 and 28)
+confirmed s07_Alone AL_b01_BreakBridge_01 owner: normal renderer differs from itself between photos without anything moving (issue 12/28)
+confirmed s07_Alone AL_c01_BeamArea_01 owner: normal renderer differs from itself between photos without anything moving (issue 12/28)
+confirmed s11_ColumnCorridor CC_Passage_Area_001 owner: normal renderer differs from itself between photos without anything moving (issue 12/28)
+confirmed s12_TheNest s12_00_Start_001 owner: normal renderer differs from itself between photos without anything moving (issue 12/28)
+confirmed s14_CondorClash CH_a01_Start_001 owner: normal renderer differs from itself between photos without anything moving (issue 12/28)
+confirmed s17_SentinelTower ST_020_TricoOnTheRoof owner: normal renderer differs from itself between photos without anything moving (issue 12/28)
+# --- owner decided, issue 27 (2026-11-18, comment 12:49)
+confirmed s05_Attacked AT_BarrelBox_001 owner 2026-11-18 (issue 27, comment 6979040549): tall grass waving in front of the camera, butterflies
+confirmed s17_SentinelTower ST_040_FallingFromSentinelTower owner 2026-11-18 (issue 27, comment 6979040549): falling cutscene, everything moves
+# --- 3-photo mask did not bring the scene within the limit (proposal, issue 27 decision 12:46; the owner confirms)
+proposed s07_Alone AL_b01_YajirobeSwitch_01 mask from 3 photos would leave out 29.55% (limit 25%)
+proposed s11_ColumnCorridor CC_switch_gateWater_02_001 still too noisy outside the 3-photo mask (24.69% left out, held-out photo: 1.343% above 16, 0.29% above 32)
+proposed s06_FallingBridge FB_e01_MirrorCart_001 still too noisy outside the 3-photo mask (12.49% left out, held-out photo: 1.992% above 16, 0.739% above 32)
+proposed s02_TricosCave s02_03_Care_Finished_001 still too noisy outside the 3-photo mask (9.45% left out, held-out photo: 1.107% above 16, 0.106% above 32)
+proposed s02_TricosCave s02_06_Accidental_Shooting_001 still too noisy outside the 3-photo mask (7.72% left out, held-out photo: 1.243% above 16, 0.003% above 32)
+proposed s15_SecondFlight SF_c02_Before_bridge still too noisy outside the 3-photo mask (5.09% left out, held-out photo: 1.502% above 16, 0.072% above 32)
+proposed s02_TricosCave s02_07_Destroy_Door_001 still too noisy outside the 3-photo mask (9.54% left out, held-out photo: 1.91% above 16, 0.032% above 32)
+proposed s07_Alone AL_a01_firstRoom_01 still too noisy outside the 3-photo mask (9.87% left out, held-out photo: 1.533% above 16, 0.73% above 32)
+proposed s07_Alone AL_b01_StepColumn_02 still too noisy outside the 3-photo mask (20.02% left out, held-out photo: 2.674% above 16, 0.043% above 32)
+proposed s05_Attacked AT_Outdoor_001 still too noisy outside the 3-photo mask (7.65% left out, held-out photo: 2.131% above 16, 0.365% above 32)
+proposed s03_Canyon CA_a01_CanyonStart_001 mask from 3 photos would leave out 40.48% (limit 25%)
+proposed s03_Canyon CA_b01_BarrelBroken_001 still too noisy outside the 3-photo mask (13.87% left out, held-out photo: 3.138% above 16, 0.058% above 32)
+proposed s06_FallingBridge FB_e02_IntervalBridge_001 mask from 3 photos would leave out 25.6% (limit 25%)
+proposed s13_FirstFlight FF_c01_HoleSwitch still too noisy outside the 3-photo mask (19.51% left out, held-out photo: 3.129% above 16, 0.424% above 32)
+proposed s16_SoldiersDen SD_a01_2F_BattleEnd_01 still too noisy outside the 3-photo mask (3.6% left out, held-out photo: 2.61% above 16, 0.0% above 32)
+proposed s17_SentinelTower ST_000_Start still too noisy outside the 3-photo mask (15.6% left out, held-out photo: 2.985% above 16, 0.009% above 32)
+proposed s02_TricosCave s02_04_Narrow_Way_001 mask from 3 photos would leave out 28.7% (limit 25%)
+proposed s02_TricosCave s02_05_Tritrigger_Get_001 mask from 3 photos would leave out 33.33% (limit 25%)
+proposed s08_LargeTower s08_01_Start_001 mask from 3 photos would leave out 39.48% (limit 25%)
+proposed s08_LargeTower s08_02_MirrorYajirobe_001 mask from 3 photos would leave out 33.5% (limit 25%)
+proposed s08_LargeTower s08_04_Climb_Tower_001 still too noisy outside the 3-photo mask (17.9% left out, held-out photo: 4.078% above 16, 0.101% above 32)
+proposed s08_LargeTower s08_06_Climb_Tower_Again_001 mask from 3 photos would leave out 25.22% (limit 25%)
+proposed s12_TheNest s12_12_Escape_from_The_Nest_001 mask from 3 photos would leave out 29.01% (limit 25%)
+# --- event-driven scene (owner 2026-11-18, PR 35 / issue 27): a lot happens, the picture is not comparable between takes
+confirmed s02_TricosCave s02_01_Care_Step1_001 owner: event-driven scene, picture not comparable between takes (PR 35, issue 27)
+# --- photo setup crashes the normal renderer (owner 2026-11-19, issue 20): judged through the log only
+confirmed s11_ColumnCorridor CC_JumpingCart_01 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s11_ColumnCorridor CC_Start_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s12_TheNest s12_11_Hungry_start_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s13_FirstFlight FF_c01_EnterAntenna photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s14_CondorClash CH_e01_AfterPulseBreakDoorDestruction_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s14_CondorClash CH_e01_BeforePulseBreakDoorDestruction_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s04_FirstAntenna FA_a04_TricoAwakeBattle_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s04_FirstAntenna FA_f01_PillarsArea_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s07_Alone AL_a01_MillerFall_01 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s07_Alone AL_d01_AloneEnd_01 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s12_TheNest s12_11_Climbing_with_Trico_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s12_TheNest s12_11_Hungry_end_001 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s16_SoldiersDen SD_a01_Elevator_01 photo setup crashes the normal renderer (owner confirmed on the issue 20 checklist)
+confirmed s14_CondorClash CH_e01_EndCare_001 cutscene: photo setup crashes the normal renderer, the other take is blank (owner accepted, issue 20)

@@ -5,6 +5,7 @@
 #include <windows.h>
 #endif
 #include "tlg_toggles.h" // sigjmp_buf, tlg_setjmp, runtime_fault_recover
+#include "native/native_linux.h" // Linux side of the Windows calls (empty on Windows)
 #include "native/native_content.h"
 
 namespace Core::NativeContent {

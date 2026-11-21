@@ -188,6 +188,7 @@ function(add_vkb_host_shader FILENAME SHADER_NAME)
 endfunction()
 add_vkb_host_shader(fill_pattern.comp fill_pattern_comp)
 add_vkb_host_shader(vkb_aa_motion.comp vkb_aa_motion_comp)
+add_vkb_host_shader(vkb_rcas.comp vkb_rcas_comp)
 add_vkb_host_shader(fs_tri.vert fs_tri_vert)
 add_vkb_host_shader(post_process.frag post_process_frag)
 foreach(BPP IN ITEMS 8 16 32 64 96 128)
@@ -264,6 +265,11 @@ target_compile_definitions(tlggpu PRIVATE TLG_VKB_HOOKS_PATH="${CMAKE_CURRENT_SO
     TLG_VKB_LUA_PATCHES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/native/data/CUSA03627.lua_patches.json")
 set_source_files_properties(native/native_builtin_data.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/native/data/CUSA03627.hooks.json;${CMAKE_CURRENT_SOURCE_DIR}/native/data/CUSA03627.lua_patches.json")
+# The Xbox pad of the button hints (scripts/make_xbox_pad.py), embedded like the font.
+target_compile_definitions(tlggpu PRIVATE TLG_PAD_XBOX_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/pad_xbox.dds"
+    TLG_PAD_XBOX_CONTROLS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/pad_xbox_controls.dds")
+set_source_files_properties(shadps4/video_core/renderer_vulkan/vk_texture_pack.cpp PROPERTIES
+    OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/pad_xbox.dds;${CMAKE_CURRENT_SOURCE_DIR}/assets/pad_xbox_controls.dds")
 target_compile_definitions(tlggpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
 target_compile_options(tlggpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers -fms-extensions)
 # Runtime symbols (runtime_memory_*, runtime_process_*) resolve against tlg-probe.
@@ -495,6 +501,10 @@ add_executable(upscaler-support-test EXCLUDE_FROM_ALL ../tests/test_upscaler_sup
     shim/tlg_settings.cpp)
 target_include_directories(upscaler-support-test PRIVATE shim)
 target_compile_options(upscaler-support-test PRIVATE -UNDEBUG)
+# tlg: the game's tlg.ini upscaler rule, for tests/test_backend_aa_env.py: ninja -C out/gpu tlg-ini-upscaler.
+add_executable(tlg-ini-upscaler EXCLUDE_FROM_ALL ../tests/tlg_ini_upscaler.cpp
+    shim/tlg_settings.cpp)
+target_include_directories(tlg-ini-upscaler PRIVATE shim)
 add_executable(perf-overlay-test EXCLUDE_FROM_ALL ../tests/test_perf_overlay.cpp
     shim/tlg_settings.cpp)
 target_include_directories(perf-overlay-test PRIVATE shim)

@@ -342,6 +342,8 @@ static ABI int32_t sem_delete(uint32_t id) {
     pthread_mutex_unlock(&lock);
     return 0;
 }
+/* The game's signal for host code (the GPU library, tlggpu_set_game_sema_signal): the same as the game's call. */
+int32_t runtime_sema_signal(uint32_t id, int32_t count) { return sem_signal(id,count); }
 /* Read-only test/diagnostic snapshot, not exposed to guest code. */
 unsigned runtime_sema_waiters(uint32_t id) {
     if (fast_mode()) {

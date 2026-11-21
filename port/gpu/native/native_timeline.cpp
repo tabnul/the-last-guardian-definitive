@@ -209,6 +209,9 @@ void WriteCapture(const std::string& tag) {
     j["end_ns"] = capture_end_ns;
     j["record_bytes"] = sizeof(CapEvent);
     j["cycles_per_ns"] = capture_cycles_per_ns;
+#ifndef _WIN32
+    j["cycles_per_ns_missing"] = "not measured on Linux: no TSC calibration and no thread cycle counter (0 above is not a measurement)";
+#endif
     j["record"] = "u64 ns, u64 arg, u64 arg2, u32 type, u32 thread";
     j["types"] = {{"1", "FirstHook"}, {"2", "Submit"}, {"3", "SubmitFlip"}, {"4", "FlipCp"}, {"5", "FlipPrepared"}, {"6", "PresentStart"}, {"7", "PresentEnd"},
                   {"8", "CpWait"}, {"9", "FlipWait"}, {"10", "GameWait"}, {"11", "GameSignal"}, {"12", "CpIdleQueued"}, {"13", "RasterIdleSignal"},
@@ -271,6 +274,8 @@ bool StartCapture(u32 seconds, const std::string& tag, bool ring) {
     capture_start_ns = Now();
 #ifdef _WIN32
     const unsigned long long tsc_start = __rdtsc();
+#else
+    const unsigned long long tsc_start = 0; // Linux: no cycle rate in the capture (cycles_per_ns stays 0, as ThreadCycles() is 0 there)
 #endif
     capture_active.store(true, std::memory_order_release);
     capture_thread = std::jthread([seconds, tag, tsc_start](std::stop_token stop) {

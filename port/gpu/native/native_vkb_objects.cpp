@@ -4,6 +4,7 @@
 #include "native/vkb_core/vkb_device.h"
 #include "native/native_vkb_objects.h"
 #include "native/native_vkb_indexed.h"
+#include "native/native_desc.h"
 #include "native/native_tsharp_watch.h"
 #include "native/native_vkb_util.h"
 
@@ -43,6 +44,13 @@
 
 #include <vk_mem_alloc.h>
 #include <xxhash.h>
+#ifndef _WIN32
+#include <sys/mman.h>
+extern "C" {
+// runtime_memory.c: host memory the game can see, in [0x800000000, 0x1000000000) (below 40 bits); null when that range is full
+void* runtime_low_map(size_t size, int prot);
+}
+#endif
 
 
 namespace Core::Vkb {
@@ -1520,8 +1528,63 @@ void NoteFrameRing(u64 base, u64 size) {
     }
 }
 
-bool PlaceFrameRing(u64 allocator) {
+namespace {
+/// R3a placed ring (TLG_VKB_RING_PLACED, default on; =0: only the driver's own address, the way before): with VK_EXT_map_memory_placed the ring's memory is mapped at an
+/// address the runtime reserves for us below 40 bits (`runtime_low_map`, where the runtime keeps its own memory the game sees), so the engine's 40 bit buffer
+/// descriptions can hold it on every driver that has the feature. Without the feature (Windows, older drivers) the driver's own address is used, as before.
+bool RingVramOn() {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_RING_VRAM"); return e == nullptr || e[0] != '0'; }(); // default on since 2026-11-14 (note 29); =0: in place
+    return on;
+}
+bool RingPlacedOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_RING_PLACED"); return e == nullptr || e[0] != '0'; }();
+    return on;
+}
+const char* ring_route = "not placed yet"; ///< the report's word for how the ring got (or did not get) its device memory; set once inside PlaceFrameRing's call_once
+std::string ring_placed_failure;           ///< why the placed route was not taken, when it was asked for and the driver has it (empty otherwise)
+std::atomic<bool> ring_decided{false};     ///< the two above are final (the report reads them only then)
+void RingDecided(const char* route) {
+    ring_route = route;
+    ring_decided.store(true, std::memory_order_release);
+}
+
+#ifndef _WIN32
+/// The ring's memory mapped at an address below 40 bits: null when the placed route cannot be taken (the reason in ring_placed_failure).
+void* MapRingPlaced(VmaAllocation allocation) {
+    VmaAllocationInfo info{};
+    vmaGetAllocationInfo(instance->GetAllocator(), allocation, &info);
+    const u64 align = instance->PlacedMapAlignment();
+    if (info.offset != 0 || info.size % align != 0) {
+        ring_placed_failure = fmt::format("the memory block (offset {:#x}, {} bytes) is not a whole, {}-aligned allocation", info.offset, info.size, align);
+        return nullptr;
+    }
+    // the runtime hands out its low memory page by page; a stricter alignment is reached by asking for more and using an aligned part of it
+    const u64 bytes = info.size + (align > 4096 ? align : 0);
+    void* const low = runtime_low_map(bytes, PROT_NONE);
+    if (low == nullptr) {
+        ring_placed_failure = fmt::format("the runtime has no free address range of {} MiB below 40 bits", bytes >> 20);
+        return nullptr;
+    }
+    const u64 at = (reinterpret_cast<u64>(low) + align - 1) & ~(align - 1);
+    const vk::MemoryMapPlacedInfoEXT placed{.pPlacedAddress = reinterpret_cast<void*>(at)};
+    const vk::MemoryMapInfo map{.pNext = &placed, .flags = vk::MemoryMapFlagBits::ePlacedEXT, .memory = info.deviceMemory, .offset = 0, .size = VK_WHOLE_SIZE};
+    void* mapped = nullptr;
+    const vk::Result result = instance->GetDevice().mapMemory2KHR(&map, &mapped);
+    if (result != vk::Result::eSuccess || reinterpret_cast<u64>(mapped) != at) {
+        ring_placed_failure = fmt::format("the driver did not map it at {:#x} ({}, got {})", at, vk::to_string(result), mapped);
+        if (result == vk::Result::eSuccess) {
+            (void)instance->GetDevice().unmapMemory2KHR(vk::MemoryUnmapInfo{.memory = info.deviceMemory});
+        }
+        munmap(low, bytes);
+        return nullptr;
+    }
+    return mapped;
+}
+#endif
+} // namespace
+
+bool PlaceFrameRing(u64 allocator) {
+    const bool on = RingVramOn();
     static std::once_flag once;
     static std::atomic<bool> placed{false};
     if (!on || allocator == 0 || !device_ready) {
@@ -1529,8 +1592,14 @@ bool PlaceFrameRing(u64 allocator) {
     }
     std::call_once(once, [allocator] {
         const u64 size = *reinterpret_cast<const u32*>(allocator);
+#ifndef _WIN32
+        const bool want_placed = RingPlacedOn() && instance->IsMapMemoryPlacedSupported();
+#else
+        const bool want_placed = false;
+#endif
+        const u64 align = want_placed ? instance->PlacedMapAlignment() : 1;
         const VkBufferCreateInfo ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-                                    .size = size + VramRingSlack,
+                                    .size = (size + VramRingSlack + align - 1) / align * align,
                                     .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                                              VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
                                              VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
@@ -1538,28 +1607,55 @@ bool PlaceFrameRing(u64 allocator) {
         VmaAllocationCreateInfo alloc{};
         alloc.usage = VMA_MEMORY_USAGE_UNKNOWN;
         alloc.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        alloc.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+        alloc.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT | (want_placed ? 0 : VMA_ALLOCATION_CREATE_MAPPED_BIT); // placed: we map it ourselves, where we choose
         VmaAllocationInfo info{};
-        if (size == 0 || vmaCreateBuffer(instance->GetAllocator(), &ci, &alloc, &vram_ring_buffer, &vram_ring_allocation, &info) != VK_SUCCESS || info.pMappedData == nullptr) {
+        if (size == 0 || vmaCreateBuffer(instance->GetAllocator(), &ci, &alloc, &vram_ring_buffer, &vram_ring_allocation, &info) != VK_SUCCESS) {
+            RingDecided("in place: no device-local CPU-visible memory");
             LOG_ERROR(Render_Vulkan, "vkb R3a: no device-local CPU-visible memory for the frame ring ({} bytes): it stays in place", size);
             return;
         }
-        const u64 mapped = reinterpret_cast<u64>(info.pMappedData);
-        if (mapped + size + VramRingSlack > (1ull << 40)) {
-            // the engine's buffer descriptions hold 40 bit addresses
-            LOG_ERROR(Render_Vulkan, "vkb R3a: the frame ring's mapping {:#x} is above 40 bits: it stays in place", mapped);
+        void* host = info.pMappedData;
+        bool vma_mapped = false; // mapped by vmaMapMemory (unmapped again before the buffer is destroyed)
+#ifndef _WIN32
+        if (want_placed && (host = MapRingPlaced(vram_ring_allocation)) == nullptr) {
+            // the placed route failed: the driver's own address, as on a driver without the feature (named here and in the report: principle 5)
+            LOG_WARNING(Render_Vulkan, "vkb R3a: the frame ring cannot be mapped below 40 bits: {}; the driver's own address is tried", ring_placed_failure);
+            vma_mapped = vmaMapMemory(instance->GetAllocator(), vram_ring_allocation, &host) == VK_SUCCESS;
+            host = vma_mapped ? host : nullptr;
+        }
+#endif
+        if (host == nullptr) {
+            RingDecided("in place: the memory could not be mapped");
+            LOG_ERROR(Render_Vulkan, "vkb R3a: the frame ring's device memory ({} bytes) could not be mapped: it stays in place", size);
             vmaDestroyBuffer(instance->GetAllocator(), vram_ring_buffer, vram_ring_allocation);
             vram_ring_buffer = VK_NULL_HANDLE;
             return;
         }
-        std::memset(info.pMappedData, 0, size + VramRingSlack); // (what the guest memory behind a block held is not known; zero, not garbage)
+        const u64 mapped = reinterpret_cast<u64>(host);
+        if (mapped + size + VramRingSlack > (1ull << 40)) {
+            // the engine's buffer descriptions hold 40 bit addresses (only the driver's own address can be up there; a placed one is below by construction, as
+            // runtime_low_map stays below 0x1000000000)
+            RingDecided("in place: the driver's address is above 40 bits");
+            LOG_ERROR(Render_Vulkan, "vkb R3a: the frame ring's mapping {:#x} is above 40 bits: it stays in place ({})", mapped,
+                      !RingPlacedOn()                                  ? "TLG_VKB_RING_PLACED=0"
+                      : instance->IsMapMemoryPlacedSupported()          ? "a mapping below 40 bits failed, see above"
+                                                                       : "the driver has no placed mapping, VK_EXT_map_memory_placed; this is the way for such drivers");
+            if (vma_mapped) {
+                vmaUnmapMemory(instance->GetAllocator(), vram_ring_allocation);
+            }
+            vmaDestroyBuffer(instance->GetAllocator(), vram_ring_buffer, vram_ring_allocation); // (a persistent VMA mapping is unmapped by VMA)
+            vram_ring_buffer = VK_NULL_HANDLE;
+            return;
+        }
+        std::memset(host, 0, size + VramRingSlack); // (what the guest memory behind a block held is not known; zero, not garbage)
         host_side_ring_size.store(size, std::memory_order_relaxed);
         host_side_ring_base.store(*reinterpret_cast<const u64*>(allocator + 0x18), std::memory_order_release);
         vram_ring_end.store(mapped + size + VramRingSlack, std::memory_order_relaxed);
         vram_ring_base.store(mapped, std::memory_order_release);
         *reinterpret_cast<u64*>(allocator + 0x18) = mapped; // from the next allocation on, the blocks are ours (base + offset)
         placed.store(true, std::memory_order_release);
-        LOG_INFO(Render_Vulkan, "vkb R3a: the frame ring ({} MiB) is in device memory at {:#x}", size >> 20, mapped);
+        RingDecided(want_placed && ring_placed_failure.empty() ? "device memory, placed below 40 bits" : "device memory, at the driver's address");
+        LOG_INFO(Render_Vulkan, "vkb R3a: the frame ring ({} MiB) is in device memory at {:#x} ({})", size >> 20, mapped, ring_route);
     });
     return placed.load(std::memory_order_acquire);
 }
@@ -1628,12 +1724,13 @@ u64 R3dTraceSize() {
 extern std::atomic<u64> g_buffer_epoch; // note 46, defined below
 namespace {
 struct ObjectBufferMemo {
-    u64 object{}, id{}, epoch{~0ull}, bytes{};
+    u64 object{}, id{}, epoch{~0ull}, memory{}, bytes{}; ///< memory and bytes: what the window was resolved for (issue 12)
     BufferWindow window{};
     bool ok{};
 };
 thread_local std::unique_ptr<std::array<ObjectBufferMemo, 4096>> t_object_buffers;
 std::atomic<u64> c_r7_ring_buffers{0}, c_r7_window_checks{0}, c_r7_window_differs{0}, c_r7_hits{0}, c_r7_resolves{0}, c_r7_whole_failed{0}, c_r7_range_fallback{0}, c_r7_past_end{0}, c_r7_ring_cb{0}, c_r7_cb_copied{0};
+std::atomic<u64> c_memo_memory_moved{0}; ///< entries that matched object, id and epoch but not memory or bytes (switch on: resolved again; off: the old window served)
 } // namespace
 void NoteConstantCopied() {
     c_r7_cb_copied.fetch_add(1, std::memory_order_relaxed);
@@ -1725,9 +1822,16 @@ bool BufferOfObjectFields(u64 buffer, u64 id, u64 memory, u64 bytes, u64 offset,
     }
     ObjectBufferMemo& m = (*t_object_buffers)[((buffer >> 4) ^ (buffer >> 16) ^ id) & 4095];
     const u64 epoch = g_buffer_epoch.load(std::memory_order_acquire);
-    if (m.object != buffer || m.id != id || m.epoch != epoch) {
+    // issue 12: a buffer keeps object and id while its memory moves (skin ring rename, recording ring, the engine's buffer move); the entry answers only for the memory it was resolved for. TLG_VKB_MEMO_BY_MEMORY=0: the old key
+    static const bool by_memory = [] { const char* e = std::getenv("TLG_VKB_MEMO_BY_MEMORY"); return e == nullptr || e[0] != '0'; }();
+    const bool same_key = m.object == buffer && m.id == id && m.epoch == epoch;
+    const bool same_memory = m.memory == memory && m.bytes == bytes;
+    if (same_key && !same_memory) {
+        c_memo_memory_moved.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (!same_key || (by_memory && !same_memory)) {
         c_r7_resolves.fetch_add(1, std::memory_order_relaxed);
-        m = {buffer, id, epoch, bytes, {}, false};
+        m = {buffer, id, epoch, memory, bytes, {}, false};
         if (memory != 0 && bytes != 0) {
             m.ok = FindLocked(memory, bytes, m.window);
             // its device copy may have been made just now (R3d): the answer stands only for this epoch
@@ -1770,7 +1874,7 @@ bool BufferOfObjectFields(u64 buffer, u64 id, u64 memory, u64 bytes, u64 offset,
 nlohmann::json BindByObjectReport() {
     return {{"object_hits", c_r7_hits.load()}, {"object_resolves", c_r7_resolves.load()}, {"whole_buffer_not_one_window", c_r7_whole_failed.load()},
             {"range_by_address_fallback", c_r7_range_fallback.load()}, {"index_past_the_end", c_r7_past_end.load()}, {"constants_in_the_frame_ring", c_r7_ring_cb.load()},
-            {"constants_copied_at_the_draw", c_r7_cb_copied.load()}, {"window_checks_differs", {c_r7_window_checks.load(), c_r7_window_differs.load()}}, {"buffers_in_the_frame_ring", c_r7_ring_buffers.load()}};
+            {"constants_copied_at_the_draw", c_r7_cb_copied.load()}, {"window_checks_differs", {c_r7_window_checks.load(), c_r7_window_differs.load()}}, {"buffers_in_the_frame_ring", c_r7_ring_buffers.load()}, {"memo_memory_moved", c_memo_memory_moved.load()}};
 }
 bool R7CensusOn() {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_R7_CENSUS"); return e != nullptr && e[0] == '1'; }();
@@ -2167,6 +2271,9 @@ void BumpViewEpoch() {
     g_view_epoch.fetch_add(1, std::memory_order_release);
     c_memo_bumps[1].fetch_add(1, std::memory_order_relaxed);
 }
+u64 ViewEpoch() {
+    return g_view_epoch.load(std::memory_order_acquire);
+}
 /// note 45: time in our object lookups (views, buffers, samplers, attachments), by lookup kind, on any thread
 std::atomic<u64> g_lookup_ns[4]{}, g_lookup_n[4]{};
 bool LookupTimesOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_TIMES"); return e != nullptr && e[0] == '1'; }(); return on; } ///< TLG_VKB_TIMES=1 only
@@ -2233,6 +2340,26 @@ bool ViewForCompute(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, 
     m = {view_id, epoch, static_cast<u32>(want), out, found}; // the epoch read before the lookup: a change during it leaves the entry stale-marked
     return true;
 }
+std::atomic<u64> c_cube_as_array{0};
+
+vk::ImageViewType ModuleViewType(VkbAmdGpu::ImageType type) {
+    static const bool cube_as_array = [] { const char* e = std::getenv("TLG_VKB_CUBE_AS_ARRAY"); return e == nullptr || e[0] != '0'; }();
+    switch (type) {
+    case VkbAmdGpu::ImageType::Color1D: return vk::ImageViewType::e2D; // note 41: the module declares 1D images as 2D
+    case VkbAmdGpu::ImageType::Color1DArray: return vk::ImageViewType::e2DArray;
+    case VkbAmdGpu::ImageType::Color2DArray:
+    case VkbAmdGpu::ImageType::Color2DMsaaArray: return vk::ImageViewType::e2DArray;
+    case VkbAmdGpu::ImageType::Color3D: return vk::ImageViewType::e3D;
+    case VkbAmdGpu::ImageType::Cube:
+        if (cube_as_array) {
+            c_cube_as_array.fetch_add(1, std::memory_order_relaxed); // (per module image binding, at the variant's build)
+            return vk::ImageViewType::e2DArray;
+        }
+        return vk::ImageViewType::eCube;
+    default: return vk::ImageViewType::e2D;
+    }
+}
+
 bool ViewForComputeLookup(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, vk::ImageView& out, vk::Image* image) {
     std::scoped_lock lock{mutex};
     const auto v = views.find(view_id);
@@ -2949,6 +3076,7 @@ struct StagingCopy {
 struct StagingRing {
     std::array<StagingCopy, 3> copies{};
     u32 width{}, height{}, depth{1}, texel{};
+    vk::Format format{}; ///< the image format of the newest copy (for the developer dump)
     u64 serial{};
 };
 std::mutex staging_mutex;
@@ -3011,6 +3139,7 @@ void StagingCopied(u64 texture_id, u32 sub) {
             }
             ring.width = width, ring.height = height, ring.depth = depth, ring.texel = texel;
         }
+        ring.format = format;
         serial = ++ring.serial;
         index = u32(serial % ring.copies.size());
         auto& slot = ring.copies[index];
@@ -3051,6 +3180,7 @@ void StagingCopied(u64 texture_id, u32 sub) {
 bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch, u32 depth_pitch) {
     StagingCopy copy;
     u32 width = 0, height = 0, depth = 1, texel = 0;
+    vk::Format format{};
     bool newest = true;
     {
         std::scoped_lock lock{staging_mutex};
@@ -3071,7 +3201,7 @@ bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch, u32 depth_pitc
             return false;
         }
         newest = best->serial == ring.serial;
-        copy = *best, width = ring.width, height = ring.height, depth = ring.depth, texel = ring.texel;
+        copy = *best, width = ring.width, height = ring.height, depth = ring.depth, texel = ring.texel, format = ring.format;
     }
     if (!newest) {
         c_staging_older.fetch_add(1, std::memory_order_relaxed);
@@ -3088,10 +3218,12 @@ bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch, u32 depth_pitc
             std::memcpy(out + z * out_slice + u64{y} * out_row, static_cast<const u8*>(copy.mapped) + (u64{z} * height + y) * row, row);
         }
     }
+    DevLog::Count(DevLog::Kind::StagingRead);
+    // a developer dump (Vkb::DevLog): every 50th read's values, each 4 byte texel read as a float whatever the format (a two-channel 16 bit texture shows huge, -nan and inf values)
     static std::mutex log_mutex;
     static std::map<u32, u32> logged_by_size;
     bool log_it = false;
-    {
+    if (DevLog::On()) {
         std::scoped_lock lock{log_mutex};
         u32& k = logged_by_size[static_cast<u32>(texture_id)];
         log_it = (k++ % 50) == 0 && k < 1000; // every 50th read of each staging texture
@@ -3106,7 +3238,7 @@ bool StagingRead(u64 texture_id, u32 sub, u8* out, u32 row_pitch, u32 depth_pitc
         for (u32 i = 0; i < width * height; ++i) {
             zeros += f[i] == 0.0f ? 1 : 0;
         }
-        LOG_WARNING(Render_Vulkan, "staging read {}: tex {} {}x{} {} min {} max {} mean {} zeros {} (as floats)", n, texture_id, width, height, newest ? "newest" : "older", lo, hi,
+        LOG_INFO(Render_Vulkan, "staging read {}: tex {} {}x{} {} {} min {} max {} mean {} zeros {} (as floats)", n, texture_id, width, height, vk::to_string(format), newest ? "newest" : "older", lo, hi,
                     sum / float(width * height), zeros);
     }
     return true;
@@ -3121,14 +3253,15 @@ std::string DescribeSampler(u64 object) {
                        RdObj<float>(d, 16), RdObj<u32>(d, 20), RdObj<u32>(d, 24), RdObj<float>(d, 44), RdObj<float>(d, 48));
 }
 
-vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare);
-vk::Sampler SamplerFor(u64 object, bool compare) {
+vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare, s32 bias_q, u32 aniso);
+vk::Sampler SamplerFor(u64 object, bool compare, s32 bias_q, u32 aniso) {
     const LookupTimer lookup_timer{2};
     if (!device_ready || object == 0) {
         return {};
     }
     const u64 id = RdObj<u64>(object, 0x10);
-    const u64 key = id * 2 + (compare ? 1 : 0); // note 40: a compare sampler only for the shaders that sample with a compare
+    // note 40: a compare sampler only for the shaders that sample with a compare; issue 42: one per bias and anisotropy setting (bias -32..31, aniso 0..31)
+    const u64 key = ((id * 2 + (compare ? 1 : 0)) << 11) | (static_cast<u64>(std::clamp(bias_q, -32, 31) + 32) << 5) | std::min(aniso, 31u);
     SamplerMemo* memo = nullptr;
     if (MemoOn()) {
         if (!t_sampler_memo) {
@@ -3141,13 +3274,13 @@ vk::Sampler SamplerFor(u64 object, bool compare) {
         }
         c_memo_misses[2].fetch_add(1, std::memory_order_relaxed);
     }
-    const vk::Sampler found = SamplerForLookup(object, id, key, compare);
+    const vk::Sampler found = SamplerForLookup(object, id, key, compare, bias_q, aniso);
     if (memo != nullptr && found) {
         *memo = {key, found}; // samplers are never destroyed: one per engine sampler id
     }
     return found;
 }
-vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
+vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare, s32 bias_q, u32 aniso_setting) {
     std::scoped_lock lock{mutex};
     if (const auto it = samplers.find(key); it != samplers.end()) {
         return it->second;
@@ -3177,8 +3310,12 @@ vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
     static constexpr u8 MipTable[9] = {1, 2, 1, 2, 1, 2, 1, 2, 2}; // 1 point, 2 linear
     const u32 f = filter % 9;
     const bool mag_linear = MagTable[f] != 0, min_linear = MinTable[f] != 0, mip_linear = MipTable[f] == 2;
-    const bool anisotropic = MagTable[f] == 3 && instance->IsAnisotropicFilteringSupported();
-    const float aniso_level = aniso <= 1 ? 1.0f : aniso == 2 ? 2.0f : aniso <= 4 ? 4.0f : aniso <= 8 ? 8.0f : 16.0f;
+    // issue 42 (part a): the anisotropic filtering setting, with the normal renderer's rule (Core::NativeDesc::ForcedAnisotropy); the engine's mip table
+    // (api-contract.md S1) holds only point and linear, never "no mip filter"
+    const u32 forced = Core::NativeDesc::ForcedAnisotropy(aniso_setting, min_linear, MipTable[f] != 0, max_lod, compare);
+    const bool anisotropic = (MagTable[f] == 3 || forced != 0) && instance->IsAnisotropicFilteringSupported();
+    const float game_level = MagTable[f] != 3 ? 1.0f : aniso <= 1 ? 1.0f : aniso == 2 ? 2.0f : aniso <= 4 ? 4.0f : aniso <= 8 ? 8.0f : 16.0f;
+    const float aniso_level = forced != 0 ? std::max(game_level, static_cast<float>(forced)) : game_level;
     const auto address_mode = [](u32 mode) {
         switch (mode) {
         case 0: return vk::SamplerAddressMode::eRepeat;
@@ -3201,7 +3338,8 @@ vk::Sampler SamplerForLookup(u64 object, u64 id, u64 key, bool compare) {
         .addressModeU = address_mode(address[0]),
         .addressModeV = address_mode(address[1]),
         .addressModeW = address_mode(address[2]),
-        .mipLodBias = 0.0f, // api-contract.md S3: the engine never writes the S#'s bias field (MipLODBias is ignored)
+        // api-contract.md S3: the engine never writes the S#'s bias field (MipLODBias is ignored); issue 42 (part b): the scene texture bias while the AA runs
+        .mipLodBias = std::clamp(static_cast<float>(bias_q) * 0.25f, -instance->MaxSamplerLodBias(), instance->MaxSamplerLodBias()),
         .anisotropyEnable = anisotropic,
         .maxAnisotropy = anisotropic ? std::min(aniso_level, instance->MaxSamplerAnisotropy()) : 1.0f,
         .compareEnable = compare,
@@ -4201,6 +4339,8 @@ nlohmann::json ObjectsReport() {
                           {"buffer_mb_in_place_seen", c_buffer_bytes.load() >> 20},
                           {"in_place_imported_mb", host_import ? host_import->ImportedBytes() >> 20 : 0},
                           {"in_place_failed_chunks", host_import ? host_import->FailedChunks() : 0},
+                          {"gpu_pool", {{"on", host_import ? host_import->OnGpuPool() : false}, {"mb", VkbVulkan::GpuPool::Bytes() >> 20}, {"reason", VkbVulkan::GpuPool::Reason()},
+                                        {"exec_dropped", VkbVulkan::GpuPool::ExecDropped()}}},
                           {"objects_before_the_device", c_too_early.load()},
                           {"deletes_of_objects_with_no_vulkan_object", c_deleted_unknown.load()},
                           {"contents_wanted", c_upload_wanted.load()},
@@ -4211,6 +4351,7 @@ nlohmann::json ObjectsReport() {
                                               {"no_initial_data", c_dev_no_initial.load()}, {"cpu_writes_copied", c_cpu_writes.load()},
                                               {"cpu_write_kb", c_cpu_write_bytes.load() >> 10}}},
                           {"other_view_types", {{"made", c_other_views.load()}, {"refused", c_other_view_refused.load()}, {"refused_pairs", refused}}},
+                          {"cube_bindings_as_array", c_cube_as_array.load()},
                           {"display", {{"presented_from_our_image", c_display_found.load()}, {"no_image_at_the_display_buffer", c_display_missed.load()},
                                        {"never_drawn_into", c_display_not_general.load()}}},
                           {"attachments", {{"format_views_made", c_attach_views.load()}, {"refused", c_attach_refused.load()}}},
@@ -4253,7 +4394,8 @@ nlohmann::json ObjectsReport() {
                                return out;
                            }()},
                           {"layout_at_creation_jobs_images_by_upload_in_batch", {true, c_layout_jobs.load(), c_layout_images.load(), c_layout_by_upload.load(), c_layout_in_batch.load()}},
-                          {"frame_ring_in_device_memory", {{"on", vram_ring_base.load() != 0}, {"base", vram_ring_base.load()}, {"binds", c_ring_vram_binds.load()},
+                          {"frame_ring_in_device_memory", {{"on", vram_ring_base.load() != 0}, {"route", ring_decided.load(std::memory_order_acquire) ? ring_route : RingVramOn() ? "not placed yet" : "off (TLG_VKB_RING_VRAM=0)"},
+                                                           {"placed_failure", ring_decided.load(std::memory_order_acquire) ? ring_placed_failure : std::string{}}, {"base", vram_ring_base.load()}, {"binds", c_ring_vram_binds.load()},
                                                            {"ranges_leaving_it", c_ring_vram_straddle.load()}}},
                           {"in_place_sources", {{"note", "binds read in place (TLG_VKB_SOURCE_CENSUS=1): engine buffer static / dynamic / staging, frame ring, other"},
                                                 {"binds", {c_src_binds[0].load(), c_src_binds[1].load(), c_src_binds[2].load(), c_src_binds[3].load(), c_src_binds[4].load()}},

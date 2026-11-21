@@ -17,9 +17,55 @@
 
 #include <vk_mem_alloc.h>
 
+// The Xbox pictures (scripts/make_xbox_pad.py), embedded: the pad of the button hints and the
+// Controls screen.
+#ifdef _WIN32
+#define TLG_EMBED(name, path) \
+    asm(".section .rdata,\"dr\"\n" \
+        ".balign 16\n" \
+        ".global " #name "\n" #name ":\n" \
+        ".incbin \"" path "\"\n" \
+        ".global " #name "_end\n" #name "_end:\n" \
+        ".text\n"); \
+    extern "C" const unsigned char name[]; \
+    extern "C" const unsigned char name##_end[];
+#else
+#define TLG_EMBED(name, path) \
+    asm(".section .rodata\n" \
+        ".balign 16\n" \
+        ".hidden " #name "\n.global " #name "\n" #name ":\n" \
+        ".incbin \"" path "\"\n" \
+        ".hidden " #name "_end\n.global " #name "_end\n" #name "_end:\n" \
+        ".previous\n"); \
+    extern "C" const unsigned char name[]; \
+    extern "C" const unsigned char name##_end[];
+#endif
+TLG_EMBED(tlg_pad_xbox_dds, TLG_PAD_XBOX_PATH)
+TLG_EMBED(tlg_pad_xbox_controls_dds, TLG_PAD_XBOX_CONTROLS_PATH)
+
 namespace Vulkan {
 
 namespace {
+
+/// The game's pad pictures and ours: XXH3 of the game's mip 0, as Key() gives it.
+struct XboxPicture {
+    u64 key;
+    u32 width, height;
+    const unsigned char* begin;
+    const unsigned char* end;
+    const char* name;
+};
+const XboxPicture XboxPictures[] = {
+    // Button hints: game/textures/ui/alert/guide_controller_base_bc7 (256x128), ours twice the size.
+    {0x4641711da2e67237ull, 512, 256, tlg_pad_xbox_dds, tlg_pad_xbox_dds_end, "button hints"},
+    // Options > Controls: game/textures/ui/gamemenu/sys_option_item_guide_padimage (1920x1088).
+    {0xa31d94e31031029eull, 1920, 1088, tlg_pad_xbox_controls_dds, tlg_pad_xbox_controls_dds_end,
+     "Controls screen"},
+    // The same picture as the running game holds it: about 1100 of its empty blocks differ from
+    // the file (seen on the EU version; cause unknown), so both keys are listed.
+    {0x9e20a9967275538full, 1920, 1088, tlg_pad_xbox_controls_dds, tlg_pad_xbox_controls_dds_end,
+     "Controls screen"},
+};
 
 constexpr u64 Budget = 16ull << 30; ///< host VRAM for pack images; later loads are refused
 constexpr u64 UploadPerFrame = 256ull << 20;
@@ -95,6 +141,7 @@ TexturePack::~TexturePack() {
         scheduler.Finish(); // the GPU is done with every pack image
         scheduler.PopPendingOperations(); // runs the deferred frees of evicted ones
         entries.clear();
+        xbox_pads.clear();
         std::scoped_lock lock{mutex};
         queue.clear();
         done.clear();
@@ -179,10 +226,35 @@ void TexturePack::Worker(std::stop_token stop) {
     }
 }
 
+void TexturePack::XboxPad() {
+    xbox_icons = TlgSettings::Get().XboxIcons();
+    ++generation; // bindings of the hint picture look again
+    if (!xbox_icons || !xbox_pads.empty()) {
+        return;
+    }
+    for (const XboxPicture& picture : XboxPictures) {
+        auto entry = std::make_unique<Entry>();
+        entry->path = std::string("the built-in Xbox picture (") + picture.name + ")";
+        entry->width = picture.width;
+        entry->height = picture.height;
+        entry->file.assign(picture.begin, picture.end);
+        Upload(*entry);
+        if (entry->state == Entry::State::Ready) {
+            resident_bytes -= entry->bytes; // the count is the pack's (Switch resets it)
+        } else {
+            std::printf("Button icons: Xbox picture (%s) failed to load\n", picture.name);
+        }
+        xbox_pads.emplace(picture.key, std::move(entry));
+    }
+}
+
 void TexturePack::Tick() {
     const int pack = TlgSettings::Get().texture_pack.load();
     if (pack != active) {
         Switch(pack);
+    }
+    if (TlgSettings::Get().XboxIcons() != xbox_icons) {
+        XboxPad();
     }
     const u32 seconds = u32(std::chrono::duration_cast<std::chrono::seconds>(
                                 std::chrono::steady_clock::now() - start)
@@ -330,7 +402,8 @@ void TexturePack::Upload(Entry& entry) {
 }
 
 vk::ImageView TexturePack::Sample(VideoCore::Image& image, const VideoCore::ImageViewInfo& info) {
-    if (!active) {
+    const bool xbox = xbox_icons && !xbox_pads.empty();
+    if (!active && !xbox) {
         return {};
     }
     if (image.pack_key == ~0ull) {
@@ -339,8 +412,17 @@ vk::ImageView TexturePack::Sample(VideoCore::Image& image, const VideoCore::Imag
     if (!image.pack_key) {
         return {};
     }
+    if (xbox) {
+        const auto pad = xbox_pads.find(image.pack_key);
+        if (pad != xbox_pads.end() && pad->second->state == Entry::State::Ready) {
+            return View(*pad->second, image, info);
+        }
+    }
     const auto it = entries.find(image.pack_key);
     if (it == entries.end()) {
+        if (!active) {
+            return {};
+        }
         ++misses;
         static const bool log = std::getenv("TLG_TEXPACK_LOG");
         static std::unordered_set<u64> logged;
@@ -360,6 +442,11 @@ vk::ImageView TexturePack::Sample(VideoCore::Image& image, const VideoCore::Imag
         queue.push_back(it->second);
         wake.notify_one();
     }
+    return View(entry, image, info);
+}
+
+vk::ImageView TexturePack::View(Entry& entry, const VideoCore::Image& image,
+                                const VideoCore::ImageViewInfo& info) {
     // Whole-texture 2D views only: a partial mip range or LOD clamp has no pack counterpart.
     if (entry.state != Entry::State::Ready || info.type != AmdGpu::ImageType::Color2D ||
         info.range.base.level != 0 || info.range.extent.levels < image.info.resources.levels ||

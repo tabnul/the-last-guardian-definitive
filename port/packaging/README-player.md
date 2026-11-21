@@ -12,7 +12,7 @@ None of it is in the download; you need your own copy. Use **The Last Guardian C
 
 | File | From | Size | Purpose |
 |---|---|---|---|
-| `eboot.bin` | update 01.03 | 89 MB | the game code (must be the 1.03 one) |
+| `eboot.bin` | update 01.03 | 89 MB | the game code (must be the 1.03 one; any other build or an already patched one runs at 30 FPS, the launcher warns) |
 | `sce_module/libc.prx`, `sce_module/libSceFios2.prx` | update 01.03 | 1.5 MB | the game's own libraries |
 | `sce_sys/` (`param.sfo`, `playgo-chunk.dat`, `icon0.png`, `pic0.png`, `pic1.png`) | base + update | ~5 MB | metadata, install info and the launcher art |
 | `trico_boot.psarc`, `trico_001.psarc`, `trico_002.psarc`, `trico_003.psarc` | base game | 2.8 + 5.8 + 5.4 + 6.8 GB | main content |
@@ -45,6 +45,7 @@ Pitfalls:
 - **FTP can cut big files off at 4 GB.** Compare the file sizes with the console. When one is short, copy it again from a USB dump.
 - **FAT32 cannot hold files over 4 GB.** Format the USB drive as exFAT.
 - **Without update 01.03 the port does not work properly** (30 FPS, none of the port's fixes). The launcher shows a warning when the folder is older.
+- **Stuck at 30 FPS?** 60 FPS and Unlocked need the 1.03 game code in `eboot.bin`. The port checks the exact bytes it changes, so any 1.03 dump works (US or EU, PS4 or PS5 dump tool). When the check fails, the game runs at 30 FPS and the launcher shows a warning. Usually the update was not merged on top of the base game, or `eboot.bin` was already changed by another patch or cheat: dump it again with update 01.03.
 
 ## How to play
 
@@ -65,9 +66,12 @@ On Linux, `./install_desktop.sh` adds the game to the applications menu.
 
 - **F10**: toggles the FPS counter
 - **Insert** (or R3 + L2 on a controller): opens the port's menu (image, performance, overlay)
-- **Alt+Q** (or hold Share + Options for 2 seconds; the window X and Alt+F4 work too): quits the game the way the game's own Quit does. Change the controller combos (quit, the port's menu, the QA menu) in the port's menu (Controls) or the launcher (Controller).
+- **Ctrl+X** (or hold Share + Options for 2 seconds; the window X and Alt+F4 work too): quits the game the way the game's own Quit does. Change the controller combos (quit, the port's menu, the QA menu) and the keyboard quit key (or turn it off) in the port's menu (Controls) or the launcher (Controller).
 - **F8**: switches between the chosen upscaler and the game's own anti-aliasing. DLSS (RTX cards), FSR 4 (recent cards, Windows and Linux) or FSR 3.1 (any card) keep foliage and thin edges stable. At the Native AA quality (the default, DLSS on RTX cards) the game renders at your screen size; at Quality, Balanced, Performance or Ultra Performance it renders smaller and DLSS or FSR upscale it, for more FPS. Change it in the launcher or under Upscaling and anti-aliasing in the port's menu (Quality needs a restart). FSR 4 is chosen once by itself on a card that runs it.
 - PS4/PS5, Xbox and 8BitDo controllers work through SDL3, over USB or Bluetooth.
+- With an Xbox controller the game's button hints and Controls screen show an Xbox pad. **Button
+  icons** on the launcher's Controller page (or Controls in the port's menu) picks Automatic,
+  PlayStation or Xbox.
 
 ## Keyboard and mouse
 

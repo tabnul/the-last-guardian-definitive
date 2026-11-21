@@ -7,6 +7,7 @@
 #include <nlohmann/json_fwd.hpp>
 #include "common/types.h"
 #include "native/native_device.h"
+#include "native/shadps4/video_core/amdgpu/resource.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
 
 namespace VkbVulkan {
@@ -37,6 +38,10 @@ void ObjectsTick();
 /// once, when Vulkan allows it: a cube as a 2D array, a 2D view as a one-layer array, and back); its image is moved to the general layout (the barrier recorded into `cmd`) when
 /// it is not there yet. False: no such view, or the type cannot be had (counted).
 bool ViewForCompute(u64 view_id, vk::ImageViewType want, vk::CommandBuffer cmd, vk::ImageView& out, vk::Image* image = nullptr);
+/// The view type an image binding of a recompiled module declares, for its T#'s host view type (`GetHostViewType`): the type `ViewForCompute` is asked for. Draws and
+/// dispatches both use it. A 1D image is declared as 2D (note 41); a cube as a 2D array of all its faces (spirv_emit_context.cpp ImageType: the module computes the layer,
+/// slice x 6 + face, itself). `TLG_VKB_CUBE_AS_ARRAY=0` (issue 34; the old way) asks for a cube view instead, which `ViewForCompute` cuts to the first cube of the range.
+[[nodiscard]] vk::ImageViewType ModuleViewType(VkbAmdGpu::ImageType type);
 /// R5 TLG_VKB_DRAW_DUMP: what a view and a sampler object are (image size, formats, mips; the sampler's engine description)
 std::string DescribeView(u64 view_id);
 std::string DescribeSampler(u64 object);
@@ -52,6 +57,8 @@ struct Attachment {
     vk::Image image{}; ///< V4d: for the barriers
 };
 bool AttachmentFor(u64 view_id, vk::Format format, vk::CommandBuffer cmd, Attachment& out);
+/// note 46 / issue 82: moves whenever a view or an image goes or an image's layout is set back; while it stays, an AttachmentFor answer for the same view id and format stays
+[[nodiscard]] u64 ViewEpoch();
 /// The format of our view of engine view `view_id` (eUndefined: none)
 [[nodiscard]] vk::Format ViewFormat(u64 view_id);
 /// Debug: the size of the first subresource of our view of engine view `view_id` (false: none)
@@ -72,7 +79,8 @@ void RetireView(vk::ImageView view);
 bool WaitDumps(u64 timeout_ms);
 /// Our sampler for an engine sampler object, made once from its Direct3D 11 description (V2d)
 /// note 40: `compare` for a shader that samples it with a depth compare (the S# compares per instruction on GCN; a Vulkan sampler compares for all its reads)
-[[nodiscard]] vk::Sampler SamplerFor(u64 sampler_object, bool compare = false);
+/// Issue 42: `bias_q` an extra mip bias in quarter steps, `aniso` the anisotropic filtering setting (0: the game's own filter), both from Aa::LookFor
+[[nodiscard]] vk::Sampler SamplerFor(u64 sampler_object, bool compare = false, s32 bias_q = 0, u32 aniso = 0);
 /// V4: a clear of engine render target view `view_id` (ClearRenderTargetView) / depth stencil view (ClearDepthStencilView: flags 1 depth, 2 stencil) as our image clear in the
 /// frame stream. False: counted.
 bool ClearColor(u64 view_id, const float* color);

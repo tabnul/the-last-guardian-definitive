@@ -23,6 +23,8 @@
 /// removed the soldiers' late readback queries behind the crash after the shield flashback.
 /// Open backend switch (2026-11-18, api-contract.md S10): TLG_LEGACY_DEPTH_BIAS=1 applies the rasterizer description's depth bias (the engine never enables polygon offset).
 /// Open backend switch (2026-11-18, api-contract.md R8): TLG_LEGACY_VIEW_IDENTITY=1 creates every view with the identity channel mapping instead of the T#'s selects.
+/// Open engine switch (2026-11-19, issue 36 log cause E): TLG_AABB_TABLE_LOCK=0 lets the AABB checks read the engine's group table without the engine's own lock (a group
+/// being added could make valid records look foreign in the K2 census (the guard itself was deleted 2026-11-19, see above)).
 /// (`TLG_LEGACY_GEOMETRY_ROWS`, note 122) were deleted for good in note 141: they had rotted once the writers left the batch (note 140).
 ///
 /// Steps whose old path is the switch's `=0` (each default on; listed so the whole set is in one place):

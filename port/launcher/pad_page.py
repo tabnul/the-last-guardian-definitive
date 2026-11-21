@@ -52,7 +52,32 @@ TEXT = {
     'combo_qa': 'QA menu',
     'combo_photo': 'Photo mode on / off',
     'combo_press': 'hold the buttons, then release…',
-    'combo_help': 'Two or more buttons together. Keyboard: Alt+Q quits, Insert opens the in-game menu.',
+    'combo_help': 'Two or more buttons together. The keyboard quit key needs Ctrl or Alt with a letter or number, or an F key. Insert opens the in-game menu.',
+    'quit_key': 'Quit game (keyboard)',
+    'quit_key_press': 'press the key, for example Ctrl+X…',
+    'quit_key_bad': 'not this key: use Ctrl or Alt with a letter or number, or an F key',
+    'quit_key_off': 'off',
+    'off_button': 'Off',
+    'photo': 'Photo mode',
+    'photo_invert': 'Invert look up / down',
+    'photo_shot': 'Screenshot',
+    'photo_up': 'Fly up',
+    'photo_down': 'Fly down',
+    'photo_fast': 'Fast (hold)',
+    'photo_slow': 'Slow (hold)',
+    'photo_help_key': 'Hide / show the button help',
+    'photo_world_key': 'Freeze world on / off',
+    'photo_sticks_key': 'Sticks: camera / boy',
+    'remap_touchpad_left': 'Touchpad (left): photo mode',
+    'remap_touchpad_right': 'Touchpad (right): pause',
+    'photo_press': 'press a button…',
+    'photo_note': 'One button each, used only in photo mode. Left stick flies, right stick looks around. '
+                  'Keyboard: the keys of the same buttons; Print Screen also takes a screenshot.',
+    'icons': 'Button icons in the game',
+    'icons_auto': 'Automatic (follows the controller used last)',
+    'icons_ps': 'PlayStation',
+    'icons_xbox': 'Xbox',
+    'hide_hints': 'Hide button hints (the tutorial still runs, nothing is skipped)',
     'credit': 'Drawing: RPCS3 DualShock 3 by HerrHulaHoop (GPL-2.0), made a DualShock 4 for this port.',
 }
 KINDS = {'ps3': 'DualShock 3 (PS3)', 'ps4': 'DualShock 4 (PS4)', 'ps5': 'DualSense (PS5)',
@@ -80,9 +105,17 @@ COMBO_BITS = {'cross': 0, 'circle': 1, 'square': 2, 'triangle': 3, 'l1': 9, 'r1'
 COMBO_LABELS = {'share': 'Share', 'options': 'Options', 'touchpad': 'Touchpad', 'ps': 'PS', 'cross': 'Cross',
                 'circle': 'Circle', 'square': 'Square', 'triangle': 'Triangle', 'up': 'Up', 'down': 'Down',
                 'left': 'Left', 'right': 'Right'}
+# The same buttons on an Xbox pad (as XBOX_LABEL and the game's own names, tlg_settings.cpp ComboNames).
+XBOX_COMBO_LABELS = dict(COMBO_LABELS, share='View', options='Menu', ps='Xbox', cross='A', circle='B',
+                         square='X', triangle='Y', l1='LB', r1='RB', l2='LT', r2='RT', l3='LS', r3='RS')
 COMBOS = (('pad_combo_quit', 'combo_quit', 'share+options'), ('pad_combo_menu', 'combo_menu', 'l2+r3'),
           ('pad_combo_qa', 'combo_qa', 'l1+l3'),
           ('pad_combo_photo', 'combo_photo', 'l3+r3'))
+# Photo mode buttons (tlg.ini pad_photo_*, tlg_settings.h photo_*): one button each.
+PHOTO_BUTTONS = (('pad_photo_shot', 'photo_shot', 'cross'), ('pad_photo_up', 'photo_up', 'r2'),
+                 ('pad_photo_down', 'photo_down', 'l2'), ('pad_photo_fast', 'photo_fast', 'r1'),
+                 ('pad_photo_slow', 'photo_slow', 'l1'), ('pad_photo_help', 'photo_help_key', 'up'),
+                 ('pad_photo_world', 'photo_world_key', 'down'), ('pad_photo_sticks', 'photo_sticks_key', 'left'))
 
 
 def parse_combo(text, fallback):
@@ -99,16 +132,48 @@ def combo_text(bits):
     return '+'.join(name for name, bit in COMBO_BITS.items() if bits & (1 << bit))
 
 
-def combo_label(bits):
-    return ' + '.join(COMBO_LABELS.get(n, n.upper()) for n in combo_text(bits).split('+') if n)
+# Keyboard quit key (tlg.ini quit_key, default ctrl+x): same rule as tlg_settings.cpp QuitKeyAllowed.
+QUIT_KEY_DEFAULT = 'ctrl+x'
+
+
+def quit_key_allowed(mods, key):
+    if len(key) > 1 and key[0] == 'f' and key[1:].isdigit() and 1 <= int(key[1:]) <= 12:
+        return key not in ('f9', 'f10') or bool(mods)
+    return len(key) == 1 and key.isalnum() and key.isascii() and bool({'ctrl', 'alt'} & set(mods))
+
+
+def parse_quit_key(text):
+    # (mods, key), or None for off / not valid
+    parts = [p for p in (text or '').replace(' ', '').lower().split('+') if p]
+    mods = [m for m in ('ctrl', 'alt', 'shift') if m in parts]
+    keys = [p for p in parts if p not in ('ctrl', 'alt', 'shift')]
+    if len(keys) != 1 or not quit_key_allowed(mods, keys[0]):
+        return None
+    return mods, keys[0]
+
+
+def quit_key_label(text):
+    parsed = parse_quit_key(text)
+    if not parsed:
+        return None
+    mods, key = parsed
+    return '+'.join([m.capitalize() for m in mods] + [key.upper()])
+
+
+def combo_label(bits, xbox=False):
+    labels = XBOX_COMBO_LABELS if xbox else COMBO_LABELS
+    return ' + '.join(labels.get(n, n.upper()) for n in combo_text(bits).split('+') if n)
 
 
 # The game's PS4 buttons that take gamepad buttons, with their default SDL source (runtime_pad.c pad_map).
 REMAP = [('cross', 'Cross', 'a'), ('circle', 'Circle', 'b'), ('square', 'Square', 'x'),
          ('triangle', 'Triangle', 'y'), ('l1', 'L1', 'leftshoulder'), ('r1', 'R1', 'rightshoulder'),
          ('l3', 'L3', 'leftstick'), ('r3', 'R3', 'rightstick'), ('options', 'Options', 'start'),
-         ('touchpad_right', 'Touchpad (right)', 'back'), ('up', 'D-pad up', 'dpup'),
+         ('touchpad_left', 'Touchpad (left)', 'misc1'), ('touchpad_right', 'Touchpad (right)', 'back'),
+         ('up', 'D-pad up', 'dpup'),
          ('down', 'D-pad down', 'dpdown'), ('left', 'D-pad left', 'dpleft'), ('right', 'D-pad right', 'dpright')]
+# Rows that also name what the button does in the game (TEXT keys).
+REMAP_TEXT = {'touchpad_left': 'remap_touchpad_left', 'touchpad_right': 'remap_touchpad_right'}
 
 
 class PadTool:
@@ -189,18 +254,8 @@ class ControllerPage:
         self.canvas = tk.Canvas(left, width=int(400 * self.scale + 20), height=int(250 * self.scale + 20),
                                 background=self.BG, highlightthickness=0)
         self.canvas.pack(anchor='w')
-        self.items, circles = pad_drawing.draw(self.canvas, self.scale, 10, 18, self.LINE, self.MUTED)
-        self.sticks = {}
-        for side, key in (('l', 'LeftJoystickInner'), ('r', 'RightJoystickInner')):
-            x, y, r = circles[key]
-            zone = self.canvas.create_oval(0, 0, 0, 0, outline=self.MUTED, dash=(2, 3))
-            dot = self.canvas.create_oval(x - 7, y - 7, x + 7, y + 7, fill=self.ACCENT, outline='')
-            self.sticks[side] = (x, y, r, dot, zone)
-        self.triggers = {}
-        for side, x in (('lt', 10 + 84 * self.scale), ('rt', 10 + 318 * self.scale)):
-            self.canvas.create_rectangle(x - 30, 2, x + 30, 10, outline=self.LINE)
-            self.triggers[side] = (x - 30, self.canvas.create_rectangle(x - 30, 2, x - 30, 10, fill=self.ACCENT, outline=''),
-                                   self.canvas.create_line(0, 0, 0, 0, fill=self.TEXT))
+        self.drawn_xbox = None
+        self.draw_pad(False)
         test = ttk.Frame(left)
         test.pack(anchor='w', pady=(6, 0))
         ttk.Label(test, text=self.t('test') + ':').pack(side='left')
@@ -208,14 +263,40 @@ class ControllerPage:
         self.rumble_button.pack(side='left', padx=6)
         self.gyro = ttk.Label(test, text='', foreground=self.MUTED, width=40)
         self.gyro.pack(side='left', padx=6)
-        ttk.Label(left, text=self.t('credit'), foreground=self.MUTED, font=('TkDefaultFont', 8)).pack(anchor='w', pady=(8, 0))
+        self.credit = ttk.Label(left, text=self.t('credit'), foreground=self.MUTED, font=('TkDefaultFont', 8))
+        self.credit.pack(anchor='w', pady=(8, 0))
+        # Button icons of the game's hints (tlg.ini button_icons; the game reads it live, also from
+        # the in-game menu).
+        icons = ttk.Frame(left)
+        icons.pack(anchor='w', pady=(8, 0))
+        ttk.Label(icons, text=self.t('icons') + ':').pack(side='left')
+        self.icons = ttk.Combobox(icons, state='readonly', width=44,
+                                  values=[self.t('icons_auto'), self.t('icons_ps'), self.t('icons_xbox')])
+        chosen = tlg_run.read_ini(tlg_run.user_dir() / 'tlg.ini').get('button_icons', '0')
+        self.icons.current(int(chosen) if chosen in ('1', '2') else 0)
+        self.icons.pack(side='left', padx=6)
+        self.icons.bind('<<ComboboxSelected>>', lambda _: tlg_run.update_ini(
+            tlg_run.user_dir() / 'tlg.ini', {'button_icons': self.icons.current()}))
+        # Hide the hint boxes (tlg.ini hide_hints, issue #84; live, also from the in-game menu).
+        self.hide_hints = tk.BooleanVar(value=tlg_run.read_ini(tlg_run.user_dir() / 'tlg.ini')
+                                        .get('hide_hints', '0') == '1')
+        ttk.Checkbutton(left, text=self.t('hide_hints'), variable=self.hide_hints,
+                        command=lambda: tlg_run.update_ini(tlg_run.user_dir() / 'tlg.ini',
+                                                           {'hide_hints': int(self.hide_hints.get())})
+                        ).pack(anchor='w', pady=(4, 0))
         self.status = ttk.Label(left, text='', foreground=self.ACCENT, wraplength=700)
         self.status.pack(anchor='w', pady=(4, 0))
 
-        ttk.Label(right, text=self.t('sticks'), font=('TkDefaultFont', 10, 'bold')).pack(anchor='w')
+        # Right column: one group at a time (the page got too tall with all of them).
+        tabs = ttk.Notebook(right)
+        tabs.pack(fill='both', expand=True)
+        tab_buttons, tab_combos, tab_photo = (ttk.Frame(tabs, padding=(8, 6)) for _ in range(3))
+        for frame, key in ((tab_buttons, 'buttons'), (tab_combos, 'combos'), (tab_photo, 'photo')):
+            tabs.add(frame, text=self.t(key))
+        ttk.Label(tab_buttons, text=self.t('sticks'), font=('TkDefaultFont', 10, 'bold')).pack(anchor='w')
         self.zone, self.zone_labels = {}, {}
         for key, setting in (('left', 'stick_deadzone'), ('right', 'stick_deadzone_right')):
-            row = ttk.Frame(right)
+            row = ttk.Frame(tab_buttons)
             row.pack(fill='x', pady=1)
             ttk.Label(row, text=self.t(key), width=22).pack(side='left')
             var = tk.IntVar(value=int(s.get(setting, s.get('stick_deadzone', 10))))
@@ -225,10 +306,10 @@ class ControllerPage:
             shown.pack(side='left', padx=4)
             self.zone[setting] = var
             self.zone_labels[setting] = shown
-        self.drift_button = ttk.Button(right, text=self.t('drift'), command=self.check_drift)
+        self.drift_button = ttk.Button(tab_buttons, text=self.t('drift'), command=self.check_drift)
         self.drift_button.pack(anchor='w', pady=(2, 8))
-        ttk.Label(right, text=self.t('triggers'), font=('TkDefaultFont', 10, 'bold')).pack(anchor='w')
-        row = ttk.Frame(right)
+        ttk.Label(tab_buttons, text=self.t('triggers'), font=('TkDefaultFont', 10, 'bold')).pack(anchor='w')
+        row = ttk.Frame(tab_buttons)
         row.pack(fill='x', pady=(1, 8))
         ttk.Label(row, text=self.t('trigger'), width=22).pack(side='left')
         self.trigger = tk.IntVar(value=int(s.get('trigger_threshold', 12)))
@@ -236,26 +317,28 @@ class ControllerPage:
         ttk.Scale(row, from_=2, to=90, variable=self.trigger, length=160,
                   command=lambda _: self.set_trigger(shown)).pack(side='left')
         shown.pack(side='left', padx=4)
-        ttk.Label(right, text=self.t('buttons'), font=('TkDefaultFont', 10, 'bold')).pack(anchor='w')
-        grid = ttk.Frame(right)
+        ttk.Label(tab_buttons, text=self.t('buttons'), font=('TkDefaultFont', 10, 'bold')).pack(anchor='w')
+        grid = ttk.Frame(tab_buttons)
         grid.pack(fill='x')
         self.sources = {}
         for index, (ps, label, _) in enumerate(REMAP):
-            ttk.Label(grid, text=label, width=16).grid(row=index, column=0, sticky='w')
+            text = self.t(REMAP_TEXT[ps]) if ps in REMAP_TEXT else label
+            ttk.Label(grid, text=text, width=28).grid(row=index, column=0, sticky='w')
             shown = ttk.Label(grid, text='', width=22, foreground=self.MUTED)
             shown.grid(row=index, column=1, sticky='w')
             ttk.Button(grid, text=self.t('set'), width=8,
                        command=lambda p=ps, l=shown: self.start_capture(p, l)).grid(row=index, column=2, pady=1)
             self.sources[ps] = shown
-        ttk.Button(right, text=self.t('reset'), command=self.reset).pack(anchor='w', pady=(8, 0))
-        ttk.Label(right, text=self.t('combos'), font=('TkDefaultFont', 10, 'bold')).pack(anchor='w', pady=(8, 0))
-        grid = ttk.Frame(right)
+        ttk.Button(tab_buttons, text=self.t('reset'), command=self.reset).pack(anchor='w', pady=(8, 0))
+        grid = ttk.Frame(tab_combos)
         grid.pack(fill='x')
         ini = tlg_run.read_ini(tlg_run.user_dir() / 'tlg.ini')
         self.combo_shown = {}
+        self.combo_bits = {}
         for index, (key, text, default) in enumerate(COMBOS):
             ttk.Label(grid, text=self.t(text), width=26).grid(row=index, column=0, sticky='w')
-            shown = ttk.Label(grid, text=combo_label(parse_combo(ini.get(key), default)), width=18,
+            self.combo_bits[key] = parse_combo(ini.get(key), default)
+            shown = ttk.Label(grid, text=combo_label(self.combo_bits[key], self.drawn_xbox), width=18,
                               foreground=self.MUTED)
             shown.grid(row=index, column=1, sticky='w')
             ttk.Button(grid, text=self.t('set'), width=8,
@@ -264,7 +347,44 @@ class ControllerPage:
                        command=lambda k=key, d=default: self.store_combo(k, parse_combo(d, ''))).grid(
                 row=index, column=3, pady=1, padx=(4, 0))
             self.combo_shown[key] = shown
-        ttk.Label(right, text=self.t('combo_help'), foreground=self.MUTED, wraplength=420).pack(anchor='w')
+        row = len(COMBOS)
+        ttk.Label(grid, text=self.t('quit_key'), width=26).grid(row=row, column=0, sticky='w')
+        self.quit_key = ini.get('quit_key', QUIT_KEY_DEFAULT)
+        if self.quit_key != 'off' and not parse_quit_key(self.quit_key):
+            self.quit_key = QUIT_KEY_DEFAULT   # the game also falls back to the default
+        self.quit_key_shown = ttk.Label(grid, text='', width=18, foreground=self.MUTED)
+        self.quit_key_shown.grid(row=row, column=1, sticky='w')
+        ttk.Button(grid, text=self.t('set'), width=8, command=self.start_quit_key).grid(row=row, column=2, pady=1)
+        ttk.Button(grid, text=self.t('default'), width=8,
+                   command=lambda: self.store_quit_key(QUIT_KEY_DEFAULT)).grid(row=row, column=3, pady=1, padx=(4, 0))
+        ttk.Button(grid, text=self.t('off_button'), width=8,
+                   command=lambda: self.store_quit_key('off')).grid(row=row, column=4, pady=1, padx=(4, 0))
+        self.quit_key_capture = None   # held modifier key names while waiting for the key
+        self.store_quit_key(self.quit_key, write=False)
+        top = grid.winfo_toplevel()
+        top.bind('<KeyPress>', self.quit_key_event, add='+')
+        top.bind('<KeyRelease>', self.quit_key_event, add='+')
+        ttk.Label(tab_combos, text=self.t('combo_help'), foreground=self.MUTED, wraplength=420).pack(anchor='w')
+        self.photo_invert = tk.BooleanVar(value=ini.get('photo_invert_y', '1') != '0')
+        ttk.Checkbutton(tab_photo, text=self.t('photo_invert'), variable=self.photo_invert,
+                        command=lambda: tlg_run.update_ini(tlg_run.user_dir() / 'tlg.ini',
+                                                           {'photo_invert_y': int(self.photo_invert.get())})
+                        ).pack(anchor='w')
+        grid = ttk.Frame(tab_photo)
+        grid.pack(fill='x')
+        for index, (key, text, default) in enumerate(PHOTO_BUTTONS):
+            ttk.Label(grid, text=self.t(text), width=26).grid(row=index, column=0, sticky='w')
+            self.combo_bits[key] = parse_combo(ini.get(key), default)
+            shown = ttk.Label(grid, text=combo_label(self.combo_bits[key], self.drawn_xbox), width=18,
+                              foreground=self.MUTED)
+            shown.grid(row=index, column=1, sticky='w')
+            ttk.Button(grid, text=self.t('set'), width=8,
+                       command=lambda k=key: self.start_combo(k, single=True)).grid(row=index, column=2, pady=1)
+            ttk.Button(grid, text=self.t('default'), width=8,
+                       command=lambda k=key, d=default: self.store_combo(k, parse_combo(d, ''))).grid(
+                row=index, column=3, pady=1, padx=(4, 0))
+            self.combo_shown[key] = shown
+        ttk.Label(tab_photo, text=self.t('photo_note'), foreground=self.MUTED, wraplength=420).pack(anchor='w')
         self.show_sources()
 
     # -- settings --------------------------------------------------------------------------
@@ -280,6 +400,31 @@ class ControllerPage:
         label.configure(text=f'{self.trigger.get()} %')
         self.app.settings['trigger_threshold'] = int(self.trigger.get())
         self.save()
+
+    def draw_pad(self, xbox):
+        """The drawing of the shown pad: our Xbox pad for Xbox-style ones, else the DualShock 4."""
+        if xbox == self.drawn_xbox:
+            return
+        self.drawn_xbox = xbox
+        self.canvas.delete('all')
+        self.items, circles = pad_drawing.draw(self.canvas, self.scale, 10, 18, self.LINE, self.MUTED,
+                                               svg=pad_drawing.XBOX_SVG if xbox else None)
+        self.sticks = {}
+        for side, key in (('l', 'LeftJoystickInner'), ('r', 'RightJoystickInner')):
+            x, y, r = circles[key]
+            zone = self.canvas.create_oval(0, 0, 0, 0, outline=self.MUTED, dash=(2, 3))
+            dot = self.canvas.create_oval(x - 7, y - 7, x + 7, y + 7, fill=self.ACCENT, outline='')
+            self.sticks[side] = (x, y, r, dot, zone)
+        self.triggers = {}
+        for side, at in (('lt', 97 if xbox else 84), ('rt', 303 if xbox else 318)):
+            x = 10 + at * self.scale
+            self.canvas.create_rectangle(x - 30, 2, x + 30, 10, outline=self.LINE)
+            self.triggers[side] = (x - 30, self.canvas.create_rectangle(x - 30, 2, x - 30, 10, fill=self.ACCENT, outline=''),
+                                   self.canvas.create_line(0, 0, 0, 0, fill=self.TEXT))
+        if hasattr(self, 'credit'):
+            self.credit.configure(text='' if xbox else self.t('credit'))  # the Xbox drawing is our own
+        for key, bits in getattr(self, 'combo_bits', {}).items():   # combo and photo buttons by pad names
+            self.combo_shown[key].configure(text=combo_label(bits, xbox))
 
     def kind(self):
         pad = self.pads.get(self.shown_id())
@@ -304,29 +449,73 @@ class ControllerPage:
         label.configure(text=self.t('press'), foreground=self.ACCENT)
 
     # -- combos (written to tlg.ini at once; the in-game Controls tab edits the same keys) ----
-    def start_combo(self, key):
-        self.combo_capture = [key, None, 0]   # key, buttons held at the start, buttons pressed since
-        self.combo_shown[key].configure(text=self.t('combo_press'), foreground=self.ACCENT)
+    def start_combo(self, key, single=False):
+        # key, buttons held at the start, buttons pressed since, one button only (photo mode)
+        self.combo_capture = [key, None, 0, single]
+        self.combo_shown[key].configure(text=self.t('photo_press' if single else 'combo_press'),
+                                        foreground=self.ACCENT)
 
     def store_combo(self, key, bits):
         tlg_run.update_ini(tlg_run.user_dir() / 'tlg.ini', {key: combo_text(bits)})
-        self.combo_shown[key].configure(text=combo_label(bits), foreground=self.MUTED)
+        self.combo_bits[key] = bits
+        self.combo_shown[key].configure(text=combo_label(bits, self.drawn_xbox), foreground=self.MUTED)
+
+    def start_quit_key(self):
+        self.quit_key_capture = set()
+        self.quit_key_shown.configure(text=self.t('quit_key_press'), foreground=self.ACCENT)
+        self.quit_key_shown.winfo_toplevel().focus_set()
+
+    def store_quit_key(self, text, write=True):
+        self.quit_key_capture = None
+        if write:
+            tlg_run.update_ini(tlg_run.user_dir() / 'tlg.ini', {'quit_key': text})
+        self.quit_key = text
+        self.quit_key_shown.configure(text=quit_key_label(text) or self.t('quit_key_off'), foreground=self.MUTED)
+
+    MODIFIER_KEYS = {'Control_L': 'ctrl', 'Control_R': 'ctrl', 'Alt_L': 'alt', 'Alt_R': 'alt',
+                     'Shift_L': 'shift', 'Shift_R': 'shift', 'Meta_L': None, 'Meta_R': None,
+                     'Win_L': None, 'Win_R': None, 'Super_L': None, 'Super_R': None}
+
+    def quit_key_event(self, event):
+        held = self.quit_key_capture
+        if held is None:
+            return None
+        sym = event.keysym or ''
+        down = str(event.type) in ('2', 'KeyPress')
+        if sym in self.MODIFIER_KEYS:
+            name = self.MODIFIER_KEYS[sym]
+            if name:
+                (held.add if down else held.discard)(name)
+            return 'break'
+        if not down:
+            return 'break'
+        if sym == 'Escape':
+            self.store_quit_key(self.quit_key, write=False)
+            return 'break'
+        key = sym.lower()
+        mods = [m for m in ('ctrl', 'alt', 'shift') if m in held]
+        if not quit_key_allowed(mods, key):
+            self.quit_key_shown.configure(text=self.t('quit_key_bad'), foreground=self.ACCENT)
+            return 'break'
+        self.store_quit_key('+'.join(mods + [key]))
+        return 'break'
 
     def combo_poll(self, buttons, lt, rt):
         threshold = self.trigger.get() / 100
         held = buttons & 0x1fffff
         held |= (1 << 24) if lt / 32767 > threshold else 0
         held |= (1 << 25) if rt / 32767 > threshold else 0
-        key, ignore, pressed = self.combo_capture
+        key, ignore, pressed, single = self.combo_capture
         ignore = held if ignore is None else ignore & held
         pressed |= held & ~ignore
-        self.combo_capture = [key, ignore, pressed]
+        self.combo_capture = [key, ignore, pressed, single]
         if not held and pressed:
-            if bin(pressed).count('1') >= 2:
+            count = bin(pressed).count('1')
+            if (count == 1) if single else (count >= 2):
                 self.combo_capture = None
                 self.store_combo(key, pressed)
             else:
-                self.combo_capture[2] = 0   # one button only: keep waiting
+                self.combo_capture[2] = 0   # wrong count (one for a combo, more for photo): keep waiting
 
     def finish_capture(self, bit):
         ps, _ = self.capture
@@ -398,6 +587,7 @@ class ControllerPage:
         self.choice.current(self.choice_guids.index(guid) if guid in self.choice_guids else 0)
         pid = self.shown_id()
         pad = self.pads.get(pid)
+        self.draw_pad(bool(pad) and pad['type'].startswith(('xbox', 'generic')))
         if pad:
             self.info.configure(text=self.t('detected', kind=KINDS.get(pad['type'], pad['type'])) + '  ·  ' +
                                 self.t('motion_yes' if pad['gyro'] else 'motion_no') + '  ·  ' +

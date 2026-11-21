@@ -10,6 +10,8 @@
 #endif
 #include "tlg_toggles.h"
 #include "tlg_freeze.h"
+#include "tlg_game_sema.h"
+#include "tlg_fun.h"
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
@@ -453,6 +455,10 @@ extern "C" void tlggpu_install_hooks(std::uintptr_t image_base, std::uint64_t im
     }
 }
 
+extern "C" void tlggpu_set_game_sema_signal(TlgGpuGameSemaSignal signal) {
+    TlgGameSema::signal.store(signal);
+}
+
 extern "C" void tlggpu_set_wait_hooks(TlgGpuWaitBegin begin, TlgGpuWaitEnd end) {
     TlgFreeze::end_hook.store(end);
     TlgFreeze::begin_hook.store(begin);
@@ -523,6 +529,20 @@ ScreenshotRequests ConsumeScreenshotRequests() { return {}; }
 
 extern "C" void tlggpu_overlay_notice(const char* text, float seconds) {
     TlgOverlay::Notice(text ? text : "", seconds);
+}
+
+// The controller the game reads changed (runtime_pad.c): Xbox-style or not, for Button icons: Automatic.
+extern "C" void tlggpu_pad_kind(int xbox) {
+    TlgSettings::Get().pad_is_xbox = xbox != 0;
+    std::printf("Button icons: controller in use is %s\n", xbox ? "Xbox" : "PlayStation");
+}
+
+extern "C" void tlggpu_pad_game_buttons(uint32_t buttons) {
+    TlgOverlay::SetGameButtons(buttons);
+}
+
+extern "C" int tlggpu_photo_takes_pad(uint8_t lx, uint8_t ly, uint8_t rx, uint8_t ry) {
+    return TlgFun::PhotoTakesPad(lx, ly, rx, ry) ? 1 : 0;
 }
 
 extern "C" int tlggpu_overlay_captures_input(void) {

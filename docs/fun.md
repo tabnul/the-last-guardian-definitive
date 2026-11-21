@@ -17,6 +17,7 @@ Open the in-game menu with **Insert** (or **R3 + L2** on a controller) and go to
 - [Trico's drool](#tricos-drool), a feature cut just before release
 - [Outfits](#outfits)
 - [Trico's size](#tricos-size)
+- [Trico's coat](#tricos-coat), only in this port
 - [Extra Tricos](#extra-tricos)
 - [Trico's eyes](#tricos-eyes)
 - [Photo mode](#photo-mode), only in this port
@@ -98,6 +99,17 @@ brings back his normal size.
 ![The boy riding a small Trico](screenshots/fun/small2.jpg)
 ![A small Trico next to the big one](screenshots/fun/baby-trico.jpg)
 
+## Trico's coat
+
+Makes Trico's fur and feathers thicker or thinner: **Trico fur and feather density** in the
+port's menu (**Insert**), Fun tab, or on the launcher's Mods page. 100% is as the game shipped
+(default and recommended), up to 250% gives a very fluffy Trico, down to 50% a thin one. It
+changes while you play and is kept for the next start. Just for fun.
+
+![A very fluffy Trico on a cliff edge, with the subtitle: Oh. You can't fly? Are your wings broken?](screenshots/fun/fluffy.jpg)
+
+<sub>No, he is just too feathered to fly.</sub>
+
 ## Extra Tricos
 
 Adds more Tricos next to the boy (**Add a Trico**). **Add an enemy Trico**
@@ -133,6 +145,9 @@ shows the controls and is left out of the saved picture.
 | L2 / R2 | Down / up |
 | Hold R1 / L1 | Faster / slower |
 | Cross, or Print Screen | Save a screenshot |
+| D-pad down | Freeze world on / off: let the world run on under your camera, or freeze it again |
+| D-pad left | Sticks: camera / boy: control the boy while the photo camera stays put, or fly the camera again |
+| D-pad up | Hide / show the button help |
 
 Screenshots are lossless PNG files at the full render resolution, in `user/screenshots`. With HDR
 on, every photo is saved twice: a normal picture that looks right on any screen, and an HDR picture
@@ -140,7 +155,14 @@ on, every photo is saved twice: a normal picture that looks right on any screen,
 the second one off. You can
 also turn photo mode on with **Photo mode** in the Fun tab. **Freeze** chooses how the world
 stops: **Pause the game** (everything stops) or **Stop time** (the game's slow motion turned down
-until nothing moves). A jump to another place turns photo mode off.
+until nothing moves). With **Freeze world on / off** (D-pad down) the world runs on while you keep
+the photo camera, so you can watch events play out from any angle. The game's pause menu does not undo
+the freeze: closing it freezes the world again. **Sticks: camera / boy** (D-pad left) gives the
+controller to the boy while the camera stays put, so you can play a moment and film it from your own
+angle; then only Print Screen takes a picture. While the sticks are on the camera, the boy stands
+still. All
+photo buttons can be changed in the menu (Controls) and in the launcher. A jump to another place
+turns photo mode off.
 
 ![Photo mode: the camera hangs above the gorge, looking down on Trico](screenshots/fun/photo-mode.jpg)
 
@@ -197,20 +219,25 @@ Tricopilot; the report notes which it was, and which camera.
 
 ## Trico Tricks: make Trico move
 
-The **Trico Tricks** tab asks the story's Trico to do things, the same way the game itself does:
-sneeze, yawn, roar, howl, flap or stretch his wings, scratch, shake off water, sit, lie down, roll
-on the ground and more. He first gets into the pose a move needs (stands up, sits or lies down) and
-gets up to 3 tries. His own mind can still win, and some moves need room: a roll can push the boy
-off a ledge.
+The **Trico Tricks** tab makes the story's Trico sneeze, yawn, roar, howl, flap or stretch his
+wings, scratch, shake off water, sit, lie down, roll on the ground and more. Some moves need room:
+a roll can push the boy off a ledge.
 
-- The moves that worked in our tests are a row of buttons. Press **F12** in game to get the same
-  buttons as a small bar over the game, and click a move.
-- The drop-down list has every move, also the ones that **may not work**: never seen in our tests,
-  or not tested (Groom, Fall asleep, Play in the mud, Dig sand and others). Try them.
+- **The bar:** press **F12** in game to get the moves as a small bar over the game (the same bar
+  is on the Trico Tricks tab), and click a move. Coloured buttons on top pick a group, in the
+  colours of the icons: Sounds and moods, Body, Play, Tummy, Rest, Marketing / E3 poses and May
+  not work. The bar opens on the group you used last.
+- **Favourites:** right-click a move to add it to the **Favourites** group, the first button (in
+  the menu also Square / X on a controller). A gold star marks it; right-click again to take it
+  out. Up to 16, kept in `user/tlg.ini` (`trico_favourites`).
+- **Marketing / E3 poses:** poses from the game's press shots and E3 demos: **Photo pose**,
+  **Claws** and **Lion roar**.
+- **May not work:** 10 moves we never saw working in our tests (Fall asleep, Dig sand, Hungry and
+  others). They have their own group; try them.
 - **Gag** and **Throw up:** the throw-up is a cut animation, sealed by the developers in July 2016.
   This brings it back.
 
-![Trico yawning, with the Trico Tricks bar (F12)](screenshots/fun/yawn.jpg)
+![Trico doing a happy jump next to the boy, with the Trico Tricks bar (F12) and its group buttons](screenshots/fun/trico-tricks-bar.jpg)
 
 ## Trico's toilet
 

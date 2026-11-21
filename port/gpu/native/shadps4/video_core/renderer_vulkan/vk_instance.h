@@ -135,6 +135,13 @@ public:
                features.shaderStorageImageArrayDynamicIndexing && vk12_features.descriptorBindingStorageImageUpdateAfterBind;
     }
 
+    /// FSR 4 native AA (native_vkb_fsr4.cpp): the v07 INT8 model passes can run (Float16, Int8, Int16, packed integer dot products, linear compute derivatives,
+    /// extended storage image formats); the normal renderer's rule (their Instance::IsFsr4Int8Supported). False with TLG_VKB_FSR4=0 (not asked for).
+    bool IsFsr4Int8Supported() const {
+        return vk12_features.shaderFloat16 && vk12_features.shaderInt8 && features.shaderInt16 && vk13_features.shaderIntegerDotProduct &&
+               compute_shader_derivatives && compute_shader_derivatives_features.computeDerivativeGroupLinear && features.shaderStorageImageExtendedFormats;
+    }
+
     /// Returns true if 8-bit ints are supported in shaders
     bool IsShaderInt8Supported() const {
         return vk12_features.shaderInt8;
@@ -151,6 +158,20 @@ public:
     /// Returns true if VK_EXT_external_memory_host is enabled (in place buffers: the GPU reads imported guest memory where it is)
     bool IsExternalMemoryHostSupported() const {
         return external_memory_host;
+    }
+
+    /// Returns true if VK_KHR_external_memory_fd and VK_EXT_external_memory_dma_buf are enabled (Linux only: the GPU pool, TLG_VKB_GPU_POOL)
+    bool IsExternalMemoryDmaBufSupported() const {
+        return external_memory_dma_buf;
+    }
+
+    /// Returns true if VK_KHR_map_memory2 and VK_EXT_map_memory_placed (feature memoryMapPlaced) are enabled (Linux only: R3a, the frame ring at an address below 40 bits)
+    bool IsMapMemoryPlacedSupported() const {
+        return map_memory_placed;
+    }
+    /// The alignment of a placed mapping's address and size (0 without the feature)
+    u64 PlacedMapAlignment() const {
+        return placed_map_alignment;
     }
 
     /// Returns true if VK_KHR_maintenance8 is supported
@@ -544,6 +565,7 @@ private:
     vk::PhysicalDeviceImage2DViewOf3DFeaturesEXT image_2d_view_of_3d_features;
     vk::PhysicalDevicePrimitiveTopologyListRestartFeaturesEXT list_restart_features;
     vk::PhysicalDeviceShaderClockFeaturesKHR shader_clock_features;
+    vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR compute_shader_derivatives_features{};
     vk::DriverIdKHR driver_id;
     vk::UniqueDebugUtilsMessengerEXT debug_callback{};
     std::string vendor_name;
@@ -580,11 +602,15 @@ private:
     bool maintenance_5{};
     bool maintenance_6{};
     bool external_memory_host{};
+    bool external_memory_dma_buf{};
+    bool map_memory_placed{};
+    u64 placed_map_alignment{};
     bool maintenance_8{};
     bool attachment_feedback_loop{};
     bool image_2d_view_of_3d{};
     bool image_view_min_lod{};
     bool shader_clock{};
+    bool compute_shader_derivatives{};
     bool supports_memory_budget{};
     bool supports_block_texel_view{};
     u64 total_memory_budget{};

@@ -14,7 +14,7 @@ fetch() { # url dir
     mkdir -p "$2" && curl -fsSL "$1" | tar -xz -C "$2" --strip-components=1
 }
 
-fetch https://github.com/libsdl-org/SDL/releases/download/release-3.2.24/SDL3-3.2.24.tar.gz sdl
+fetch https://github.com/libsdl-org/SDL/releases/download/release-3.4.20/SDL3-3.4.20.tar.gz sdl
 cmake -S sdl -B sdl/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PREFIX" \
     -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF
 ninja -C sdl/build install

@@ -35,6 +35,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+#include "native/native_linux.h" // Linux side of the Windows calls (empty on Windows)
 
 using namespace Xbyak::util;
 
@@ -118,10 +119,33 @@ u64 ParseHex(const nlohmann::json& value) {
     return std::stoull(value.get<std::string>(), nullptr, 16);
 }
 
+/// TLG_HOOK_RIP_RELATIVE (default on; =0: the old rule, such an entry is refused): a displaced instruction that addresses memory relative to
+/// itself (`lea rcx,[rip+N]`, `mov eax,[rip+N]`) is taken; its 32 bit displacement is corrected for the address the copy runs at.
+bool RipRelativeOn() {
+    static const bool on = [] {
+        const char* e = std::getenv("TLG_HOOK_RIP_RELATIVE");
+        return e == nullptr || *e != '0';
+    }();
+    return on;
+}
+
+/// The displaced instructions whose rip-relative displacement must be corrected when they are copied.
+struct RipFixes {
+    struct Fix {
+        u8 at;        ///< start of the instruction in the displaced bytes
+        u8 length;    ///< its length (rip points past it)
+        u8 disp_at;   ///< start of its 32 bit displacement in the instruction
+    };
+    Fix fix[MaxDisplacedBytes]{};
+    size_t count{};
+};
+
 /// Decodes whole instructions from `code` until at least MinDisplacedBytes are covered. Returns 0 if
-/// an instruction cannot be copied to another address unchanged.
-size_t DisplacedLength(const u8* code, std::string& why) {
+/// an instruction cannot be copied to another address. A memory operand relative to rip can be copied
+/// (its displacement is noted in `fixes` and corrected by EmitDisplaced); relative branches and calls cannot.
+size_t DisplacedLength(const u8* code, std::string& why, RipFixes& fixes) {
     size_t length = 0;
+    fixes.count = 0;
     while (length < MinDisplacedBytes) {
         ZydisDecodedInstruction inst;
         ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT];
@@ -129,10 +153,6 @@ size_t DisplacedLength(const u8* code, std::string& why) {
             inst, operands, const_cast<u8*>(code) + length, MaxDisplacedBytes);
         if (!ZYAN_SUCCESS(status)) {
             why = "cannot decode instruction at +" + std::to_string(length);
-            return 0;
-        }
-        if ((inst.attributes & ZYDIS_ATTRIB_IS_RELATIVE) != 0) {
-            why = "relative operand at +" + std::to_string(length);
             return 0;
         }
         switch (inst.meta.category) {
@@ -147,6 +167,17 @@ size_t DisplacedLength(const u8* code, std::string& why) {
         default:
             break;
         }
+        if ((inst.attributes & ZYDIS_ATTRIB_IS_RELATIVE) != 0) {
+            bool rip_memory = false;
+            for (u32 i = 0; i < inst.operand_count; ++i) {
+                rip_memory |= operands[i].type == ZYDIS_OPERAND_TYPE_MEMORY && operands[i].mem.base == ZYDIS_REGISTER_RIP;
+            }
+            if (!RipRelativeOn() || !rip_memory || inst.raw.disp.size != 32 || inst.raw.imm[0].is_relative || inst.raw.imm[1].is_relative) {
+                why = "relative operand at +" + std::to_string(length);
+                return 0;
+            }
+            fixes.fix[fixes.count++] = {static_cast<u8>(length), inst.length, inst.raw.disp.offset};
+        }
         length += inst.length;
         if (length > MaxDisplacedBytes) {
             why = "displaced bytes exceed the limit";
@@ -154,6 +185,29 @@ size_t DisplacedLength(const u8* code, std::string& why) {
         }
     }
     return length;
+}
+
+/// Writes the displaced instructions at the generator's current address. A rip-relative displacement is set so it names the same
+/// address as at `entry`; false if that address is out of the 32 bit reach of the copy or lies in the displaced bytes themselves (the hook is then refused).
+bool EmitDisplaced(Xbyak::CodeGenerator& c, const u8* entry, const u8* original, size_t displaced, const RipFixes& fixes) {
+    u8 bytes[MaxDisplacedBytes];
+    std::memcpy(bytes, original, displaced);
+    const auto copy = c.getCurr<const u8*>();
+    for (size_t i = 0; i < fixes.count; ++i) {
+        const auto& f = fixes.fix[i];
+        s32 disp;
+        std::memcpy(&disp, &bytes[f.at + f.disp_at], sizeof(disp));
+        const s64 target = reinterpret_cast<s64>(entry + f.at + f.length) + disp;
+        const s64 moved = target - reinterpret_cast<s64>(copy + f.at + f.length);
+        const bool into_patch = target >= reinterpret_cast<s64>(entry) && target < reinterpret_cast<s64>(entry + displaced); // would read the jump, not the code
+        if (into_patch || moved < INT32_MIN || moved > INT32_MAX) {
+            return false;
+        }
+        const auto moved32 = static_cast<s32>(moved);
+        std::memcpy(&bytes[f.at + f.disp_at], &moved32, sizeof(moved32));
+    }
+    c.db(bytes, displaced);
+    return true;
 }
 
 /// Stub for a counter-only hook: lock inc [header].
@@ -241,8 +295,9 @@ u64 PS4_SYSV_ABI ProfiledMid(Core::GuestHooks::MidContext* context, Hook* hook) 
 /// Stub for a hook that calls a host function: saves the caller-saved registers and the argument registers, calls
 /// handler(rdi, rsi, rdx, rcx, r8, r9, return address, rsp of the caller). A non-zero result skips the hooked function (the stub
 /// returns to its caller; with bit 63 set the rest of the result is returned as its value); zero runs the displaced instructions and continues in the function.
-void EmitCallStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_t displaced,
-                  const u8* resume) {
+bool EmitCallStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_t displaced,
+                  const RipFixes& fixes, const u8* resume) {
+    bool fits = true;
     Xbyak::Label handled;
     // TLG_HOOK_PROF: 16 more bytes for a ninth argument (the hook) at [rsp + 16]; the xmm registers move up by 16 (rsp stays 16-byte aligned at the call)
     const bool prof = HookProfOn() && hook.prof_site != nullptr;
@@ -298,7 +353,7 @@ void EmitCallStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_
     c.test(rax, rax);
     c.jnz(handled, Xbyak::CodeGenerator::T_NEAR);
     restore();
-    c.db(original, displaced);
+    fits &= EmitDisplaced(c, resume - displaced, original, displaced, fixes);
     c.jmp(resume, Xbyak::CodeGenerator::T_NEAR);
     c.L(handled);
     // a result with bit 63 set is also the return value of the skipped function (the saved rax is replaced)
@@ -312,13 +367,14 @@ void EmitCallStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_
     restore();
     c.ret();
     hook.original_call = c.getCurr<u64>();
-    c.db(original, displaced);
+    fits &= EmitDisplaced(c, resume - displaced, original, displaced, fixes);
     c.jmp(resume, Xbyak::CodeGenerator::T_NEAR);
+    return fits;
 }
 
 /// Mode Mid (see MidContext). The stub keeps the interrupted code's registers in a MidContext on its stack: 128 bytes of red zone are skipped, a slot for the continue address,
 /// flags and the fifteen registers, rip and rsp, the sixteen ymm registers; the handler is called with the stack aligned and a pointer to the context in rdi.
-void EmitMidStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_t displaced, const u8* resume) {
+bool EmitMidStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_t displaced, const RipFixes& fixes, const u8* resume) {
     constexpr int YmmBytes = 16 * 32;
     constexpr int Fields = 16;       // rip, rsp
     constexpr int RegsAndFlags = 128; // fifteen registers and the flags
@@ -391,13 +447,18 @@ void EmitMidStub(Xbyak::CodeGenerator& c, Hook& hook, const u8* original, size_t
     c.jnz(take, Xbyak::CodeGenerator::T_NEAR);
     restore();
     c.add(rsp, RedZone + Slot);
-    c.db(original, displaced);
+    const bool fits = EmitDisplaced(c, resume - displaced, original, displaced, fixes);
     c.jmp(resume, Xbyak::CodeGenerator::T_NEAR);
     c.L(take);
     c.mov(ptr[rsp + ContinueSlotInContext], rax);
     restore();
     c.ret(RedZone);
+    return fits;
 }
+
+/// Hooks that share one address (issue 103): the first one installed patches the game's code; each later one gets its own stub that runs it,
+/// then jumps to the stub that was there before (instead of the game's code, which already starts with that stub's jump). The later one runs first.
+std::unordered_map<u64, const u8*> stub_at_offset;
 
 bool InstallHook(Hook& hook, u8* image_base, u64 image_size) {
     if (hook.offset + 16 > image_size) {
@@ -405,13 +466,18 @@ bool InstallHook(Hook& hook, u8* image_base, u64 image_size) {
         return false;
     }
     u8* entry = image_base + hook.offset;
+    // shared address: nothing is displaced, and the stub continues in the earlier stub instead of the game's code
+    const auto shared = stub_at_offset.find(hook.offset);
+    const u8* chain_to = shared != stub_at_offset.end() ? shared->second : nullptr;
     std::string why;
-    const size_t displaced = DisplacedLength(entry, why);
-    if (displaced == 0) {
+    RipFixes fixes;
+    const size_t displaced = chain_to != nullptr ? 0 : DisplacedLength(entry, why, fixes);
+    if (displaced == 0 && chain_to == nullptr) {
         TLG_LOG(HOOK, Error, "guest hook '{}' at {:#x} refused: {}", hook.name, hook.offset, why);
         return false;
     }
-    u8 original[MaxDisplacedBytes];
+    const u8* resume = chain_to != nullptr ? chain_to : entry + displaced;
+    u8 original[MaxDisplacedBytes]{};
     std::memcpy(original, entry, displaced);
     LOG_INFO(Core, "guest hook '{}' code bytes {}", hook.name, fmt::format("{:02x}", fmt::join(std::span<const u8>{entry, 8}, "")));
 
@@ -424,26 +490,31 @@ bool InstallHook(Hook& hook, u8* image_base, u64 image_size) {
     hook.header = reinterpret_cast<u8*>((raw + 63) & ~u64{63});
 
     const u8* stub = nullptr;
+    bool fits = true;
     const bool emitted = EmitInTrampolineArea(entry, [&](Xbyak::CodeGenerator& c) {
         stub = c.getCurr<const u8*>();
         if (hook.mode == Mode::Call) {
-            EmitCallStub(c, hook, original, displaced, entry + displaced);
-            return true;
+            fits = EmitCallStub(c, hook, original, displaced, fixes, resume);
+            return fits;
         }
         if (hook.mode == Mode::Mid) {
             hook.entry = entry;
-            EmitMidStub(c, hook, original, displaced, entry + displaced);
-            return true;
+            fits = EmitMidStub(c, hook, original, displaced, fixes, resume);
+            return fits;
         }
         if (hook.mode != Mode::Count) {
             EmitArgsStub(c, hook);
         } else {
             EmitCountStub(c, hook);
         }
-        c.db(original, displaced);
-        c.jmp(entry + displaced, Xbyak::CodeGenerator::T_NEAR);
-        return true;
+        fits = EmitDisplaced(c, entry, original, displaced, fixes);
+        c.jmp(resume, Xbyak::CodeGenerator::T_NEAR);
+        return fits;
     });
+    if (!fits) {
+        TLG_LOG(HOOK, Error, "guest hook '{}': a rip-relative address of the displaced code is out of reach of the trampoline or points into the displaced bytes", hook.name);
+        return false;
+    }
     if (!emitted) {
         TLG_LOG(HOOK, Error, "guest hook '{}': no room in the trampoline area", hook.name);
         return false;
@@ -454,16 +525,19 @@ bool InstallHook(Hook& hook, u8* image_base, u64 image_size) {
         TLG_LOG(HOOK, Error, "guest hook '{}': trampoline is out of near-jump range", hook.name);
         return false;
     }
+    // a shared address already holds the earlier stub's jump and its nops: only the jump's target changes
+    const size_t patched = chain_to != nullptr ? 5 : displaced;
     u8 patch[MaxDisplacedBytes];
     patch[0] = 0xE9;
     const auto rel32 = static_cast<s32>(rel);
     std::memcpy(&patch[1], &rel32, sizeof(rel32));
-    std::memset(&patch[5], 0x90, displaced - 5);
-    std::memcpy(entry, patch, displaced);
+    std::memset(&patch[5], 0x90, patched - 5);
+    std::memcpy(entry, patch, patched);
 #ifdef _WIN32
-    FlushInstructionCache(GetCurrentProcess(), entry, displaced);
+    FlushInstructionCache(GetCurrentProcess(), entry, patched);
 #endif
     hook.entry = entry;
+    stub_at_offset[hook.offset] = stub;
     LOG_INFO(Core, "guest hook '{}' installed at {:#x} ({} bytes displaced, mode {})", hook.name,
              reinterpret_cast<u64>(entry), displaced, hook.mode == Mode::Call   ? "call"
                  : hook.mode == Mode::Mid  ? "mid"
@@ -605,7 +679,10 @@ void InstallSpans(VAddr base, u64 image_size) {
             *slot = reinterpret_cast<u64>(stub);
             VirtualProtect(slot, 8, old, &old);
 #else
-            *slot = reinterpret_cast<u64>(stub);
+            if (!WriteProtectedSlot(slot, reinterpret_cast<u64>(stub))) {
+                TLG_LOG(HOOK, Error, "frame profiler span '{}': cannot make its slot writable", name);
+                continue;
+            }
 #endif
             span_names_installed.push_back(name);
             FrameTimeline::RegisterSpan(id, name);
@@ -693,7 +770,17 @@ void InstallForEboot(VAddr base, u64 image_size) {
 
         u32 installed = 0;
         u32 failed = 0;
+        // two passes: the call and mid hooks first, then the observing ones (count, args, snap). On a shared address the one installed last runs
+        // first, so an observer always sees the call even when a call hook then skips the game's function (issue 103).
+        for (int pass = 0; pass < 2; ++pass)
         for (const auto& item : config.at("hooks")) {
+            {
+                const auto mode_name = item.value("mode", std::string("count"));
+                const bool acting = mode_name == "call" || mode_name == "mid";
+                if (acting != (pass == 0)) {
+                    continue;
+                }
+            }
             auto hook = std::make_unique<Hook>();
             hook->name = item.at("name").get<std::string>();
             if (item.contains("ghidra")) {

@@ -303,6 +303,64 @@ void VideoOutDriver::Flip(const Request& req) {
         g_presenter->Present(frame);
         TlgFreeze::presents.fetch_add(1, std::memory_order_relaxed);
     });
+    // Frame rate line, same text start and same window as the normal renderer's ("Frame stats: N FPS, worst
+    // frame M ms"), so one reader handles both logs. Only with TLG_FRAME_STATS=1; window TLG_FRAME_STATS_MS.
+    static const bool frame_stats = EmulatorSettingsImpl::Flag("TLG_FRAME_STATS", false);
+    if (frame_stats) {
+        static const double window_s = [] {
+            const char* env = std::getenv("TLG_FRAME_STATS_MS");
+            const int ms = env ? std::atoi(env) : 0;
+            return ms > 0 ? ms / 1000.0 : 5.0;
+        }();
+        using Clock = std::chrono::steady_clock;
+        static Clock::time_point window_start = Clock::now(), last = window_start;
+        static u32 frames;
+        static double worst_ms;
+        // Same "Stall:" and "Frame pacing:" lines as the normal renderer (text start and rules), so the bench
+        // tool gets p99, slow frames and stalls for both renderers (issue 82). The new engine has no wait counters.
+        static std::vector<double> intervals;
+        static bool primed = false;
+        static u32 stalls_shown = 0;
+        const auto now = Clock::now();
+        const double frame_ms = std::chrono::duration<double, std::milli>(now - last).count();
+        worst_ms = std::max(worst_ms, frame_ms);
+        last = now;
+        ++frames;
+        if (primed) {
+            intervals.push_back(frame_ms);
+            if (frame_ms > 40.0 && stalls_shown < 10) {
+                ++stalls_shown;
+                std::printf("Stall: %.1f ms frame; new engine\n", frame_ms);
+            }
+        }
+        primed = true;
+        const double window = std::chrono::duration<double>(now - window_start).count();
+        if (window >= window_s) {
+            std::printf("Frame stats: %.1f FPS, worst frame %.1f ms (vblank %u Hz); new engine\n", frames / window,
+                        worst_ms, EmulatorSettings.GetVblankFrequency());
+            if (intervals.size() > 2) {
+                std::vector<double> sorted = intervals;
+                std::sort(sorted.begin(), sorted.end());
+                const double median = sorted[sorted.size() / 2];
+                double sum = 0, sq = 0;
+                u32 spikes = 0;
+                for (const double ms : intervals) {
+                    sum += ms;
+                    sq += ms * ms;
+                    spikes += ms > 1.5 * median;
+                }
+                const double mean = sum / intervals.size();
+                std::printf("Frame pacing: median %.2f ms, stddev %.2f ms, p99 %.2f ms, %u frames over 1.5x median\n", median,
+                            std::sqrt(std::max(0.0, sq / intervals.size() - mean * mean)),
+                            sorted[std::min(sorted.size() - 1, sorted.size() * 99 / 100)], spikes);
+            }
+            intervals.clear();
+            stalls_shown = 0;
+            window_start = now;
+            frames = 0;
+            worst_ms = 0;
+        }
+    }
     // Update flip status.
     auto* port = req.port;
     {

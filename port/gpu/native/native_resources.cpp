@@ -25,6 +25,7 @@
 #ifdef TLG_PORT
 #include "tlg_toggles.h" // sigjmp_buf, tlg_setjmp, runtime_fault_recover
 #endif
+#include "native/native_linux.h" // Linux side of the Windows calls (empty on Windows)
 #include "common/logging/log.h"
 #include "common/path_util.h"
 #include "native/native_draw.h"

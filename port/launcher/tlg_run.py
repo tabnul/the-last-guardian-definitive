@@ -222,7 +222,6 @@ DEBUG_FLAGS = (
     ('flag_fault_nodrain', 'TLG_FAULT_NODRAIN', '1', None, False),     # #38
     ('flag_pipeline_binaries', 'TLG_PIPELINE_BINARIES', '1', '0', False),  # NVIDIA 595 crash
     ('flag_object_motion', 'TLG_OBJECT_MOTION', '1', '0', False),      # ~10% FPS; unguarded reads
-    ('flag_arena_free', 'TLG_ARENA_FREE', '1', None, False),           # #79: out of memory, 8 GB AMD
     ('flag_granule', 'TLG_RESIDENCY_GRANULE_MB', None, '0', True),    # #79: AMD Windows submit OOM
     ('flag_sema_fast', 'TLG_SEMA_FAST', None, '0', True),            # #41 (@thearturord)
     ('flag_vk_validation', 'TLG_VK_VALIDATION', '1', None, False),     # needs the Vulkan SDK layer
@@ -447,7 +446,7 @@ def save_settings(settings):
 # Messages about the player's game folder the Qt launcher can show; none blocks only as a
 # warning in this port (check_game reports missing files and the unbuilt probe).
 TEXT = {}
-WARNINGS = {'old_version'}   # check_game: shown, but Play stays enabled
+WARNINGS = {'old_version', 'fps_unsupported'}   # check_game: shown, but Play stays enabled
 
 
 def message(key, **fmt):
@@ -493,40 +492,40 @@ def check_game(game_dir):
             problems.append(('missing', name))
     version = game_version(Path(game_image.safe_files_dir(game_dir)))
     if version is not None:
-        problems.append(('old_version', version))
+        problems.append(version)
     if not PROBE.is_file():
         problems.append(('not_built', str(PROBE)))
     return problems
 
 
-EBOOT_103_SHA256 = '91dce685be81f8f6bc88097d4fc7a62e97ca08d109621c57fe9371ae125feb3c'  # tlg_patches.py
 _version_cache = {}
 
 
 def game_version(game):
-    """The game's version (APP_VER of sce_sys/param.sfo) when it is older than update 01.03 and
-    eboot.bin is not the plain 1.03 build either; None when the folder is 1.03 or cannot be read.
-    The port is made for the 1.03 eboot: older ones start at 30 FPS without the port's patches.
-    A merged dump can keep the base game's param.sfo, so the eboot hash has the last word."""
+    """A check_game warning about eboot.bin, or None when it holds the 1.03 game code the frame
+    rate patches expect (or the folder cannot be read). ('old_version', APP_VER) when param.sfo
+    is older than update 01.03 too; else ('fps_unsupported', ''). The bytes decide, not the
+    file hash: 1.03 dumps of other regions and dump tools differ elsewhere in the file (#87).
+    With either warning the game starts at 30 FPS without the frame rate patches."""
     try:
         sfo, eboot = game / 'sce_sys' / 'param.sfo', game / 'eboot.bin'
-        stamp = (str(game), sfo.stat().st_mtime_ns, eboot.stat().st_mtime_ns, eboot.stat().st_size)
+        stamp = (str(game), eboot.stat().st_mtime_ns, eboot.stat().st_size,
+                 sfo.stat().st_mtime_ns if sfo.is_file() else 0)
     except OSError:
         return None
     if stamp in _version_cache:
         return _version_cache[stamp]
     result = None
     try:
-        from prepare import sfo as read_sfo
-        app_ver = str(read_sfo(sfo.read_bytes()).get('APP_VER', ''))
-        if re.fullmatch(r'\d{2}\.\d{2}', app_ver) and app_ver < '01.03':
-            import hashlib
-            digest = hashlib.sha256()
-            with eboot.open('rb') as f:
-                for block in iter(lambda: f.read(1 << 20), b''):
-                    digest.update(block)
-            if digest.hexdigest() != EBOOT_103_SHA256:
-                result = app_ver
+        import tlg_patches
+        elf = tlg_patches.read_eboot_elf(game)
+        if not tlg_patches.fps_patches_fit(elf):   # None: unreadable or a broken SELF
+            result = ('fps_unsupported', '')
+            if sfo.is_file():
+                from prepare import sfo as read_sfo
+                app_ver = str(read_sfo(sfo.read_bytes()).get('APP_VER', ''))
+                if re.fullmatch(r'\d{2}\.\d{2}', app_ver) and app_ver < '01.03':
+                    result = ('old_version', app_ver)
     except (OSError, ValueError, ImportError, struct.error):
         result = None
     _version_cache[stamp] = result
@@ -955,30 +954,69 @@ def texture_packs(folder):
     return sorted(entry.name for entry in folder.iterdir() if (entry / 'index.txt').is_file())
 
 
+# tlg.ini upscaler names, as TlgSettings::UpscalerName (gpu/shim/tlg_settings.cpp)
+INI_UPSCALERS = ('off', 'fsr3', 'fsr4', 'fsr411', 'taa', 'dlss')
+
+
+def ini_int(ini, key, default):
+    """A tlg.ini number as the game reads it (TlgSettings::Set: C atoi; a key that is not there keeps the default)."""
+    if key not in ini:
+        return default
+    match = re.match(r'[ \t\n\v\f\r]*([+-]?[0-9]+)', ini[key])
+    return int(match.group(1)) if match else 0
+
+
+def loaded_upscaler(ini):
+    """The upscaler the game itself loads from tlg.ini (TlgSettings::Load, before the card checks): a name it does not
+    know keeps its default (fsr3); a file from before the AA row (no aa_row), and every upscaler but off, fsr3, fsr4 and
+    taa (dlss, fsr411), load as dlss; anti-aliasing off (dlaa=0) loads as off. Not mirrored: the environment overrides
+    TLG_UPSCALER / TLG_DLAA (test runs), and spaces before a key (read_ini strips them, the game does not)."""
+    upscaler = ini.get('upscaler', 'fsr3')
+    if upscaler not in INI_UPSCALERS:
+        upscaler = 'fsr3'
+    if ini_int(ini, 'aa_row', 0) == 0 or upscaler not in ('off', 'fsr3', 'fsr4', 'taa'):
+        upscaler = 'dlss'
+    if ini_int(ini, 'dlaa', 1) == 0 and upscaler != 'off':
+        upscaler = 'off'
+    return upscaler
+
+
 def backend_aa_env(settings, ini):
     """The Video page's Anti-aliasing and Frame generation rows for the engine-to-Vulkan backend
     (TLG_VKB_AA / TLG_VKB_FG, gpu/native/native_vkb_aa.cpp). The backend draws at the output size
-    (no upscaler), so the row's choice is its anti-aliasing: DLAA (an upscaler choice of DLSS counts
-    as DLAA), FSR 3.1 (FSR 4 runs as FSR 3.1 here), or none (Off, TAA). Frame generation: DLSS only,
-    on top of an anti-aliasing (it takes the AA's depth and motion), off at a 30 FPS game rate."""
+    (no upscaler), so the row's choice is its anti-aliasing. The choice is what the game itself loads
+    from tlg.ini (loaded_upscaler), so every value the file can hold reaches the backend: dlss as DLAA,
+    fsr3, fsr4, taa and off as they are (the backend says it when it has no AA for one, and runs
+    FSR 3.1: owner, pull request 51, "The game is never left without AA"). With nothing chosen yet (no
+    aa_row in tlg.ini: a fresh launch) the backend decides (TLG_VKB_AA=auto: DLAA if DLSS is
+    installed, else FSR 4 on an RDNA 4 card, else FSR 3.1; owner, pull request 51). Frame generation:
+    the row's 1 = DLSS, 2 = FSR (as TLG_FG for the normal renderer), on top of an anti-aliasing (it takes
+    the AA's depth and motion), off at a 30 FPS game rate. TLG_VKB_AA_CHOICE=0: the old table (only dlss, fsr3, fsr4 reached the backend)."""
     env = {}
     # tlg.ini dlss_supported / dlss_fg_supported are the default renderer's own DLSS checks: they never run with the
     # backend (which loads DLSS through its own glue, tlg_dlss.dll), so they say nothing here
-    if ini.get('aa_row', '0') in ('0', ''):
-        choice = 'dlss'                     # a tlg.ini from before the row: DLSS (launcher upscaler_of)
-    elif ini.get('dlaa', '1') in ('0', ''):
-        choice = 'off'
+    if os.environ.get('TLG_VKB_AA_CHOICE', '1') == '0':
+        if ini.get('aa_row', '0') in ('0', ''):
+            choice = 'auto'
+        elif ini.get('dlaa', '1') in ('0', ''):
+            choice = 'off'
+        else:
+            choice = ini.get('upscaler', 'dlss')
+        aa = {'auto': 'auto', 'dlss': 'dlaa', 'fsr3': 'fsr3', 'fsr4': 'fsr4'}.get(choice)
     else:
-        choice = ini.get('upscaler', 'dlss')
-    aa = {'dlss': 'dlaa', 'fsr3': 'fsr3', 'fsr4': 'fsr3'}.get(choice)
+        loaded = loaded_upscaler(ini)
+        if ini_int(ini, 'aa_row', 0) == 0 and loaded != 'off':
+            aa = 'auto'                     # nothing chosen yet (fresh launch, or a tlg.ini from before the row)
+        else:
+            aa = 'dlaa' if loaded == 'dlss' else loaded
     blocked = settings.get('frame_rate') == '30' or ini.get('fps_limit') == '30'
-    fg = ini.get('frame_generation', '0') == '1' and not blocked
-    if fg and aa is None:
+    fg = {'1': 'dlss', '2': 'fsr'}.get(ini.get('frame_generation', '0')) if not blocked else None
+    if fg and aa in (None, 'off'):
         aa = 'dlaa'                         # frame generation needs an anti-aliasing's inputs
     if aa:
         env['TLG_VKB_AA'] = aa
     if fg:
-        env['TLG_VKB_FG'] = 'dlss'
+        env['TLG_VKB_FG'] = fg
     return env
 
 

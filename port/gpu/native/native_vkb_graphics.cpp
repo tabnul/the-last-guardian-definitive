@@ -24,6 +24,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <vector>
 #include <boost/container/small_vector.hpp>
@@ -43,6 +44,7 @@
 #include "native/native_vkb_objects.h"
 #include "native/native_vkb_stream.h"
 #include "native/native_vkb_util.h"
+#include "native/shadps4/shader_recompiler/ir/passes/ir_passes.h"
 #include "native/shadps4/shader_recompiler/backend/bindings.h"
 #include "native/shadps4/shader_recompiler/backend/spirv/emit_spirv.h"
 #include "native/shadps4/shader_recompiler/frontend/fetch_shader.h"
@@ -91,6 +93,8 @@ struct Stage {
     Core::NativeDraw::UserLayout live;    ///< the user data of the current draw (the flat user data buffer only)
     std::vector<vk::ImageViewType> image_types;
     std::vector<std::unique_ptr<VideoCore::Vkb::Sampler>> constant_samplers; ///< per sampler: ours from the S# the shader holds as a constant (null: from a slot)
+    std::vector<Core::NativeDesc::SamplerDesc> constant_descs; ///< issue 42: per sampler, the constant S#'s description (for a draw's bias / anisotropy)
+    std::vector<u32> constant_ids;                             ///< issue 42: per sampler, a session-unique number of the constant S# (0: from a slot), for the per-thread memo
     bool has_flat{};
     std::unique_ptr<VkbShader::Info> info;
     VkbShader::RuntimeInfo runtime{};
@@ -155,6 +159,8 @@ std::atomic<u64> c_src[2][3][2]{}; ///< [stage vs/ps][buffers/images/samplers][m
 std::atomic<u64> c_attr_mapped{0}, c_attr_unmapped{0};
 std::atomic<u64> c_recorded{0}, c_record_ns{0}, c_skip_not_compiled{0}, c_skip_buffer{0}, c_skip_image{0}, c_skip_sampler{0}, c_skip_uav{0}, c_skip_special{0}, c_skip_target{0},
     c_skip_depth{0}, c_late_views{0}, c_skip_vertex{0}, c_skip_index{0}, c_skip_indirect{0}, c_skip_no_attachment{0}, c_indirect_recorded{0}, c_new_passes{0}, c_flat_rebuilt{0};
+std::atomic<u64> c_base_vertex_vulkan{0}, c_base_vertex_shader{0}, c_base_vertex_other_register{0}; ///< issue 36: direct draws with a first vertex: added by Vulkan /
+                                                                                                    ///< left to the shader's own code / fetch shader reads another register (Vulkan, as before)
 
 u64 NowNs() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -386,6 +392,30 @@ u32 IndirectSgprs(u64 vs) {
     return vertex | instance << 16;
 }
 
+/// Issue 36: the first vertex Vulkan adds to a direct draw (vertexOffset of an indexed draw, firstVertex of the others). The engine hands a draw's first vertex (the
+/// base vertex of an indexed draw) to the vertex shader in the user data register the shader names (low nibble of byte 0x27 of its block, 0 = none), and the
+/// shader adds it itself: in its fetch shader, or in its own code when it reads its vertices from buffers. A fetch shader becomes Vulkan's vertex input, so its add
+/// has to come from Vulkan; a shader that adds it in its own code gets 0 here, or every vertex index is moved twice (the cave walls of s02_05 drew as huge
+/// spikes, 650 ms of GPU time a frame). A shader that names no register cannot add it: Vulkan does. A fetch shader that reads another register than the one named
+/// keeps the old way (Vulkan adds it) and is counted. Where the hardware index offset is 0 this is the normal renderer's rule (GetDrawOffsets), read from the
+/// engine's side. TLG_VKB_BASE_VERTEX=0: the old way, Vulkan always adds it.
+u32 VulkanFirstVertex(u64 ctx, const Variant& v, u32 first) {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_BASE_VERTEX"); return e == nullptr || e[0] != '0'; }();
+    if (!on || first == 0) {
+        return first;
+    }
+    const u64 vs = Rd<u64>(ctx, CtxVertexShader);
+    const u32 location = vs != 0 ? (Rd<u8>(Rd<u64>(vs, 0x120), 0x27) & 0xfu) : 0u;
+    const bool fetch_reads = v.has_fetch && v.fetch.vertex_offset_sgpr != -1;
+    if (location == 0 || fetch_reads) {
+        (fetch_reads && location != 0 && v.fetch.vertex_offset_sgpr != static_cast<s8>(location) ? c_base_vertex_other_register : c_base_vertex_vulkan)
+            .fetch_add(1, std::memory_order_relaxed);
+        return first;
+    }
+    c_base_vertex_shader.fetch_add(1, std::memory_order_relaxed);
+    return 0;
+}
+
 /// A3 (note 47; TLG_VKB_FAST_KEY, default on, =0 the full key): the same key value as VariantKeyFull, made cheaper. Only the set bits of the
 /// shader-resource masks are visited; of a target view's words only the three the key uses are read; a bound object's class is remembered per thread by the object
 /// and its unique id (+0x10, never reused), since a view's format, kind and resource and the resource's description do not change for its life.
@@ -496,19 +526,8 @@ u64 VariantKeyFull(u64 ctx, u64 vs, u64 ps, u64 fetch, const VkbVulkan::FixedSta
     return h;
 }
 
-vk::ImageViewType ViewTypeOf(VkbAmdGpu::ImageType type) {
-    switch (type) {
-    case VkbAmdGpu::ImageType::Color1D: return vk::ImageViewType::e2D; // note 41: the module declares 1D images as 2D
-    case VkbAmdGpu::ImageType::Color1DArray: return vk::ImageViewType::e2DArray;
-    case VkbAmdGpu::ImageType::Color2DArray:
-    case VkbAmdGpu::ImageType::Color2DMsaaArray: return vk::ImageViewType::e2DArray;
-    case VkbAmdGpu::ImageType::Color3D: return vk::ImageViewType::e3D;
-    case VkbAmdGpu::ImageType::Cube: return vk::ImageViewType::eCube;
-    default: return vk::ImageViewType::e2D;
-    }
-}
-
 /// Compiles one stage (mutex held): its user data, program, translation, module and slot map
+std::atomic<u32> next_constant_id{1}; ///< issue 42: the session-unique numbers of the shaders' constant S#s (Stage::constant_ids)
 bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, VkbShader::Backend::Bindings& binding, bool record = false) {
     const VkbShader::Profile& stage_profile = record ? record_profile : profile; // R2
     const HwStage hw = stage == 0 ? HwStage::Vertex : HwStage::Fragment;
@@ -643,7 +662,7 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
     for (const auto& image : out.info->images) {
         out.images.push_back(SourceOf(image.sharp_fetch, flat, false, false));
         count(1, out.images.back());
-        out.image_types.push_back(ViewTypeOf(image.GetSharp(*out.info).GetHostViewType(image.is_array)));
+        out.image_types.push_back(Core::Vkb::ModuleViewType(image.GetSharp(*out.info).GetHostViewType(image.is_array)));
     }
     for (const auto& b : out.info->buffers) {
         out.has_flat |= b.buffer_type == VkbShader::BufferType::Flatbuf;
@@ -653,15 +672,21 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
     for (const auto& sampler : out.info->samplers) {
         Source s = SourceOf(sampler.sharp_fetch, flat, false, false);
         std::unique_ptr<VideoCore::Vkb::Sampler> constant;
+        Core::NativeDesc::SamplerDesc constant_desc{};
+        u32 constant_id = 0;
         using Summary = std::remove_cvref_t<decltype(sampler.sharp_fetch)>::Summary;
         if (s.cls == Source::Class::Unmapped && sampler.sharp_fetch.summary == Summary::MultiLoad && sampler.sharp_fetch.load_mask == 0) {
             // the S# is a constant of the shader's code (no table load): our sampler made from it, once
-            constant = std::make_unique<VideoCore::Vkb::Sampler>(*instance, VideoCore::Vkb::SamplerDescFromSharp(sampler.GetSharp(*out.info)), VkbAmdGpu::BorderColorBuffer{},
-                                                             sampler.is_depth);
+            const auto sharp = sampler.GetSharp(*out.info);
+            constant_desc = VideoCore::Vkb::SamplerDescFromSharp(sharp);
+            constant_id = next_constant_id.fetch_add(1, std::memory_order_relaxed);
+            constant = std::make_unique<VideoCore::Vkb::Sampler>(*instance, constant_desc, VkbAmdGpu::BorderColorBuffer{}, sampler.is_depth);
             s.cls = Source::Class::ProgramConstant;
         }
         out.samplers.push_back(s);
         out.constant_samplers.push_back(std::move(constant));
+        out.constant_descs.push_back(constant_desc);
+        out.constant_ids.push_back(constant_id);
         count(2, out.samplers.back());
     }
     return true;
@@ -1050,6 +1075,7 @@ struct DrawJob final : Stream::Job {
     u64 args_offset{};
     u32 kind{};
     u64 a1{}, a2{}, a3{};
+    u32 first_vertex{}; ///< issue 36: what Vulkan adds to the vertex index (VulkanFirstVertex)
     u32 instances{};
     u64 ps_hash{};
     u32 color_format0{};
@@ -1141,8 +1167,42 @@ thread_local u64 t_stage_hash[3]{}, t_stage_prev[2][3]{};
 inline void StageMix(u32 part, u64 v) {
     t_stage_hash[part] = (t_stage_hash[part] ^ v) * 0x100000001b3ull;
 }
+/// Issue 42: a shader's constant S# with a draw's bias / anisotropy (`look` not plain): made once per description and look, kept for the session as the
+/// slot samplers (Core::Vkb::SamplerFor); the plain one stays the stage's own. `look` is already the sampler's own (Aa::ForSampler: no bias on a depth read).
+/// A per-thread memo keyed by the constant's session-unique number answers the repeat draws; the shared table (one mutex) only a thread's first use.
+std::mutex constant_look_mutex;
+std::unordered_map<std::string, std::unique_ptr<VideoCore::Vkb::Sampler>> constant_look_samplers; ///< key: the description's bytes, bias, anisotropy, depth
+thread_local std::unordered_map<u64, vk::Sampler> t_constant_look; ///< key: constant number, bias, forced level, depth; samplers are never destroyed, numbers never reused
+vk::Sampler ConstantSamplerFor(const Stage& st, u32 i, bool is_depth, Core::Vkb::Aa::SamplerLook look) {
+    const Core::NativeDesc::SamplerDesc& desc = st.constant_descs[i];
+    const u32 aniso = VideoCore::Vkb::ForcedAnisotropy(desc, look.aniso, is_depth); // the one rule (Core::NativeDesc::ForcedAnisotropy)
+    if (look.bias_q == 0 && aniso == 0) {
+        return st.constant_samplers[i]->Handle();
+    }
+    const u64 memo_key = static_cast<u64>(st.constant_ids[i]) << 32 | static_cast<u64>(static_cast<u16>(look.bias_q)) << 16 | static_cast<u64>(aniso & 0x7fffu) << 1 |
+                         (is_depth ? 1u : 0u);
+    if (const auto it = t_constant_look.find(memo_key); it != t_constant_look.end()) {
+        return it->second;
+    }
+    static_assert(sizeof(Core::NativeDesc::SamplerDesc) == 16 * sizeof(u32), "its bytes are the key below: no padding bytes (native_desc.h)");
+    std::string key(reinterpret_cast<const char*>(&desc), sizeof(desc));
+    const std::array<s32, 3> extra{look.bias_q, static_cast<s32>(aniso), is_depth ? 1 : 0};
+    key.append(reinterpret_cast<const char*>(extra.data()), sizeof(extra));
+    vk::Sampler handle;
+    {
+        std::scoped_lock lock{constant_look_mutex};
+        auto& made = constant_look_samplers[key];
+        if (!made) {
+            made = std::make_unique<VideoCore::Vkb::Sampler>(*instance, desc, VkbAmdGpu::BorderColorBuffer{}, is_depth, static_cast<float>(look.bias_q) * 0.25f, aniso);
+        }
+        handle = made->Handle();
+    }
+    t_constant_look.emplace(memo_key, handle);
+    return handle;
+}
+
 bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& push, u32& buffer_index, Bound& b, Ranges& ranges,
-               boost::container::small_vector<Stream::Use, 64>& uses, LateList* late_list, LateImages* late_images = nullptr) {
+               boost::container::small_vector<Stream::Use, 64>& uses, LateList* late_list, LateImages* late_images = nullptr, Core::Vkb::Aa::SamplerLook look = {}) {
     if (StageCensusOn()) {
         for (u32 k = 0; k < 3; ++k) {
             t_stage_hash[k] = 0xcbf29ce484222325ull ^ reinterpret_cast<u64>(st.info.get());
@@ -1385,7 +1445,11 @@ bool BindStage(u64 ctx, Stage& st, vk::CommandBuffer cmd, VkbShader::PushData& p
     for (u32 i = 0; i < st.samplers.size(); ++i) {
         const Source& src = st.samplers[i];
         const u64 object = src.cls == Source::Class::Slot && src.kind == 2 ? SlotObject(ctx, st.index, 2, src.slot) : 0;
-        const vk::Sampler sampler = st.constant_samplers[i] ? st.constant_samplers[i]->Handle() : object != 0 ? Core::Vkb::SamplerFor(object, i < info.samplers.size() && info.samplers[i].is_depth) : vk::Sampler{};
+        const bool is_depth = i < info.samplers.size() && info.samplers[i].is_depth;
+        const Core::Vkb::Aa::SamplerLook own = Core::Vkb::Aa::ForSampler(look, is_depth);
+        const vk::Sampler sampler = st.constant_samplers[i] ? ConstantSamplerFor(st, i, is_depth, own)
+                                    : object != 0              ? Core::Vkb::SamplerFor(object, is_depth, own.bias_q, own.aniso)
+                                                               : vk::Sampler{};
         if (!sampler) {
             c_skip_sampler.fetch_add(1, std::memory_order_relaxed);
             return false;
@@ -1490,6 +1554,7 @@ inline void MemoPut(u64 key, u64 serial, u32 a, u32 b, u32 c) {
     memo[at] = {key, serial, a, b, c};
 }
 std::atomic<u64> c_row_memo_hits{0}, c_row_memo_misses{0};
+thread_local Core::Vkb::Aa::SamplerLook t_row_look{}; ///< issue 42 (merge): the draw's sampler look, set by the caller of BuildRow / FastRow
 bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<Stream::Use, 64>& uses, u64 memo_serial = 0) {
     using BT = VkbShader::BufferType;
     t_row_memo_serial = memo_serial;
@@ -1602,7 +1667,9 @@ bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector
     for (u32 i = 0; i < st.samplers.size(); ++i) {
         const Source& src = st.samplers[i];
         const u64 object = src.cls == Source::Class::Slot && src.kind == 2 ? SlotObject(ctx, st.index, 2, src.slot) : 0;
-        const vk::Sampler sampler = st.constant_samplers[i] ? st.constant_samplers[i]->Handle() : object != 0 ? Core::Vkb::SamplerFor(object, i < info.samplers.size() && info.samplers[i].is_depth) : vk::Sampler{};
+        const bool is_depth = i < info.samplers.size() && info.samplers[i].is_depth;
+        const Core::Vkb::Aa::SamplerLook own = Core::Vkb::Aa::ForSampler(t_row_look, is_depth);
+        const vk::Sampler sampler = st.constant_samplers[i] ? ConstantSamplerFor(st, i, is_depth, own) : object != 0 ? Core::Vkb::SamplerFor(object, is_depth, own.bias_q, own.aniso) : vk::Sampler{};
         if (!sampler) {
             return false;
         }
@@ -1727,6 +1794,29 @@ void DcCensus(u64 ctx, const Variant& v, const VkbVulkan::FixedState* fixed, u32
 /// Binds and records one draw of a compiled variant into the frame stream (mutex held)
 /// note 45 (R2 design): Record's phases on the engine thread (0 views + attachments, 1 stage bindings, 2 vertex + index, 3 the rest + the job hand-over) and the job on the recorder
 std::atomic<u64> c_phase_ns[4]{}, c_job_ns{0}, c_job_n{0}, c_fixed_ns{0}, c_variant_find_ns{0};
+/// issue 82 point 2 (TLG_VKB_TARGET_MEMO, default on, =0 off): most draws use the same targets as the draw before them on the same thread. Each thread keeps the
+/// attachments it found for its last draw and reuses them while the draw's target set (view ids, formats, slots in use) is the same and the view epoch has not
+/// moved (a view or an image went, note 46): then neither the first-use view check nor the attachment lookups run again, and the shared objects lock is not taken
+/// for them. Not used with the late images (R2b part 2b, resolved on the recorder) or the contract census (it notes every draw's targets).
+bool TargetMemoOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_TARGET_MEMO"); return e == nullptr || e[0] != '0'; }(); return on; }
+std::atomic<u64> c_target_memo_hits{0}, c_target_memo_misses{0};
+struct TargetSet {
+    u64 epoch{~0ull};
+    std::array<u64, 8> ids{};            ///< engine view id per colour slot (0: no view)
+    std::array<vk::Format, 8> formats{}; ///< the pipeline's format per colour slot
+    u64 depth_id{};                      ///< engine view id of the depth target (0: none)
+    u32 color_count{}, mrt_mask{};
+    bool depth{}, stencil{};
+    bool operator==(const TargetSet&) const = default;
+};
+struct TargetMemo {
+    TargetSet key{}; ///< epoch ~0: nothing kept
+    std::array<vk::ImageView, 8> colors{};
+    vk::ImageView depth{};
+    bool depth_has_stencil{};
+    u32 width{}, height{}, layers{};
+    boost::container::small_vector<Stream::Use, 9> uses;
+};
 bool TimesOn() { static const bool on = [] { const char* e = std::getenv("TLG_VKB_TIMES"); return e != nullptr && e[0] == '1'; }(); return on || (t_depth_pass && DepthCensusOn()); } // note 109 census: the cascade draws timed alone ///< note 45: these timers only with TLG_VKB_TIMES=1
 bool BatchOn();
 bool JoinBatch(DrawJob& job);
@@ -1771,6 +1861,27 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     // views the engine made through a path its view-creation hooks do not see are noted at their first use (their description is kept at + 0x40)
     // R2b part 2b: a view id seen with a format is never checked again on this thread (ids are never reused); the check itself stays here (it reads the engine view)
     thread_local std::array<u64, 1024> known_views{};
+    // issue 82 point 2: this draw's target set against the one of the last draw on this thread (the epoch is read before any lookup: a change during them marks it stale)
+    thread_local TargetMemo t_targets;
+    const bool target_memo = TargetMemoOn() && !LateImagesOn() && !Core::Vkb::ContractCensusOn();
+    TargetSet target_key{};
+    bool targets_reused = false, targets_keep = target_memo;
+    if (target_memo) {
+        target_key.epoch = Core::Vkb::ViewEpoch();
+        const auto targets = TargetViews(ctx);
+        target_key.color_count = std::min<u32>(v.key.num_color_attachments, 8);
+        target_key.mrt_mask = v.key.mrt_mask;
+        for (u32 cb = 0; cb < target_key.color_count; ++cb) {
+            target_key.ids[cb] = targets[cb] != 0 ? Rd<u64>(targets[cb], 0x10) : 0;
+            target_key.formats[cb] = v.color_formats[cb];
+        }
+        const u64 dsv = Rd<u64>(ctx, CtxDepthStencilView);
+        target_key.depth_id = dsv != 0 ? Rd<u64>(dsv, 0x10) : 0;
+        target_key.depth = v.key.z_format != Core::NativeTarget::DepthTarget::ZFormat::Invalid;
+        target_key.stencil = v.key.stencil_format != Core::NativeTarget::DepthTarget::StencilFormat::Invalid;
+        targets_reused = target_key == t_targets.key;
+        (targets_reused ? c_target_memo_hits : c_target_memo_misses).fetch_add(1, std::memory_order_relaxed);
+    }
     const auto view_known = [](u64 id) {
         if (!LateImagesOn()) {
             return false;
@@ -1785,17 +1896,19 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         slot = id;
         return true;
     };
-    {
+    if (!targets_reused) { // issue 82: a reused target set had every view known at the last draw, and none has gone since (the epoch)
         const auto targets = TargetViews(ctx);
         for (u32 cb = 0; cb < v.key.num_color_attachments; ++cb) {
             if (targets[cb] != 0 && !view_known(Rd<u64>(targets[cb], 0x10)) && Core::Vkb::ViewFormat(Rd<u64>(targets[cb], 0x10)) == vk::Format::eUndefined) {
                 Core::NativeDevice::NoteView(Core::NativeDevice::Kind::RenderTargetView, targets[cb], targets[cb] + 0x40);
                 c_late_views.fetch_add(1, std::memory_order_relaxed);
+                targets_keep = false; // noted just now: the next draw checks again
             }
         }
         if (const u64 dsv = Rd<u64>(ctx, CtxDepthStencilView); dsv != 0 && !view_known(Rd<u64>(dsv, 0x10)) && Core::Vkb::ViewFormat(Rd<u64>(dsv, 0x10)) == vk::Format::eUndefined) {
             Core::NativeDevice::NoteView(Core::NativeDevice::Kind::DepthStencilView, dsv, dsv + 0x40);
             c_late_views.fetch_add(1, std::memory_order_relaxed);
+            targets_keep = false;
         }
     }
     u64 ph = TimesOn() ? NowNs() : 0;
@@ -1850,7 +1963,14 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
                                    fmt::format("C10 draw in target-7 mode: target 7 {}, target 0 {}, pixel shader writes target 7 {}, uconfig gradient mode {}", describe(t7),
                                                describe(Rd<u64>(ctx, 0x4488)), (v.key.mrt_mask >> 7) & 1, Rd<u8>(ctx, 0x44c8)));
     }
-    for (u32 cb = 0; !late_images && cb < pass.color_count; ++cb) {
+    if (targets_reused) { // issue 82 point 2: the last draw's attachments (same views, formats and slots; nothing gone since)
+        pass.colors = t_targets.colors;
+        pass.depth = t_targets.depth;
+        pass.depth_has_stencil = t_targets.depth_has_stencil;
+        attachment_uses = t_targets.uses;
+        width = t_targets.width, height = t_targets.height, layers = t_targets.layers;
+    }
+    for (u32 cb = 0; !late_images && !targets_reused && cb < pass.color_count; ++cb) {
         if ((v.key.mrt_mask & (1u << cb)) == 0 || v.color_formats[cb] == vk::Format::eUndefined || views[cb] == 0) {
             continue;
         }
@@ -1879,7 +1999,7 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         attachment_uses.push_back(Stream::ImageUse(a.image, true));
         width = std::min(width, a.extent.width), height = std::min(height, a.extent.height), layers = std::min(layers, a.layers);
     }
-    if (!late_images && v.key.z_format != Core::NativeTarget::DepthTarget::ZFormat::Invalid) {
+    if (!late_images && !targets_reused && v.key.z_format != Core::NativeTarget::DepthTarget::ZFormat::Invalid) {
         const u64 dsv = Rd<u64>(ctx, CtxDepthStencilView);
         Core::Vkb::Attachment a;
         if (dsv == 0 || !Core::Vkb::AttachmentFor(Rd<u64>(dsv, 0x10), vk::Format::eUndefined, cmd, a)) {
@@ -1895,8 +2015,20 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         c_skip_no_attachment.fetch_add(1, std::memory_order_relaxed);
         return;
     }
+#if defined(__clang__)
     pass.extent = {width, height};
+#else // GCC: {..} also matches operator=(VkExtent2D const&) and is ambiguous
+    pass.extent = vk::Extent2D{width, height};
+#endif
     pass.layers = layers;
+    if (targets_keep && !targets_reused) { // issue 82: found in full; kept for the next draw on this thread
+        t_targets.key = target_key;
+        t_targets.colors = pass.colors;
+        t_targets.depth = pass.depth;
+        t_targets.depth_has_stencil = pass.depth_has_stencil;
+        t_targets.uses = attachment_uses;
+        t_targets.width = width, t_targets.height = height, t_targets.layers = layers;
+    }
     phase(0);
     // the resources of both stages, pixel first (the pipeline layout's order)
     VkbShader::PushData& push = job->push;
@@ -1909,10 +2041,13 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     u32 buffer_index = 0;
     LateList* const late = ResolveOnRecorder() && !(v.record && BatchOn()) ? &job->late : nullptr; // R2b (note 64); R3b: a batched draw's index buffer is found now
     LateImages* const late_imgs = late_images ? &job->late_images : nullptr; // R2b part 2b
+    // issue 42: the draw's sampler look (the anisotropy setting; the scene texture bias for a scene material pass while the AA runs)
+    const Core::Vkb::Aa::SamplerLook look = Core::Vkb::Aa::LookFor(v.key.mrt_mask);
     const bool dc = t_depth_pass && DepthCensusOn();
     const u64 dc_b0 = dc ? NowNs() : 0;
     const u64 dc_c0 = t_dc_copies;
     if (v.record) {
+        t_row_look = look;
         // R3: the draw's row in the host ring (the row table); the shaders read every resource through it
         const Stream::Slice slice = RowSlice(std::max<u32>(v.row_dwords, 1) * 4);
         u32* row = reinterpret_cast<u32*>(slice.data);
@@ -1926,10 +2061,10 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
         job->record = true;
         c_rec_draws.fetch_add(1, std::memory_order_relaxed);
     } else {
-    if (v.has_ps && !BindStage(ctx, v.ps, cmd, push, buffer_index, b, ranges, uses, late, late_imgs)) {
+    if (v.has_ps && !BindStage(ctx, v.ps, cmd, push, buffer_index, b, ranges, uses, late, late_imgs, look)) {
         return;
     }
-    if (!BindStage(ctx, v.vs, cmd, push, buffer_index, b, ranges, uses, late, late_imgs)) {
+    if (!BindStage(ctx, v.vs, cmd, push, buffer_index, b, ranges, uses, late, late_imgs, look)) {
         return;
     }
     }
@@ -2251,6 +2386,7 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     job->fixed_state = &fixed; // interned by FixedStateOf, never freed
     job->masks = v.key.write_masks;
     job->kind = kind, job->a1 = a1, job->a2 = a2, job->a3 = a3;
+    job->first_vertex = kind == 2 ? 0u : VulkanFirstVertex(ctx, v, static_cast<u32>(kind == 0 ? a3 : a2));
     job->jittered = false;
     if (Core::Vkb::Aa::On()) [[unlikely]] { // F1c: decided here, in game order (two recording threads must not see different offsets within a frame)
         const u64 dsv = Rd<u64>(ctx, CtxDepthStencilView);
@@ -2262,7 +2398,17 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
             Core::Vkb::Aa::NoteSceneDepth(dsv_id);
         }
         const bool geometry = (kind == 2) || a1 > 6 || instances > 1;
-        const u64 mesh = Mix(Mix(Mix(a1, a2), a3), v.vs.info ? v.vs.info->pgm_hash : 0ull);
+        // issue 54: a mesh is its index data, as the normal renderer's rule (vk_rasterizer.cpp: index address and count): the address of the first index and
+        // the index count (an indirect draw: the index data and its arguments), whatever shader draws it, so a second pass of a surface with another vertex shader
+        // matches its shifted pre-pass. Not indexed: no mesh. TLG_VKB_AA_MESH_KEY=0: the old key (counts and the vertex shader; it never matched, issue 54)
+        u64 mesh = 0;
+        if (!Core::Vkb::Aa::MeshKeySwitch()) {
+            mesh = Mix(Mix(Mix(a1, a2), a3), v.vs.info ? v.vs.info->pgm_hash : 0ull);
+        } else if (const u64 index_view = Rd<u64>(ctx, 0x58); (kind == 0 || kind == 2) && index_view != 0) {
+            const u64 index_address = static_cast<u64>(Rd<u32>(index_view, 0x64) & 0xff) << 32 | (Rd<u32>(index_view, 0x60) & 0xfffffffeu);
+            const u64 index_bytes = Rd<u32>(ctx, 0x64) == 1 ? 4 : 2;
+            mesh = index_address == 0 ? 0 : kind == 0 ? Mix(index_address + a2 * index_bytes, a1) : Mix(Mix(index_address, a1), a2);
+        }
         // does the pixel shader read a scene depth (decals, lights): its used texture slots' resources against the scene depth ids
         bool samples_depth = false;
         const u64 ps_object = Rd<u64>(ctx, CtxPixelShader);
@@ -2342,7 +2488,11 @@ bool DrawJob::ResolveLate() {
             }
             const u64 aligned = w.offset & ~(alignment - 1);
             push.buf_offsets[l.push_index] = static_cast<u8>(w.offset - aligned);
+#if defined(__clang__)
             b.buffers[l.slot] = {w.buffer, aligned, l.size + (w.offset - aligned)};
+#else // GCC: {..} also matches operator=(VkDescriptorBufferInfo const&) and is ambiguous
+            b.buffers[l.slot] = vk::DescriptorBufferInfo{w.buffer, aligned, l.size + (w.offset - aligned)};
+#endif
             b.stageable[l.slot] = !w.device && !l.written ? 1 : 0;
             uses.push_back(Stream::BufferUse(w.buffer, w.offset, l.size, l.written));
             Core::Vkb::NoteBind(1, w, l.size, l.written);
@@ -2402,7 +2552,11 @@ bool DrawJob::ResolveLate() {
             attachment_uses.push_back(Stream::ImageUse(a.image, true));
             width = std::min(width, a.extent.width), height = std::min(height, a.extent.height), layers = std::min(layers, a.layers);
         }
+#if defined(__clang__)
         pass.extent = {width, height};
+#else // GCC: {..} also matches operator=(VkExtent2D const&) and is ambiguous
+        pass.extent = vk::Extent2D{width, height};
+#endif
         pass.layers = layers;
     }
     c_late_images.fetch_add(late_images.size(), std::memory_order_relaxed);
@@ -2806,8 +2960,10 @@ bool FastRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<
         }
     }
     for (u32 i = 0; i < st.samplers.size(); ++i) {
+        const bool is_depth_s = i < info.samplers.size() && info.samplers[i].is_depth;
+        const Core::Vkb::Aa::SamplerLook own = Core::Vkb::Aa::ForSampler(t_row_look, is_depth_s);
         if (st.constant_samplers[i]) {
-            row[at++] = Core::Vkb::Indexed::SamplerSlot(st.constant_samplers[i]->Handle());
+            row[at++] = Core::Vkb::Indexed::SamplerSlot(ConstantSamplerFor(st, i, is_depth_s, own));
             continue;
         }
         const Source& src = st.samplers[i];
@@ -2817,17 +2973,18 @@ bool FastRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<
         }
         const u64 id = Rd<u64>(object, 0x10);
         const u32 depth = i < info.samplers.size() && info.samplers[i].is_depth ? 1 : 0;
-        FastSmp& e = f.smps[FastHash(id, depth + 1) & (f.smps.size() - 1)];
-        if (e.id == id && e.object == object && e.depth == depth && e.slot != 0) {
+        const u32 look_key = static_cast<u32>(static_cast<u16>(own.bias_q)) << 16 | (own.aniso & 0x7fffu) << 1 | depth;
+        FastSmp& e = f.smps[FastHash(id, look_key + 1) & (f.smps.size() - 1)];
+        if (e.id == id && e.object == object && e.depth == look_key && e.slot != 0) {
             ++f.hits;
         } else {
             ++f.misses;
-            const vk::Sampler sampler = Core::Vkb::SamplerFor(object, depth != 0);
+            const vk::Sampler sampler = Core::Vkb::SamplerFor(object, depth != 0, own.bias_q, own.aniso);
             const u32 slot = sampler ? Core::Vkb::Indexed::SamplerSlot(sampler) : 0;
             if (slot == 0) {
                 return false;
             }
-            e = {id, object, depth, slot};
+            e = {id, object, look_key, slot};
         }
         row[at++] = e.slot;
     }
@@ -2909,6 +3066,7 @@ bool LeanAppend(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kin
     boost::container::small_vector<Stream::Use, 64> uses;
     const Stream::Slice slice = RowSlice(std::max<u32>(v.row_dwords, 1) * 4);
     u32* row = reinterpret_cast<u32*>(slice.data);
+    t_row_look = Core::Vkb::Aa::LookFor(v.key.mrt_mask); // issue 42 (merge): as the plain path's samplers
     static const bool lean_times = [] { const char* e = std::getenv("TLG_VKB_LEAN_TIMES"); return e != nullptr && e[0] == '1'; }();
     const u64 r0 = lean_times ? NowNs() : 0;
     if (FastRowOn() && FastRowVerify()) { // G1 verify: both rows; the old one is drawn
@@ -3228,7 +3386,7 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
             cmd.bindIndexBuffer(index_buffer, index_offset, index_type);
             state.index_buffer = static_cast<VkBuffer>(index_buffer), state.index_offset = index_offset, state.index_type = index_type;
         }
-        cmd.drawIndexed(static_cast<u32>(a1), instances, static_cast<u32>(a2), static_cast<s32>(static_cast<u32>(a3)), 0);
+        cmd.drawIndexed(static_cast<u32>(a1), instances, static_cast<u32>(a2), static_cast<s32>(first_vertex), 0);
     } else if (kind == 2) {
         if (state.index_buffer != static_cast<VkBuffer>(index_buffer) || state.index_offset != index_offset || state.index_type != index_type) {
             cmd.bindIndexBuffer(index_buffer, index_offset, index_type);
@@ -3236,7 +3394,7 @@ void DrawJob::Run(vk::CommandBuffer cmd) {
         }
         cmd.drawIndexedIndirect(args_buffer, args_offset, 1, 20);
     } else {
-        cmd.draw(static_cast<u32>(a1), instances, static_cast<u32>(a2), 0);
+        cmd.draw(static_cast<u32>(a1), instances, first_vertex, 0);
     }
     if (debug_id != 0) [[unlikely]] { // note 91: the draw's GPU time, and its row in the frame capture
         Stream::StampDraw(debug_id, vs_hash, ps_hash, kind == 2 ? 0u : static_cast<u32>(a1), instances);
@@ -3834,6 +3992,38 @@ nlohmann::json TargetCensusReport() {
     }
     return j;
 }
+/// issue 75: the translator's reads with automatic level choice in per-pixel branches (pixel shaders): moved before the branch, or kept with a reason
+/// (reads = moved + in_uniform_branch_only + outside_any_branch + the kept ones)
+nlohmann::json ReadsOutOfBranchReport() {
+    namespace O = VkbShader::Optimization;
+    const auto& c = O::ReadsOutOfBranchCounters();
+    nlohmann::json kept = nlohmann::json::object();
+    for (u32 i = 0; i < O::ReadsOutOfBranchReasonCount; ++i) {
+        kept[O::ReadsOutOfBranchReasonNames[i]] = c.not_moved[i].load();
+    }
+    nlohmann::json shaders = nlohmann::json::array();
+    for (const auto& s : O::ReadsOutOfBranchShaders()) {
+        nlohmann::json k = nlohmann::json::object();
+        for (u32 i = 0; i < O::ReadsOutOfBranchReasonCount; ++i) {
+            if (s.not_moved[i] != 0) {
+                k[O::ReadsOutOfBranchReasonNames[i]] = s.not_moved[i];
+            }
+        }
+        shaders.push_back({{"ps", fmt::format("{:016x}", s.hash)}, {"applied", s.applied}, {"reads", s.reads}, {"moved", s.moved},
+                           {"ops_moved", s.ops_moved}, {"in_uniform_branch", s.in_uniform_branch}, {"outside_any_branch", s.outside_branches}, {"kept", k}});
+    }
+    return {{"on", profile.reads_out_of_branch},
+            {"pixel_shader_translations", c.pixel_shaders.load()},
+            {"translations_with_reads_in_a_branch", c.shaders_with_reads_in_branch.load()},
+            {"reads", c.reads.load()},
+            {"moved", c.moved.load()},
+            {"ops_moved", c.ops_moved.load()},
+            {"in_uniform_branch_only", c.in_uniform_branch.load()},
+            {"outside_any_branch", c.outside_branches.load()},
+            {"kept_in_per_pixel_branch", kept},
+            {"shaders", shaders}};
+}
+
 nlohmann::json Report() {
     const u64 compiled = c_compiled.load(), draws = c_draws.load();
     nlohmann::json fails = nlohmann::json::object();
@@ -3874,6 +4064,8 @@ nlohmann::json Report() {
                                }()},
                               {"flat_n_same_dwords", {c_dc_flat_n.load(), c_dc_flat_same.load(), c_dc_flat_dwords.load()}}, {"cb_copies", c_dc_copies.load()}, {"draw_ms", static_cast<double>(c_dc_draw_ns.load()) / 1e6}, {"bind_ms", static_cast<double>(c_dc_bind_ns.load()) / 1e6}}},
             {"by_kind_indexed_auto_indirect", {c_by_kind[0].load(), c_by_kind[1].load(), c_by_kind[2].load()}},
+            {"first_vertex_by_vulkan_by_shader", {c_base_vertex_vulkan.load(), c_base_vertex_shader.load()}},
+            {"first_vertex_fetch_reads_another_register", c_base_vertex_other_register.load()},
             {"no_vertex_shader", c_no_vs.load()},
             {"special_pipeline", c_special.load()},
             {"no_fixed_state", c_no_fixed.load()},
@@ -3901,6 +4093,7 @@ nlohmann::json Report() {
             {"fixed_state_us_mean", draws ? static_cast<double>(c_fixed_ns.load()) / 1e3 / static_cast<double>(draws) : 0.0},
             {"r2b_on_late_buffers_failed", {ResolveOnRecorder(), c_late_buffers.load(), c_late_failed.load()}},
             {"r2b2b_on_late_targets_images", {LateImagesOn(), c_late_targets.load(), c_late_images.load()}},
+            {"target_memo_on_hits_misses", {TargetMemoOn(), c_target_memo_hits.load(), c_target_memo_misses.load()}}, // issue 82 point 2
             {"target_census", TargetCensusReport()},
             {"flat_census", Core::Vkb::FlatCensus::Report()},
             {"d3_targets_engine_unmapped", {c_targets_engine.load(), c_targets_unmapped.load()}},
@@ -3913,6 +4106,7 @@ nlohmann::json Report() {
             {"variant_find_us_mean", draws ? static_cast<double>(c_variant_find_ns.load()) / 1e3 / static_cast<double>(draws) : 0.0},
             {"lookups", Core::Vkb::LookupReport()},
             {"aa", Core::Vkb::Aa::Report()},
+            {"reads_out_of_branch", ReadsOutOfBranchReport()},
             {"recorder_job_us_mean", c_job_n.load() ? static_cast<double>(c_job_ns.load()) / 1e3 / static_cast<double>(c_job_n.load()) : 0.0},
             {"new_passes", c_new_passes.load()},
             {"indirect_recorded", c_indirect_recorded.load()},

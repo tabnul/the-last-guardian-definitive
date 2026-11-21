@@ -28,8 +28,10 @@
 #include <windows.h>
 #endif
 #ifdef TLG_PORT
+#include "tlg_game_sema.h"
 #include "tlg_toggles.h" // sigjmp_buf, tlg_setjmp, runtime_fault_recover
 #endif
+#include "native/native_linux.h" // Linux side of the Windows calls (empty on Windows)
 #include "native/shadps4/core/guest_heap.h"
 #include "native/native_primitive.h"
 #include "native/native_log.h"
@@ -1066,32 +1068,48 @@ u32 SweepSyncPackets(u64 begin, u64 end) {
     return removed;
 }
 
+/// `TLG_VKB_STREAM_SWEEP=1` brings back the stream sweep with the new engine on (the behaviour before 2026-11-19). Off by default: with the new engine the game's command buffers
+/// are not parsed or run (V1b, gnmdriver PerformSubmit) and every sync producer hands its fence, wait or copy to the new engine itself and leaves no typed record, so the sweep
+/// read the game's command list (principle 1) only to find sync packets nothing reads and to report each one as untyped (issue 36, log cause D).
+bool StreamSweepOn() {
+    static const bool on = [] {
+        if (!Core::Vkb::On()) {
+            return true;
+        }
+        const char* e = std::getenv("TLG_VKB_STREAM_SWEEP");
+        return e != nullptr && e[0] == '1';
+    }();
+    return on;
+}
+
 bool WriteDwordsAt(u64 writer, const u32* words, u32 count) {
     // the game's own synchronization between the last tag written to this command buffer and this one
-    struct Sweep {
-        u64 writer{};
-        u64 base{};
-        u64 last{};
-    };
-    static thread_local std::array<Sweep, 6> sweeps;
-    {
-        const u64 cursor = Rd<u64>(writer, 0x10);
-        const u64 base = Rd<u64>(writer, 0x0);
-        Sweep* entry = nullptr;
-        for (auto& s : sweeps) {
-            if (s.writer == writer) {
-                entry = &s;
+    if (StreamSweepOn()) {
+        struct Sweep {
+            u64 writer{};
+            u64 base{};
+            u64 last{};
+        };
+        static thread_local std::array<Sweep, 6> sweeps;
+        {
+            const u64 cursor = Rd<u64>(writer, 0x10);
+            const u64 base = Rd<u64>(writer, 0x0);
+            Sweep* entry = nullptr;
+            for (auto& s : sweeps) {
+                if (s.writer == writer) {
+                    entry = &s;
+                }
             }
+            if (entry == nullptr) {
+                entry = &sweeps[(writer >> 4) % sweeps.size()];
+                *entry = {writer, base, 0};
+            }
+            if (entry->base == base && entry->last != 0 && entry->last < cursor && cursor - entry->last < (1u << 16)) {
+                SweepSyncPackets(entry->last, cursor);
+            }
+            entry->base = base;
+            entry->last = cursor + count * sizeof(u32);
         }
-        if (entry == nullptr) {
-            entry = &sweeps[(writer >> 4) % sweeps.size()];
-            *entry = {writer, base, 0};
-        }
-        if (entry->base == base && entry->last != 0 && entry->last < cursor && cursor - entry->last < (1u << 16)) {
-            SweepSyncPackets(entry->last, cursor);
-        }
-        entry->base = base;
-        entry->last = cursor + count * sizeof(u32);
     }
     u64 cur = Rd<u64>(writer, 0x10);
     const u64 end = Rd<u64>(writer, 0x08);
@@ -6818,7 +6836,8 @@ void Publish() {
                                                               {"compute_dispatch_us_mean", take_dispatch_n.load() ? static_cast<double>(compute_dispatch_ns.load()) / 1e3 / static_cast<double>(take_dispatch_n.load()) : 0.0},
                                                               {"take_draw_ms_total", take_draw_ns.load() / 1000000}, {"take_dispatch_ms_total", take_dispatch_ns.load() / 1000000},
                                                               {"takes_draw_dispatch", {take_draw_n.load(), take_dispatch_n.load()}}}}, {"fills_kept_on_the_engine_path", fills_kept.load()}, {"dynamic_maps_taken_at_work", c_dyn_taken_at_work.load()}, {"fills_of_cleared_targets_dropped", fills_of_cleared_targets_dropped.load()}, {"fills_of_cleared_depth_dropped", fills_of_cleared_depth_dropped.load()}, {"engine_draws_for_a_fetch_shader", fetch_builds.load()}, {"compute", Core::Vkb::Compute::Report()}, {"graphics", Core::Vkb::Graphics::Report()},
-                                           {"work_census", Core::Vkb::WorkCensus::Report()}, {"side_census", Core::Vkb::SideCensus::Report()}, {"engine_calls_skipped", Core::Vkb::EngineCallsSkipped()}});
+                                           {"work_census", Core::Vkb::WorkCensus::Report()}, {"side_census", Core::Vkb::SideCensus::Report()}, {"engine_calls_skipped", Core::Vkb::EngineCallsSkipped()},
+                                           {"dev_log", Core::Vkb::DevLog::Report()}});
     }
 }
 /// Note 108 kill experiment (A/B only, never default): TLG_VKB_TEST_ZPASS=skip skips the shadow cascade passes (Z pass view types 1 and 2) whole; =nodraw runs the engine's
@@ -8034,6 +8053,64 @@ std::atomic<u64> c_aabb_reads{0}, c_aabb_records{0}, c_aabb_bad{0}, c_aabb_bad_r
 std::atomic<u32> g_recordings_since_read{0};
 std::atomic<u64> g_rec_frame{0};               ///< the last recording BeginRecording's frame data
 std::atomic<u32> g_rec_groups{0}, g_rec_active{0}; ///< its group count / active groups (+0x18 != 0 and +0x30 != 0) at its entry
+/// The group table (frame data + 0x31e60, count + 0x31e68) is one of the engine's locked arrays. Adding a group (FUN_01ce5da0, the push FUN_01ce5ea0) raises the count
+/// before it writes the new entry and may move the whole table to new memory, all under the array's spin lock (+ 0x31e74: FUN_01ce58e0 sets it from 0 to 1, the
+/// release stores 0). The engine's own reads of the table (BeginRecording, the reader 01c4c570) hold that lock. Read without it, the table can be an old copy that was
+/// just moved away or end in an entry not written yet: valid records then seem to name a group not in the table (issue 36, log cause E: K1 error, K2 skipped a good read).
+/// Our reads take the same lock the same way. Safe from self deadlock: at each of our hook points the engine takes this lock itself right after, so its thread
+/// cannot hold it there. The lock word is the engine's 32 bit int (FUN_01ce58e0 compares and swaps a dword). The wait has a time limit (100 ms; a push holds the lock for
+/// microseconds): past it the read goes on without the lock, as before this change, counted and logged (it should never happen).
+/// LEGACY(aabb_table_unlocked): TLG_AABB_TABLE_LOCK=0 reads the table without the lock (the old way).
+class GroupTableLock {
+public:
+    explicit GroupTableLock(u64 frame) {
+        static const bool on = [] { const char* e = std::getenv("TLG_AABB_TABLE_LOCK"); return e == nullptr || e[0] != '0'; }();
+        if (!on || !IsHeapPointer(frame)) {
+            return;
+        }
+        auto* const word = reinterpret_cast<std::atomic<u32>*>(frame + 0x31e74);
+        std::chrono::steady_clock::time_point limit{};
+        bool waited = false;
+        for (u32 tries = 0;; ++tries) {
+            u32 expected = 0;
+            if (word->compare_exchange_strong(expected, 1, std::memory_order_acquire, std::memory_order_relaxed)) {
+                word_ = word;
+                break;
+            }
+            waited = true;
+            if (tries < 64) {
+                _mm_pause();
+                continue;
+            }
+            const auto now = std::chrono::steady_clock::now();
+            if (tries == 64) {
+                limit = now + std::chrono::milliseconds(100);
+            } else if (now > limit) {
+                const u64 n = Live().aabb_table_lock_timeouts.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (n <= 16) {
+                    TLG_LOG(CP, Error, "K1 AABB group table: the engine's lock at {:#x} is still taken after 100 ms (value {:#x}): read without it ({} so far)", frame + 0x31e74,
+                            word->load(std::memory_order_relaxed), n);
+                }
+                break;
+            }
+            std::this_thread::yield();
+        }
+        if (waited) {
+            Live().aabb_table_lock_waits.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    ~GroupTableLock() {
+        if (word_ != nullptr) {
+            word_->store(0, std::memory_order_release);
+        }
+    }
+    GroupTableLock(const GroupTableLock&) = delete;
+    GroupTableLock& operator=(const GroupTableLock&) = delete;
+
+private:
+    std::atomic<u32>* word_ = nullptr;
+};
+/// Call with the frame's GroupTableLock held
 u32 ActiveGroups(u64 frame) {
     const u32 groups = Rd<u32>(frame, 0x31e68);
     const u64 table = Rd<u64>(frame, 0x31e60);
@@ -8078,6 +8155,7 @@ u64 PS4_SYSV_ABI AabbReadCheck(Core::GuestHooks::MidContext* c) {
         return 0;
     }
     const u64 count_memory = Rd<u64>(c->rbp - 0x4a0, 0), records = Rd<u64>(c->rbp - 0x4b0, 0);
+    const GroupTableLock lock(frame); // the table as the engine's reader sees it (it takes this lock right after our hook; issue 36 cause E)
     const u64 table = Rd<u64>(frame, 0x31e60);
     if (count_memory == 0 || records == 0 || table == 0 || Rd<u32>(count_memory, 0) == 0) {
         return 0;
@@ -8584,9 +8662,10 @@ u64 PS4_SYSV_ABI TagCopyResource(u64 ctx, u64 destination, u64 destination_sub, 
         // A buffer's copy is the engine's CsCopyBufferDwords, our copy at its own hook.
         const u32 kind = Rd<u32>(destination, 0x124);
         if (kind >= 2 && kind <= 4 && TextureUsage(destination) == 3) { // engine API map, data paths: a copy into a staging texture (a CPU read-back of a texture)
+            Core::Vkb::DevLog::Count(Core::Vkb::DevLog::Kind::CopyIntoStagingTexture);
             static std::atomic<u32> logged{0};
-            if (logged.fetch_add(1) < 24) {
-                LOG_WARNING(Core, "api map: CopyResource into a staging texture: caller {:#x} {}x{} format {} mips {} sub {} from texture {}x{} sub {}", ret - ImageBase() + 0x1000000,
+            if (Core::Vkb::DevLog::On() && logged.fetch_add(1) < 24) { // a developer dump (Vkb::DevLog)
+                LOG_INFO(Core, "api map: CopyResource into a staging texture: caller {:#x} {}x{} format {} mips {} sub {} from texture {}x{} sub {}", ret - ImageBase() + 0x1000000,
                             Rd<u32>(destination, 0x180), Rd<u32>(destination, 0x184), Rd<u32>(destination, 0x190), Rd<u32>(destination, 0x188), destination_sub,
                             Rd<u32>(source, 0x180), Rd<u32>(source, 0x184), source_sub);
             }
@@ -9219,6 +9298,41 @@ u64 PS4_SYSV_ABI K2TricoChain(Core::GuestHooks::MidContext* c) {
 /// On PS4 at 30 fps the recording waits on the render long enough that those jobs run first (91 % in time); above that the recording runs first, the next reset
 /// drops the queries and a pass with pending groups is skipped. The recording now waits until every unlocked extension that registered a query in the last
 /// AnimationTick generation has run in the next one; locked ones run after the reset by the engine's own rule and are never waited for. 50 ms bound.
+/// Issue 78: the game's job scheduler, as its own enqueue call names it (hook K2_Enqueue, first argument). A backend wait that holds one of the
+/// game's workers keeps the pool awake through the scheduler's "work available" semaphore (its handle at + 0x1a8), the one the game's enqueue
+/// signals. Switch TLG_VKB_SCHEDULER_WAKE=0: the wait without the wake (the old behaviour).
+namespace SchedulerWake {
+std::atomic<u64> scheduler{0};
+std::atomic<u64> c_posts{0};
+std::atomic<u64> c_no_scheduler{0}, c_no_signal{0}, c_refused{0}; ///< wakes not given: no enqueue seen yet / the loader gave no signal / no handle or the semaphore refused
+bool On() {
+    static const bool on = [] {
+        const char* e = std::getenv("TLG_VKB_SCHEDULER_WAKE");
+        return e == nullptr || std::strcmp(e, "0") != 0;
+    }();
+    return on;
+}
+void Post() {
+    const u64 s = scheduler.load(std::memory_order_relaxed);
+    const auto signal = TlgGameSema::signal.load(std::memory_order_relaxed);
+    if (s == 0) {
+        c_no_scheduler.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    if (signal == nullptr) {
+        c_no_signal.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    const u64 handle = Rd<u64>(s, 0x1a8);
+    // the loader's signal checks the handle: an unknown one is refused (no semaphore is touched) and counted here
+    if (handle == 0 || handle > 0xffffffffull || signal(static_cast<u32>(handle), 1) != 0) {
+        c_refused.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    c_posts.fetch_add(1, std::memory_order_relaxed);
+}
+} // namespace SchedulerWake
+
 namespace AnimQueryOrder {
 bool On() {
     return true; // default since 2026-11-19 (owner plays: late 22,989 -> ~29, no crash, AABB guard deleted); the old order (no wait) is gone
@@ -9298,7 +9412,26 @@ void BeforeRecording() {
         return;
     }
     const auto t0 = std::chrono::steady_clock::now();
-    const bool ok = cv.wait_for(lock, std::chrono::milliseconds(50), ready);
+    bool ok = false;
+    if (SchedulerWake::On()) {
+        // Issue 78: this worker waits for work of the game's next task cycle, but the game's scheduler counts it as busy and expects every busy
+        // worker to come back to its job loop soon and signal. Until one does, the scheduler may sleep on with its cycle already finished, or
+        // leave a queued task unrun, and the next cycle (the AnimationTick waited for) cannot start: only the 50 ms limit ended that. So the
+        // wait keeps the pool awake as the game's own enqueue does: every 0.5 ms one count on the scheduler's "work available" semaphore. An
+        // idle worker wakes, runs what is queued, and going idle again wakes the scheduler. The 50 ms limit stays as a safety net.
+        const auto end = t0 + std::chrono::milliseconds(50);
+        while (true) {
+            ok = cv.wait_until(lock, std::min(end, std::chrono::steady_clock::now() + std::chrono::microseconds(500)), ready);
+            if (ok || std::chrono::steady_clock::now() >= end) {
+                break;
+            }
+            lock.unlock();
+            SchedulerWake::Post();
+            lock.lock();
+        }
+    } else {
+        ok = cv.wait_for(lock, std::chrono::milliseconds(50), ready);
+    }
     c_waits.fetch_add(1, std::memory_order_relaxed);
     c_waited_us.fetch_add(static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count()), std::memory_order_relaxed);
     if (!ok) {
@@ -9314,7 +9447,9 @@ void BeforeRecording() {
         }
     }
     if (const u64 n = c_waits.load(std::memory_order_relaxed) + c_no_wait.load(std::memory_order_relaxed); n % 1800 == 0) {
-        TLG_LOG(CP, Warn, "anim query order: {} recordings, {} waited ({} us total), {} timed out", n, c_waits.load(), c_waited_us.load(), c_timeouts.load());
+        TLG_LOG(CP, Warn, "anim query order: {} recordings, {} waited ({} us total), {} timed out; scheduler wakes {} (not given: no scheduler {}, no signal {}, refused {})", n,
+                c_waits.load(), c_waited_us.load(), c_timeouts.load(), SchedulerWake::c_posts.load(), SchedulerWake::c_no_scheduler.load(),
+                SchedulerWake::c_no_signal.load(), SchedulerWake::c_refused.load());
     }
 }
 } // namespace AnimQueryOrder
@@ -9518,6 +9653,7 @@ u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64
         if (IsHeapPointer(device) && IsHeapPointer(a1)) {
             g_aabb_count_buffer.store(Rd<u64>(device, 0x27a8), std::memory_order_relaxed);
             g_rec_frame.store(a1, std::memory_order_relaxed);
+            const GroupTableLock lock(a1); // BeginRecording takes this lock itself after its entry (our hook point)
             g_rec_groups.store(Rd<u32>(a1, 0x31e68), std::memory_order_relaxed);
             g_rec_groups_at_dispatch.store(Rd<u32>(a1, 0x31e68), std::memory_order_relaxed);
             g_rec_active.store(ActiveGroups(a1), std::memory_order_relaxed);
@@ -9675,7 +9811,10 @@ void InstallUnmapSlot() {
     *slot = reinterpret_cast<u64>(&UnmapSlot);
     VirtualProtect(slot, sizeof(u64), old_protect, &old_protect);
 #else
-    *slot = reinterpret_cast<u64>(&UnmapSlot);
+    if (!WriteProtectedSlot(slot, reinterpret_cast<u64>(&UnmapSlot))) { // the table is read only after relocation
+        TLG_LOG(CP, Error, "native updates: cannot make the Unmap slot writable");
+        return;
+    }
 #endif
     LOG_INFO(Core, "native updates: the Unmap slot of the device context is replaced");
 }
@@ -11942,6 +12081,14 @@ u64 PS4_SYSV_ABI DecalEnter(u64 render_device, u64 view, u64 a3, u64 a4, u64 des
     return 0;
 }
 
+/// Issue 78: the hook at the game's enqueue first notes the job scheduler (its first argument) for SchedulerWake, then runs its census handler.
+u64 PS4_SYSV_ABI SchedulerEnqueue(Core::GuestHooks::MidContext* c) {
+    if (SchedulerWake::scheduler.load(std::memory_order_relaxed) != c->rdi && IsHeapPointer(c->rdi)) {
+        SchedulerWake::scheduler.store(c->rdi, std::memory_order_relaxed);
+    }
+    return K2Enqueue(c);
+}
+
 u64 FindHandler(const std::string& name) {
     if (name == "forward_enter") {
         return reinterpret_cast<u64>(&ForwardEnter);
@@ -12157,7 +12304,7 @@ u64 FindHandler(const std::string& name) {
         return reinterpret_cast<u64>(&K2AnimationTick);
     }
     if (name == "k2_enqueue") {
-        return reinterpret_cast<u64>(&K2Enqueue);
+        return reinterpret_cast<u64>(&SchedulerEnqueue); // K2Enqueue after the scheduler is noted (issue 78)
     }
     if (name == "k2_task_object") {
         return reinterpret_cast<u64>(&K2TaskObject);

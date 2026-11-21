@@ -37,12 +37,44 @@ bool FgWanted() {
     return wanted;
 }
 
+bool FsrFgWanted() {
+    static const bool wanted = [] {
+        const char* e = std::getenv("TLG_VKB_FG");
+        return e != nullptr && std::strcmp(e, "fsr") == 0;
+    }();
+    return wanted;
+}
+
+bool AnyFgWanted() {
+    return FgWanted() || FsrFgWanted();
+}
+
 bool Wanted() {
     static const bool wanted = [] {
         const char* e = std::getenv("TLG_VKB_AA");
         return (e != nullptr && std::strcmp(e, "dlaa") == 0 && Vulkan::Dlss::Get() != nullptr) || FgWanted();
     }();
     return wanted;
+}
+
+bool Usable(std::string& why) {
+    Vulkan::Dlss* dlss = Vulkan::Dlss::Get();
+    if (!Wanted() || dlss == nullptr) {
+        why = "tlg_dlss.dll / nvngx_dlss.dll are not next to the executable";
+        return false;
+    }
+    if (!dlss->Available()) {
+        why = dlss->Problem().empty() ? std::string("the DLSS bridge did not start") : dlss->Problem();
+        return false;
+    }
+    return true;
+}
+
+void Release(vk::Device device) {
+    if (Vulkan::Dlss* dlss = Vulkan::Dlss::Get()) {
+        IdleDevice(device);
+        dlss->ReleaseFeature();
+    }
 }
 
 bool FgAvailable() {
