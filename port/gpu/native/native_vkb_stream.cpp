@@ -351,6 +351,7 @@ struct Rec {
     std::vector<std::tuple<vk::Buffer, u64, u64, u32>> capture_buffers; ///< note 91: buffer ranges of captured draws, copied at the pass end (with their file index)
     u32 jobs_in_cmd = 0;
     std::unordered_set<u64> census_touched; ///< census: handles the current command buffer's commands touched
+    std::vector<std::pair<u64, u64>> touched; ///< U1: (handle, generation) of what the current command buffer's commands touched (open addressing, reset by generation)
     u64 census_generation = 0;
     u64 value = 0; ///< R4a: the timeline value of the submission this thread records (0: the shared recorder, which takes the next value at its submit)
 };
@@ -938,6 +939,56 @@ void SetLanternFootprint(const LanternFootprint* footprint) {
 bool IsLanternShader(u64 hash) {
     return IsQuietChain(hash);
 }
+bool HoistOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_HOIST_UPLOADS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+constexpr u64 TouchedSlots = 1u << 14;
+inline u64 TouchHash(u64 h) {
+    return ((h >> 4) * 0x9e3779b97f4a7c15ull) >> 50; // 14 bits
+}
+/// U1: true if the current command buffer touched `handle`; `mark` adds it
+bool Touched(u64 handle, bool mark) {
+    auto& t = t_rec->touched;
+    if (t.empty()) {
+        t.assign(TouchedSlots, {0, 0});
+    }
+    const u64 gen = t_rec->generation;
+    for (u64 i = 0, at = TouchHash(handle); i < 16; ++i, at = (at + 1) & (TouchedSlots - 1)) {
+        auto& e = t[at];
+        if (e.second != gen) { // free in this command buffer
+            if (mark) {
+                e = {handle, gen};
+            }
+            return false;
+        }
+        if (e.first == handle) {
+            return true;
+        }
+    }
+    return true; // a full probe run: say touched (the copy stays in place: always correct)
+}
+void Touch(u64 handle) {
+    (void)Touched(handle, true);
+}
+std::atomic<u64> c_hoisted{0}, c_hoisted_bytes{0}, c_hoist_in_place{0};
+void EnsureStageCmd();
+bool HoistCopy(vk::Buffer src, u64 src_offset, vk::Buffer dst, u64 dst_offset, u64 size) {
+    if (!HoistOn() || !t_rec->current) {
+        return false;
+    }
+    const u64 handle = reinterpret_cast<u64>(static_cast<VkBuffer>(dst));
+    if (Touched(handle, false) || Touches(t_rec->cmd_written, BufferUse(src, src_offset, size, false)) != 0) { // (the source: our GPU work in this command buffer wrote it)
+        c_hoist_in_place.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    EnsureStageCmd();
+    t_rec->stage_cmd.copyBuffer(src, dst, vk::BufferCopy{src_offset, dst_offset, size});
+    Touch(handle); // a second copy into it in this command buffer goes in place (after the first, behind the current command buffer's first barrier)
+    c_hoisted.fetch_add(1, std::memory_order_relaxed);
+    c_hoisted_bytes.fetch_add(size, std::memory_order_relaxed);
+    return true;
+}
 bool Hazard(vk::CommandBuffer cmd, std::span<const Use> uses, Agent agent) {
     if (LegacyBarriers()) {
         EndPassLocked(EndWhy::Barrier);
@@ -945,6 +996,13 @@ bool Hazard(vk::CommandBuffer cmd, std::span<const Use> uses, Agent agent) {
         return true;
     }
     c_hazard_checks.fetch_add(1, std::memory_order_relaxed);
+    if (HoistOn()) {
+        for (const Use& u : uses) {
+            if (u.handle != 0) {
+                Touch(u.handle);
+            }
+        }
+    }
     if (OverlapCensus::On()) [[unlikely]] {
         OverlapCensus::Note(uses, static_cast<u32>(t_rec->current_work), t_job_async, hazard_tag);
         if (t_rec->census_generation != t_rec->generation) {
@@ -1074,7 +1132,7 @@ bool Hazard(vk::CommandBuffer cmd, std::span<const Use> uses, Agent agent) {
     for (const Use& u : uses) {
         if (u.handle != 0) {
             Note(u.write ? t_rec->written_since : t_rec->read_since, u, cls);
-            if (u.write && StageOn()) {
+            if (u.write && (StageOn() || HoistOn())) {
                 Note(t_rec->cmd_written, u, cls);
             }
         }
@@ -1951,6 +2009,21 @@ bool StageRead(vk::Buffer& buffer, u64& offset, u64 size) {
         Wait(wait_for);
         c_stage_waits.fetch_add(1, std::memory_order_relaxed);
     }
+    EnsureStageCmd();
+    t_rec->stage_cmd.copyBuffer(buffer, vk::Buffer{stage_buffer.buffer}, vk::BufferCopy{offset, at, size});
+    t_rec->stage_map.emplace(key, at);
+    if (u64 rh = 0, rb = 0, re = 0; Core::Vkb::FrameRingInPlace(rh, rb, re) && rh == u.handle && offset >= rb && offset + size <= re) {
+        c_stage_ring.fetch_add(1, std::memory_order_relaxed);
+        c_stage_ring_bytes.fetch_add(size, std::memory_order_relaxed);
+    }
+    buffer = vk::Buffer{stage_buffer.buffer};
+    offset = at;
+    c_staged.fetch_add(1, std::memory_order_relaxed);
+    c_staged_bytes.fetch_add(size, std::memory_order_relaxed);
+    return true;
+}
+/// The command buffer in front of the current one (V4h copies, U1 hoisted uploads): made at its first use, with its barrier
+void EnsureStageCmd() {
     if (!t_rec->stage_cmd) {
         MakePool();
         const vk::CommandBufferAllocateInfo ai{.commandPool = t_rec->pool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1};
@@ -1974,17 +2047,6 @@ bool StageRead(vk::Buffer& buffer, u64& offset, u64 size) {
             t_rec->stage_cmd.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, stage_stamp_pool, t_rec->stage_stamp_open);
         }
     }
-    t_rec->stage_cmd.copyBuffer(buffer, vk::Buffer{stage_buffer.buffer}, vk::BufferCopy{offset, at, size});
-    t_rec->stage_map.emplace(key, at);
-    if (u64 rh = 0, rb = 0, re = 0; Core::Vkb::FrameRingInPlace(rh, rb, re) && rh == u.handle && offset >= rb && offset + size <= re) {
-        c_stage_ring.fetch_add(1, std::memory_order_relaxed);
-        c_stage_ring_bytes.fetch_add(size, std::memory_order_relaxed);
-    }
-    buffer = vk::Buffer{stage_buffer.buffer};
-    offset = at;
-    c_staged.fetch_add(1, std::memory_order_relaxed);
-    c_staged_bytes.fetch_add(size, std::memory_order_relaxed);
-    return true;
 }
 
 namespace {
@@ -2488,7 +2550,7 @@ nlohmann::json Report() {
                                t["enqueue_on_producers"] = c_enqueue_ns.load() / 1000000;
                                return t;
                            }()}, {"most_queued", c_jobs_most.load()}, {"producer_waits_queue_full", c_job_waits_full.load()},
-                          {"overlap_census", OverlapCensus::On() ? OverlapCensus::Report() : nlohmann::json{}}, {"drains", c_drains.load()}, {"splices", c_splices.load()}, {"splice_jobs", c_splice_jobs.load()}, {"splice_waits", c_splice_waits.load()}, {"splice_wait_us", c_splice_wait_us.load()}, {"split_submits", c_splits.load()},
+                          {"overlap_census", OverlapCensus::On() ? OverlapCensus::Report() : nlohmann::json{}}, {"hoisted_uploads", {{"on", HoistOn()}, {"hoisted", c_hoisted.load()}, {"mb", c_hoisted_bytes.load() >> 20}, {"in_place", c_hoist_in_place.load()}}}, {"drains", c_drains.load()}, {"splices", c_splices.load()}, {"splice_jobs", c_splice_jobs.load()}, {"splice_waits", c_splice_waits.load()}, {"splice_wait_us", c_splice_wait_us.load()}, {"split_submits", c_splits.load()},
                           {"r4a_recorders_submissions_jobs_transition_jobs_worker_waits_batches", {Recorders(), c_r4a_submissions.load(), c_r4a_jobs.load(), c_r4a_transition_jobs.load(), c_r4a_worker_waits.load(), c_r4a_batches.load()}},
                           {"stage_own_overlap", c_stage_own_overlap.load()},
                           {"drain_wait_ms_mean", c_drains.load() ? static_cast<double>(c_drain_us.load()) / 1e3 / static_cast<double>(c_drains.load()) : 0.0}}},

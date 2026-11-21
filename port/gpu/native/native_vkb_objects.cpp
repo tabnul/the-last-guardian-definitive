@@ -2630,6 +2630,9 @@ void BufferCpuWritten(u64 address, u64 size) {
             if (const BufferWindow src = SourceWindow(address, size); src.buffer && !skip_uploads_gw) {
                 Stream::NoteBytes(Stream::Work::UploadCpuWritten, size);
                 Stream::Defer(Stream::Work::UploadCpuWritten, [src, device = written_device, offset = written_offset, size](vk::CommandBuffer cmd) {
+                    if (Stream::HoistCopy(src.buffer, src.offset, vk::Buffer{device}, offset, size)) {
+                        return;
+                    }
                     Stream::Hazard(cmd, {Stream::BufferUse(src.buffer, src.offset, size, false), Stream::BufferUse(vk::Buffer{device}, offset, size, true)});
                     cmd.copyBuffer(src.buffer, vk::Buffer{device}, vk::BufferCopy{src.offset, offset, size});
                 });
@@ -2679,6 +2682,9 @@ void BufferCpuWritten(u64 address, u64 size) {
     }
     Stream::NoteBytes(Stream::Work::UploadCpuWritten, size);
     Stream::Defer(Stream::Work::UploadCpuWritten, [w, device_buffer, offset, size](vk::CommandBuffer cmd) {
+        if (Stream::HoistCopy(w.buffer, w.offset, vk::Buffer{device_buffer}, offset, size)) {
+            return;
+        }
         Stream::Hazard(cmd, {Stream::BufferUse(w.buffer, w.offset, size, false), Stream::BufferUse(vk::Buffer{device_buffer}, offset, size, true)});
         cmd.copyBuffer(w.buffer, vk::Buffer{device_buffer}, vk::BufferCopy{w.offset, offset, size});
     });
@@ -3676,6 +3682,9 @@ u32 MemoryLoaded(u64 address, u64 bytes) {
         }
         Stream::NoteBytes(Stream::Work::UploadCpuWritten, c.bytes);
         Stream::Defer(Stream::Work::UploadCpuWritten, [src, c](vk::CommandBuffer cmd) {
+            if (Stream::HoistCopy(src.buffer, src.offset, vk::Buffer{c.device}, c.offset, c.bytes)) {
+                return;
+            }
             Stream::Hazard(cmd, {Stream::BufferUse(src.buffer, src.offset, c.bytes, false), Stream::BufferUse(vk::Buffer{c.device}, c.offset, c.bytes, true)});
             cmd.copyBuffer(src.buffer, vk::Buffer{c.device}, vk::BufferCopy{src.offset, c.offset, c.bytes});
         });

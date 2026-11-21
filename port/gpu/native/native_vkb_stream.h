@@ -159,6 +159,10 @@ void DeferUnlocked(F&& f) {
 /// buffer that runs in front of the submission's; `buffer` / `offset` then name the copy. Not for a range our GPU work wrote earlier in the same submission. Lock held (a job).
 /// False: left in place.
 bool StageRead(vk::Buffer& buffer, u64& offset, u64 size);
+/// U1 (TLG_VKB_HOIST_UPLOADS, default off while tested): a copy of CPU-written data into one of our buffers, from a job (lock held). When no command of the current
+/// command buffer touched `dst` yet, the copy goes into the command buffer that runs in front of it (with the V4h copies, behind its one barrier; the current command
+/// buffer's first barrier orders it before everything in it) and true is returned; else false (the caller records it in place, with its hazard check).
+bool HoistCopy(vk::Buffer src, u64 src_offset, vk::Buffer dst, u64 dst_offset, u64 size);
 /// V4i: our GPU work that writes engine memory in place says so: those ranges stay in place for the rest of the frame (a copy in front of a later submission would
 /// miss the write). Lock held (a job). NewFrame: at the engine's graphics submit.
 void NoteInPlaceWrite(vk::Buffer buffer, u64 offset, u64 size);
