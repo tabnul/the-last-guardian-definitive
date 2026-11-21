@@ -1067,7 +1067,12 @@ def build_env(settings, extra=None):
     # 30/60: a 240 Hz vblank shows a late frame ~4 ms late instead of a whole 60 Hz vblank later
     # (bench 2026-10-25: frames over 1.5x median 360 -> 13 in the garden); the limiter keeps the
     # flips at the engine rate (driver.cpp PresentThread).
-    env.setdefault('TLG_VBLANK_HZ', '0' if applied_frame_rate == 'unlocked' else '240')
+    # Unlocked (2026-11-21, parallel-passes-research.md section 14): a 1000 Hz tick (presents land within 1 ms; no 120 ceiling:
+    # GetFrameLimit applies only to the 480 Hz tick) and the game moves its world by the real frame time (TLG_GAME_STEP=raw: the
+    # engine's smoothed step cut to 1/360 s made camera moves judder above 60 FPS; owner play OK).
+    env.setdefault('TLG_VBLANK_HZ', '1000' if applied_frame_rate == 'unlocked' else '240')
+    if applied_frame_rate == 'unlocked':
+        env.setdefault('TLG_GAME_STEP', 'raw')
     # The game renders natively at the patched size: the upscaler stays off (vk_temporal_upscaler).
     if applied_resolution:
         env['TLG_RESOLUTION_PATCH'] = applied_resolution
