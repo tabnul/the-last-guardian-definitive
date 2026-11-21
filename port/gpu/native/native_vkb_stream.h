@@ -191,6 +191,19 @@ enum class Agent : u8 { Current = 0, Graphics = 1, Compute = 2, Transfer = 4 };
 bool Hazard(vk::CommandBuffer cmd, std::span<const Use> uses, Agent agent = Agent::Current);
 /// R5 census TLG_VKB_HAZARD_LOG=1: the shader hash the next Hazard calls belong to (recording thread), for log/vkb_hazards.txt
 void SetHazardTag(u64 tag);
+/// Lantern waits, exact rule (our change to tabnul's #98): what one lantern particle dispatch writes, read by the CPU from the engine's own emitter records before it
+/// runs: the emitter records it processes ([record_begin, record_end), its per-record output) and the particle slots they name (record dword 6; slot 0 left out: the
+/// game's own throwaway slot, written by many emitters at once on the console too). `known` false: not readable (the dispatch keeps its wait).
+struct LanternFootprint {
+    bool known{false};
+    u32 record_begin{}, record_end{};
+    u32 slot_count{};
+    std::array<u32, 16> slots{};
+};
+/// Set around the Hazard call of a lantern dispatch (null otherwise)
+void SetLanternFootprint(const LanternFootprint* footprint);
+/// One of the four lantern particle shaders (by program hash)
+[[nodiscard]] bool IsLanternShader(u64 hash);
 [[nodiscard]] bool LegacyBarriersOn();
 inline bool Hazard(vk::CommandBuffer cmd, std::initializer_list<Use> uses, Agent agent = Agent::Current) {
     return Hazard(cmd, std::span<const Use>{uses.begin(), uses.size()}, agent);

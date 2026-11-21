@@ -329,6 +329,8 @@ struct Rec {
     Pass open_pass{};
     RangeSet written_since, read_since; ///< V4d: what the commands since the last barrier wrote and read
     bool quiet_chain = false;           ///< every write noted since the last full release came from a QuietChain shader (lantern waits)
+    std::vector<std::pair<u32, u32>> chain_records; ///< exact rule: the record ranges the chain's dispatches since the last full release wrote
+    std::vector<u32> chain_slots;                  ///< exact rule: the particle slots (not 0) they wrote
     RangeSet cmd_written;               ///< V4h: what this command buffer's GPU work wrote (not cleared by barriers)
     u32 stat_count = 0;
     bool stat_open = false;
@@ -360,6 +362,8 @@ void FullBarrierLocked(vk::CommandBuffer cmd) {
     t_rec->written_since.clear();
     t_rec->read_since.clear();
     t_rec->quiet_chain = true; // nothing is outstanding
+    t_rec->chain_records.clear();
+    t_rec->chain_slots.clear();
 }
 struct PassKey {
     u8 kind;
@@ -635,6 +639,7 @@ thread_local u64 hazard_tag = 0;
 void SetHazardTag(u64 tag) {
     hazard_tag = tag;
 }
+void SetLanternFootprint(const LanternFootprint* footprint);
 namespace {
 /// Lantern waits (live issue #98): the game updates the lantern flames with ~150 tiny dispatches of these shaders per frame on the terrace
 /// (s04 FA_b01). Each one writes buffers the ones before it wrote, so each got a full wait, ~2.7 ms per frame on an RTX 5090.
@@ -650,7 +655,22 @@ bool QuietChainOn() {
 bool IsQuietChain(u64 tag) {
     return std::find(kQuietChain.begin(), kQuietChain.end(), tag) != kQuietChain.end();
 }
-std::atomic<u64> c_quiet_skipped{0};
+std::atomic<u64> c_quiet_skipped{0}, c_quiet_overlap{0}, c_quiet_unknown{0};
+thread_local const LanternFootprint* t_lantern = nullptr;
+/// Exact rule: does this dispatch's footprint miss everything the chain wrote since its last full release?
+bool LanternDisjoint(const LanternFootprint& f) {
+    for (const auto& [b, e] : t_rec->chain_records) {
+        if (f.record_begin < e && b < f.record_end) {
+            return false;
+        }
+    }
+    for (u32 i = 0; i < f.slot_count; ++i) {
+        if (std::find(t_rec->chain_slots.begin(), t_rec->chain_slots.end(), f.slots[i]) != t_rec->chain_slots.end()) {
+            return false;
+        }
+    }
+    return true;
+}
 /// R5 census (note 70, `TLG_VKB_BARRIER_BY_SHADER=1`, debug only): per dispatch shader (the hazard tag), the commands checked, the barriers they got and the first cause
 struct ShaderBarriers {
     u64 checked{}, barriers{};
@@ -702,6 +722,12 @@ void LogHazard(std::span<const Use> uses) {
 }
 } // namespace
 
+void SetLanternFootprint(const LanternFootprint* footprint) {
+    t_lantern = footprint;
+}
+bool IsLanternShader(u64 hash) {
+    return IsQuietChain(hash);
+}
 bool Hazard(vk::CommandBuffer cmd, std::span<const Use> uses, Agent agent) {
     if (LegacyBarriers()) {
         EndPassLocked(EndWhy::Barrier);
@@ -758,8 +784,16 @@ bool Hazard(vk::CommandBuffer cmd, std::span<const Use> uses, Agent agent) {
     }
     const bool quiet = cls == 2 && QuietChainOn() && IsQuietChain(hazard_tag);
     if (src != 0 && quiet && only_cs_buffer_waw && t_rec->quiet_chain) {
-        src = 0; // only the earlier lantern dispatches' writes are outstanding, and they never overlap with this one's
-        c_quiet_skipped.fetch_add(1, std::memory_order_relaxed);
+        // exact rule: only the earlier lantern dispatches' writes are outstanding; skip the wait when this one's records and slots (read from the engine's records
+        // before it ran) miss all of theirs
+        if (t_lantern == nullptr || !t_lantern->known) {
+            c_quiet_unknown.fetch_add(1, std::memory_order_relaxed);
+        } else if (!LanternDisjoint(*t_lantern)) {
+            c_quiet_overlap.fetch_add(1, std::memory_order_relaxed);
+        } else {
+            src = 0;
+            c_quiet_skipped.fetch_add(1, std::memory_order_relaxed);
+        }
     }
     if (src != 0 && quiet) {
         src = 7; // the wait it keeps releases everything, so only lantern writes stay outstanding after it
@@ -789,7 +823,18 @@ bool Hazard(vk::CommandBuffer cmd, std::span<const Use> uses, Agent agent) {
         c_barrier_src[src & 7].fetch_add(1, std::memory_order_relaxed);
         c_hazard_barriers.fetch_add(1, std::memory_order_relaxed);
     }
-    t_rec->quiet_chain = quiet && (t_rec->quiet_chain || released_all);
+    t_rec->quiet_chain = quiet && (t_rec->quiet_chain || released_all) && t_lantern != nullptr && t_lantern->known;
+    if (released_all) { // the full release: only this dispatch's writes are outstanding now
+        t_rec->chain_records.clear();
+        t_rec->chain_slots.clear();
+    }
+    if (t_rec->quiet_chain) {
+        t_rec->chain_records.push_back({t_lantern->record_begin, t_lantern->record_end});
+        t_rec->chain_slots.insert(t_rec->chain_slots.end(), t_lantern->slots.begin(), t_lantern->slots.begin() + t_lantern->slot_count);
+    } else {
+        t_rec->chain_records.clear();
+        t_rec->chain_slots.clear();
+    }
     for (const Use& u : uses) {
         if (u.handle != 0) {
             Note(u.write ? t_rec->written_since : t_rec->read_since, u, cls);
@@ -2175,7 +2220,7 @@ nlohmann::json Report() {
                  }
                  return j;
              }()},
-            {"barriers", {{"legacy_rule", LegacyBarriers()}, {"full_barriers", FullBarriers()}, {"commands_checked", c_hazard_checks.load()}, {"barriers_for_a_hazard", c_hazard_barriers.load()}, {"lantern_waits_skipped", c_quiet_skipped.load()},
+            {"barriers", {{"legacy_rule", LegacyBarriers()}, {"full_barriers", FullBarriers()}, {"commands_checked", c_hazard_checks.load()}, {"barriers_for_a_hazard", c_hazard_barriers.load()}, {"lantern_waits_skipped_overlap_unknown", {c_quiet_skipped.load(), c_quiet_overlap.load(), c_quiet_unknown.load()}},
                           {"barriers_at_command_buffer_begin", c_begin_barriers.load()}}},
             {"submits", c_submits.load()},
             {"submits_with_nothing_recorded", c_empty_submits.load()},

@@ -846,6 +846,29 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
     if (LanternCensusOn() && v.info) {
         LanternNote(v.info->pgm_hash, v, guest_of, x, y, z);
     }
+    // lantern waits, exact rule: the records this dispatch processes (constant buffer binding 0: count at dword 104, first at 106; thread i takes record first + i while
+    // i < count) and the particle slot each names (binding 1, the CPU-written emitter records of 60 dwords: slot at dword 6); all four shaders have this layout
+    Stream::LanternFootprint lantern{};
+    if (v.info && Stream::IsLanternShader(v.info->pgm_hash) && guest_of.size() >= 2 && v.buffers.size() >= 2 && v.buffers[0].cls == Source::Class::Slot && v.buffers[0].kind == 3 &&
+        v.buffers[1].cls == Source::Class::Slot && v.buffers[1].kind == 1 && guest_of[0].first != 0 && guest_of[0].second >= 107 * 4 && guest_of[1].first != 0 && indirect_address == 0) {
+        const u32 count = *reinterpret_cast<const u32*>(guest_of[0].first + 104 * 4);
+        const u32 first = *reinterpret_cast<const u32*>(guest_of[0].first + 106 * 4);
+        const u32 n = count; // (every record the guard lets through: a superset of what the threads reach, so the footprint is never too small)
+        bool ok = n <= 4096 && (static_cast<u64>(first) + n) * 240 <= guest_of[1].second;
+        for (u32 g = 0; ok && g < n; ++g) {
+            const u32 slot = *reinterpret_cast<const u32*>(guest_of[1].first + (static_cast<u64>(first + g) * 60 + 6) * 4);
+            if (slot == 0) {
+                continue;
+            }
+            if (lantern.slot_count == lantern.slots.size()) {
+                ok = false; // more slots than the footprint holds: keep the wait
+                break;
+            }
+            lantern.slots[lantern.slot_count++] = slot;
+        }
+        lantern.known = ok;
+        lantern.record_begin = first, lantern.record_end = first + n;
+    }
     if (WriteWindowsOn() && !v.windows.empty()) {
         const auto read_cb = [&](u32 binding, u32 index, u64& out) {
             if (binding >= guest_of.size() || guest_of[binding].first == 0 || (static_cast<u64>(index) + 1) * 4 > guest_of[binding].second) {
@@ -1012,7 +1035,7 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
     Stream::Defer(Stream::Work::Dispatch, [aa_jitter, aa_cut, dump_views = std::move(dump_views), dump_buffers, uses = std::move(uses), gds_inits = std::move(gds_inits), buffer_infos = std::move(buffer_infos), image_infos = std::move(image_infos),
                                            sampler_infos = std::move(sampler_infos), image_types = std::move(image_types), pipeline = v.pipeline, layout = v.pipeline_layout, push,
                                            args_buffer, args_offset, x, y, z, sid = Rd<u64>(shader, 0x10), hash = v.info->pgm_hash,
-                                           stageable = std::move(stageable)](vk::CommandBuffer cmd) mutable {
+                                           stageable = std::move(stageable), lantern](vk::CommandBuffer cmd) mutable {
         // the async context's append / consume counters that start at a value: our GDS gets it in front of the dispatch (the engine's DMA packet on the console)
         for (const auto& [offset, init] : gds_inits) {
             Stream::Hazard(cmd, {Stream::BufferUse(Stream::GdsBuffer(), offset, 4, true)}, Stream::Agent::Transfer);
@@ -1024,7 +1047,9 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
         // V4d: a barrier only when the dispatch touches what earlier work since the last barrier wrote (or writes what it read)
         if (!no_barrier) {
             Stream::SetHazardTag(hash);
+            Stream::SetLanternFootprint(lantern.known || Stream::IsLanternShader(hash) ? &lantern : nullptr);
             Stream::Hazard(cmd, std::span<const Stream::Use>{uses.data(), uses.size()});
+            Stream::SetLanternFootprint(nullptr);
         }
         cmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
         for (u32 i = 0; i < buffer_infos.size() && i < stageable.size(); ++i) {
