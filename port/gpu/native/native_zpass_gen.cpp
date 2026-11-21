@@ -4856,6 +4856,11 @@ bool ParOn() {
 std::atomic<u64> c_par_group_publish{0}; // P2: instance group binds made on the engine's thread at hand-overs
 constexpr size_t ParCtxBytes = 0x13100; // the device context's words our draw path reads (the highest: + 0x130e8)
 constexpr u32 ParSlots = 4;
+// the render device's words the worker reads (the highest: the visibility lists at + 0x10988, 0x18 each, list index at + 0x10978): copied at the hand-over like the context.
+// The worker used to read the live render device after the engine's thread had moved on to its next pass (a cascade drawn with the next pass's setup: the sun's shadow
+// map wrong for a frame or two, owner play 2026-11-21)
+constexpr size_t ParRdBytes = 0x11000;
+constexpr u32 ParRdMaxList = static_cast<u32>((ParRdBytes - 0x10988) / 0x18) - 1;
 constexpr u64 ParArenaMin = 64 << 10, ParArenaMax = 2 << 20;
 struct ParTask {
     u64 rd{}, desc{};
@@ -4873,6 +4878,9 @@ struct ParState {
     std::condition_variable cv;
     std::deque<ParTask> tasks;
     std::array<std::vector<u8>, ParSlots> snapshots;
+    std::array<std::vector<u8>, ParSlots> rd_snapshots; ///< the render device at the hand-over (ParRdBytes)
+    std::array<std::array<u8, 0x200>, ParSlots> rs_objects{}; ///< the resource set's buffer object at the hand-over
+    std::array<u32, ParSlots> rs_stage_bytes{};
     std::array<std::atomic<bool>, ParSlots> busy{};
     std::array<std::atomic<bool>, 16> serial_next{}, view_off{};
     std::array<std::atomic<u64>, 16> need{};
@@ -4962,7 +4970,8 @@ void ParWorkG(ParTask& task, u32 index) {
     plan.mode = static_cast<u32>(task.mode);
     plan.flags = static_cast<u32>(task.flags);
     plan.query_mode = static_cast<u32>(task.query_mode);
-    GScanArgs scan_args{&plan, task.rd, task.list, task.args, true};
+    const u64 rd = reinterpret_cast<u64>(ps.rd_snapshots[task.slot].data()); // the render device as the hand-over left it
+    GScanArgs scan_args{&plan, rd, task.list, task.args, true};
     if (!NativeDraw::GuardedCall([](void* p) { ScanGBuffer(*static_cast<GScanArgs*>(p)); }, &scan_args)) {
         plan.scanned = false;
     }
@@ -4978,18 +4987,20 @@ void ParWorkG(ParTask& task, u32 index) {
         Target t;
         const GPlan* plan;
         u64 rd;
+        const u8* rs_object;
     } args{};
     ParTarget(args.t, task, index);
     args.t.moved_check = task.moved.get();
     args.plan = &plan;
-    args.rd = task.rd;
+    args.rd = rd;
+    args.rs_object = ps.rs_objects[task.slot].data();
     if (!NativeDraw::GuardedCall(
             [](void* p) {
                 auto* a = static_cast<Args*>(p);
                 const u64 rs_buffer = R<u64>(a->rd + 0x2910 + 0xef0);
                 if (rs_buffer != 0) {
-                    std::memcpy(a->t.rs_clone, reinterpret_cast<const void*>(rs_buffer), 0x200);
-                    const u32 size = std::min<u32>(R<u32>(rs_buffer + 0x180), 4096);
+                    std::memcpy(a->t.rs_clone, a->rs_object, 0x200); // (the object as the hand-over left it)
+                    const u32 size = std::min<u32>(R<u32>(reinterpret_cast<u64>(a->rs_object) + 0x180), 4096);
                     std::memcpy(a->t.rs_stage, reinterpret_cast<const void*>(a->rd + 0x2910 + 0xe80), size);
                 } else {
                     a->t.rs_clone = nullptr;
@@ -5012,10 +5023,11 @@ void ParWork(ParTask& task, u32 index) {
     ParState& ps = PS();
     State& s = S();
     Plan plan;
-    ScanArgs scan_args{&plan, task.rd, task.desc, &s.table, true};
+    const u64 rd = reinterpret_cast<u64>(ps.rd_snapshots[task.slot].data()); // the render device as the hand-over left it
+    ScanArgs scan_args{&plan, rd, task.desc, &s.table, true};
     {
         std::scoped_lock lock{s.mutex};
-        CacheArgs cache_args{&s, task.rd};
+        CacheArgs cache_args{&s, rd};
         (void)NativeDraw::GuardedCall([](void* p) { CheckCacheImpl(*static_cast<CacheArgs*>(p)); }, &cache_args);
         if (!NativeDraw::GuardedCall([](void* p) { ScanImpl(*static_cast<ScanArgs*>(p)); }, &scan_args)) {
             plan.scanned = false;
@@ -5032,19 +5044,21 @@ void ParWork(ParTask& task, u32 index) {
         Target t;
         const Plan* plan;
         u64 rd;
+        const u8* rs_object;
     } args{};
     Target& t = args.t;
     ParTarget(t, task, index);
     args.plan = &plan;
-    args.rd = task.rd;
+    args.rd = rd;
+    args.rs_object = ps.rs_objects[task.slot].data();
     if (!NativeDraw::GuardedCall(
             [](void* p) {
                 auto* a = static_cast<Args*>(p);
                 // the worker's copies of the resource set's buffer object and of its staging block (renamed / filled per primitive below)
                 const u64 rs_buffer = R<u64>(a->rd + 0x2910 + 0xef0);
                 if (rs_buffer != 0) {
-                    std::memcpy(a->t.rs_clone, reinterpret_cast<const void*>(rs_buffer), 0x200);
-                    const u32 size = std::min<u32>(R<u32>(rs_buffer + 0x180), 4096);
+                    std::memcpy(a->t.rs_clone, a->rs_object, 0x200); // (the object as the hand-over left it)
+                    const u32 size = std::min<u32>(R<u32>(reinterpret_cast<u64>(a->rs_object) + 0x180), 4096);
                     std::memcpy(a->t.rs_stage, reinterpret_cast<const void*>(a->rd + 0x2910 + 0xe80), size);
                 } else {
                     a->t.rs_clone = nullptr;
@@ -5148,7 +5162,7 @@ void ParPublishGroups(u64 list, u32 stamp) {
         &args);
 }
 /// A free context copy slot with the context copied into it (ParSlots: none)
-u32 ParSnapshot(u64 ctx) {
+u32 ParSnapshot(u64 ctx, u64 rd) {
     ParState& ps = PS();
     u32 slot = ParSlots;
     for (u32 i = 0; i < ParSlots; ++i) {
@@ -5166,11 +5180,30 @@ u32 ParSnapshot(u64 ctx) {
     if (snap.size() != ParCtxBytes) {
         snap.assign(ParCtxBytes, 0);
     }
+    std::vector<u8>& rd_snap = ps.rd_snapshots[slot];
+    if (rd_snap.size() != ParRdBytes) {
+        rd_snap.assign(ParRdBytes, 0);
+    }
     struct CopyArgs {
         u8* dst;
         u64 src;
-    } copy{snap.data(), ctx};
-    if (!NativeDraw::GuardedCall([](void* p) { auto* c = static_cast<CopyArgs*>(p); std::memcpy(c->dst, reinterpret_cast<const void*>(c->src), ParCtxBytes); }, &copy)) {
+        u8* rd_dst;
+        u64 rd;
+        u8* rs_dst;
+        bool ok;
+    } copy{snap.data(), ctx, rd_snap.data(), rd, ps.rs_objects[slot].data(), false};
+    if (!NativeDraw::GuardedCall(
+            [](void* p) {
+                auto* c = static_cast<CopyArgs*>(p);
+                std::memcpy(c->dst, reinterpret_cast<const void*>(c->src), ParCtxBytes);
+                std::memcpy(c->rd_dst, reinterpret_cast<const void*>(c->rd), ParRdBytes);
+                if (const u64 rs_buffer = R<u64>(c->rd + 0x2910 + 0xef0); rs_buffer != 0) {
+                    std::memcpy(c->rs_dst, reinterpret_cast<const void*>(rs_buffer), 0x200);
+                }
+                c->ok = R<u32>(c->rd + 0x10978) <= ParRdMaxList;
+            },
+            &copy) ||
+        !copy.ok) {
         ps.busy[slot].store(false, std::memory_order_release);
         ps.copy_faults.fetch_add(1, std::memory_order_relaxed);
         return ParSlots;
@@ -5292,7 +5325,7 @@ bool ParKickG(u64 rd, u64 mode, u64 list, u64 args, u64 flags, u64 query_mode) {
         return false;
     }
     const u64 ctx = head.ctx;
-    const u32 slot = ParSnapshot(ctx);
+    const u32 slot = ParSnapshot(ctx, rd);
     if (slot == ParSlots) {
         return false;
     }
@@ -5388,7 +5421,7 @@ bool ParKick(u64 rd, u64 desc, u32 view) {
         !head.ok) {
         return false;
     }
-    const u32 slot = ParSnapshot(head.ctx);
+    const u32 slot = ParSnapshot(head.ctx, rd);
     if (slot == ParSlots) {
         return false;
     }
