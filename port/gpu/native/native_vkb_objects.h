@@ -129,6 +129,10 @@ BufferWindow SourceWindow(u64 address, u64 size);
 void NoteBind(u32 kind, const BufferWindow& w, u64 size, bool written);
 /// The CPU wrote [address, address + size) of an engine buffer (UpdateSubresource): when it is ours in device memory the bytes are copied in, in the frame stream's order
 void BufferCpuWritten(u64 address, u64 size);
+/// census: the caller of the next BufferCpuWritten (0 Unmap, 1 UpdateSubresource, 2 other)
+void SetCpuWriteKind(u32 kind);
+nlohmann::json UploadCensusReport();
+bool UploadCensusOn();
 /// V2e: the CPU wrote a texture's memory after its creation (UpdateSubresource, the dynamic texture fill): our image gets the contents again (the upload batch, which the
 /// queue runs before the frame stream: a dispatch earlier in the same frame sees the new contents too)
 void TextureCpuWritten(u64 texture_id, u32 subresource = ~0u); ///< subresource: the one UpdateSubresource named (~0u: the whole texture)

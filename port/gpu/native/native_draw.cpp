@@ -11727,7 +11727,9 @@ u64 PS4_SYSV_ABI TextureUpdateSubresource(u64 context, u64 resource, u64 subreso
                 left = Rd<u32>(box, 0), right = std::min<u64>(Rd<u32>(box, 12), width);
             }
             if (memory != 0 && right > left) {
+                Core::Vkb::SetCpuWriteKind(1);
                 Core::Vkb::BufferCpuWritten(memory + left, right - left);
+                Core::Vkb::SetCpuWriteKind(2);
             }
             return 1ull << 63;
         }
@@ -11761,7 +11763,9 @@ u64 PS4_SYSV_ABI ComputeUpdateSubresource(u64 context, u64 resource, u64 subreso
                 left = Rd<u32>(box, 0), right = std::min<u64>(Rd<u32>(box, 12), width);
             }
             if (memory != 0 && right > left) {
+                Core::Vkb::SetCpuWriteKind(1);
                 Core::Vkb::BufferCpuWritten(memory + left, right - left);
+                Core::Vkb::SetCpuWriteKind(2);
             }
             return 1ull << 63;
         }

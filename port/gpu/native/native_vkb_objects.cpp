@@ -23,6 +23,15 @@
 #include <filesystem>
 #include <thread>
 #include <memory>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 #include <map>
 #include <string>
 #include <mutex>
@@ -1273,11 +1282,309 @@ bool DynamicDeviceOn() {
     return on && On();
 }
 
+thread_local u32 t_cpu_write_kind = 2; ///< upload census: 0 Unmap (dynamic), 1 UpdateSubresource, 2 other (moves, counters, ...)
 std::atomic<u64> c_dyn_device{0}, c_dyn_unmaps{0}, c_dyn_unmap_mb{0}, c_dyn_checks{0}, c_dyn_changed_outside{0};
+bool UploadCensusOn();
+std::mutex page_census_mutex;
+std::unordered_map<u64, std::vector<u64>> page_hashes; ///< census: per big dynamic buffer, its 4 KiB pages' hashes at the last Unmap
+std::atomic<u64> c_pc_unmaps{0}, c_pc_pages{0}, c_pc_changed{0}, c_pc_first_changed_sum{0}, c_pc_last_changed_sum{0};
+void PageCensus(u64 memory, u64 bytes) {
+    if (!UploadCensusOn() || bytes < (1u << 20)) {
+        return;
+    }
+    const u64 pages = bytes >> 12;
+    std::scoped_lock lock{page_census_mutex};
+    auto& h = page_hashes[memory];
+    const bool first = h.size() != pages;
+    h.resize(pages);
+    u64 changed = 0, first_changed = pages, last_changed = 0;
+    for (u64 i = 0; i < pages; ++i) {
+        const u64* q = reinterpret_cast<const u64*>(memory + (i << 12));
+        u64 x = 0xcbf29ce484222325ull;
+        for (u32 k = 0; k < 512; ++k) { // every qword of the page
+            x = (x ^ q[k]) * 0x100000001b3ull;
+        }
+        if (first || x != h[i]) {
+            ++changed;
+            first_changed = std::min(first_changed, i);
+            last_changed = i;
+        }
+        h[i] = x;
+    }
+    if (!first) {
+        c_pc_unmaps.fetch_add(1, std::memory_order_relaxed);
+        c_pc_pages.fetch_add(pages, std::memory_order_relaxed);
+        c_pc_changed.fetch_add(changed, std::memory_order_relaxed);
+        c_pc_first_changed_sum.fetch_add(first_changed, std::memory_order_relaxed);
+        c_pc_last_changed_sum.fetch_add(last_changed, std::memory_order_relaxed);
+    }
+}
+/// U2 (TLG_VKB_DIRTY_PAGES=1, off while tested): a big dynamic buffer the engine maps every frame and barely changes (heaviest save: two of ~7 MB, 0.05 of 1,750 pages
+/// changed per Unmap) is copied to our device copy page by page, only the pages written since its last Unmap. After an Unmap its pages are read only; the first write to
+/// a page (any thread, any code) faults once: the handler marks the page and makes it writable. A region not unmapped for a while is given back (writable, forgotten).
+#ifdef _WIN32
+namespace Dirty {
+constexpr u32 MaxRegions = 16;
+constexpr u64 MinBytes = 1ull << 20;
+constexpr u64 Page = 4096;
+struct Region {
+    std::atomic<u64> lo{0}, hi{0}; ///< the page span (page aligned) the handler answers for; 0: free
+    u64 memory{}, bytes{};
+    std::unique_ptr<std::atomic<u8>[]> dirty;
+    u64 pages{};
+    u64 last_unmap{};
+};
+std::array<Region, MaxRegions> regions;
+std::mutex m; // Unmaps (the handler is lock free)
+std::atomic<bool> handler_added{false};
+std::atomic<u64> c_faults{0}, c_unmaps{0}, c_full{0}, c_pages_copied{0}, c_bytes_skipped{0}, c_released{0}, c_refused{0};
+u64 unmap_clock = 0;
+bool On() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_DIRTY_PAGES"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+LONG CALLBACK Handler(EXCEPTION_POINTERS* info) {
+    const EXCEPTION_RECORD* r = info->ExceptionRecord;
+    if (r->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || r->NumberParameters < 2 || r->ExceptionInformation[0] != 1) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    const u64 address = r->ExceptionInformation[1];
+    for (Region& g : regions) {
+        const u64 lo = g.lo.load(std::memory_order_acquire);
+        if (lo == 0 || address < lo || address >= g.hi.load(std::memory_order_relaxed)) {
+            continue;
+        }
+        const u64 page = (address - lo) / Page;
+        g.dirty[page].store(1, std::memory_order_release);
+        DWORD old = 0;
+        VirtualProtect(reinterpret_cast<void*>(lo + page * Page), Page, PAGE_READWRITE, &old);
+        c_faults.fetch_add(1, std::memory_order_relaxed);
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+void Protect(u64 lo, u64 pages) {
+    DWORD old = 0;
+    VirtualProtect(reinterpret_cast<void*>(lo), pages * Page, PAGE_READONLY, &old);
+}
+void Release(Region& g) {
+    const u64 lo = g.lo.load(std::memory_order_relaxed);
+    g.lo.store(0, std::memory_order_release);
+    if (lo != 0) {
+        DWORD old = 0;
+        VirtualProtect(reinterpret_cast<void*>(lo), g.pages * Page, PAGE_READWRITE, &old);
+    }
+    c_released.fetch_add(1, std::memory_order_relaxed);
+}
+/// True: handled (the dirty pages were sent); false: the caller copies the whole range
+bool Unmapped(u64 memory, u64 bytes) {
+    if (!On() || bytes < MinBytes) {
+        return false;
+    }
+    if (!handler_added.exchange(true)) {
+        AddVectoredExceptionHandler(1, Handler);
+    }
+    std::scoped_lock lock{m};
+    ++unmap_clock;
+    const u64 lo = memory & ~(Page - 1), hi = (memory + bytes + Page - 1) & ~(Page - 1);
+    Region* found = nullptr;
+    Region* free_slot = nullptr;
+    for (Region& g : regions) {
+        const u64 glo = g.lo.load(std::memory_order_relaxed);
+        if (glo == 0) {
+            free_slot = free_slot ? free_slot : &g;
+            continue;
+        }
+        if (g.memory == memory && g.bytes == bytes) {
+            found = &g;
+        } else if (lo < g.hi.load(std::memory_order_relaxed) && glo < hi) {
+            Release(g); // another range over its pages: forget it (whole copies until it settles again)
+            free_slot = free_slot ? free_slot : &g;
+        } else if (unmap_clock - g.last_unmap > 4096) {
+            Release(g); // not unmapped for a long time: give its pages back
+            free_slot = free_slot ? free_slot : &g;
+        }
+    }
+    c_unmaps.fetch_add(1, std::memory_order_relaxed);
+    if (found == nullptr) {
+        if (free_slot == nullptr) {
+            c_refused.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+        // first time: the whole range goes now, then the pages are watched
+        Region& g = *free_slot;
+        g.memory = memory, g.bytes = bytes, g.pages = (hi - lo) / Page;
+        g.dirty = std::make_unique<std::atomic<u8>[]>(g.pages);
+        for (u64 i = 0; i < g.pages; ++i) {
+            g.dirty[i].store(0, std::memory_order_relaxed);
+        }
+        g.hi.store(hi, std::memory_order_relaxed);
+        g.lo.store(lo, std::memory_order_release);
+        g.last_unmap = unmap_clock;
+        Protect(lo, g.pages);
+        c_full.fetch_add(1, std::memory_order_relaxed);
+        BufferCpuWritten(memory, bytes);
+        return true;
+    }
+    Region& g = *found;
+    g.last_unmap = unmap_clock;
+    u64 copied = 0;
+    for (u64 i = 0; i < g.pages;) {
+        if (g.dirty[i].load(std::memory_order_acquire) == 0) {
+            ++i;
+            continue;
+        }
+        u64 j = i;
+        while (j < g.pages && g.dirty[j].load(std::memory_order_acquire) != 0) {
+            g.dirty[j].store(0, std::memory_order_release); // cleared before the protection: a write after it faults and marks the page again
+            ++j;
+        }
+        Protect(lo + i * Page, j - i);
+        const u64 a = std::max(memory, lo + i * Page), b = std::min(memory + bytes, lo + j * Page);
+        if (b > a) {
+            BufferCpuWritten(a, b - a); // (the copy reads the memory when it runs: a write before then is in it)
+            copied += b - a;
+        }
+        c_pages_copied.fetch_add(j - i, std::memory_order_relaxed);
+        i = j;
+    }
+    c_bytes_skipped.fetch_add(bytes - copied, std::memory_order_relaxed);
+    return true;
+}
+nlohmann::json Report() {
+    return {{"on", On()}, {"faults", c_faults.load()}, {"unmaps", c_unmaps.load()}, {"first_full", c_full.load()}, {"pages_copied", c_pages_copied.load()},
+            {"mb_skipped", c_bytes_skipped.load() >> 20}, {"released", c_released.load()}, {"refused", c_refused.load()}};
+}
+} // namespace Dirty
+#endif
+/// U3 (TLG_VKB_CHANGED_PAGES=1, off while tested): a big dynamic buffer (1 MiB or more) the engine maps every frame is copied to our device copy only where its bytes
+/// changed. The engine rewrites ~212 pages of a 7 MB buffer each frame with the same values (U2 census), so neither page protection nor the whole copy pays: the job
+/// compares the memory with a copy of what was last sent, page by page, on the resolver (in stream order, before the job is recorded), and copies the changed runs.
+namespace Changed {
+bool On() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_CHANGED_PAGES"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+u64 MinBytesNow() { // TLG_VKB_CHANGED_MIN=<bytes> (default 1 MiB)
+    static const u64 n = [] { const char* e = std::getenv("TLG_VKB_CHANGED_MIN"); return e != nullptr ? std::strtoull(e, nullptr, 10) : (1ull << 20); }();
+    return n;
+}
+constexpr u64 Page = 4096;
+std::mutex shadows_mutex;
+std::unordered_map<u64, std::vector<u8>> shadows; ///< by memory start: what was last sent
+std::atomic<u64> c_jobs{0}, c_pages{0}, c_changed_pages{0}, c_runs{0}, c_compare_ns{0};
+struct CompareJob final : Stream::Job {
+    u64 memory{}, bytes{};
+    BufferWindow src{};
+    VkBuffer device{};
+    u64 offset{};
+    bool prepared{false};
+    std::vector<std::pair<u64, u64>> runs; ///< (byte offset, bytes) within the range
+    void Prepare() override {
+        if (prepared) {
+            return;
+        }
+        prepared = true;
+        const auto t0 = std::chrono::steady_clock::now();
+        std::vector<u8>* shadow = nullptr;
+        {
+            std::scoped_lock lock{shadows_mutex};
+            shadow = &shadows[memory];
+        }
+        const u8* now = reinterpret_cast<const u8*>(memory);
+        if (shadow->size() != bytes) {
+            shadow->assign(now, now + bytes);
+            runs.push_back({0, bytes});
+        } else {
+            const u64 pages = (bytes + Page - 1) / Page;
+            u64 run_start = ~0ull;
+            for (u64 i = 0; i < pages; ++i) {
+                const u64 a = i * Page, n = std::min(Page, bytes - a);
+                const bool diff = std::memcmp(now + a, shadow->data() + a, n) != 0;
+                if (diff) {
+                    std::memcpy(shadow->data() + a, now + a, n);
+                    c_changed_pages.fetch_add(1, std::memory_order_relaxed);
+                    if (run_start == ~0ull) {
+                        run_start = a;
+                    }
+                } else if (run_start != ~0ull) {
+                    runs.push_back({run_start, a - run_start});
+                    run_start = ~0ull;
+                }
+            }
+            if (run_start != ~0ull) {
+                runs.push_back({run_start, bytes - run_start});
+            }
+            c_pages.fetch_add(pages, std::memory_order_relaxed);
+        }
+        c_runs.fetch_add(runs.size(), std::memory_order_relaxed);
+        c_compare_ns.fetch_add(static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count()), std::memory_order_relaxed);
+    }
+    void Run(vk::CommandBuffer cmd) override {
+        Prepare(); // (with one recording thread the resolver does not call it)
+        for (const auto& [at, n] : runs) {
+            Stream::Hazard(cmd, {Stream::BufferUse(src.buffer, src.offset + at, n, false), Stream::BufferUse(vk::Buffer{device}, offset + at, n, true)});
+            cmd.copyBuffer(src.buffer, vk::Buffer{device}, vk::BufferCopy{src.offset + at, offset + at, n});
+        }
+    }
+};
+/// True: handled (a compare-and-copy job is in the stream)
+bool Unmapped(u64 memory, u64 bytes) {
+    if (!On() || bytes < MinBytesNow() || !device_ready || (DeviceBuffersMode() == 2 && [&] {
+            std::scoped_lock lock{mutex};
+            const Watched* w = WatchedAt(memory, bytes);
+            return w != nullptr && w->cls == 0 && w->state == Watched::State::Device; // (a watched static buffer: the old path)
+        }())) {
+        return false;
+    }
+    VkBuffer device{};
+    u64 offset = 0;
+    {
+        std::scoped_lock lock{mutex};
+        u64 start = 0;
+        bool straddle = false;
+        const DeviceBuffer* d = DeviceBufferOf(memory, bytes, start, straddle);
+        if (d == nullptr || straddle) {
+            return false;
+        }
+        device = d->buffer, offset = memory - start;
+    }
+    const BufferWindow src = SourceWindow(memory, bytes);
+    if (!src.buffer) {
+        return false;
+    }
+    auto job = std::make_unique<CompareJob>();
+    job->work = Stream::Work::UploadCpuWritten;
+    job->memory = memory, job->bytes = bytes, job->src = src, job->device = device, job->offset = offset;
+    Stream::NoteBytes(Stream::Work::UploadCpuWritten, 0);
+    Stream::Enqueue(std::move(job));
+    c_jobs.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+nlohmann::json Report() {
+    const double j = static_cast<double>(std::max<u64>(c_jobs.load(), 1));
+    return {{"on", On()}, {"jobs", c_jobs.load()}, {"pages_per_job", c_pages.load() / j}, {"changed_pages_per_job", c_changed_pages.load() / j},
+            {"runs_per_job", c_runs.load() / j}, {"compare_us_per_job", c_compare_ns.load() / j / 1000.0}};
+}
+} // namespace Changed
 void DynamicUnmapped(u64 memory, u64 bytes) {
     c_dyn_unmaps.fetch_add(1, std::memory_order_relaxed);
     c_dyn_unmap_mb.fetch_add(bytes, std::memory_order_relaxed);
+    PageCensus(memory, bytes);
+    if (Changed::Unmapped(memory, bytes)) {
+        return;
+    }
+#ifdef _WIN32
+    if (Dirty::Unmapped(memory, bytes)) {
+        return;
+    }
+#endif
+    t_cpu_write_kind = 0;
     BufferCpuWritten(memory, bytes);
+    t_cpu_write_kind = 2;
+}
+void SetCpuWriteKind(u32 kind) {
+    t_cpu_write_kind = kind;
 }
 
 std::mutex dyn_check_mutex;
@@ -2610,11 +2917,79 @@ void R3dTrace(const char* what, u64 address, u64 bytes) {
     LOG_WARNING(Render_Vulkan, "vkb R3d trace: {} at {:#x} (+{:#x}, {} bytes) into buffer {:#x}: state {} first bind {} now {}", what, address, address - it->first, bytes,
                 it->first, static_cast<u32>(w.state), w.first_bind_submit, GraphicsSubmits());
 }
+/// census (TLG_VKB_UPLOAD_CENSUS=1): CPU-written bytes by the engine buffer they land in, and by caller (Unmap / UpdateSubresource / other); /stats vkb_objects.upload_census
+struct UploadCensusRow {
+    u64 calls{}, bytes{}, copied_calls{}, copied_bytes{}, size{};
+    u32 usage{}, bind{}, cpu{}, cls{};
+    std::array<u64, 3> by_kind{};
+    bool device{}, gpu_written{};
+};
+std::mutex upload_census_mutex;
+std::unordered_map<u64, UploadCensusRow> upload_census;
+bool UploadCensusOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_UPLOAD_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+void UploadCensusNote(u64 address, u64 size, bool copied) {
+    u64 start = address;
+    UploadCensusRow info;
+    {
+        std::scoped_lock lock{mutex};
+        if (Watched* w = WatchedAt(address, size)) {
+            start = std::prev(watched.upper_bound(address))->first;
+            info.size = w->end - start, info.usage = w->usage, info.bind = w->bind, info.cpu = w->cpu_access, info.cls = w->cls;
+            info.device = w->state == Watched::State::Device, info.gpu_written = w->gpu_written;
+        }
+    }
+    std::scoped_lock lock{upload_census_mutex};
+    UploadCensusRow& r = upload_census[start];
+    r.size = info.size, r.usage = info.usage, r.bind = info.bind, r.cpu = info.cpu, r.cls = info.cls, r.device = info.device, r.gpu_written = info.gpu_written;
+    ++r.calls;
+    r.bytes += size;
+    r.by_kind[std::min<u32>(t_cpu_write_kind, 2)] += size;
+    if (copied) {
+        ++r.copied_calls;
+        r.copied_bytes += size;
+    }
+}
+nlohmann::json UploadCensusReport() {
+    std::scoped_lock lock{upload_census_mutex};
+    std::vector<std::pair<u64, UploadCensusRow>> v(upload_census.begin(), upload_census.end());
+    std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.second.copied_bytes > b.second.copied_bytes; });
+    u64 total = 0, copied = 0;
+    std::array<u64, 3> kinds{};
+    for (const auto& [a, r] : v) {
+        total += r.bytes, copied += r.copied_bytes;
+        for (u32 k = 0; k < 3; ++k) {
+            kinds[k] += r.by_kind[k];
+        }
+    }
+    nlohmann::json top = nlohmann::json::array();
+    for (size_t i = 0; i < v.size() && i < 24; ++i) {
+        const auto& [a, r] = v[i];
+        top.push_back({{"buffer", fmt::format("{:#x}", a)}, {"size", r.size}, {"calls", r.calls}, {"mb", r.bytes >> 20}, {"copied_calls", r.copied_calls}, {"copied_mb", r.copied_bytes >> 20},
+                       {"unmap_mb", r.by_kind[0] >> 20}, {"update_mb", r.by_kind[1] >> 20}, {"other_mb", r.by_kind[2] >> 20}, {"usage", r.usage}, {"bind", r.bind}, {"cpu", r.cpu},
+                       {"cls", r.cls}, {"device_copy", r.device}, {"gpu_written", r.gpu_written}});
+    }
+    const double un = static_cast<double>(std::max<u64>(c_pc_unmaps.load(), 1));
+    nlohmann::json pages = {{"big_unmaps", c_pc_unmaps.load()}, {"pages_per_unmap", c_pc_pages.load() / un}, {"changed_pages_per_unmap", c_pc_changed.load() / un},
+                            {"first_changed_page_mean", c_pc_first_changed_sum.load() / un}, {"last_changed_page_mean", c_pc_last_changed_sum.load() / un}};
+    return {{"big_buffer_pages", pages}, {"buffers", v.size()}, {"mb", total >> 20}, {"copied_mb", copied >> 20}, {"unmap_mb", kinds[0] >> 20}, {"update_mb", kinds[1] >> 20}, {"other_mb", kinds[2] >> 20}, {"top", top}};
+}
 void BufferCpuWritten(u64 address, u64 size) {
     R3dTrace("UpdateSubresource", address, size);
     if (!On() || !device_ready || size == 0) {
         return;
     }
+    struct CensusAtEnd {
+        u64 address, size;
+        bool copied{false};
+        ~CensusAtEnd() {
+            if (UploadCensusOn()) {
+                UploadCensusNote(address, size, copied);
+            }
+        }
+    } census_at_end{address, size};
     if (DeviceBuffersMode() == 2) {
         // the GPU wrote our device copy (a copy or fill into it): it holds the buffer, the engine memory under it is older; the CPU's bytes go into it
         VkBuffer written_device{};
@@ -2628,6 +3003,7 @@ void BufferCpuWritten(u64 address, u64 size) {
         static const bool skip_uploads_gw = [] { const char* e = std::getenv("TLG_VKB_TEST_SKIP_CPU_UPLOADS"); return e != nullptr && e[0] == '1'; }();
         if (written_device != VK_NULL_HANDLE) { // (no job is made under this module's lock)
             if (const BufferWindow src = SourceWindow(address, size); src.buffer && !skip_uploads_gw) {
+                census_at_end.copied = true;
                 Stream::NoteBytes(Stream::Work::UploadCpuWritten, size);
                 Stream::Defer(Stream::Work::UploadCpuWritten, [src, device = written_device, offset = written_offset, size](vk::CommandBuffer cmd) {
                     if (Stream::HoistCopy(src.buffer, src.offset, vk::Buffer{device}, offset, size)) {
@@ -2680,6 +3056,7 @@ void BufferCpuWritten(u64 address, u64 size) {
     if (skip_uploads) {
         return;
     }
+    census_at_end.copied = true;
     Stream::NoteBytes(Stream::Work::UploadCpuWritten, size);
     Stream::Defer(Stream::Work::UploadCpuWritten, [w, device_buffer, offset, size](vk::CommandBuffer cmd) {
         if (Stream::HoistCopy(w.buffer, w.offset, vk::Buffer{device_buffer}, offset, size)) {
@@ -4295,6 +4672,11 @@ nlohmann::json ObjectsReport() {
     const u64 made = c_images_created.load();
     return nlohmann::json(
                          {{"view_channel_census", channel_census},
+                          {"upload_census", UploadCensusOn() ? UploadCensusReport() : nlohmann::json{}},
+#ifdef _WIN32
+                          {"dirty_pages", Dirty::Report()},
+#endif
+                          {"changed_pages", Changed::Report()},
                           {"contract_census", ContractReport()},
                           {"display_texture", g_display_texture.load(std::memory_order_relaxed)},
                           {"images_live", live_images},
