@@ -2598,6 +2598,256 @@ bool BatchMatches(u64 ctx) {
 u64 CurrentBatchSerial() {
     return t_batch ? t_batch->serial : 0;
 }
+
+/// G1 (scene on the GPU, the CPU part of "raw capture"): a cascade row from per-thread tables by engine object id. An engine id (+0x10) is never used again after its
+/// object is deleted, and our answer for an id (its device buffer and window, its view, its sampler, their global-set slots) changes only when that object is deleted;
+/// so an entry checked by (id, object pointer, the memory word it was made from) holds for the object's life, without the global memo epochs (which bump ~1.5 times a
+/// frame). Only device answers are kept (ring windows move every submission: by arithmetic per draw). Hazards once per object per batch; no shared counters per draw.
+/// Switches: TLG_VKB_FAST_ROW=1 (off by default), TLG_VKB_FAST_ROW_VERIFY=1 (both rows made, the old one drawn, differences counted).
+struct FastBuf {
+    u64 id{}, object{}, buffer{}, memory{};
+    vk::Buffer vk_buffer{};
+    u32 slot{}, offset{}, size{};
+    u64 use_offset{}, use_size{};
+    u64 serial{};
+    bool device{};
+};
+struct FastImg {
+    u64 id{}, object{};
+    u32 want{}, key{}, slot{};
+    vk::Image image{};
+    u64 serial{};
+};
+struct FastSmp {
+    u64 id{}, object{};
+    u32 depth{}, slot{};
+};
+struct FastTables {
+    std::vector<FastBuf> bufs = std::vector<FastBuf>(1u << 16);
+    std::vector<FastBuf> idx = std::vector<FastBuf>(1u << 15);
+    std::vector<FastImg> imgs = std::vector<FastImg>(1u << 14);
+    std::vector<FastSmp> smps = std::vector<FastSmp>(1u << 12);
+    u64 hits{}, misses{}, rows{}, ring{};
+};
+thread_local FastTables* t_fast = nullptr;
+thread_local bool t_fast_verifying = false;
+std::atomic<u64> c_fast_hits{0}, c_fast_misses{0}, c_fast_rows{0}, c_fast_ring{0}, c_fast_verify{0}, c_fast_verify_diff{0}, c_fast_refused{0};
+inline FastTables& Fast() {
+    if (t_fast == nullptr) {
+        t_fast = new FastTables();
+    }
+    return *t_fast;
+}
+inline u32 FastHash(u64 id, u64 extra = 0) {
+    return static_cast<u32>(((id ^ (extra * 0x9e3779b97f4a7c15ull)) * 0xff51afd7ed558ccdull) >> 40);
+}
+bool FastRowOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_FAST_ROW"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+bool FastRowVerify() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_FAST_ROW_VERIFY"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+void FastPublish(FastTables& f) {
+    if ((++f.rows & 1023) == 0) {
+        c_fast_rows.fetch_add(1024, std::memory_order_relaxed);
+        c_fast_hits.fetch_add(std::exchange(f.hits, 0), std::memory_order_relaxed);
+        c_fast_misses.fetch_add(std::exchange(f.misses, 0), std::memory_order_relaxed);
+        c_fast_ring.fetch_add(std::exchange(f.ring, 0), std::memory_order_relaxed);
+    }
+}
+bool FastRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<Stream::Use, 64>& uses, u64 serial) {
+    using BT = VkbShader::BufferType;
+    FastTables& f = Fast();
+    const auto& info = *st.info;
+    u32 at = st.row_start;
+    for (u32 i = 0; i < st.buffers.size(); ++i) {
+        const Source& src = st.buffers[i];
+        const auto& desc = info.buffers[i];
+        if (desc.buffer_type == BT::GdsBuffer) {
+            row[at++] = Core::Vkb::Indexed::BufferSlot(Stream::GdsBuffer());
+            continue;
+        }
+        if (desc.buffer_type == BT::ClipPlanes) {
+            row[at++] = Core::Vkb::Indexed::BufferSlot(Stream::NullBuffer());
+            continue;
+        }
+        if (desc.buffer_type != BT::Guest || src.cls != Source::Class::Slot || (src.kind != 1 && src.kind != 3)) {
+            return false;
+        }
+        const u64 object = SlotObject(ctx, st.index, src.kind, src.slot);
+        if (object == 0) {
+            return false;
+        }
+        if (src.kind == 3) { // a constant buffer: renamed by the engine at every update, so its current data per draw (as the old row)
+            const u64 address = static_cast<u64>(Rd<u32>(object, 0x60)) | static_cast<u64>(Rd<u32>(object, 0x64) & 0xffu) << 32;
+            const u64 size = Rd<u32>(object, 0x180);
+            if (address == 0 || size == 0) {
+                return false;
+            }
+            Core::Vkb::BufferWindow w;
+            if (!Core::Vkb::ConstantInRing(address, size, w)) {
+                if (size > 65536) {
+                    return false;
+                }
+                if (t_fast_verifying) { // (verify: the old row made its own copy; this entry is not compared)
+                    row[at++] = ~0u, row[at++] = ~0u, row[at++] = ~0u;
+                    continue;
+                }
+                const Stream::Slice slice = RowSlice(size);
+                std::memcpy(slice.data, reinterpret_cast<const void*>(address), size);
+                w.buffer = slice.buffer, w.offset = slice.offset, w.device = false;
+            }
+            if (!w.buffer || (w.offset & 3) != 0) {
+                return false;
+            }
+            row[at++] = Core::Vkb::Indexed::BufferSlot(w.buffer);
+            row[at++] = static_cast<u32>(w.offset);
+            row[at++] = static_cast<u32>(size);
+            uses.push_back(Stream::BufferUse(w.buffer, w.offset, size, false));
+            continue;
+        }
+        // a buffer view
+        const u64 id = Rd<u64>(object, 0x10);
+        const u64 buffer = Rd<u64>(object, 0x30);
+        const u64 memory = buffer != 0 ? Rd<u64>(buffer, 0x30) : 0;
+        FastBuf& e = f.bufs[FastHash(id) & (f.bufs.size() - 1)];
+        if (e.id == id && e.object == object && e.buffer == buffer && e.memory == memory && e.vk_buffer) {
+            ++f.hits;
+        } else {
+            ++f.misses;
+            if (Rd<u32>(object, 0x44) != 1 && Rd<u32>(object, 0x44) != 0xb) {
+                return false;
+            }
+            const u64 bytes = buffer != 0 ? Rd<u32>(buffer, 0x180) : 0;
+            u64 offset = 0, size = bytes;
+            Core::Vkb::ViewRange(object, true, buffer, bytes, offset, size);
+            Core::Vkb::BufferWindow w;
+            if (bytes == 0) {
+                return false;
+            }
+            if (Core::Vkb::BufferInRing(memory + offset, size, w)) { // ring data moves every submission: by arithmetic, not kept
+                ++f.ring;
+                if (!w.buffer || (w.offset & 3) != 0) {
+                    return false;
+                }
+                row[at++] = Core::Vkb::Indexed::BufferSlot(w.buffer);
+                row[at++] = static_cast<u32>(w.offset);
+                row[at++] = static_cast<u32>(size);
+                uses.push_back(Stream::BufferUse(w.buffer, w.offset, size, false));
+                continue;
+            }
+            if (!Core::Vkb::BufferOfObject(buffer, offset, size, w) || !w.device || !w.buffer || (w.offset & 3) != 0) {
+                return false;
+            }
+            const u32 slot = Core::Vkb::Indexed::BufferSlot(w.buffer);
+            if (slot == 0) {
+                return false;
+            }
+            e = {id, object, buffer, memory, w.buffer, slot, static_cast<u32>(w.offset), static_cast<u32>(size), w.offset, size, 0, true};
+        }
+        row[at++] = e.slot;
+        row[at++] = e.offset;
+        row[at++] = e.size;
+        if (e.serial != serial) { // its hazard once per batch
+            uses.push_back(Stream::BufferUse(e.vk_buffer, e.use_offset, e.use_size, false));
+            e.serial = serial;
+        }
+    }
+    for (u32 i = 0; i < st.images.size(); ++i) {
+        const Source& src = st.images[i];
+        const u64 object = src.cls == Source::Class::Slot && src.kind == 1 ? SlotObject(ctx, st.index, 1, src.slot) : 0;
+        if (object == 0) {
+            return false;
+        }
+        const u64 id = Rd<u64>(object, 0x10);
+        const u32 want = static_cast<u32>(st.image_types[i]);
+        const u32 key = info.images[i].array_key;
+        const bool written = info.images[i].is_written;
+        FastImg& e = f.imgs[FastHash(id, want | key << 8) & (f.imgs.size() - 1)];
+        if (e.id == id && e.object == object && e.want == want && e.key == key && e.slot != 0) {
+            ++f.hits;
+        } else {
+            ++f.misses;
+            vk::ImageView view{};
+            vk::Image image{};
+            if (!Core::Vkb::ViewForCompute(id, st.image_types[i], vk::CommandBuffer{}, view, &image)) {
+                return false;
+            }
+            const u32 slot = Core::Vkb::Indexed::ImageSlot(key, view);
+            if (slot == 0) {
+                return false;
+            }
+            e = {id, object, want, key, slot, image, 0};
+        }
+        row[at++] = e.slot;
+        if (written || e.serial != serial) {
+            uses.push_back(Stream::ImageUse(e.image, written));
+            e.serial = serial;
+        }
+    }
+    for (u32 i = 0; i < st.samplers.size(); ++i) {
+        if (st.constant_samplers[i]) {
+            row[at++] = Core::Vkb::Indexed::SamplerSlot(st.constant_samplers[i]->Handle());
+            continue;
+        }
+        const Source& src = st.samplers[i];
+        const u64 object = src.cls == Source::Class::Slot && src.kind == 2 ? SlotObject(ctx, st.index, 2, src.slot) : 0;
+        if (object == 0) {
+            return false;
+        }
+        const u64 id = Rd<u64>(object, 0x10);
+        const u32 depth = i < info.samplers.size() && info.samplers[i].is_depth ? 1 : 0;
+        FastSmp& e = f.smps[FastHash(id, depth + 1) & (f.smps.size() - 1)];
+        if (e.id == id && e.object == object && e.depth == depth && e.slot != 0) {
+            ++f.hits;
+        } else {
+            ++f.misses;
+            const vk::Sampler sampler = Core::Vkb::SamplerFor(object, depth != 0);
+            const u32 slot = sampler ? Core::Vkb::Indexed::SamplerSlot(sampler) : 0;
+            if (slot == 0) {
+                return false;
+            }
+            e = {id, object, depth, slot};
+        }
+        row[at++] = e.slot;
+    }
+    return true;
+}
+/// G1: the index buffer of a cascade draw from the table by the index buffer's id (its device or in-place window from its start; the range of this draw on top)
+bool FastIndex(u64 view, u64 index_range, Core::Vkb::BufferWindow& w, boost::container::small_vector<Stream::Use, 64>& uses, u64 serial) {
+    FastTables& f = Fast();
+    const u64 id = Rd<u64>(view, 0x10);
+    const u64 memory = Rd<u64>(view, 0x30);
+    const u64 bytes = Rd<u32>(view, 0x180);
+    FastBuf& e = f.idx[FastHash(id, 3) & (f.idx.size() - 1)];
+    if (e.id == id && e.object == view && e.memory == memory && e.vk_buffer && index_range <= e.use_size) {
+        ++f.hits;
+    } else {
+        ++f.misses;
+        if (Core::Vkb::BufferInRing(memory, index_range, w)) { // ring data moves every submission: not kept
+            uses.push_back(Stream::BufferUse(w.buffer, w.offset, index_range, false));
+            return true;
+        }
+        Core::Vkb::BufferWindow whole;
+        if (!Core::Vkb::BufferOfObject(view, 0, index_range, whole) || !whole.buffer) {
+            return false;
+        }
+        if (!whole.device) { // in place: its device copy may come at a later bind (R3d): not kept
+            w = whole;
+            uses.push_back(Stream::BufferUse(w.buffer, w.offset, index_range, false));
+            return true;
+        }
+        e = {id, view, view, memory, whole.buffer, 0, 0, 0, whole.offset, std::max<u64>(bytes, index_range), 0, true};
+    }
+    w.buffer = e.vk_buffer, w.offset = e.use_offset, w.device = e.device;
+    if (e.serial != serial) {
+        uses.push_back(Stream::BufferUse(e.vk_buffer, e.use_offset, e.use_size, false));
+        e.serial = serial;
+    }
+    return true;
+}
 bool LeanAppend(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u64 a1, u64 a2, u64 a3) {
     if (!BatchMatches(ctx) || v.key.num_color_attachments != 0 || Core::Vkb::Aa::On() || (kind != 0 && kind != 2)) {
         return false;
@@ -2633,7 +2883,38 @@ bool LeanAppend(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kin
     u32* row = reinterpret_cast<u32*>(slice.data);
     static const bool lean_times = [] { const char* e = std::getenv("TLG_VKB_LEAN_TIMES"); return e != nullptr && e[0] == '1'; }();
     const u64 r0 = lean_times ? NowNs() : 0;
-    if ((v.has_ps && !BuildRow(ctx, v.ps, row, uses, serial)) || !BuildRow(ctx, v.vs, row, uses, serial)) {
+    if (FastRowOn() && FastRowVerify()) { // G1 verify: both rows; the old one is drawn
+        std::array<u32, 1024> fast_row{};
+        boost::container::small_vector<Stream::Use, 64> fast_uses;
+        t_fast_verifying = true;
+        const bool fast_ok = v.row_dwords <= fast_row.size() && (!v.has_ps || FastRow(ctx, v.ps, fast_row.data(), fast_uses, ~serial)) && FastRow(ctx, v.vs, fast_row.data(), fast_uses, ~serial);
+        t_fast_verifying = false;
+        if ((v.has_ps && !BuildRow(ctx, v.ps, row, uses, serial)) || !BuildRow(ctx, v.vs, row, uses, serial)) {
+            return false;
+        }
+        c_fast_verify.fetch_add(1, std::memory_order_relaxed);
+        bool same = fast_ok;
+        for (u32 i = 0; same && i < v.row_dwords; ++i) {
+            same = fast_row[i] == ~0u || fast_row[i] == row[i];
+        }
+        if (!same) {
+            static std::atomic<u32> shown{0};
+            if (shown.fetch_add(1, std::memory_order_relaxed) < 8) {
+                std::string a, b;
+                for (u32 i = 0; i < std::min<u32>(v.row_dwords, 24); ++i) {
+                    a += fmt::format(" {:x}", fast_row[i]), b += fmt::format(" {:x}", row[i]);
+                }
+                LOG_WARNING(Render_Vulkan, "G1 verify: fast row {} differs ({} dwords): fast{} / old{}", fast_ok ? "made" : "refused", v.row_dwords, a, b);
+            }
+            c_fast_verify_diff.fetch_add(1, std::memory_order_relaxed);
+        }
+    } else if (FastRowOn()) { // G1: rows from the tables by engine id
+        if ((v.has_ps && !FastRow(ctx, v.ps, row, uses, serial)) || !FastRow(ctx, v.vs, row, uses, serial)) {
+            c_fast_refused.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+        FastPublish(Fast());
+    } else if ((v.has_ps && !BuildRow(ctx, v.ps, row, uses, serial)) || !BuildRow(ctx, v.vs, row, uses, serial)) {
         return false;
     }
     if (lean_times) {
@@ -2672,12 +2953,30 @@ bool LeanAppend(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kin
     const u64 index_bytes = type == 1 ? 4 : 2;
     const u64 index_range = kind == 0 ? (a2 + a1) * index_bytes : static_cast<u64>(Rd<u32>(view, 0x68)) * index_bytes;
     Core::Vkb::BufferWindow w;
-    if (index_range == 0 || !Core::Vkb::BufferOfObject(view, 0, index_range, w) || (w.offset % index_bytes) != 0) {
-        return false;
+    if (FastRowOn() && !FastRowVerify()) { // G1: the index buffer from its table by id
+        if (index_range == 0 || !FastIndex(view, index_range, w, uses, serial) || (w.offset % index_bytes) != 0) {
+            return false;
+        }
+    } else {
+        if (index_range == 0 || !Core::Vkb::BufferOfObject(view, 0, index_range, w) || (w.offset % index_bytes) != 0) {
+            return false;
+        }
+        if (FastRowOn()) { // G1 verify: the index buffer too
+            Core::Vkb::BufferWindow fw;
+            boost::container::small_vector<Stream::Use, 64> fast_uses;
+            if (!FastIndex(view, index_range, fw, fast_uses, ~serial) || fw.buffer != w.buffer || fw.offset != w.offset || fw.device != w.device) {
+                c_fast_verify_diff.fetch_add(1, std::memory_order_relaxed);
+                static std::atomic<u32> shown{0};
+                if (shown.fetch_add(1, std::memory_order_relaxed) < 8) {
+                    LOG_WARNING(Render_Vulkan, "G1 verify: index buffer differs: fast {:x}+{} dev {} / old {:x}+{} dev {}", reinterpret_cast<u64>(static_cast<VkBuffer>(fw.buffer)), fw.offset, fw.device,
+                                reinterpret_cast<u64>(static_cast<VkBuffer>(w.buffer)), w.offset, w.device);
+                }
+            }
+        }
+        uses.push_back(Stream::BufferUse(w.buffer, w.offset, index_range, false));
     }
     d.index_buffer = w.buffer, d.index_offset = w.offset, d.index_size = w.device ? 0 : index_range;
     d.index_type = type == 1 ? vk::IndexType::eUint32 : vk::IndexType::eUint16;
-    uses.push_back(Stream::BufferUse(w.buffer, w.offset, index_range, false));
     if (kind == 2) {
         Core::Vkb::BufferWindow aw;
         if (a1 == 0 || !IsHeapPointer(a1) || !Core::Vkb::BufferOfObject(a1, static_cast<u32>(a2), 20, aw) || (aw.offset & 3) != 0) {
@@ -3195,6 +3494,105 @@ void LeanWords(u64 ctx, u32 kind, u64 vs, u64 ps, std::array<u64, 24>& w) {
     }
     w[23] = ps != 0 ? Rd<u64>(ps, 0x120) : 0; // (the pixel shader's Gnm block: the export mask the fixed state reads)
 }
+/// GPU-driven bound, kill experiment only (TLG_VKB_TEST_RAW_ONLY=1, nothing is drawn): every draw does only what stays on the CPU in "raw capture, GPU
+/// translation": the pipeline found by a per-thread cache keyed by the context words (LeanWords: shaders, state objects, targets, viewport, the slot objects' ids),
+/// then a raw record written (per source of both stages: the slot's object, for a constant buffer its current address and size; the draw's arguments and index view),
+/// then the draw is dropped. Against TLG_VKB_TEST_NO_CAPTURE=1 (nothing at all): the cost of the CPU part of the design.
+struct RawPipe {
+    u64 hash{};
+    std::array<u64, 24> words{};
+    const Variant* v{};
+};
+struct RawState {
+    std::vector<RawPipe> pipes = std::vector<RawPipe>(65536);
+    u64 draws = 0;
+    std::vector<u64> ring = std::vector<u64>(1u << 17);
+    u32 at = 0;
+};
+thread_local RawState* t_raw = nullptr;
+std::atomic<u64> c_raw_draws{0}, c_raw_hits{0}, c_raw_misses{0}, c_raw_words{0};
+void RawOnly(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
+    if (t_raw == nullptr) {
+        t_raw = new RawState();
+    }
+    RawState& r = *t_raw;
+    const u64 vs = Rd<u64>(ctx, CtxVertexShader);
+    const u64 ps = Rd<u64>(ctx, CtxPixelShader);
+    if (vs == 0) {
+        return;
+    }
+    std::array<u64, 24> words;
+    LeanWords(ctx, kind, vs, ps, words);
+    u64 h = 0xcbf29ce484222325ull;
+    for (const u64 w : words) {
+        h = (h ^ w) * 0x100000001b3ull;
+    }
+    RawPipe& slot = r.pipes[static_cast<u32>(h >> 48) & 65535];
+    if ((++r.draws & 1023) == 0) {
+        c_raw_draws.fetch_add(1024, std::memory_order_relaxed);
+    }
+    const Variant* v = nullptr;
+    if (slot.hash == h && slot.words == words) {
+        v = slot.v;
+        ++r.at; // (a local counter: no shared atomic on the hot path)
+    } else {
+        c_raw_misses.fetch_add(1, std::memory_order_relaxed);
+        const VkbVulkan::FixedState* fixed = Core::NativeDraw::FixedStateOf(ctx);
+        if (fixed == nullptr) {
+            return;
+        }
+        const u64 fetch = Core::NativeDraw::FetchObjectOf(ctx, vs);
+        const u64 key = VariantKey(ctx, vs, ps, fetch, fixed, kind == 2);
+        std::scoped_lock lock{mutex};
+        if (!Ready()) {
+            return;
+        }
+        auto [it, fresh] = variants.try_emplace(key);
+        if (fresh) {
+            it->second = std::make_unique<Variant>();
+            Compile(ctx, vs, ps, fetch, *fixed, *it->second, kind == 2);
+        }
+        if (!it->second->ok) {
+            return;
+        }
+        v = it->second.get();
+        slot.hash = h, slot.words = words, slot.v = v;
+    }
+    // the raw record
+    u64* out = r.ring.data();
+    u32 at = r.at & ((1u << 17) - 1);
+    if (at + 512 > r.ring.size()) {
+        at = 0;
+    }
+    u32 n = 0;
+    out[at + n++] = reinterpret_cast<u64>(v);
+    out[at + n++] = a1, out[at + n++] = a2, out[at + n++] = a3;
+    out[at + n++] = Rd<u64>(ctx, 0x58), out[at + n++] = Rd<u64>(ctx, 0x60), out[at + n++] = Rd<u32>(ctx, 0x4724);
+    const auto stage = [&](const Stage& st) {
+        for (const auto* list : {&st.buffers, &st.images, &st.samplers}) {
+            for (const Source& src : *list) {
+                if (src.cls != Source::Class::Slot || n > 480) {
+                    continue;
+                }
+                const u64 object = SlotObject(ctx, st.index, src.kind, src.slot);
+                out[at + n++] = object;
+                if (src.kind == 3 && object != 0) {
+                    out[at + n++] = static_cast<u64>(Rd<u32>(object, 0x60)) | static_cast<u64>(Rd<u32>(object, 0x64) & 0xffu) << 32 | u64{Rd<u32>(object, 0x180)} << 40;
+                }
+            }
+        }
+    };
+    stage(v->vs);
+    if (v->has_ps) {
+        stage(v->ps);
+    }
+    for (const Source& src : v->attributes) { // the vertex buffers of a fixed-function vertex input
+        if (src.cls == Source::Class::Slot && n < 500) {
+            out[at + n++] = SlotObject(ctx, 0, src.kind, src.slot);
+        }
+    }
+    r.at = at + n;
+}
 void SetDepthPass(bool on) {
     t_depth_pass = on;
 }
@@ -3208,6 +3606,11 @@ void Draw(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
     static const bool no_capture = [] { const char* e = std::getenv("TLG_VKB_TEST_NO_CAPTURE"); return e != nullptr && e[0] == '1'; }();
     if (no_capture) {
         c_draws.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    static const bool raw_only = [] { const char* e = std::getenv("TLG_VKB_TEST_RAW_ONLY"); return e != nullptr && e[0] == '1'; }();
+    if (raw_only) {
+        RawOnly(ctx, kind, a1, a2, a3);
         return;
     }
     if (t_depth_pass && DepthCensusOn()) {
@@ -3393,6 +3796,8 @@ nlohmann::json Report() {
     };
     return {{"draws", draws},
             {"gd_census", GdReport()},
+            {"raw_only_draws_misses", {c_raw_draws.load(), c_raw_misses.load()}},
+            {"fast_row", {{"rows_hits_misses_ring", {c_fast_rows.load(), c_fast_hits.load(), c_fast_misses.load(), c_fast_ring.load()}}, {"refused", c_fast_refused.load()}, {"verify_diff", {c_fast_verify.load(), c_fast_verify_diff.load()}}}},
             {"record", {{"compiled", c_rec_compiled.load()}, {"refused", c_rec_refused.load()}, {"refused_by", [] {
                              nlohmann::json j = nlohmann::json::object();
                              for (u32 i = 0; i < RecRefusedNames.size(); ++i) {
