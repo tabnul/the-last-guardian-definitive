@@ -145,7 +145,7 @@
     "launcher.fps_30": "30 FPS (zoals op PS4)",
     "launcher.deck_preset": "Steam Deck (experimenteel)",
     "launcher.fps_60": "60 FPS",
-    "launcher.fps_unlocked": "Onbegrensd (tot het scherm)",
+    "launcher.fps_unlocked": "Onbegrensd (experimenteel, geen limiet)",
     "launcher.fps_hint": "60/onbegrensd-patch eboot 1.03 in het geheugen. Onbegrensd verlaagt de basisframerate met ongeveer 10 FPS ten opzichte van 60 op dezelfde plek; kies 60 tenzij je pc ruim boven de 60 draait",
     "launcher.skip_logos": "Opstartlogo's overslaan",
     "launcher.horns_built": "De hoornmodellen worden op deze pc gebouwd.",

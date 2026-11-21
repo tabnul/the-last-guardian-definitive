@@ -37,7 +37,7 @@ the most common colour). A blank picture is kept as `vkbV_takeN.blank.png`, neve
 
 The game runs on its own Xvfb (`SHOT_DISPLAY`, default `:93`) with `MESA_VK_WSI_DEBUG=sw`, so the picture
 is what the game presented, taken the same way for both renderers. Fixed settings for every take:
-`TLG_SKIP_LOGOS=1 TLG_FPS=unlocked TLG_HDR=0 TLG_FG=0 TLG_DLAA=1`; `TLG_VKB` is always set from the
+`TLG_SKIP_LOGOS=1 TLG_FPS=120 TLG_HDR=0 TLG_FG=0 TLG_DLAA=1`; `TLG_VKB` is always set from the
 `VKB` argument. Extra `NAME=VALUE` arguments go into the game's environment; no other `TLG_` setting of the
 calling shell reaches the game.
 

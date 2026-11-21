@@ -137,7 +137,7 @@
     "launcher.fps_30": "30 FPS（PS4と同じ）",
     "launcher.deck_preset": "Steam Deck（試験的）",
     "launcher.fps_60": "60 FPS",
-    "launcher.fps_unlocked": "上限なし（ディスプレイまで）",
+    "launcher.fps_unlocked": "上限なし（実験的、制限なし）",
     "launcher.fps_hint": "60/上限なしパッチ（eboot 1.03、メモリ上で適用）。上限なしでは同じ場所で60に比べ基本フレームレートが約10 FPS下がります。PCが60を大きく超えて動くのでなければ60を選んでください",
     "launcher.skip_logos": "起動時のロゴをスキップ",
     "launcher.debug": "デバッグ（起動時）",

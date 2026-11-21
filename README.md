@@ -86,7 +86,7 @@ No game files are included. You need your own copy, dumped from your own PS4.
 
 - Native Windows and Linux builds
 - DLSS, FSR 4 and FSR 3.1 anti-aliasing and upscaling, and DLSS or FSR frame generation
-- Any resolution including 21:9 ultrawide (32:9 experimental), and 30, 60 or unlocked FPS
+- Any resolution including 21:9 ultrawide (32:9 experimental), and 30, 60, 120 or unlocked FPS
 - An in-game settings menu (**Insert**) with presets, shadows, field of view, effects, colour and HDR10
 - Shader recipes against stutter and calmer wind
 - 7.1 surround, output device choice and headphone surround
@@ -104,7 +104,7 @@ No game files are included. You need your own copy, dumped from your own PS4.
 3. For audio, copy `libSceNgs2.sprx` from your PS4 firmware into `system_lib/` next to the executable.
 4. Start the launcher, pick the game folder and press **Play**.
 
-**Stuck at 30 FPS?** 60 FPS and Unlocked need the 1.03 game code in `eboot.bin`. The port checks
+**Stuck at 30 FPS?** 60, 120 FPS and Unlocked need the 1.03 game code in `eboot.bin`. The port checks
 the exact bytes it changes, so any 1.03 dump works (US or EU, PS4 or PS5 dump tool). When the
 check fails, the game safely runs at 30 FPS and the launcher shows a warning next to Play. The
 usual cause is a folder where the update was not merged on top of the base game, or an
@@ -156,7 +156,11 @@ Each setting shows what the game originally used and what we recommend.
 - **Frame generation:** DLSS (RTX 40 or newer) or FSR 3.1 (any card). It shows one generated frame
   between each pair of real ones, and works with any upscaler setting, the game's own (Built-in)
   included. It needs a game frame rate above 30, so it is off at 30 FPS. Off by default.
-- **Frame rate:** 30 (as on PS4), 60 or unlocked. On an RTX 5090, unlocked runs at about 90-120 FPS.
+- **Frame rate:** 30 (as on PS4), 60, 120 or unlocked. 120 is the stable high mode (based on the
+  120 FPS mode by @thearturord). Unlocked is experimental: no limit, so it runs as fast as the PC can
+  (game speed above 120 FPS is not fully checked yet). With vsync on it stops at the screen refresh
+  rate; turn vsync off to go higher. Settings saved as the old Unlocked (which stopped at 120) move
+  to 120 once.
 - **Steam Deck (experimental):** a graphics preset in the launcher, next to Stock and
   Recommended, sets the game up for a Steam Deck: 1280x800, 30 FPS, no upscaling, frame
   generation off, and every graphics setting at Stock (as on PS4). It is new and still being tuned: tell us how it runs.

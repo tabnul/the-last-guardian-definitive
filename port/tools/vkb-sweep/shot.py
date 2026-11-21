@@ -307,7 +307,7 @@ class Game:
         # no TLG_ setting of the calling shell reaches the game: only the fixed ones below and NAME=VALUE
         base = {k: v for k, v in os.environ.items() if not k.startswith("TLG_")}
         full = dict(base, DISPLAY=DISPLAY, MESA_VK_WSI_DEBUG="sw", TLG_USER_DIR=USER, TLG_SKIP_LOGOS="1",
-                    TLG_FPS="unlocked", TLG_HDR="0", TLG_FG="0", TLG_DLAA="1", TLG_LUA_EXEC=exec_path)
+                    TLG_FPS="120", TLG_HDR="0", TLG_FG="0", TLG_DLAA="1", TLG_LUA_EXEC=exec_path)
         full.update(env)
         self.log = open(log_path, "w")
         self.proc = subprocess.Popen([sys.executable, os.path.join(PORT, "launcher", "tlg_run.py")], cwd=PORT,
@@ -316,7 +316,7 @@ class Game:
     def win_start(self, env, exec_path):
         """Windows: start the install's launcher exe; the game writes its own log in out/logs (copied to TAG.log)."""
         base = {k: v for k, v in os.environ.items() if not k.startswith("TLG_")}
-        full = dict(base, TLG_SKIP_LOGOS="1", TLG_FPS="unlocked", TLG_HDR="0", TLG_FG="0", TLG_DLAA="1",
+        full = dict(base, TLG_SKIP_LOGOS="1", TLG_FPS="120", TLG_HDR="0", TLG_FG="0", TLG_DLAA="1",
                     TLG_FRAME_STATS="1", TLG_LUA_EXEC=exec_path)
         full.update(env)
         self.launched, self.game_log, self.log = time.time(), None, None

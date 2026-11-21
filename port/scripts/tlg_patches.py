@@ -154,8 +154,8 @@ MODES = {
     'unlocked': ['flip_rate_60', 'cloth_null_guard'],
 }
 # The engine rate each mode presents at most (TLG_ENGINE_FPS: the overlay's frame limiter and
-# tlg_graphics.h PresentLimit). Unlocked is paced by the present thread (TLG_VBLANK_HZ=0).
-ENGINE_FPS = {'30': 30, '60': 60, '120': 120, 'unlocked': 240}
+# tlg_graphics.h PresentLimit). Unlocked has no ceiling (TLG_ENGINE_FPS=1000, TLG_VBLANK_HZ=1000).
+ENGINE_FPS = {'30': 30, '60': 60, '120': 120, 'unlocked': 1000}
 
 
 def normalize_mode(value):
