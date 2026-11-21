@@ -46,6 +46,7 @@
 #include "native/native_debug_server.h"
 #include "native/native_vkb_graphics.h"
 #include "native/native_vkb_stream.h"
+#include "native/shadps4/core/guest_heap.h"
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -330,6 +331,8 @@ struct Target {
     u8* group_clone{nullptr}; // P1b: the same for the instance group's buffer
     u8* rs_stage{nullptr};    // P1b: the worker's copy of the block at renderDev + 0x3790 (the matrices go in, the whole block goes to the ring)
     u32 rs_fail{0}, group_fail{0}, unlearned{0};
+    const std::unordered_map<u64, std::pair<u64, u64>>* moved_check{nullptr}; // P2 census: per batch, the constants' address and the vertex view's memory at the hand-over
+    u32 moved_cb{0}, moved_vb{0}, moved_checked{0};
     u8* base{nullptr};
     std::vector<u8> arena; // shadow: entries [u32 offset][u32 size][bytes]
     std::vector<Mark> marks;
@@ -938,7 +941,9 @@ void IssueDraw(Target& t, u32 kind, u64 count, u64 first, u64 a3 = 0) {
 }
 
 u64 HandleLookup(u64 render_device, u64 object);
+extern thread_local bool t_par_worker, t_par_lookup_failed;
 void ResourceSetStep(Target& t, u64 rd, u64 material, u64 special, bool shadow_ok);
+bool ParRealBuffers();
 bool GroupBindNative(Target& t, const BatchLevel& level);
 bool GroupBindWorker(Target& t, const BatchLevel& level);
 
@@ -1178,7 +1183,21 @@ LeafStats& Leaf() {
     static LeafStats stats;
     return stats;
 }
+/// P2: on a pass worker the lookup takes only a texture the engine has made (RenderDev_GetGpuTexture makes a missing one: engine state of the engine's thread); else it
+/// answers 0 and notes it (the caller leaves the primitive out; the engine's thread makes the texture at its own next use)
+thread_local bool t_par_worker = false, t_par_lookup_failed = false;
 u64 HandleLookup(u64 render_device, u64 object) {
+    if (t_par_worker) {
+        if (object == 0) {
+            return 0;
+        }
+        const u64 texture = R<u64>(object + 0x38);
+        if (R<s32>(object + 0x20) != 0 || texture == 0) {
+            t_par_lookup_failed = true;
+            return 0;
+        }
+        return texture;
+    }
     return reinterpret_cast<u64(PS4_SYSV_ABI*)(u64, u64)>(Global(FunctionHandleLookup))(render_device, object);
 }
 constexpr u64 GlobalObjectTable = 0x0689eed8;    // DAT_0689eed8
@@ -1225,6 +1244,7 @@ struct GPlan {
 struct GScanArgs {
     GPlan* plan;
     u64 render_device, list, args;
+    bool worker{false}; // P2: the live context's shaders are the engine thread's
 };
 
 void ScanGBuffer(GScanArgs& a) {
@@ -1244,6 +1264,9 @@ void ScanGBuffer(GScanArgs& a) {
         plan.Decline("query mode 1, 2, 5 (queries or a target switch)");
     }
     for (const u32 offset : {0x4698u, 0x4690u}) {
+        if (a.worker) {
+            break;
+        }
         if (const u64 shader = R<u64>(plan.ctx + offset); shader != 0 && R<s64>(shader + 8) <= 1) {
             plan.Decline("the context holds a shader with a single reference (releasing it destroys it)");
         }
@@ -1464,7 +1487,13 @@ void GenerateGBuffer(Target& t, const GPlan& plan, u32 pass_flags) {
             if (level.only_580) {
                 continue;
             }
-            if (Timed(CallId::GroupBind, [&] { return GroupBindNative(t, level); })) {
+            if (t.worker && !ParRealBuffers()) {
+                if (!GroupBindWorker(t, level)) {
+                    ++t.group_fail;
+                    t.refused += level.step_count;
+                    continue;
+                }
+            } else if (Timed(CallId::GroupBind, [&] { return GroupBindNative(t, level); })) {
                 // done natively
             } else if (t.live) {
                 Timed(CallId::GroupBind, [&] { reinterpret_cast<GuestGroupBind>(Global(FunctionGroupBind))(level.inner, level.group_object, 0); });
@@ -1485,6 +1514,17 @@ void GenerateGBuffer(Target& t, const GPlan& plan, u32 pass_flags) {
             t.batch_owner = 0;
             t.Set<u64>(0x60, 0x39);
         }
+        if (t.moved_check != nullptr) { // P2 census: did the engine's thread move this batch's data after the hand-over?
+            if (const auto it = t.moved_check->find(level.batch); it != t.moved_check->end()) {
+                ++t.moved_checked;
+                const u64 obj = level.pass_object_288;
+                const u64 cb = obj != 0 ? (u64{R<u32>(obj + 0x60)} | u64{R<u32>(obj + 0x64) & 0xffu} << 32) : 0;
+                const u64 view = level.value_580;
+                const u64 vb = view != 0 && R<u64>(view + 0x30) != 0 ? R<u64>(R<u64>(view + 0x30) + 0x30) : 0;
+                t.moved_cb += cb != it->second.first;
+                t.moved_vb += vb != it->second.second;
+            }
+        }
         // FUN_01c932d0
         t.batch_owner = level.batch;
         t.Set<u64>(0x288, level.pass_object_288);
@@ -1497,6 +1537,7 @@ void GenerateGBuffer(Target& t, const GPlan& plan, u32 pass_flags) {
         }
         for (u32 s = level.first_step; s < level.first_step + level.step_count; ++s) {
             const GStep& step = plan.steps[s];
+            t.step_failed = false;
             Timed(CallId::ResourceSet, [&] { ResourceSetStep(t, rd, step.material, 0, true); });
             const bool raster = (R<u32>(step.material + 0xd4) & 0x26) != 0;
             if (raster != raster_flag) {
@@ -1513,12 +1554,19 @@ void GenerateGBuffer(Target& t, const GPlan& plan, u32 pass_flags) {
             BindMaterial(t, step.material);
             t.slot_material = 0;
             const s32 triangles = R<s32>(step.record + 0x14);
+            if (t.worker && t.step_failed) {
+                ++t.refused;
+                continue;
+            }
             if (level.group) {
                 IssueDraw(t, 1, level.indirect_buffer, u64{step.index} * 0xd8);
             } else {
                 IssueDraw(t, 0, static_cast<u32>(triangles * 3), R<u32>(step.record + 0x10));
             }
-            if (t.live) {
+            if (t.worker) {
+                ++t.draws;
+                t.triangles += triangles;
+            } else if (t.live) {
                 W<s32>(rd + 0x10, R<s32>(rd + 0x10) + 1);
                 W<s32>(rd + 0x14, R<s32>(rd + 0x14) + triangles);
             } else {
@@ -1622,6 +1670,11 @@ bool NativeResourceSetOn() {
     }();
     return on;
 }
+/// debug (TLG_VKB_PAR_REAL_BUFFERS=1, only with TLG_VKB_PAR_INLINE=1): the worker's matrices / instance data go into the engine's real buffer objects, as the serial path
+bool ParRealBuffers() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_PAR_REAL_BUFFERS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
 /// P1b: the worker's pieces of its ring block (256 byte aligned; null when the block is used up: the caller leaves the draw out)
 constexpr u32 ParStageBytes = 4096;
 constexpr u32 ParCloneBytes = 0x200;
@@ -1715,6 +1768,12 @@ void ResourceSetStep(Target& t, u64 rd, u64 material, u64 special, bool shadow_o
         s32 expected = 1;
         lock->compare_exchange_strong(expected, 0);
     }
+    if (t.worker && t_par_lookup_failed) {
+        t_par_lookup_failed = false;
+        t.step_failed = true;
+        ++t.rs_fail;
+        return;
+    }
     const u32 mask = R<u32>(material + 0x170);
     if ((mask & 1) != 0) {
         for (u32 i = 0; i < 8; ++i) {
@@ -1727,7 +1786,8 @@ void ResourceSetStep(Target& t, u64 rd, u64 material, u64 special, bool shadow_o
         }
     }
     const u32 size = R<u32>(buffer + 0x180);
-    if (t.worker) {
+    static const bool real_rs = [] { const char* e = std::getenv("TLG_VKB_PAR_REAL_RS"); return e != nullptr && e[0] == '1'; }(); // debug, inline only
+    if (t.worker && !ParRealBuffers() && !real_rs) {
         // P1b: the same into the worker's own copies: its staging block, a piece of its ring block, its copy of the buffer object (the engine's thread keeps renaming the real one)
         u8* block = size <= ParStageBytes && t.rs_clone != nullptr ? WorkerAlloc(t, size) : nullptr;
         if (block == nullptr) {
@@ -4793,12 +4853,17 @@ bool ParOn() {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_PAR_ZPASS"); return e != nullptr && e[0] == '1'; }();
     return on;
 }
+std::atomic<u64> c_par_group_publish{0}; // P2: instance group binds made on the engine's thread at hand-overs
 constexpr size_t ParCtxBytes = 0x13100; // the device context's words our draw path reads (the highest: + 0x130e8)
 constexpr u32 ParSlots = 4;
 constexpr u64 ParArenaMin = 64 << 10, ParArenaMax = 2 << 20;
 struct ParTask {
     u64 rd{}, desc{};
+    u32 kind{0}; // 0 a shadow cascade (Z pass), 1 a G-buffer pass
+    u64 mode{}, list{}, args{}, flags{}, query_mode{};
     u32 view{}, slot{};
+    std::shared_ptr<std::unordered_map<u64, std::pair<u64, u64>>> moved; // P2 census (TLG_VKB_PAR_MOVED=1)
+    u64 v_b60{0}; // P2: the G-buffer pass's texture at ctx + 0xb60, looked up on the engine's thread (RenderDev_GetGpuTexture refreshes this texture at each lookup)
     Core::Vkb::Stream::Splice* splice{};
     u8* arena{};
     u64 arena_size{};
@@ -4814,10 +4879,15 @@ struct ParState {
     std::atomic<s64> pend_draws{0}, pend_triangles{0};
     std::atomic<u64> calls{0}, passes{0}, no_slot{0}, copy_faults{0}, scan_faults{0}, worker_faults{0}, learn_frames{0}, views_off{0};
     std::atomic<u64> steps{0}, drawn{0}, refused{0}, unlearned{0}, rs_fail{0}, group_fail{0}, arena_short{0}, worker_ns{0};
+    std::atomic<u64> moved_checked{0}, moved_cb{0}, moved_vb{0};
     std::mutex reasons_mutex;
     std::map<std::string, u64> reasons;
     struct WorkerMem {
         std::vector<u8> rs_clone = std::vector<u8>(0x200), group_clone = std::vector<u8>(0x200), rs_stage = std::vector<u8>(4096);
+        // the copies of engine buffer objects live in the game's heap: our backend tells engine objects from anything else by address (IsHeapPointer; ObjectClass of
+        // anything else is "not an engine object", which picks another pipeline and leaves the slot unbound)
+        u8* rs_object{nullptr};
+        u8* group_object{nullptr};
     };
     std::array<WorkerMem, 4> mem; // per worker thread
     bool started{false};
@@ -4826,8 +4896,14 @@ ParState& PS() {
     static ParState state;
     return state;
 }
+bool ParGOn() { // P2: TLG_VKB_PAR_GBUFFER=1 (with TLG_GBUFFER_GEN=1): the G-buffer passes on the worker too
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_PAR_GBUFFER"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+constexpr u32 ParGView = 15; // the G-buffer's entry in the per-view switches
 bool Learnable(const char* reason) {
-    for (const char* prefix : {"mesh render data not created yet", "variant key not learned yet", "visibility cache entry missing"}) {
+    for (const char* prefix : {"mesh render data not created yet", "variant key not learned yet", "visibility cache entry missing", "second render data not created yet",
+                               "primitive without a cached variant"}) {
         if (std::strncmp(reason, prefix, std::strlen(prefix)) == 0) {
             return true;
         }
@@ -4838,7 +4914,101 @@ u32 ParWorkers() { // TLG_VKB_PAR_WORKERS (1 to 4, default 1): 2 (one per cascad
     static const u32 n = [] { const char* e = std::getenv("TLG_VKB_PAR_WORKERS"); return e != nullptr ? std::clamp<u32>(static_cast<u32>(std::atoi(e)), 1, 4) : 1u; }();
     return n;
 }
+void ParTarget(Target& t, const ParTask& task, u32 index) {
+    ParState& ps = PS();
+    t.live = true;
+    t.worker = true;
+    t.base = ps.snapshots[task.slot].data();
+    t.ring = task.arena;
+    t.arena_size = task.arena_size;
+    t.rs_clone = ps.mem[index].rs_object != nullptr ? ps.mem[index].rs_object : ps.mem[index].rs_clone.data();
+    t.group_clone = ps.mem[index].group_object != nullptr ? ps.mem[index].group_object : ps.mem[index].group_clone.data();
+    t.rs_stage = ps.mem[index].rs_stage.data();
+}
+void ParReasons(const std::vector<const char*>& reasons, u32 view) {
+    ParState& ps = PS();
+    bool learn = false, off = false;
+    for (const char* r : reasons) {
+        (Learnable(r) ? learn : off) = true;
+        std::scoped_lock lock{ps.reasons_mutex};
+        ++ps.reasons[r];
+    }
+    if (off) {
+        ps.view_off[view].store(true, std::memory_order_relaxed);
+        ps.views_off.fetch_add(1, std::memory_order_relaxed);
+    } else if (learn) {
+        ps.serial_next[view].store(true, std::memory_order_relaxed);
+        ps.learn_frames.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+void ParDone(const Target& t, const ParTask& task, u64 steps) {
+    ParState& ps = PS();
+    ps.pend_draws.fetch_add(t.draws, std::memory_order_relaxed);
+    ps.pend_triangles.fetch_add(t.triangles, std::memory_order_relaxed);
+    ps.need[task.view].store(t.arena_need, std::memory_order_relaxed);
+    if (t.arena_need > t.arena_size) {
+        ps.arena_short.fetch_add(1, std::memory_order_relaxed);
+    }
+    ps.steps.fetch_add(steps, std::memory_order_relaxed);
+    ps.drawn.fetch_add(static_cast<u64>(t.draws), std::memory_order_relaxed);
+    ps.refused.fetch_add(t.refused, std::memory_order_relaxed);
+    ps.unlearned.fetch_add(t.unlearned, std::memory_order_relaxed);
+    ps.rs_fail.fetch_add(t.rs_fail, std::memory_order_relaxed);
+    ps.group_fail.fetch_add(t.group_fail, std::memory_order_relaxed);
+}
+void ParWorkG(ParTask& task, u32 index) {
+    ParState& ps = PS();
+    GPlan plan;
+    plan.mode = static_cast<u32>(task.mode);
+    plan.flags = static_cast<u32>(task.flags);
+    plan.query_mode = static_cast<u32>(task.query_mode);
+    GScanArgs scan_args{&plan, task.rd, task.list, task.args, true};
+    if (!NativeDraw::GuardedCall([](void* p) { ScanGBuffer(*static_cast<GScanArgs*>(p)); }, &scan_args)) {
+        plan.scanned = false;
+    }
+    t_par_lookup_failed = false;
+    plan.v_b60 = task.v_b60;
+    if (!plan.scanned) {
+        ps.scan_faults.fetch_add(1, std::memory_order_relaxed);
+        ps.serial_next[ParGView].store(true, std::memory_order_relaxed);
+        return;
+    }
+    ParReasons(plan.reasons, ParGView);
+    struct Args {
+        Target t;
+        const GPlan* plan;
+        u64 rd;
+    } args{};
+    ParTarget(args.t, task, index);
+    args.t.moved_check = task.moved.get();
+    args.plan = &plan;
+    args.rd = task.rd;
+    if (!NativeDraw::GuardedCall(
+            [](void* p) {
+                auto* a = static_cast<Args*>(p);
+                const u64 rs_buffer = R<u64>(a->rd + 0x2910 + 0xef0);
+                if (rs_buffer != 0) {
+                    std::memcpy(a->t.rs_clone, reinterpret_cast<const void*>(rs_buffer), 0x200);
+                    const u32 size = std::min<u32>(R<u32>(rs_buffer + 0x180), 4096);
+                    std::memcpy(a->t.rs_stage, reinterpret_cast<const void*>(a->rd + 0x2910 + 0xe80), size);
+                } else {
+                    a->t.rs_clone = nullptr;
+                }
+                GenerateGBuffer(a->t, *a->plan, a->plan->flags);
+            },
+            &args)) {
+        ps.worker_faults.fetch_add(1, std::memory_order_relaxed);
+    }
+    ps.moved_checked.fetch_add(args.t.moved_checked, std::memory_order_relaxed);
+    ps.moved_cb.fetch_add(args.t.moved_cb, std::memory_order_relaxed);
+    ps.moved_vb.fetch_add(args.t.moved_vb, std::memory_order_relaxed);
+    ParDone(args.t, task, plan.steps.size());
+}
 void ParWork(ParTask& task, u32 index) {
+    if (task.kind == 1) {
+        ParWorkG(task, index);
+        return;
+    }
     ParState& ps = PS();
     State& s = S();
     Plan plan;
@@ -4856,33 +5026,15 @@ void ParWork(ParTask& task, u32 index) {
         ps.serial_next[task.view].store(true, std::memory_order_relaxed);
         return;
     }
-    bool learn = false, off = false;
-    for (const char* r : plan.reasons) {
-        (Learnable(r) ? learn : off) = true;
-        std::scoped_lock lock{ps.reasons_mutex};
-        ++ps.reasons[r];
-    }
-    if (off) {
-        ps.view_off[task.view].store(true, std::memory_order_relaxed);
-        ps.views_off.fetch_add(1, std::memory_order_relaxed);
-    } else if (learn) {
-        ps.serial_next[task.view].store(true, std::memory_order_relaxed);
-        ps.learn_frames.fetch_add(1, std::memory_order_relaxed);
-    }
+    t_par_lookup_failed = false;
+    ParReasons(plan.reasons, task.view);
     struct Args {
         Target t;
         const Plan* plan;
         u64 rd;
     } args{};
     Target& t = args.t;
-    t.live = true;
-    t.worker = true;
-    t.base = ps.snapshots[task.slot].data();
-    t.ring = task.arena;
-    t.arena_size = task.arena_size;
-    t.rs_clone = ps.mem[index].rs_clone.data();
-    t.group_clone = ps.mem[index].group_clone.data();
-    t.rs_stage = ps.mem[index].rs_stage.data();
+    ParTarget(t, task, index);
     args.plan = &plan;
     args.rd = task.rd;
     if (!NativeDraw::GuardedCall(
@@ -4902,24 +5054,14 @@ void ParWork(ParTask& task, u32 index) {
             &args)) {
         ps.worker_faults.fetch_add(1, std::memory_order_relaxed);
     }
-    ps.pend_draws.fetch_add(t.draws, std::memory_order_relaxed);
-    ps.pend_triangles.fetch_add(t.triangles, std::memory_order_relaxed);
-    ps.need[task.view].store(t.arena_need, std::memory_order_relaxed);
-    if (t.arena_need > t.arena_size) {
-        ps.arena_short.fetch_add(1, std::memory_order_relaxed);
-    }
-    ps.steps.fetch_add(plan.steps.size(), std::memory_order_relaxed);
-    ps.drawn.fetch_add(static_cast<u64>(t.draws), std::memory_order_relaxed);
-    ps.refused.fetch_add(t.refused, std::memory_order_relaxed);
-    ps.unlearned.fetch_add(t.unlearned, std::memory_order_relaxed);
-    ps.rs_fail.fetch_add(t.rs_fail, std::memory_order_relaxed);
-    ps.group_fail.fetch_add(t.group_fail, std::memory_order_relaxed);
+    ParDone(t, task, plan.steps.size());
 }
 void ParWorkerMain(u32 index) {
 #ifdef _WIN32
     SetThreadDescription(GetCurrentThread(), index == 0 ? L"vkb:Pass1" : index == 1 ? L"vkb:Pass2" : index == 2 ? L"vkb:Pass3" : L"vkb:Pass4");
 #endif
     ParState& ps = PS();
+    t_par_worker = true;
     for (;;) {
         ParTask task;
         {
@@ -4929,7 +5071,7 @@ void ParWorkerMain(u32 index) {
             ps.tasks.pop_front();
         }
         const auto t0 = std::chrono::steady_clock::now();
-        Core::Vkb::Graphics::SetDepthPass(true);
+        Core::Vkb::Graphics::SetDepthPass(task.kind == 0);
         Core::Vkb::Stream::SinkTo(task.splice);
         ParWork(task, index);
         Core::Vkb::Graphics::FlushBatch();
@@ -4953,8 +5095,274 @@ void ParPublish() {
                           {"scan_faults", ps.scan_faults.load()}, {"worker_faults", ps.worker_faults.load()}, {"learn_frames", ps.learn_frames.load()},
                           {"views_off", ps.views_off.load()}, {"steps", ps.steps.load()}, {"drawn", ps.drawn.load()}, {"refused", ps.refused.load()},
                           {"unlearned", ps.unlearned.load()}, {"rs_fail", ps.rs_fail.load()}, {"group_fail", ps.group_fail.load()}, {"arena_short", ps.arena_short.load()},
-                          {"worker_ms", static_cast<double>(ps.worker_ns.load()) / 1e6}, {"reasons", reasons}, {"draw", NativeDraw::WorkerDrawStats()}};
+                          {"worker_ms", static_cast<double>(ps.worker_ns.load()) / 1e6}, {"reasons", reasons},
+                          {"groups_published", c_par_group_publish.load()}, {"moved_checked", ps.moved_checked.load()}, {"moved_cb", ps.moved_cb.load()}, {"moved_vb", ps.moved_vb.load()}, {"draw", NativeDraw::WorkerDrawStats()}};
     DebugServer::Publish("par_zpass", std::move(out));
+}
+/// P2: the engine-visible part of the pass's instance group binds (FUN_01ee4e50's uploader: the staged data into a new ring block, the node's buffer renamed, the
+/// double buffer toggled), made on the engine's thread at the hand-over, in the pass's batch order: later passes read a group's buffer as the pass left it. The worker draws
+/// from its own copies of the same staged data.
+void ParPublishGroups(u64 list, u32 stamp) {
+    struct Args {
+        u64 list;
+        u32 stamp;
+    } args{list, stamp};
+    (void)NativeDraw::GuardedCall(
+        [](void* p) {
+            auto* a = static_cast<Args*>(p);
+            const u64 array = R<u64>(a->list);
+            const u32 count = R<u32>(a->list + 8);
+            const u64 holder = R<u64>(Global(GlobalDeviceHolder));
+            for (u32 b = 0; b < count && b < 100000; ++b) {
+                const u64 batch = R<u64>(array + u64{b} * 8);
+                const u64 group = batch != 0 && R<u64>(batch + 0x20) != 0 ? R<u64>(batch + 0x38) : 0;
+                const u64 group_inner = group != 0 ? R<u64>(group + 8) : 0;
+                const u64 group_object = group_inner != 0 ? R<u64>(group_inner + 0x38) : 0;
+                if (group_object == 0 || R<u32>(R<u64>(group_object + 0x28) + 0x48) == 0) {
+                    continue;
+                }
+                const u64 uploader = R<u64>(group_object + 0xf0);
+                if (uploader == 0) {
+                    continue;
+                }
+                const u64 node = R<u64>(uploader);
+                const u64 buffer = R<u64>(node + 0x10);
+                const s32 index = R<s32>(uploader + 0x28);
+                const u64 value = R<u64>(uploader + 0x18 + static_cast<u64>(index & 1) * 8);
+                const u64 staged = R<u64>(uploader + 8);
+                const s32 staged_bytes = R<s32>(uploader + 0x10);
+                if ((index != 0 && index != 1) || buffer == 0 || R<s32>(buffer + 0x124) != 1 || (R<u8>(buffer + 0x188) & 4) == 0 || R<u32>(buffer + 0x180) == 0 ||
+                    staged_bytes < 0 || value == 0) {
+                    continue;
+                }
+                std::memcpy(reinterpret_cast<void*>(value), reinterpret_cast<const void*>(staged), static_cast<size_t>(staged_bytes));
+                W<u64>(node, value);
+                const u32 size = R<u32>(buffer + 0x180);
+                void* block = reinterpret_cast<void*>(reinterpret_cast<u64(PS4_SYSV_ABI*)(u64, u64, u64)>(Global(FunctionAllocFrameGarlic))(R<u64>(holder + 0x10238), size, 0x10));
+                std::memcpy(block, reinterpret_cast<const void*>(value), size);
+                WriteRename(buffer, reinterpret_cast<u64>(block), size, a->stamp);
+                W<u8>(uploader + 0x28, R<u8>(uploader + 0x28) ^ 1);
+                c_par_group_publish.fetch_add(1, std::memory_order_relaxed);
+            }
+        },
+        &args);
+}
+/// A free context copy slot with the context copied into it (ParSlots: none)
+u32 ParSnapshot(u64 ctx) {
+    ParState& ps = PS();
+    u32 slot = ParSlots;
+    for (u32 i = 0; i < ParSlots; ++i) {
+        bool expected = false;
+        if (ps.busy[i].compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot == ParSlots) {
+        ps.no_slot.fetch_add(1, std::memory_order_relaxed);
+        return ParSlots;
+    }
+    std::vector<u8>& snap = ps.snapshots[slot];
+    if (snap.size() != ParCtxBytes) {
+        snap.assign(ParCtxBytes, 0);
+    }
+    struct CopyArgs {
+        u8* dst;
+        u64 src;
+    } copy{snap.data(), ctx};
+    if (!NativeDraw::GuardedCall([](void* p) { auto* c = static_cast<CopyArgs*>(p); std::memcpy(c->dst, reinterpret_cast<const void*>(c->src), ParCtxBytes); }, &copy)) {
+        ps.busy[slot].store(false, std::memory_order_release);
+        ps.copy_faults.fetch_add(1, std::memory_order_relaxed);
+        return ParSlots;
+    }
+    {
+        std::scoped_lock lock{ps.m};
+        if (!ps.started) {
+            ps.started = true;
+            using GuestMalloc = u64(PS4_SYSV_ABI*)(u64);
+            for (auto& mem : ps.mem) { // the game's malloc (libc thunk 0x024bdc18), on the engine's thread
+                const u64 a = reinterpret_cast<GuestMalloc>(Global(0x024bdc18))(0x200);
+                const u64 b = reinterpret_cast<GuestMalloc>(Global(0x024bdc18))(0x200);
+                mem.rs_object = IsHeapPointer(a) ? reinterpret_cast<u8*>(a) : nullptr;
+                mem.group_object = IsHeapPointer(b) ? reinterpret_cast<u8*>(b) : nullptr;
+                LOG_INFO(Core, "P2: worker buffer object copies in the game heap: {:#x} {:#x}", a, b);
+            }
+            for (u32 i = 0; i < ParWorkers(); ++i) {
+                std::thread{ParWorkerMain, i}.detach();
+            }
+        }
+    }
+    return slot;
+}
+/// The shared tail of a hand-over: the counters of the worker's earlier passes, its ring block, the placeholder, the task
+void ParSend(ParTask task) {
+    ParState& ps = PS();
+    const u64 rd = task.rd;
+    if (const s64 d = ps.pend_draws.exchange(0, std::memory_order_relaxed); d != 0) {
+        W<s32>(rd + 0x10, R<s32>(rd + 0x10) + static_cast<s32>(d));
+    }
+    if (const s64 tr = ps.pend_triangles.exchange(0, std::memory_order_relaxed); tr != 0) {
+        W<s32>(rd + 0x14, R<s32>(rd + 0x14) + static_cast<s32>(tr));
+    }
+    const u64 bytes = std::clamp<u64>(ps.need[task.view].load(std::memory_order_relaxed) * 2, ParArenaMin, ParArenaMax);
+    const u64 holder = R<u64>(Global(GlobalDeviceHolder));
+    task.arena = reinterpret_cast<u8*>(reinterpret_cast<u64(PS4_SYSV_ABI*)(u64, u64, u64)>(Global(FunctionAllocFrameGarlic))(R<u64>(holder + 0x10238), bytes, 0x100));
+    task.arena_size = task.arena != nullptr ? bytes : 0;
+    // debug (TLG_VKB_PAR_INLINE=1): the worker's code runs here, on the engine's thread, without a placeholder (the worker's inputs without another thread)
+    static const bool inline_run = [] { const char* e = std::getenv("TLG_VKB_PAR_INLINE"); return e != nullptr && e[0] == '1'; }();
+    if (inline_run) {
+        const bool was = t_par_worker;
+        t_par_worker = true;
+        Core::Vkb::Graphics::SetDepthPass(task.kind == 0);
+        ParWork(task, 3);
+        static const bool copy_back = [] { const char* e = std::getenv("TLG_VKB_PAR_COPYBACK"); return e != nullptr && e[0] == '1'; }();
+        if (copy_back) { // debug: the context words the pass loop writes (0 .. 0xd80) as the worker's copy left them (is the end state the difference?)
+            std::memcpy(reinterpret_cast<void*>(R<u64>(task.rd + 0x2d8)), ps.snapshots[task.slot].data(), 0xd80);
+        }
+        Core::Vkb::Graphics::FlushBatch();
+        Core::Vkb::Graphics::SetDepthPass(false);
+        t_par_worker = was;
+        ps.busy[task.slot].store(false, std::memory_order_release);
+        ps.passes.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    task.splice = Core::Vkb::Stream::OpenSplice();
+    {
+        std::scoped_lock lock{ps.m};
+        ps.tasks.push_back(task);
+    }
+    ps.cv.notify_one();
+    ps.passes.fetch_add(1, std::memory_order_relaxed);
+    // debug (TLG_VKB_PAR_SYNC=1, no gain by design): the engine's thread waits until the worker is done (rules a timing race in or out)
+    static const bool sync = [] { const char* e = std::getenv("TLG_VKB_PAR_SYNC"); return e != nullptr && e[0] == '1'; }();
+    if (sync) {
+        while (ps.busy[task.slot].load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+    }
+}
+/// P2: a G-buffer pass (RenderDev_DrawGBufferPrimitives) handed to the worker. The context's end state as the loop leaves it: the stage mode word, ctx + 0x68 (the last
+/// batch with a mesh: its group's word or 0), the epilogue (ctx + 0x580 and + 0x980, 0x400 bytes each, cleared; the default raster state; the flags state object and the last
+/// batch's flags value when the pass has flags)
+bool ParKickG(u64 rd, u64 mode, u64 list, u64 args, u64 flags, u64 query_mode) {
+    ParState& ps = PS();
+    if ((ps.calls.fetch_add(1, std::memory_order_relaxed) & 255) == 0) {
+        ParPublish();
+    }
+    if (mode == 1 || query_mode == 1 || query_mode == 2 || query_mode == 5 || list == 0) {
+        return false;
+    }
+    if (ps.view_off[ParGView].load(std::memory_order_relaxed) || ps.serial_next[ParGView].exchange(false, std::memory_order_relaxed)) {
+        return false;
+    }
+    struct Head {
+        u64 rd, list, flags, ctx, v68;
+        u32 last_flags;
+        bool ok;
+    } head{rd, list, flags, 0, 0, 0, false};
+    if (!NativeDraw::GuardedCall(
+            [](void* p) {
+                auto* h = static_cast<Head*>(p);
+                h->ctx = R<u64>(h->rd + 0x2d8);
+                const u64 array = R<u64>(h->list);
+                const u32 count = R<u32>(h->list + 8);
+                if (h->ctx == 0 || (count != 0 && (array == 0 || count > 100000))) {
+                    return;
+                }
+                const s32 indirect_mode = R<s32>(h->rd + 0x38e0);
+                h->v68 = R<u64>(h->rd + 0x3d90);
+                h->last_flags = static_cast<u32>(h->flags);
+                for (u32 b = count; b-- > 0;) {
+                    const u64 batch = R<u64>(array + u64{b} * 8);
+                    if (batch == 0) {
+                        continue;
+                    }
+                    if (b == count - 1) {
+                        h->last_flags = (static_cast<u32>(R<u16>(batch + 0x66) & 4) << 4) | static_cast<u32>(h->flags);
+                    }
+                    if (R<u64>(batch + 0x20) != 0) {
+                        h->v68 = R<u64>(batch + 0x38) != 0 ? (indirect_mode == 0 ? R<u64>(h->rd + 0x3da8) : R<u64>(h->rd + 0x3d90)) : 0;
+                        break;
+                    }
+                }
+                h->ok = true;
+            },
+            &head) ||
+        !head.ok) {
+        return false;
+    }
+    const u64 ctx = head.ctx;
+    const u32 slot = ParSnapshot(ctx);
+    if (slot == ParSlots) {
+        return false;
+    }
+    NativeDraw::HandOverTargets(ctx);
+    ParPublishGroups(list, R<u32>(ctx + 0x47ac));
+    if (R<u32>(ctx + 0x4480) != 4) {
+        W<u32>(ctx + 0x4480, 4);
+        W<u8>(ctx + 0x447c, R<u8>(ctx + 0x447c) | 1);
+    }
+    W<u64>(ctx + 0x68, head.v68);
+    std::memset(reinterpret_cast<void*>(ctx + 0x580), 0, 0x400);
+    std::memset(reinterpret_cast<void*>(ctx + 0x980), 0, 0x400);
+    if (const u64 raster = R<u64>(rd + 0x3bf0); R<u64>(ctx + 0x46c8) != raster) {
+        W<u64>(ctx + 0x46c8, raster);
+        W<u8>(ctx + 0x46d8, 1);
+    }
+    W<u64>(ctx + 0x46e0, R<u64>(rd + 0x3c28));
+    W<u32>(ctx + 0x46e8, flags != 0 ? head.last_flags : 0);
+    W<u8>(ctx + 0x46ec, 1);
+    ParTask task;
+    static const bool moved_census = [] { const char* e = std::getenv("TLG_VKB_PAR_MOVED"); return e != nullptr && e[0] == '1'; }();
+    if (moved_census) {
+        struct Walk {
+            u64 list;
+            std::unordered_map<u64, std::pair<u64, u64>>* out;
+        } walk{list, nullptr};
+        task.moved = std::make_shared<std::unordered_map<u64, std::pair<u64, u64>>>();
+        walk.out = task.moved.get();
+        (void)NativeDraw::GuardedCall(
+            [](void* p) {
+                auto* w = static_cast<Walk*>(p);
+                const u64 array = R<u64>(w->list);
+                const u32 count = R<u32>(w->list + 8);
+                for (u32 b = 0; b < count && b < 100000; ++b) {
+                    const u64 batch = R<u64>(array + u64{b} * 8);
+                    const u64 mesh = batch != 0 ? R<u64>(batch + 0x20) : 0;
+                    const u64 render_data = mesh != 0 ? R<u64>(mesh + 0x38) : 0;
+                    const u64 inner = render_data != 0 ? R<u64>(render_data + 0x20) : 0;
+                    if (inner == 0) {
+                        continue;
+                    }
+                    const u64 obj = R<u64>(R<u64>(batch + 0x68) + 0x130);
+                    const u64 cb = obj != 0 ? (u64{R<u32>(obj + 0x60)} | u64{R<u32>(obj + 0x64) & 0xffu} << 32) : 0;
+                    const u64 view = R<u64>(R<u64>(R<u64>(inner + 0x48) + 0x38) + 0x28);
+                    const u64 vb = view != 0 && R<u64>(view + 0x30) != 0 ? R<u64>(R<u64>(view + 0x30) + 0x30) : 0;
+                    (*w->out)[batch] = {cb, vb};
+                }
+            },
+            &walk);
+    }
+    {
+        struct B60 {
+            u64 args, value;
+        } b60{args, 0};
+        (void)NativeDraw::GuardedCall(
+            [](void* p) {
+                auto* b = static_cast<B60*>(p);
+                const u64 object = HandleLookup(R<u64>(Global(GlobalObjectTable)), R<u64>(R<u64>(b->args + 0x2d0) + 0x30));
+                b->value = object != 0 ? R<u64>(object + 0x48) : 0;
+            },
+            &b60);
+        task.v_b60 = b60.value;
+    }
+    task.rd = rd;
+    task.kind = 1;
+    task.mode = mode, task.list = list, task.args = args, task.flags = flags, task.query_mode = query_mode;
+    task.view = ParGView;
+    task.slot = slot;
+    ParSend(task);
+    return true;
 }
 /// The engine's thread: hand the pass to the worker. False: nothing done (the caller runs the pass as before).
 bool ParKick(u64 rd, u64 desc, u32 view) {
@@ -4980,42 +5388,13 @@ bool ParKick(u64 rd, u64 desc, u32 view) {
         !head.ok) {
         return false;
     }
-    u32 slot = ParSlots;
-    for (u32 i = 0; i < ParSlots; ++i) {
-        bool expected = false;
-        if (ps.busy[i].compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-            slot = i;
-            break;
-        }
-    }
+    const u32 slot = ParSnapshot(head.ctx);
     if (slot == ParSlots) {
-        ps.no_slot.fetch_add(1, std::memory_order_relaxed);
         return false;
-    }
-    std::vector<u8>& snap = ps.snapshots[slot];
-    if (snap.size() != ParCtxBytes) {
-        snap.assign(ParCtxBytes, 0);
-    }
-    struct CopyArgs {
-        u8* dst;
-        u64 src;
-    } copy{snap.data(), head.ctx};
-    if (!NativeDraw::GuardedCall([](void* p) { auto* c = static_cast<CopyArgs*>(p); std::memcpy(c->dst, reinterpret_cast<const void*>(c->src), ParCtxBytes); }, &copy)) {
-        ps.busy[slot].store(false, std::memory_order_release);
-        ps.copy_faults.fetch_add(1, std::memory_order_relaxed);
-        return false;
-    }
-    {
-        std::scoped_lock lock{ps.m};
-        if (!ps.started) {
-            ps.started = true;
-            for (u32 i = 0; i < ParWorkers(); ++i) {
-                std::thread{ParWorkerMain, i}.detach();
-            }
-        }
     }
     NativeDraw::HandOverTargets(head.ctx);
     const u64 ctx = head.ctx;
+    ParPublishGroups(R<u64>(desc), R<u32>(ctx + 0x47ac));
     // the context as the loop leaves it: its prologue (the stage mode word and its dirty bit, no input layout) and its epilogue (no material block, the default raster state)
     if (R<u32>(ctx + 0x4480) != 4) {
         W<u32>(ctx + 0x4480, 4);
@@ -5027,24 +5406,13 @@ bool ParKick(u64 rd, u64 desc, u32 view) {
         W<u64>(ctx + 0x46c8, raster);
         W<u8>(ctx + 0x46d8, 1);
     }
-    // the device's counters: the draws of the worker's earlier passes
-    if (const s64 d = ps.pend_draws.exchange(0, std::memory_order_relaxed); d != 0) {
-        W<s32>(rd + 0x10, R<s32>(rd + 0x10) + static_cast<s32>(d));
-    }
-    if (const s64 tr = ps.pend_triangles.exchange(0, std::memory_order_relaxed); tr != 0) {
-        W<s32>(rd + 0x14, R<s32>(rd + 0x14) + static_cast<s32>(tr));
-    }
-    // the worker's block of the frame ring: twice what this view needed last time
-    const u64 bytes = std::clamp<u64>(ps.need[view].load(std::memory_order_relaxed) * 2, ParArenaMin, ParArenaMax);
-    const u64 holder = R<u64>(Global(GlobalDeviceHolder));
-    u8* arena = reinterpret_cast<u8*>(reinterpret_cast<u64(PS4_SYSV_ABI*)(u64, u64, u64)>(Global(FunctionAllocFrameGarlic))(R<u64>(holder + 0x10238), bytes, 0x100));
-    Core::Vkb::Stream::Splice* splice = Core::Vkb::Stream::OpenSplice();
-    {
-        std::scoped_lock lock{ps.m};
-        ps.tasks.push_back({rd, desc, view, slot, splice, arena, arena != nullptr ? bytes : 0});
-    }
-    ps.cv.notify_one();
-    ps.passes.fetch_add(1, std::memory_order_relaxed);
+    ParTask task;
+    task.rd = rd;
+    task.desc = desc;
+    task.kind = 0;
+    task.view = view;
+    task.slot = slot;
+    ParSend(task);
     return true;
 }
 } // namespace
@@ -5166,6 +5534,9 @@ bool HandleGBuffer(u64 render_device, u64 mode, u64 list, u64 args, u64 flags, u
     }
     (void)param7;
     using Loop = void(PS4_SYSV_ABI*)(u64, u64, u64, u64, u64, u64, u64);
+    if (ParOn() && ParGOn() && Core::Vkb::Stream::RecorderOn() && ParKickG(render_device, mode, list, args, flags, query_mode)) {
+        return true; // P2: the pass is the worker's
+    }
     State& s = S();
     GStats& gs = GS();
     GPlan plan;

@@ -119,8 +119,11 @@ struct Splice final : Job {
         splice = true;
     }
     void Run(vk::CommandBuffer) override {}
-    std::vector<std::unique_ptr<Job>> jobs;
+    std::mutex m;
+    std::vector<std::unique_ptr<Job>> jobs; ///< (under m) the filling thread appends; the resolver takes them in order as they come (P2: streamed, not at Close)
+    std::atomic<u32> pushed{0};             ///< jobs appended so far (+ (1 << 31) once closed); the resolver waits on it
     std::atomic<u32> closed{0};
+    std::atomic<u32> refs{2}; ///< the resolver and the filling thread: the last one done deletes it
 };
 /// The engine's thread: a new placeholder, enqueued now (the caller's open batch goes first). The pointer stays valid until Close.
 Splice* OpenSplice();

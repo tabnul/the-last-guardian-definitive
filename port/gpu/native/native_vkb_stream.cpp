@@ -1309,29 +1309,55 @@ void RecorderThread() {
             while (std::chrono::steady_clock::now() < until) {
             }
         }
-        if (job->splice) { // P1: wait for the pass made on another thread, then its jobs in this place
+        if (job->splice) { // P1 / P2: the pass made on another thread, its jobs in this place, each as soon as it is made
             auto* sp = static_cast<Splice*>(job.get());
-            if (sp->closed.load(std::memory_order_acquire) == 0) {
+            c_splices.fetch_add(1, std::memory_order_relaxed);
+            if (!job->transitions.empty()) { // the layout changes the engine's thread decided before the placeholder (they ride on its next job: this one)
+                auto t = std::make_unique<TransitionJob>();
+                t->transitions.swap(job->transitions);
+                if (Recorders() > 1) {
+                    Resolve(std::move(t));
+                } else {
+                    RunJob(*t);
+                }
+            }
+            size_t next = 0;
+            for (;;) {
+                const u32 state = sp->pushed.load(std::memory_order_acquire);
+                const u32 count = state & 0x7fffffffu;
+                if (next < count) {
+                    std::vector<std::unique_ptr<Job>> take;
+                    {
+                        std::scoped_lock lock{sp->m};
+                        for (; next < sp->jobs.size(); ++next) {
+                            take.push_back(std::move(sp->jobs[next]));
+                        }
+                    }
+                    c_splice_jobs.fetch_add(take.size(), std::memory_order_relaxed);
+                    for (auto& inner : take) {
+                        if (Recorders() > 1) {
+                            Resolve(std::move(inner));
+                        } else {
+                            RunJob(*inner);
+                        }
+                    }
+                    continue;
+                }
+                if ((state & 0x80000000u) != 0) {
+                    break;
+                }
                 c_splice_waits.fetch_add(1, std::memory_order_relaxed);
                 const u64 w0 = RecNs();
                 if (Recorders() > 1) {
                     FlushBatch(); // what is resolved so far goes to its recording thread while we wait
                 }
-                while (sp->closed.load(std::memory_order_acquire) == 0) {
-                    sp->closed.wait(0, std::memory_order_acquire);
-                }
+                sp->pushed.wait(state, std::memory_order_acquire);
                 c_splice_wait_us.fetch_add((RecNs() - w0) / 1000, std::memory_order_relaxed);
             }
-            c_splices.fetch_add(1, std::memory_order_relaxed);
-            c_splice_jobs.fetch_add(sp->jobs.size(), std::memory_order_relaxed);
-            for (auto& inner : sp->jobs) {
-                if (Recorders() > 1) {
-                    Resolve(std::move(inner));
-                } else {
-                    RunJob(*inner);
-                }
+            job.release();
+            if (sp->refs.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                delete sp;
             }
-            sp->jobs.clear();
             continue;
         }
         const u32 kind = job->locked ? static_cast<u32>(job->work) : static_cast<u32>(Work::Count);
@@ -1390,14 +1416,23 @@ void SinkTo(Splice* splice) {
 }
 void CloseSplice(Splice* splice) {
     splice->closed.store(1, std::memory_order_release);
-    splice->closed.notify_all();
+    splice->pushed.fetch_or(0x80000000u, std::memory_order_acq_rel);
+    splice->pushed.notify_all();
+    if (splice->refs.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+        delete splice;
+    }
 }
 void EnqueueImpl(std::unique_ptr<Job> job) {
     job->transitions.swap(pending_transitions);
     pending_transitions.clear();
     c_jobs.fetch_add(1, std::memory_order_relaxed);
-    if (t_sink != nullptr) { // P1: a pass made on another thread
-        t_sink->jobs.push_back(std::move(job));
+    if (t_sink != nullptr) { // P1: a pass made on another thread (P2: the resolver takes it now)
+        {
+            std::scoped_lock lock{t_sink->m};
+            t_sink->jobs.push_back(std::move(job));
+        }
+        t_sink->pushed.fetch_add(1, std::memory_order_acq_rel);
+        t_sink->pushed.notify_all();
         return;
     }
     if (!RecorderOn()) {

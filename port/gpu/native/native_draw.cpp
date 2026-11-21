@@ -6938,6 +6938,7 @@ bool TakeDrawWorker(u64 ctx, u32 kind, u64 a1, u64 a2, u64 a3) {
 }
 void NoteTargetsHandedOver(u64 ctx) {
     ApplyTargetSideEffects(ctx);
+    TakePendingDynamicMap(); // P2: this thread's in-place Map is taken before the pass it may feed (as its first draw here would take it)
 }
 /// A dispatch of the device context (direct, fenced: the fence is an in-stream scratch label, see TagDispatchFenced; or indirect).
 u64 TakeDispatchImpl(u64 ctx, u64 x, u64 y, u64 z, bool indirect, u64 args_address);
