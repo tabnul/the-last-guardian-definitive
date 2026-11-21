@@ -8,6 +8,7 @@ development and CI builds never report an update. Settings > Launcher turns the 
 import json
 from pathlib import Path
 import re
+import subprocess
 import urllib.request
 
 REPO = 'tabnul/the-last-guardian-definitive'
@@ -27,6 +28,25 @@ def own_version(port_dir):
     try:
         return (Path(port_dir) / 'VERSION').read_text(encoding='utf-8').splitlines()[0].strip()
     except (OSError, IndexError, UnicodeDecodeError):
+        return ''
+
+
+def shown_version(port_dir):
+    """The version the launcher shows: the VERSION file of a package; in a source tree
+    'dev <commit>' from git (+ ' *' with local changes); '' when neither is there."""
+    version = own_version(port_dir)
+    if version:
+        return version
+    try:
+        cwd = str(Path(port_dir).parent)
+        commit = subprocess.run(['git', 'rev-parse', '--short=7', 'HEAD'], cwd=cwd, capture_output=True,
+                                text=True, timeout=5).stdout.strip()
+        if not commit:
+            return ''
+        dirty = subprocess.run(['git', 'status', '--porcelain', '--untracked-files=no'], cwd=cwd,
+                               capture_output=True, text=True, timeout=5).stdout.strip()
+        return f'dev {commit}' + (' *' if dirty else '')
+    except (OSError, subprocess.SubprocessError):
         return ''
 
 

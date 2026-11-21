@@ -131,13 +131,6 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
                     readback_stats_enabled ? "; statistics enabled" : "");
     }
 
-    // tlg (issue #79): Debug > Flags "Free replaced buffer arenas".
-    if (const char* v = std::getenv("TLG_ARENA_FREE")) {
-        free_replaced_arenas = v[0] == '1';
-    }
-    if (free_replaced_arenas) {
-        std::printf("GPU: buffer arenas replaced by a migration are freed (TLG_ARENA_FREE=1)\n");
-    }
     // tlg (issue #79): Debug > Flags "Group buffer memory" (TLG_RESIDENCY_GRANULE_MB, 0 = off).
     if (const char* v = std::getenv("TLG_RESIDENCY_GRANULE_MB")) {
         residency_granule_bytes = std::strtoull(v, nullptr, 10) << 20;
@@ -1154,6 +1147,10 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
             // with the mark left in place the same read fault would come back forever.
             memory_tracker->UnmarkRegionAsGpuModified(download_addr, download_size);
             ClearExactWritePagesInner(download_addr, download_size);
+            // tlg (#89): from here on the region reads from RAM; an image over it would be
+            // re-uploaded from RAM too (texture cache "Image refresh from RAM").
+            readback_mark_cleared.fetch_add(1, std::memory_order_relaxed);
+            readback_mark_cleared_bytes.fetch_add(download_size, std::memory_order_relaxed);
             static std::atomic<u32> reports{0};
             if (reports.fetch_add(1, std::memory_order_relaxed) < 20) {
                 std::printf("Readback: GPU mark without data at %#llx size %#llx\n",
@@ -1550,10 +1547,13 @@ void BufferCache::ReportReadbackStats() {
                 readback_gather_bytes.exchange(0) / 1048576.0,
                 static_cast<unsigned long long>(readback_gather_declined.exchange(0)));
     std::printf("Buffer readback stale skips (5 s): %.2f MiB not re-downloaded, %llu write "
-                "faults resolved without a flush\n",
+                "faults resolved without a flush; %llu GPU marks cleared without data (%.2f MiB)\n",
                 readback_stale_bytes.exchange(0, std::memory_order_relaxed) / 1048576.0,
                 static_cast<unsigned long long>(
-                    readback_false_share_skips.exchange(0, std::memory_order_relaxed)));
+                    readback_false_share_skips.exchange(0, std::memory_order_relaxed)),
+                static_cast<unsigned long long>(
+                    readback_mark_cleared.exchange(0, std::memory_order_relaxed)),
+                readback_mark_cleared_bytes.exchange(0, std::memory_order_relaxed) / 1048576.0);
     std::printf("Buffer readback waits (5 s): %.1f ms in Finish, %.1f ms in %llu side copies; "
                 "last GPU write done %llu, submitted %llu, still "
                 "recording %llu, unknown %llu; fence flushes EOP %llu, EOS %llu, WRITE_DATA %llu, "
@@ -2215,28 +2215,12 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
         // tlg (issue #79): the request behind it and the load on the driver so far.
         LOG_WARNING(Render,
                     "Arena growth: request {:#x}+{} KiB, {} MiB filled in {} allocations, {} "
-                    "sparse binds so far, {} arenas freed, freeing {}",
+                    "sparse binds so far",
                     u64{first_block} << block_shift,
                     (u64{last_block - first_block + 1} << block_shift) >> 10,
                     TlgStats::arena_resident_bytes.load(std::memory_order_relaxed) >> 20,
                     TlgStats::arena_backing_allocs.load(std::memory_order_relaxed),
-                    TlgStats::arena_binds_total.load(std::memory_order_relaxed),
-                    TlgStats::arena_freed_count.load(std::memory_order_relaxed),
-                    free_replaced_arenas ? "on" : "off");
-        if (free_replaced_arenas) {
-            // The new arena covers every page of the ones it joins (lo..hi holds their full
-            // extent), so nothing looks these up again; commands and binds recorded against
-            // them so far belong to the current tick.
-            const u64 tick = scheduler.CurrentTick();
-            const auto now = std::chrono::steady_clock::now();
-            for (u64 page = lo; page <= hi; ++page) {
-                const Buffer* old = address_space[page];
-                if (old && std::ranges::find(retired_arenas, old, &RetiredArena::arena) ==
-                               retired_arenas.end()) {
-                    retired_arenas.push_back({old, tick, now});
-                }
-            }
-        }
+                    TlgStats::arena_binds_total.load(std::memory_order_relaxed));
         const u64 base_block = base_addr >> block_shift;
         const u64 end_block = (base_addr + total_size) >> block_shift;
         auto* bind = BindsForArena(new_arena);
@@ -2617,32 +2601,6 @@ void BufferCache::UnbindResident(std::span<const Backing> released) {
             }
         }
     }
-}
-
-void BufferCache::FreeReplacedArenas() {
-    if (retired_arenas.empty()) {
-        return;
-    }
-    // Two seconds on top of the GPU being done: threads resolving a write fault read an arena's
-    // tick tables through a pointer they took from address_space just before the migration.
-    const auto now = std::chrono::steady_clock::now();
-    std::erase_if(retired_arenas, [&](const RetiredArena& retired) {
-        if (now - retired.since < std::chrono::seconds(2) || !scheduler.IsFree(retired.tick) ||
-            retired.arena == async_arena ||
-            std::ranges::find(pending_binds, retired.arena, &ArenaBinds::arena) !=
-                pending_binds.end()) {
-            return false;
-        }
-        const u64 size = retired.arena->SizeBytes();
-        arenas.remove_if([&](const Buffer& arena) { return &arena == retired.arena; });
-        TlgStats::arena_live_count.fetch_sub(1, std::memory_order_relaxed);
-        TlgStats::arena_live_bytes.fetch_sub(size, std::memory_order_relaxed);
-        TlgStats::arena_freed_count.fetch_add(1, std::memory_order_relaxed);
-        LOG_WARNING(Render, "Freed a replaced arena of {} MiB; {} arenas alive, {} MiB in total",
-                    size >> 20, arenas.size(),
-                    TlgStats::arena_live_bytes.load(std::memory_order_relaxed) >> 20);
-        return true;
-    });
 }
 
 void BufferCache::ReportArenaRelease() {

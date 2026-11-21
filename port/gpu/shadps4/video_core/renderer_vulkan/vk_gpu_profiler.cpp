@@ -11,10 +11,11 @@ namespace Vulkan {
 
 void GpuProfiler::Init(const Instance& instance, Scheduler& scheduler) {
     const char* env = std::getenv("TLG_GPU_PROFILE");
-    if (!env || env[0] != '1' || instance_ptr) {
+    if (!env || (env[0] != '1' && env[0] != '2') || instance_ptr) {
         return;
     }
     instance_ptr = new GpuProfiler(instance, scheduler);
+    instance_ptr->counts_only = env[0] == '2';
 }
 
 GpuProfiler::GpuProfiler(const Instance& instance, Scheduler& scheduler_)
@@ -33,6 +34,11 @@ GpuProfiler::GpuProfiler(const Instance& instance, Scheduler& scheduler_)
 }
 
 void GpuProfiler::WriteTimestamp(u64 key) {
+    if (counts_only) {
+        current = key;
+        ++totals[key].segments;
+        return;
+    }
     if (used[slice] + 1 >= SliceQueries) {
         return; // the frame's slice is full: the rest of the frame goes to the last label
     }
@@ -48,6 +54,11 @@ void GpuProfiler::WriteTimestamp(u64 key) {
 }
 
 void GpuProfiler::BeginFrame() {
+    if (counts_only) {
+        ++frames;
+        Print();
+        return;
+    }
     // Close the frame: one more timestamp without a label.
     if (used[slice] > 0 && used[slice] < SliceQueries) {
         scheduler.EndRendering();
@@ -106,8 +117,28 @@ void GpuProfiler::Print() {
                 static_cast<unsigned long long>(frames), sorted.size());
     for (size_t i = 0; i < std::min<size_t>(sorted.size(), 30); ++i) {
         const auto& [key, total] = sorted[i];
-        std::printf("  %6.3f ms/frame %5.1f/frame  %s\n", total.ms / frames,
-                    double(total.segments) / frames, described[key].c_str());
+        std::printf("  %6.3f ms/frame %5.1f/frame %6.1f draws/frame  %s\n", total.ms / frames,
+                    double(total.segments) / frames, double(total.draws) / frames,
+                    described[key].c_str());
+    }
+    // The same per kind of pass (size and targets, whatever the shaders): where the draws go.
+    std::unordered_map<std::string, Total> kinds;
+    for (const auto& [key, total] : sorted) {
+        const std::string& name = described[key];
+        auto& kind = kinds[name.substr(0, name.find(" vs "))];
+        kind.ms += total.ms;
+        kind.segments += total.segments;
+        kind.draws += total.draws;
+    }
+    std::vector<std::pair<std::string, Total>> by_draws(kinds.begin(), kinds.end());
+    std::ranges::sort(by_draws,
+                      [](const auto& a, const auto& b) { return a.second.draws > b.second.draws; });
+    std::printf("GPU profile draws by kind of pass:\n");
+    for (size_t i = 0; i < std::min<size_t>(by_draws.size(), 20); ++i) {
+        const auto& [name, total] = by_draws[i];
+        std::printf("  %7.1f draws/frame %6.3f ms/frame %5.1f passes/frame  %s\n",
+                    double(total.draws) / frames, total.ms / frames,
+                    double(total.segments) / frames, name.c_str());
     }
     totals.clear();
     frames = 0;

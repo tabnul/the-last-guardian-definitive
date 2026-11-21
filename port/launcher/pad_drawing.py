@@ -41,6 +41,41 @@ DS4_SVG = r'''<svg xmlns="http://www.w3.org/2000/svg" id="DualShock_3_SVG" width
 <path id="DpadButtonBottom" d="M 75 125 V 108 L 83.5 102 L 92 108 V 125 Z M 78 129 H 89 L 83.5 134 Z" stroke="black" fill="none" />
 <rect id="Touchpad" x="151" y="45" width="100" height="56" rx="6" stroke="black" fill="none" /><rect id="ShareButton" x="141" y="47" width="5" height="12" rx="2" stroke="black" fill="none" /><rect id="OptionsButton" x="256" y="47" width="5" height="12" rx="2" stroke="black" fill="none" /><path id="L2Trigger" d="M 56 16 C 60 -6, 106 -6, 112 12" stroke="black" fill="none" /><path id="R2Trigger" d="M 290 12 C 296 -6, 342 -6, 346 16" stroke="black" fill="none" /></svg>'''
 
+# An Xbox pad, drawn for this port (issue #61), in the same 400x250 box and with the same part ids as
+# the DualShock above (ButtonCross = A, ButtonCircle = B, ButtonSquare = X, ButtonTriangle = Y,
+# ShareButton = View, OptionsButton = Menu, PSButton = Xbox button), so the Controller page lights
+# the same parts. scripts/make_xbox_pad.py turns it into the picture of the game's button hints.
+XBOX_SVG = r"""<svg xmlns="http://www.w3.org/2000/svg" id="Xbox_SVG" width="400" height="250" viewBox="0, 0, 400, 250">
+<path id="L2Trigger" d="M 74 28 C 78 6, 112 6, 120 24" stroke="black" fill="none" />
+<path id="R2Trigger" d="M 280 24 C 288 6, 322 6, 326 28" stroke="black" fill="none" />
+<path id="LeftShoulder" d="M 60 44 C 76 22, 112 22, 142 34 L 140 41 C 112 31, 82 32, 65 48 Z" stroke="black" fill="none" />
+<path id="RightShoulder" d="M 340 44 C 324 22, 288 22, 258 34 L 260 41 C 288 31, 318 32, 335 48 Z" stroke="black" fill="none" />
+<path id="MainOutline" d="M 138 38 H 262 C 290 30, 318 30, 336 44 C 356 62, 372 110, 378 160 C 382 200, 372 236, 350 238 C 332 240, 318 224, 304 202 C 294 186, 282 178, 262 178 H 138 C 118 178, 106 186, 96 202 C 82 224, 68 240, 50 238 C 28 236, 18 200, 22 160 C 28 110, 44 62, 64 44 C 82 30, 110 30, 138 38 Z" stroke="black" fill="none" />
+<circle id="PSButton" cx="200" cy="62" r="11" stroke="black" fill="none" />
+<circle id="ShareButton" cx="174" cy="88" r="6" stroke="black" fill="none" />
+<circle id="OptionsButton" cx="226" cy="88" r="6" stroke="black" fill="none" />
+<circle id="LeftJoystickOuter" cx="112" cy="88" r="30" stroke="black" fill="none" />
+<circle id="LeftJoystickMiddle" cx="112" cy="88" r="23" stroke="black" fill="none" />
+<circle id="LeftJoystickInner" cx="112" cy="88" r="20" stroke="black" fill="none" />
+<circle id="RightJoystickOuter" cx="246" cy="140" r="30" stroke="black" fill="none" />
+<circle id="RightJoystickMiddle" cx="246" cy="140" r="23" stroke="black" fill="none" />
+<circle id="RightJoystickInner" cx="246" cy="140" r="20" stroke="black" fill="none" />
+<circle id="DpadBorder" cx="154" cy="140" r="33" stroke="black" fill="none" />
+<path id="DpadButtonTop" d="M 146 110 H 162 V 127 L 154 133 L 146 127 Z" stroke="black" fill="none" />
+<path id="DpadButtonBottom" d="M 146 170 H 162 V 153 L 154 147 L 146 153 Z" stroke="black" fill="none" />
+<path id="DpadButtonLeft" d="M 124 132 V 148 H 141 L 147 140 L 141 132 Z" stroke="black" fill="none" />
+<path id="DpadButtonRight" d="M 184 132 V 148 H 167 L 161 140 L 167 132 Z" stroke="black" fill="none" />
+<circle id="ButtonBorder1" cx="266" cy="88" r="11" stroke="black" fill="none" />
+<path id="ButtonSquare" d="M 261.5 82 L 270.5 94 M 270.5 82 L 261.5 94" stroke="black" fill="none" />
+<circle id="ButtonBorder2" cx="310" cy="88" r="11" stroke="black" fill="none" />
+<path id="ButtonCircle" d="M 306.5 82 V 94 H 311 C 315.5 94, 315.5 88, 311 88 H 306.5 M 311 88 C 315 88, 315 82, 311 82 H 306.5" stroke="black" fill="none" />
+<circle id="ButtonBorder3" cx="288" cy="66" r="11" stroke="black" fill="none" />
+<path id="ButtonTriangle" d="M 283 60 L 288 66.5 L 293 60 M 288 66.5 V 72" stroke="black" fill="none" />
+<circle id="ButtonBorder4" cx="288" cy="110" r="11" stroke="black" fill="none" />
+<path id="ButtonCross" d="M 283 116 L 288 104 L 293 116 M 285 111.5 H 291" stroke="black" fill="none" />
+</svg>"""
+
+
 
 def arc_points(x1, y1, rx, ry, phi, large, sweep, x2, y2, n=16):
     if rx == 0 or ry == 0:
@@ -117,11 +152,11 @@ def path_polylines(d):
     return lines
 
 
-def draw(canvas, scale, ox, oy, line, muted):
+def draw(canvas, scale, ox, oy, line, muted, svg=None):
     """Draws the controller; returns {svg id: [canvas items]} and {stick id: (x, y, r)} in canvas pixels."""
     P = lambda x, y: (ox + x * scale, oy + y * scale)
     items, circles = {}, {}
-    for el in ET.fromstring(DS4_SVG).iter():
+    for el in ET.fromstring(svg or DS4_SVG).iter():
         tag = el.tag.split('}')[-1]
         eid = el.get('id', '')
         made = []

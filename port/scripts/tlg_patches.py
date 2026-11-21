@@ -3,9 +3,11 @@
 """The Last Guardian frame rate patches (TLG_FPS=30|60|unlocked) and community mods/cheats,
 written together to out/patches.bin.
 
-Each built-in frame rate patch is a list of {image offset, expected bytes, new bytes} for eboot
-1.03 only (sha256 below, or a SELF dump of it): the expected bytes are checked in eboot.bin
-before anything is written, so another build never gets byte writes in the wrong place. The
+Each built-in frame rate patch is a list of {image offset, expected bytes, new bytes} for the
+1.03 game code. Every expected byte is checked in eboot.bin (a plain ELF, or the ELF inside a
+SELF dump) before anything is written, so another build never gets byte writes in the wrong
+place. That byte check is the gate, not a file hash: US and EU 1.03 dumps from different tools
+differ outside the patched code (#87) and all get the patches when the code matches. The
 loader (probe.c apply_patches) applies the file after relocation. Image offsets are eboot
 virtual addresses; the Ghidra addresses in the comments (base 0x1000000) are offset + 0x1000000.
 
@@ -30,7 +32,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mod_patches
 
 TITLE_IDS = {'CUSA03627', 'CUSA03745', 'CUSA04936', 'CUSA04943'}   # US, EU, KR, CN (tlg_run.py LANGUAGES_BY_TITLE)
-EBOOT_103_SHA256 = '91dce685be81f8f6bc88097d4fc7a62e97ca08d109621c57fe9371ae125feb3c'
 SELF_MAGIC = b'O\x15=\x1d'
 TEXT_FILE_OFFSET = 0x4000      # PT_LOAD 0 (R E): file offset of vaddr 0
 TEXT_SIZE = 0x16b2d5c
@@ -170,11 +171,22 @@ def mode_writes(eboot, names):
             offset = address - GHIDRA_BASE
             if not (0 <= offset and offset + len(expected) <= TEXT_SIZE) or len(expected) != len(new):
                 raise ValueError(f'{name}: bad patch entry at {address:#x}')
-            found = eboot[TEXT_FILE_OFFSET + offset:TEXT_FILE_OFFSET + offset + len(expected)]
+            start = file_offset(eboot, offset, len(expected))
+            found = b'' if start is None else eboot[start:start + len(expected)]
             if found != expected:
                 raise ValueError(f'{name}: {address:#x} has {found.hex()}, expected {expected.hex()}')
             writes.append((offset, new, f'{name}: {address:#x} {what}'))
     return writes
+
+
+def fps_patches_fit(eboot):
+    """True when the ELF eboot holds every byte the 60 FPS and unlocked patches expect (the
+    launcher's warning: with False the game runs at 30 FPS whatever the frame rate setting)."""
+    try:
+        mode_writes(eboot or b'', sorted({name for names in MODES.values() for name in names}))
+        return True
+    except ValueError:
+        return False
 
 
 # Resolution (TLG_RESOLUTION=WxH, e.g. 3440x1440): the mode table (0x18 bytes per entry: u16
@@ -477,6 +489,7 @@ def prepare(game_dir, out_dir, mode, mods_dir=None, mods_config=None, resolution
         mode = '30'
     fps_writes = []
     eboot = None
+    usable = False
     # TLG_FPS_PATCHES="a,b" (measurements): these patches instead of the mode's own.
     names = [n for n in os.environ.get('TLG_FPS_PATCHES', '').split(',') if n in PATCHES] or MODES[mode]
     want_tail_fix = os.environ.get('TLG_TAIL_CLIMB_FIX', '').strip().lower() in ('1', 'true', 'yes', 'on')
@@ -487,34 +500,36 @@ def prepare(game_dir, out_dir, mode, mods_dir=None, mods_config=None, resolution
             eboot = b''
             lines.append(f'Frame rate: cannot read eboot.bin ({error})')
         digest = hashlib.sha256(eboot).hexdigest()
-        usable = digest == EBOOT_103_SHA256
-        if not usable and eboot[:4] == SELF_MAGIC:
-            # A SELF dump of 1.03 (sha256 b7f61057…, #40) wraps the same ELF as the plain
-            # dump the hash is for, at other file offsets: patch the ELF inside (the image
-            # prepare.py hands the loader). mode_writes checks every expected byte, so a SELF
-            # of another build still falls back to 30.
+        if eboot[:4] == SELF_MAGIC:
+            # A SELF dump (#40) wraps the ELF at other file offsets: check and patch the ELF
+            # inside (the image prepare.py hands the loader).
             try:
                 from prepare import parse_self
                 eboot = bytes(parse_self(eboot)[0])
-                usable = True
                 lines.append(f'Frame rate: eboot.bin is a SELF ({digest[:16]}…), checking the ELF inside')
             except ValueError as error:
+                eboot = b''
                 lines.append(f'Frame rate: cannot read the SELF eboot.bin ({error})')
+        usable = eboot[:4] == b'ELF'
         if names and not usable:
-            lines.append(f'Frame rate: eboot.bin is not v1.03 ({digest[:16]}…): {mode} FPS patches not applied, 30 FPS')
+            lines.append(f'Frame rate: eboot.bin ({digest[:16]}…) is not a game executable: '
+                         f'{mode} FPS patches not applied, 30 FPS')
             mode = '30'
         elif names:
+            # The expected bytes are the check (any region or dump tool of 1.03 passes, #87).
             try:
                 fps_writes = mode_writes(eboot, names)
+                lines.append(f'Frame rate: eboot.bin ({digest[:16]}…) has the 1.03 code the patches expect')
             except ValueError as error:
-                lines.append(f'Frame rate: {error}: patches not applied, 30 FPS')
+                lines.append(f'Frame rate: eboot.bin ({digest[:16]}…) is not the 1.03 game code ({error}): '
+                             f'{mode} FPS patches not applied, 30 FPS')
                 mode, fps_writes = '30', []
     for _, data, what in fps_writes:
         lines.append(f'Frame rate patch {what} ({data.hex()})')
     tail_writes = []
     if want_tail_fix:
         if not usable:
-            lines.append('Tail climb fix: eboot.bin is not v1.03; not applied')
+            lines.append('Tail climb fix: eboot.bin is not a game executable; not applied')
         else:
             try:
                 tail_writes = mode_writes(eboot, ['tail_climb_fix'])

@@ -222,7 +222,6 @@ DEBUG_FLAGS = (
     ('flag_fault_nodrain', 'TLG_FAULT_NODRAIN', '1', None, False),     # #38
     ('flag_pipeline_binaries', 'TLG_PIPELINE_BINARIES', '1', '0', False),  # NVIDIA 595 crash
     ('flag_object_motion', 'TLG_OBJECT_MOTION', '1', '0', False),      # ~10% FPS; unguarded reads
-    ('flag_arena_free', 'TLG_ARENA_FREE', '1', None, False),           # #79: out of memory, 8 GB AMD
     ('flag_granule', 'TLG_RESIDENCY_GRANULE_MB', None, '0', True),    # #79: AMD Windows submit OOM
     ('flag_sema_fast', 'TLG_SEMA_FAST', None, '0', True),            # #41 (@thearturord)
     ('flag_vk_validation', 'TLG_VK_VALIDATION', '1', None, False),     # needs the Vulkan SDK layer
@@ -447,7 +446,7 @@ def save_settings(settings):
 # Messages about the player's game folder the Qt launcher can show; none blocks only as a
 # warning in this port (check_game reports missing files and the unbuilt probe).
 TEXT = {}
-WARNINGS = {'old_version'}   # check_game: shown, but Play stays enabled
+WARNINGS = {'old_version', 'fps_unsupported'}   # check_game: shown, but Play stays enabled
 
 
 def message(key, **fmt):
@@ -493,40 +492,40 @@ def check_game(game_dir):
             problems.append(('missing', name))
     version = game_version(Path(game_image.safe_files_dir(game_dir)))
     if version is not None:
-        problems.append(('old_version', version))
+        problems.append(version)
     if not PROBE.is_file():
         problems.append(('not_built', str(PROBE)))
     return problems
 
 
-EBOOT_103_SHA256 = '91dce685be81f8f6bc88097d4fc7a62e97ca08d109621c57fe9371ae125feb3c'  # tlg_patches.py
 _version_cache = {}
 
 
 def game_version(game):
-    """The game's version (APP_VER of sce_sys/param.sfo) when it is older than update 01.03 and
-    eboot.bin is not the plain 1.03 build either; None when the folder is 1.03 or cannot be read.
-    The port is made for the 1.03 eboot: older ones start at 30 FPS without the port's patches.
-    A merged dump can keep the base game's param.sfo, so the eboot hash has the last word."""
+    """A check_game warning about eboot.bin, or None when it holds the 1.03 game code the frame
+    rate patches expect (or the folder cannot be read). ('old_version', APP_VER) when param.sfo
+    is older than update 01.03 too; else ('fps_unsupported', ''). The bytes decide, not the
+    file hash: 1.03 dumps of other regions and dump tools differ elsewhere in the file (#87).
+    With either warning the game starts at 30 FPS without the frame rate patches."""
     try:
         sfo, eboot = game / 'sce_sys' / 'param.sfo', game / 'eboot.bin'
-        stamp = (str(game), sfo.stat().st_mtime_ns, eboot.stat().st_mtime_ns, eboot.stat().st_size)
+        stamp = (str(game), eboot.stat().st_mtime_ns, eboot.stat().st_size,
+                 sfo.stat().st_mtime_ns if sfo.is_file() else 0)
     except OSError:
         return None
     if stamp in _version_cache:
         return _version_cache[stamp]
     result = None
     try:
-        from prepare import sfo as read_sfo
-        app_ver = str(read_sfo(sfo.read_bytes()).get('APP_VER', ''))
-        if re.fullmatch(r'\d{2}\.\d{2}', app_ver) and app_ver < '01.03':
-            import hashlib
-            digest = hashlib.sha256()
-            with eboot.open('rb') as f:
-                for block in iter(lambda: f.read(1 << 20), b''):
-                    digest.update(block)
-            if digest.hexdigest() != EBOOT_103_SHA256:
-                result = app_ver
+        import tlg_patches
+        elf = tlg_patches.read_eboot_elf(game)
+        if not tlg_patches.fps_patches_fit(elf):   # None: unreadable or a broken SELF
+            result = ('fps_unsupported', '')
+            if sfo.is_file():
+                from prepare import sfo as read_sfo
+                app_ver = str(read_sfo(sfo.read_bytes()).get('APP_VER', ''))
+                if re.fullmatch(r'\d{2}\.\d{2}', app_ver) and app_ver < '01.03':
+                    result = ('old_version', app_ver)
     except (OSError, ValueError, ImportError, struct.error):
         result = None
     _version_cache[stamp] = result

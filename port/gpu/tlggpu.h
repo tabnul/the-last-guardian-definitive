@@ -21,7 +21,7 @@ int tlggpu_init(const TlgGpuConfig *config);
 /* Unless TLG_CACHE_FLUSH_ON_EXIT=0: waits at most two seconds for queued shader-cache writes
  * before window close or restart skips destructors (from SpartanPort, @maze1377). */
 void tlggpu_flush_cache(void);
-/* 1 after the player asked to quit (Alt+Q, window close, controller combo; tlg_lua.cpp TlgQuit): the
+/* 1 after the player asked to quit (Ctrl+X, window close, controller combo; tlg_lua.cpp TlgQuit): the
  * game's own exit then ends in sceSystemServiceLoadExec, which closes instead of restarting. */
 int tlggpu_quit_requested(void);
 /* Function for an imported NID ("NID#lib#mod"), or 0 when the GPU library does not provide it. */
@@ -62,6 +62,13 @@ void tlggpu_save_progress(int kind, int active, int percent, const char *text);
 void tlggpu_save_toast(int kind);
 /* 1 while the in-game settings menu is open: the game's pad input is held neutral. */
 int tlggpu_overlay_captures_input(void);
+/* The buttons the game reads now (PS4 pad bits: controller, keyboard and mouse after the
+ * remaps), after every pad read. Photo mode takes its buttons from here. */
+void tlggpu_pad_kind(int xbox);
+void tlggpu_pad_game_buttons(uint32_t buttons);
+/* Photo mode: the sticks as the game would get them (0..255). 1 = the photo camera takes the
+ * pad (world running, sticks on the camera): the game gets centered sticks and no buttons. */
+int tlggpu_photo_takes_pad(uint8_t lx, uint8_t ly, uint8_t rx, uint8_t ry);
 /* A short message at the top of the screen (any thread). */
 void tlggpu_overlay_notice(const char *text, float seconds);
 /* The mouse, gathered by the window thread while the game has it (SDL relative mode: the window
