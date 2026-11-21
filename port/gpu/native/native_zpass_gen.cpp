@@ -4891,6 +4891,12 @@ struct ParState {
         u64 live_list{}; ///< the engine's list (census: changed by the time the worker reads it?)
     };
     std::array<ListCopy, ParSlots> lists;
+    // the constant buffers bound in the context at the hand-over, frozen: the draw path reads a constant buffer's data address from its engine object (+ 0x60) at the draw,
+    // and the engine's thread renames the same object for its next pass (both sun cascades drawn with one cascade's view constants, owner play 2026-11-21, spears).
+    // Per slot: up to ParCbClones copies of engine buffer objects in the game heap (the backend tells engine objects by address)
+    static constexpr u32 ParCbClones = 80;
+    std::array<u8*, ParSlots> cb_clones{};
+    std::atomic<u64> cbs_frozen{0};
     std::atomic<u64> list_changed{0}, list_checked{0};
     std::array<std::atomic<bool>, ParSlots> busy{};
     std::array<std::atomic<bool>, 16> serial_next{}, view_off{};
@@ -5118,7 +5124,7 @@ void ParPublish() {
         }
     }
     nlohmann::json out = {{"calls", ps.calls.load()}, {"passes", ps.passes.load()}, {"no_slot", ps.no_slot.load()}, {"copy_faults", ps.copy_faults.load()},
-                          {"scan_faults", ps.scan_faults.load()}, {"worker_faults", ps.worker_faults.load()}, {"learn_frames", ps.learn_frames.load()}, {"list_checked", ps.list_checked.load()}, {"list_changed", ps.list_changed.load()},
+                          {"scan_faults", ps.scan_faults.load()}, {"worker_faults", ps.worker_faults.load()}, {"learn_frames", ps.learn_frames.load()}, {"list_checked", ps.list_checked.load()}, {"cbs_frozen", ps.cbs_frozen.load()}, {"list_changed", ps.list_changed.load()},
                           {"views_off", ps.views_off.load()}, {"steps", ps.steps.load()}, {"drawn", ps.drawn.load()}, {"refused", ps.refused.load()},
                           {"unlearned", ps.unlearned.load()}, {"rs_fail", ps.rs_fail.load()}, {"group_fail", ps.group_fail.load()}, {"arena_short", ps.arena_short.load()},
                           {"worker_ms", static_cast<double>(ps.worker_ns.load()) / 1e6}, {"reasons", reasons},
@@ -5232,10 +5238,55 @@ u32 ParSnapshot(u64 ctx, u64 rd) {
                 mem.group_object = IsHeapPointer(b) ? reinterpret_cast<u8*>(b) : nullptr;
                 LOG_INFO(Core, "P2: worker buffer object copies in the game heap: {:#x} {:#x}", a, b);
             }
+            for (auto& pool : ps.cb_clones) {
+                const u64 a = reinterpret_cast<GuestMalloc>(Global(0x024bdc18))(u64{ParState::ParCbClones} * 0x200);
+                pool = IsHeapPointer(a) ? reinterpret_cast<u8*>(a) : nullptr;
+            }
             for (u32 i = 0; i < ParWorkers(); ++i) {
                 std::thread{ParWorkerMain, i}.detach();
             }
         }
+    }
+    if (u8* pool = ps.cb_clones[slot]; pool != nullptr) {
+        struct FreezeArgs {
+            u8* snap;
+            u8* pool;
+            u32 used;
+            std::array<u64, ParState::ParCbClones> originals;
+        } f{snap.data(), pool, 0, {}};
+        (void)NativeDraw::GuardedCall(
+            [](void* p) {
+                auto* f = static_cast<FreezeArgs*>(p);
+                for (u32 stage = 0; stage < 5; ++stage) {
+                    for (u32 i = 0; i < 16; ++i) {
+                        const u64 at = 0x280 + stage * 0x80 + i * 8;
+                        u64 object = 0;
+                        std::memcpy(&object, f->snap + at, 8);
+                        if (object == 0 || !IsHeapPointer(object) || (object & 7) != 0) {
+                            continue;
+                        }
+                        u64 clone = 0;
+                        for (u32 k = 0; k < f->used; ++k) { // (the same object in two slots: one clone)
+                            if (f->originals[k] == object) {
+                                clone = reinterpret_cast<u64>(f->pool + k * 0x200);
+                                break;
+                            }
+                        }
+                        if (clone == 0) {
+                            if (f->used == ParState::ParCbClones) {
+                                continue;
+                            }
+                            u8* c = f->pool + f->used * 0x200;
+                            std::memcpy(c, reinterpret_cast<const void*>(object), 0x200);
+                            f->originals[f->used++] = object;
+                            clone = reinterpret_cast<u64>(c);
+                        }
+                        std::memcpy(f->snap + at, &clone, 8);
+                    }
+                }
+            },
+            &f);
+        ps.cbs_frozen.fetch_add(f.used, std::memory_order_relaxed);
     }
     return slot;
 }
