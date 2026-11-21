@@ -91,9 +91,10 @@ bool WriteWindowsOn() {
 }
 std::atomic<u64> c_window_narrowed{0}, c_window_whole{0}, c_window_empty{0};
 
-/// Native parallel shaders (research section 13): the game's single-workgroup loops rewritten to step over a grid. TLG_VKB_NATIVE_CULL=1 (test)
+/// Native parallel shaders (research section 13): the game's single-workgroup loops rewritten to step over a grid. Default on since 2026-11-21 (owner play OK);
+/// TLG_VKB_NATIVE_CULL=0: the recompiled module, as the game dispatches it
 bool NativeCullOn() {
-    static const bool on = [] { const char* e = std::getenv("TLG_VKB_NATIVE_CULL"); return e != nullptr && e[0] == '1'; }();
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_NATIVE_CULL"); return e == nullptr || e[0] != '0'; }();
     return on;
 }
 constexpr u64 CullShaderA3c4525b = 0xa3c4525b;
