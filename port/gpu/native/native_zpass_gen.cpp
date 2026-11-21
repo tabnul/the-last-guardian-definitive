@@ -4816,7 +4816,10 @@ struct ParState {
     std::atomic<u64> steps{0}, drawn{0}, refused{0}, unlearned{0}, rs_fail{0}, group_fail{0}, arena_short{0}, worker_ns{0};
     std::mutex reasons_mutex;
     std::map<std::string, u64> reasons;
-    std::vector<u8> rs_clone = std::vector<u8>(0x200), group_clone = std::vector<u8>(0x200), rs_stage = std::vector<u8>(4096);
+    struct WorkerMem {
+        std::vector<u8> rs_clone = std::vector<u8>(0x200), group_clone = std::vector<u8>(0x200), rs_stage = std::vector<u8>(4096);
+    };
+    std::array<WorkerMem, 4> mem; // per worker thread
     bool started{false};
 };
 ParState& PS() {
@@ -4831,7 +4834,11 @@ bool Learnable(const char* reason) {
     }
     return false;
 }
-void ParWork(ParTask& task) {
+u32 ParWorkers() { // TLG_VKB_PAR_WORKERS (1 to 4, default 1): 2 (one per cascade) measured no gain, 121.0 vs 124.3 fps
+    static const u32 n = [] { const char* e = std::getenv("TLG_VKB_PAR_WORKERS"); return e != nullptr ? std::clamp<u32>(static_cast<u32>(std::atoi(e)), 1, 4) : 1u; }();
+    return n;
+}
+void ParWork(ParTask& task, u32 index) {
     ParState& ps = PS();
     State& s = S();
     Plan plan;
@@ -4873,9 +4880,9 @@ void ParWork(ParTask& task) {
     t.base = ps.snapshots[task.slot].data();
     t.ring = task.arena;
     t.arena_size = task.arena_size;
-    t.rs_clone = ps.rs_clone.data();
-    t.group_clone = ps.group_clone.data();
-    t.rs_stage = ps.rs_stage.data();
+    t.rs_clone = ps.mem[index].rs_clone.data();
+    t.group_clone = ps.mem[index].group_clone.data();
+    t.rs_stage = ps.mem[index].rs_stage.data();
     args.plan = &plan;
     args.rd = task.rd;
     if (!NativeDraw::GuardedCall(
@@ -4908,9 +4915,9 @@ void ParWork(ParTask& task) {
     ps.rs_fail.fetch_add(t.rs_fail, std::memory_order_relaxed);
     ps.group_fail.fetch_add(t.group_fail, std::memory_order_relaxed);
 }
-void ParWorkerMain() {
+void ParWorkerMain(u32 index) {
 #ifdef _WIN32
-    SetThreadDescription(GetCurrentThread(), L"vkb:Pass1");
+    SetThreadDescription(GetCurrentThread(), index == 0 ? L"vkb:Pass1" : index == 1 ? L"vkb:Pass2" : index == 2 ? L"vkb:Pass3" : L"vkb:Pass4");
 #endif
     ParState& ps = PS();
     for (;;) {
@@ -4924,7 +4931,7 @@ void ParWorkerMain() {
         const auto t0 = std::chrono::steady_clock::now();
         Core::Vkb::Graphics::SetDepthPass(true);
         Core::Vkb::Stream::SinkTo(task.splice);
-        ParWork(task);
+        ParWork(task, index);
         Core::Vkb::Graphics::FlushBatch();
         Core::Vkb::Graphics::SetDepthPass(false);
         Core::Vkb::Stream::SinkTo(nullptr);
@@ -5002,7 +5009,9 @@ bool ParKick(u64 rd, u64 desc, u32 view) {
         std::scoped_lock lock{ps.m};
         if (!ps.started) {
             ps.started = true;
-            std::thread{ParWorkerMain}.detach();
+            for (u32 i = 0; i < ParWorkers(); ++i) {
+                std::thread{ParWorkerMain, i}.detach();
+            }
         }
     }
     NativeDraw::HandOverTargets(head.ctx);
