@@ -2625,8 +2625,9 @@ void BufferCpuWritten(u64 address, u64 size) {
                 written_device = w->device, written_offset = address - std::prev(watched.upper_bound(address))->first;
             }
         }
+        static const bool skip_uploads_gw = [] { const char* e = std::getenv("TLG_VKB_TEST_SKIP_CPU_UPLOADS"); return e != nullptr && e[0] == '1'; }();
         if (written_device != VK_NULL_HANDLE) { // (no job is made under this module's lock)
-            if (const BufferWindow src = SourceWindow(address, size); src.buffer) {
+            if (const BufferWindow src = SourceWindow(address, size); src.buffer && !skip_uploads_gw) {
                 Stream::NoteBytes(Stream::Work::UploadCpuWritten, size);
                 Stream::Defer(Stream::Work::UploadCpuWritten, [src, device = written_device, offset = written_offset, size](vk::CommandBuffer cmd) {
                     Stream::Hazard(cmd, {Stream::BufferUse(src.buffer, src.offset, size, false), Stream::BufferUse(vk::Buffer{device}, offset, size, true)});
@@ -2669,6 +2670,11 @@ void BufferCpuWritten(u64 address, u64 size) {
     const BufferWindow w = SourceWindow(address, size);
     if (!w.buffer) {
         c_copy_unresolved.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    // GPU-side bound, kill experiment only (TLG_VKB_TEST_SKIP_CPU_UPLOADS=1, the picture is wrong): the GPU copies of CPU-written buffer data are dropped
+    static const bool skip_uploads = [] { const char* e = std::getenv("TLG_VKB_TEST_SKIP_CPU_UPLOADS"); return e != nullptr && e[0] == '1'; }();
+    if (skip_uploads) {
         return;
     }
     Stream::NoteBytes(Stream::Work::UploadCpuWritten, size);

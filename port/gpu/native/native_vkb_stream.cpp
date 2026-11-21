@@ -21,6 +21,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -349,6 +350,8 @@ struct Rec {
     u32 capture_pass = ~0u;             ///< note 91: the open pass's index in the frame capture (~0: no captured draw in it yet)
     std::vector<std::tuple<vk::Buffer, u64, u64, u32>> capture_buffers; ///< note 91: buffer ranges of captured draws, copied at the pass end (with their file index)
     u32 jobs_in_cmd = 0;
+    std::unordered_set<u64> census_touched; ///< census: handles the current command buffer's commands touched
+    u64 census_generation = 0;
     u64 value = 0; ///< R4a: the timeline value of the submission this thread records (0: the shared recorder, which takes the next value at its submit)
 };
 Rec shared_rec;
@@ -641,6 +644,211 @@ thread_local u64 hazard_tag = 0;
 void SetHazardTag(u64 tag) {
     hazard_tag = tag;
 }
+thread_local bool t_job_async = false;
+void SetJobAsync(bool async) {
+    t_job_async = async;
+}
+/// GPU census (TLG_VKB_OVERLAP_CENSUS=1, run with one recording thread: TLG_VKB_RECORDERS=1, so the hazard checks come in stream order):
+/// (1) overlap: for each run of async compute dispatches (a batch), the ranges it writes and reads; then the graphics work after it, job by job, until the first job that
+///     reads or writes what the batch wrote, or writes what it read (that job and all after it depend on the batch: the rest could run beside it on a second queue);
+/// (2) uploads: a CPU-written buffer copy whose destination no earlier command of its command buffer touched could move to the front of that command buffer.
+namespace OverlapCensus {
+bool On() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_OVERLAP_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+struct Span {
+    u64 begin{~0ull}, end{0};
+};
+struct Sample {
+    u32 batch_dispatches{}, draw_jobs{}, dispatch_jobs{}, other_jobs{};
+    bool conflict{};
+    u32 conflict_kind{}; // 0 reads a batch write, 1 writes a batch write, 2 writes a batch read
+    u32 conflict_work{};
+    u64 conflict_tag{};
+    bool conflict_image{};
+};
+std::mutex m;
+std::unordered_map<u64, Span> written, read;
+bool in_batch = false, in_prefix = false;
+Sample cur;
+std::vector<Sample> samples;
+u64 batches = 0, big_batches = 0, big_draw_jobs = 0, big_dispatch_jobs = 0, big_other_jobs = 0, big_conflicts = 0;
+u64 up_total = 0, up_front = 0, up_bytes = 0, up_front_bytes = 0;
+std::unordered_set<u64> images; // handles noted as images (ImageUse: the whole range)
+void Close() {
+    ++batches;
+    if (cur.batch_dispatches >= 50) {
+        ++big_batches;
+        big_draw_jobs += cur.draw_jobs;
+        big_dispatch_jobs += cur.dispatch_jobs;
+        big_other_jobs += cur.other_jobs;
+        big_conflicts += cur.conflict ? 1 : 0;
+        if (samples.size() < 64) {
+            samples.push_back(cur);
+        }
+    }
+    in_prefix = false;
+}
+bool Hit(const std::unordered_map<u64, Span>& set, const Use& u) {
+    const auto it = set.find(u.handle);
+    return it != set.end() && u.begin < it->second.end && it->second.begin < u.end;
+}
+// v2: per frame, every range each side wrote (a few spans per buffer, merged); each job is checked against what the other side wrote earlier in the frame
+struct Spans {
+    std::vector<Span> v;
+    void Add(u64 b, u64 e) {
+        for (Span& x : v) {
+            if (b <= x.end && x.begin <= e) {
+                x.begin = std::min(x.begin, b);
+                x.end = std::max(x.end, e);
+                return;
+            }
+        }
+        if (v.size() < 256) {
+            v.push_back({b, e});
+        } else {
+            v[0].begin = std::min(v[0].begin, b), v[0].end = std::max(v[0].end, e);
+        }
+    }
+    bool Hit(u64 b, u64 e) const {
+        for (const Span& x : v) {
+            if (b < x.end && x.begin < e) {
+                return true;
+            }
+        }
+        return false;
+    }
+};
+std::unordered_map<u64, Spans> fa_written, fg_written; // this frame: async writes, graphics writes
+u64 frame_seen = 0;
+std::atomic<u64> frame_now{0};
+u64 v2_frames = 0, g_jobs = 0, g_dep = 0, g_dep_first_job = 0, a_jobs = 0, a_dep = 0, g_jobs_this = 0, g_first_dep_this = ~0ull;
+std::map<u64, u64> g_dep_by_tag, a_dep_by_tag;
+void NoteV2(std::span<const Use> uses, u32 work, bool async, u64 tag) {
+    const u64 f = frame_now.load(std::memory_order_relaxed);
+    if (f != frame_seen) {
+        frame_seen = f;
+        fa_written.clear();
+        fg_written.clear();
+        ++v2_frames;
+        if (g_first_dep_this != ~0ull) {
+            g_dep_first_job += g_first_dep_this;
+        }
+        g_jobs_this = 0;
+        g_first_dep_this = ~0ull;
+    }
+    auto& other = async ? fg_written : fa_written;
+    bool dep = false;
+    for (const Use& u : uses) {
+        if (u.handle == 0) {
+            continue;
+        }
+        if (const auto it = other.find(u.handle); it != other.end() && it->second.Hit(u.begin, u.end)) {
+            dep = true;
+            break;
+        }
+    }
+    if (async) {
+        ++a_jobs;
+        if (dep) {
+            ++a_dep;
+            ++a_dep_by_tag[tag];
+        }
+    } else {
+        ++g_jobs;
+        ++g_jobs_this;
+        if (dep) {
+            ++g_dep;
+            ++g_dep_by_tag[work == static_cast<u32>(Work::Dispatch) ? tag : (u64{work} << 56)];
+            if (g_first_dep_this == ~0ull) {
+                g_first_dep_this = g_jobs_this;
+            }
+        }
+    }
+    auto& mine = async ? fa_written : fg_written;
+    for (const Use& u : uses) {
+        if (u.handle != 0 && u.write) {
+            mine[u.handle].Add(u.begin, u.end);
+        }
+    }
+}
+void Note(std::span<const Use> uses, u32 work, bool async, u64 tag) {
+    std::scoped_lock lock{m};
+    NoteV2(uses, work, async, tag);
+    if (async) {
+        if (!in_batch) {
+            if (in_prefix) {
+                Close(); // the next batch came first: everything since the last one was independent of it
+            }
+            written.clear();
+            read.clear();
+            cur = Sample{};
+            in_batch = true;
+        }
+        ++cur.batch_dispatches;
+        for (const Use& u : uses) {
+            if (u.handle == 0) {
+                continue;
+            }
+            Span& sp = (u.write ? written : read)[u.handle];
+            sp.begin = std::min(sp.begin, u.begin);
+            sp.end = std::max(sp.end, u.end);
+        }
+        return;
+    }
+    if (in_batch) {
+        in_batch = false;
+        in_prefix = true;
+    }
+    if (!in_prefix) {
+        return;
+    }
+    for (const Use& u : uses) {
+        if (u.handle == 0) {
+            continue;
+        }
+        const bool raw = Hit(written, u);
+        const bool war = u.write && Hit(read, u);
+        if (raw || war) {
+            cur.conflict = true;
+            cur.conflict_kind = raw ? (u.write ? 1 : 0) : 2;
+            cur.conflict_work = work;
+            cur.conflict_tag = tag;
+            cur.conflict_image = u.end == ~0ull && u.begin == 0;
+            Close();
+            return;
+        }
+    }
+    (work == static_cast<u32>(Work::Draw) ? cur.draw_jobs : work == static_cast<u32>(Work::Dispatch) ? cur.dispatch_jobs : cur.other_jobs) += 1;
+}
+nlohmann::json Report() {
+    std::scoped_lock lock{m};
+    nlohmann::json list = nlohmann::json::array();
+    for (const Sample& x : samples) {
+        list.push_back({{"batch", x.batch_dispatches}, {"independent_draw_jobs", x.draw_jobs}, {"independent_dispatch_jobs", x.dispatch_jobs}, {"independent_other_jobs", x.other_jobs},
+                        {"ended_by", x.conflict ? (x.conflict_kind == 0 ? "reads a batch write" : x.conflict_kind == 1 ? "writes a batch write" : "writes a batch read") : "next batch"},
+                        {"by_work", x.conflict_work}, {"by_tag", fmt::format("{:#x}", x.conflict_tag)}, {"whole_resource", x.conflict_image}});
+    }
+    const auto top = [](const std::map<u64, u64>& by) {
+        std::vector<std::pair<u64, u64>> v(by.begin(), by.end());
+        std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+        nlohmann::json out = nlohmann::json::object();
+        for (size_t i = 0; i < v.size() && i < 12; ++i) {
+            out[fmt::format("{:#x}", v[i].first)] = v[i].second;
+        }
+        return out;
+    };
+    const double fr = static_cast<double>(std::max<u64>(v2_frames, 1));
+    nlohmann::json v2 = {{"frames", v2_frames}, {"graphics_jobs_per_frame", g_jobs / fr}, {"graphics_jobs_reading_or_writing_async_writes_per_frame", g_dep / fr},
+                         {"first_such_graphics_job_mean_index", g_dep_first_job / fr}, {"async_jobs_per_frame", a_jobs / fr},
+                         {"async_jobs_reading_or_writing_graphics_writes_per_frame", a_dep / fr}, {"graphics_dep_by_kind_or_shader", top(g_dep_by_tag)},
+                         {"async_dep_by_shader", top(a_dep_by_tag)}};
+    return {{"v2", v2}, {"batches", batches}, {"big_batches", big_batches}, {"big_independent_draw_jobs", big_draw_jobs}, {"big_independent_dispatch_jobs", big_dispatch_jobs},
+            {"big_independent_other_jobs", big_other_jobs}, {"big_ended_by_conflict", big_conflicts}, {"samples", list},
+            {"uploads", {{"cpu_written_copies", up_total}, {"movable_to_front", up_front}, {"mb", up_bytes >> 20}, {"movable_mb", up_front_bytes >> 20}}}};
+}
+} // namespace OverlapCensus
 void SetLanternFootprint(const LanternFootprint* footprint);
 namespace {
 /// Lantern waits (live issue #98): the game updates the lantern flames with ~150 tiny dispatches of these shaders per frame on the terrace
@@ -737,6 +945,32 @@ bool Hazard(vk::CommandBuffer cmd, std::span<const Use> uses, Agent agent) {
         return true;
     }
     c_hazard_checks.fetch_add(1, std::memory_order_relaxed);
+    if (OverlapCensus::On()) [[unlikely]] {
+        OverlapCensus::Note(uses, static_cast<u32>(t_rec->current_work), t_job_async, hazard_tag);
+        if (t_rec->census_generation != t_rec->generation) {
+            t_rec->census_generation = t_rec->generation;
+            t_rec->census_touched.clear();
+        }
+        if (t_rec->current_work == Work::UploadCpuWritten) {
+            for (const Use& u : uses) {
+                if (u.write && u.handle != 0) {
+                    const bool front = t_rec->census_touched.count(u.handle) == 0;
+                    std::scoped_lock lock{OverlapCensus::m};
+                    ++OverlapCensus::up_total;
+                    OverlapCensus::up_bytes += u.end - u.begin;
+                    if (front) {
+                        ++OverlapCensus::up_front;
+                        OverlapCensus::up_front_bytes += u.end - u.begin;
+                    }
+                }
+            }
+        }
+        for (const Use& u : uses) {
+            if (u.handle != 0) {
+                t_rec->census_touched.insert(u.handle);
+            }
+        }
+    }
     u8 cls = static_cast<u8>(agent);
     if (cls == 0) {
         cls = t_rec->current_work == Work::Draw ? 1 : t_rec->current_work == Work::Dispatch ? 2 : (IsCopyKind(t_rec->current_work) || t_rec->current_work == Work::Clear || IsUploadKind(t_rec->current_work)) ? 4 : 7;
@@ -1581,6 +1815,7 @@ void NoteInPlaceWrite(vk::Buffer buffer, u64 offset, u64 size) {
 }
 
 void NewFrame() {
+    OverlapCensus::frame_now.fetch_add(1, std::memory_order_relaxed);
     std::scoped_lock lock{mutex};
     t_rec->stage_map.clear();
     std::scoped_lock written_lock{frame_written_mutex};
@@ -2253,7 +2488,7 @@ nlohmann::json Report() {
                                t["enqueue_on_producers"] = c_enqueue_ns.load() / 1000000;
                                return t;
                            }()}, {"most_queued", c_jobs_most.load()}, {"producer_waits_queue_full", c_job_waits_full.load()},
-                          {"drains", c_drains.load()}, {"splices", c_splices.load()}, {"splice_jobs", c_splice_jobs.load()}, {"splice_waits", c_splice_waits.load()}, {"splice_wait_us", c_splice_wait_us.load()}, {"split_submits", c_splits.load()},
+                          {"overlap_census", OverlapCensus::On() ? OverlapCensus::Report() : nlohmann::json{}}, {"drains", c_drains.load()}, {"splices", c_splices.load()}, {"splice_jobs", c_splice_jobs.load()}, {"splice_waits", c_splice_waits.load()}, {"splice_wait_us", c_splice_wait_us.load()}, {"split_submits", c_splits.load()},
                           {"r4a_recorders_submissions_jobs_transition_jobs_worker_waits_batches", {Recorders(), c_r4a_submissions.load(), c_r4a_jobs.load(), c_r4a_transition_jobs.load(), c_r4a_worker_waits.load(), c_r4a_batches.load()}},
                           {"stage_own_overlap", c_stage_own_overlap.load()},
                           {"drain_wait_ms_mean", c_drains.load() ? static_cast<double>(c_drain_us.load()) / 1e3 / static_cast<double>(c_drains.load()) : 0.0}}},

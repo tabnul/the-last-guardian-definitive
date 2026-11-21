@@ -1035,7 +1035,7 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
     Stream::Defer(Stream::Work::Dispatch, [aa_jitter, aa_cut, dump_views = std::move(dump_views), dump_buffers, uses = std::move(uses), gds_inits = std::move(gds_inits), buffer_infos = std::move(buffer_infos), image_infos = std::move(image_infos),
                                            sampler_infos = std::move(sampler_infos), image_types = std::move(image_types), pipeline = v.pipeline, layout = v.pipeline_layout, push,
                                            args_buffer, args_offset, x, y, z, sid = Rd<u64>(shader, 0x10), hash = v.info->pgm_hash,
-                                           stageable = std::move(stageable), lantern](vk::CommandBuffer cmd) mutable {
+                                           stageable = std::move(stageable), lantern, job_async = v.async](vk::CommandBuffer cmd) mutable {
         // the async context's append / consume counters that start at a value: our GDS gets it in front of the dispatch (the engine's DMA packet on the console)
         for (const auto& [offset, init] : gds_inits) {
             Stream::Hazard(cmd, {Stream::BufferUse(Stream::GdsBuffer(), offset, 4, true)}, Stream::Agent::Transfer);
@@ -1048,7 +1048,9 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
         if (!no_barrier) {
             Stream::SetHazardTag(hash);
             Stream::SetLanternFootprint(lantern.known || Stream::IsLanternShader(hash) ? &lantern : nullptr);
+            Stream::SetJobAsync(job_async);
             Stream::Hazard(cmd, std::span<const Stream::Use>{uses.data(), uses.size()});
+            Stream::SetJobAsync(false);
             Stream::SetLanternFootprint(nullptr);
         }
         cmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
