@@ -208,7 +208,8 @@ Job* QueuePop() {
 }
 thread_local bool on_recorder = false;
 thread_local Job* t_preparing = nullptr; ///< issue 111: the job whose Prepare runs now on the resolver (CopyInStream goes with it)
-std::atomic<u64> c_copies_first{0}, c_copies_first_mb{0}, c_copies_first_in_run{0};
+thread_local bool t_in_locked_run = false; ///< issue 111: a locked job's Run on this recording thread (its lock held, its command buffer begun)
+std::atomic<u64> c_copies_first{0}, c_copies_first_mb{0}, c_copies_first_in_run{0}, c_copies_first_own_job{0};
 std::atomic<u64> c_jobs{0}, c_job_waits_full{0}, c_drains{0}, c_drain_us{0}, c_jobs_most{0};
 /// note 45: the recording thread's time: running jobs by kind (unlocked jobs = submits under "submit"), asleep on an empty queue, and the producers' enqueue
 std::atomic<u64> c_rec_run_ns[static_cast<u32>(Work::Count) + 1]{}, c_rec_run_n[static_cast<u32>(Work::Count) + 1]{}, c_rec_sleep_ns{0}, c_rec_sleeps{0}, c_enqueue_ns{0};
@@ -1405,13 +1406,14 @@ void CopyInStream(vk::Buffer source, u64 source_offset, vk::Buffer destination, 
         t_preparing->copies_first.push_back(c);
         return;
     }
-    if (on_recorder && RecorderOn() && t_rec != nullptr && t_rec->current) {
+    if (on_recorder && RecorderOn() && t_in_locked_run && t_rec != nullptr && t_rec->current) {
         const Work was = t_rec->current_work; // a job's Run (the single recorder): its lock is held, its command buffer begun; its own kind is back after
         RecordCopiesLocked(t_rec->current, std::span<const Job::Copy>{&c, 1});
         MarkWork(t_rec->current, was);
         c_copies_first_in_run.fetch_add(1, std::memory_order_relaxed);
         return;
     }
+    c_copies_first_own_job.fetch_add(1, std::memory_order_relaxed); // (not from a job's Prepare or Run: a job of its own, behind what is queued)
     Defer(Work::Upload, [c](vk::CommandBuffer cmd) { RecordCopiesLocked(cmd, std::span<const Job::Copy>{&c, 1}); });
 }
 
@@ -1450,7 +1452,9 @@ void RunJob(Job& job) {
             }
             MarkWork(cmd, job.work);
             t_rec->current_has_work = true;
+            t_in_locked_run = true;
             job.Run(cmd);
+            t_in_locked_run = false;
             if (const u32 split = SplitJobs(); shared && split != 0 && (t_rec->jobs_in_cmd += job.weight) >= split && !t_rec->query_open) {
                 (void)SubmitLocked(); // its records (none: the engine's fences go with the engine's submits) need nothing
                 c_splits.fetch_add(1, std::memory_order_relaxed);
@@ -2636,7 +2640,7 @@ nlohmann::json Report() {
     return {{"occlusion", {{"begun", c_q_begun.load()}, {"ended", c_q_ended.load()}, {"seen", c_q_seen.load()}, {"hidden", c_q_hidden.load()},
                            {"first_answers_visible", c_q_first.load()}, {"nested_ignored", c_q_nested.load()}, {"dropped_unanswered", c_q_dropped.load()},
                            {"ended_by_a_submit", c_q_cut_by_submit.load()}, {"end_without_begin", c_q_unmatched_end.load()}}},
-            {"copies_in_front_of_a_job", {{"copies", c_copies_first.load()}, {"mb", c_copies_first_mb.load() >> 20}, {"recorded_in_a_run", c_copies_first_in_run.load()}}},
+            {"copies_in_front_of_a_job", {{"copies", c_copies_first.load()}, {"mb", c_copies_first_mb.load() >> 20}, {"recorded_in_a_run", c_copies_first_in_run.load()}, {"as_a_job_of_their_own", c_copies_first_own_job.load()}}},
             {"staging", {{"on", StageOn()}, {"copies", c_staged.load()}, {"mb_copied", c_staged_bytes.load() >> 20}, {"reused_in_a_submission", c_stage_reused.load()}, {"merge", StageMergeOn()}, {"reads_inside_a_staged_region", c_stage_covered.load()},
                           {"copies_that_took_in_overlapping_regions", c_stage_merged.load()}, {"unions_over_the_size_limit", c_stage_merge_too_big.load()}, {"copies_from_the_frame_ring", c_stage_ring.load()},
                          {"mb_from_the_frame_ring", c_stage_ring_bytes.load() >> 20},

@@ -901,8 +901,8 @@ VkBuffer MakeDeviceBuffer(u64 bytes, VmaAllocation& allocation) {
     return handle;
 }
 
-/// issue 111: the first-bind copy job of the buffer at `address` runs on our recording side (stream lock held, then this module's lock): from here on in the stream
-/// its device copy holds the data, so binds found on the recording side may take it
+/// issue 111: the resolver has reached the first-bind copy job of the buffer at `address` (its Prepare, no stream lock; or its Run: the stream lock, then this
+/// module's lock): from here on in the stream its device copy holds the data, so binds found on the recording side may take it
 void CopyJobReached(u64 address, VkBuffer device) {
     if (!FirstBindOnRecorderOn()) {
         return;
