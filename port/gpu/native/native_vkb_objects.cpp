@@ -1457,12 +1457,12 @@ nlohmann::json Report() {
 }
 } // namespace Dirty
 #endif
-/// U3 (TLG_VKB_CHANGED_PAGES=1, off while tested): a big dynamic buffer (1 MiB or more) the engine maps every frame is copied to our device copy only where its bytes
+/// U3 (default on since 2026-11-21, owner play; TLG_VKB_CHANGED_PAGES=0: whole copies): a big dynamic buffer (1 MiB or more) the engine maps every frame is copied to our device copy only where its bytes
 /// changed. The engine rewrites ~212 pages of a 7 MB buffer each frame with the same values (U2 census), so neither page protection nor the whole copy pays: the job
 /// compares the memory with a copy of what was last sent, page by page, on the resolver (in stream order, before the job is recorded), and copies the changed runs.
 namespace Changed {
 bool On() {
-    static const bool on = [] { const char* e = std::getenv("TLG_VKB_CHANGED_PAGES"); return e != nullptr && e[0] == '1'; }();
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_CHANGED_PAGES"); return e == nullptr || e[0] != '0'; }();
     return on;
 }
 u64 MinBytesNow() { // TLG_VKB_CHANGED_MIN=<bytes> (default 1 MiB)

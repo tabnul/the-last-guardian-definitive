@@ -167,13 +167,29 @@ struct Config {
     bool on{false};
     std::array<bool, 16> views{};
 };
+/// Parallel scene passes (2026-11-21, default under TLG_VKB): the shadow cascades (views 1 and 2) and the G-buffer passes are walked and drawn on worker threads
+/// (parallel-passes-research.md). The generators run only for the passes the workers take: alone (on the engine's thread) they are slower than the engine's loop
+/// (102.7 vs 110.5 fps). TLG_VKB_PAR_ZPASS=0 / TLG_VKB_PAR_GBUFFER=0 give a pass back to the engine's loop; the TLG_*_GEN switches still win when set.
+bool VkbBackendOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+bool ParZpassSwitch() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_PAR_ZPASS"); return e != nullptr ? e[0] == '1' : VkbBackendOn(); }();
+    return on;
+}
+bool ParGbufferSwitch() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_PAR_GBUFFER"); return e != nullptr ? e[0] == '1' : VkbBackendOn(); }();
+    return on;
+}
 const Config& Cfg() {
     static const Config config = [] {
         Config c;
         const char* e = std::getenv("TLG_ZPASS_GEN");
-        c.on = e != nullptr ? *e != '0' : GeneratorsDefaultOn(); // off under TLG_VKB (note 57); before: default on since 2026-10-27 (the owner's play test); TLG_ZPASS_GEN=0 turns it off
+        // under TLG_VKB: on for the cascade workers (views 1 and 2); without TLG_VKB: default on since 2026-10-27 (the owner's play test); TLG_ZPASS_GEN=0 turns it off
+        c.on = e != nullptr ? *e != '0' : (GeneratorsDefaultOn() || ParZpassSwitch());
         const char* v = std::getenv("TLG_ZPASS_GEN_VIEWS");
-        std::string list = v != nullptr && *v != 0 ? v : "0,1,2,5,6,7";
+        std::string list = v != nullptr && *v != 0 ? v : (VkbBackendOn() ? "1,2" : "0,1,2,5,6,7");
         std::replace(list.begin(), list.end(), '+', ','); // (R7: '+' also separates, for env lists that split at commas)
         size_t at = 0;
         while (at < list.size()) {
@@ -1606,7 +1622,8 @@ const GConfig& GCfg() {
     static const GConfig config = [] {
         GConfig c;
         const char* e = std::getenv("TLG_GBUFFER_GEN");
-        c.on = e != nullptr ? *e != '0' : GeneratorsDefaultOn(); // off under TLG_VKB (note 57); before: default on since 2026-10-27 (the owner's play test); TLG_GBUFFER_GEN=0 turns it off
+        // under TLG_VKB: on for the G-buffer workers; without TLG_VKB: default on since 2026-10-27 (the owner's play test); TLG_GBUFFER_GEN=0 turns it off
+        c.on = e != nullptr ? *e != '0' : (GeneratorsDefaultOn() || ParGbufferSwitch());
         return c;
     }();
     return config;
@@ -4849,9 +4866,8 @@ void R7Finish() {
 // made: the engine's loop makes them at first use) is left out of this frame's pass and the next pass of that view runs on the engine's thread (the loop, and the generator learns).
 // Another reason the scan declines switches the view back to the engine's thread for good.
 namespace {
-bool ParOn() {
-    static const bool on = [] { const char* e = std::getenv("TLG_VKB_PAR_ZPASS"); return e != nullptr && e[0] == '1'; }();
-    return on;
+bool ParOn() { // default on under TLG_VKB since 2026-11-21 (owner play: heaviest and spears saves); TLG_VKB_PAR_ZPASS=0: the engine's loop
+    return ParZpassSwitch();
 }
 std::atomic<u64> c_par_group_publish{0}; // P2: instance group binds made on the engine's thread at hand-overs
 constexpr size_t ParCtxBytes = 0x13100; // the device context's words our draw path reads (the highest: + 0x130e8)
@@ -4921,9 +4937,8 @@ ParState& PS() {
     static ParState state;
     return state;
 }
-bool ParGOn() { // P2: TLG_VKB_PAR_GBUFFER=1 (with TLG_GBUFFER_GEN=1): the G-buffer passes on the worker too
-    static const bool on = [] { const char* e = std::getenv("TLG_VKB_PAR_GBUFFER"); return e != nullptr && e[0] == '1'; }();
-    return on;
+bool ParGOn() { // P2: the G-buffer passes on the workers too; default on under TLG_VKB since 2026-11-21; TLG_VKB_PAR_GBUFFER=0: the engine's loop
+    return ParGbufferSwitch();
 }
 constexpr u32 ParGView = 15; // the G-buffer's entry in the per-view switches
 bool Learnable(const char* reason) {
@@ -4935,8 +4950,8 @@ bool Learnable(const char* reason) {
     }
     return false;
 }
-u32 ParWorkers() { // TLG_VKB_PAR_WORKERS (1 to 4, default 1): 2 (one per cascade) measured no gain, 121.0 vs 124.3 fps
-    static const u32 n = [] { const char* e = std::getenv("TLG_VKB_PAR_WORKERS"); return e != nullptr ? std::clamp<u32>(static_cast<u32>(std::atoi(e)), 1, 4) : 1u; }();
+u32 ParWorkers() { // TLG_VKB_PAR_WORKERS (1 to 4, default 2 since 2026-11-21: shadows alone gained nothing from 2, 121.0 vs 124.3; with the G-buffer passes 2 is the played set)
+    static const u32 n = [] { const char* e = std::getenv("TLG_VKB_PAR_WORKERS"); return e != nullptr ? std::clamp<u32>(static_cast<u32>(std::atoi(e)), 1, 4) : 2u; }();
     return n;
 }
 void ParTarget(Target& t, const ParTask& task, u32 index) {
