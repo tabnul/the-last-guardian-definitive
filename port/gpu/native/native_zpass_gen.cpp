@@ -322,7 +322,14 @@ struct Target {
     bool live{true};
     bool worker{false}; // P1: the worker's run (a private copy of the context; lanes 1 and 2; no engine-visible side effects but its draws)
     bool split{false};  // P1: the engine's thread's run of a handed-over pass (lanes 0 and 2's state)
-    u32 refused{0};     // P1: worker draws not drawn (fetch shader missing)
+    u32 refused{0};     // P1: worker draws not drawn (fetch shader missing, a binding it cannot make)
+    bool step_failed{false}; // P1b: the worker could not make this primitive's binding (the draw is left out)
+    u8* ring{nullptr};       // P1b: the worker's block of the frame ring (taken by the engine's thread at the hand-over), for the matrices and instance data
+    u64 arena_size{0}, arena_used{0}, arena_need{0};
+    u8* rs_clone{nullptr};    // P1b: the worker's own copy of the resource set's constant buffer object (renamed per primitive, as the engine renames its own)
+    u8* group_clone{nullptr}; // P1b: the same for the instance group's buffer
+    u8* rs_stage{nullptr};    // P1b: the worker's copy of the block at renderDev + 0x3790 (the matrices go in, the whole block goes to the ring)
+    u32 rs_fail{0}, group_fail{0}, unlearned{0};
     u8* base{nullptr};
     std::vector<u8> arena; // shadow: entries [u32 offset][u32 size][bytes]
     std::vector<Mark> marks;
@@ -624,6 +631,7 @@ struct ScanArgs {
     Plan* plan;
     u64 render_device, desc;
     const std::unordered_map<u64, TableEntry>* table;
+    bool worker{false}; // P1b: the worker's scan (the live context is the engine thread's: its shader references are not ours to release)
 };
 
 void ScanImpl(ScanArgs& args) {
@@ -653,6 +661,9 @@ void ScanImpl(ScanArgs& args) {
         plan.Decline("the engine's per draw register packet is on (renderDev + 0x8930)");
     }
     for (const u32 offset : {0x4698u, 0x4690u}) {
+        if (args.worker) {
+            break;
+        }
         if (const u64 shader = R<u64>(plan.ctx + offset); shader != 0 && R<s64>(shader + 8) <= 1) {
             plan.Decline("the context holds a shader with a single reference (releasing it destroys it)");
         }
@@ -890,7 +901,7 @@ void CountReuse(const Target& t) {
 
 void IssueDraw(Target& t, u32 kind, u64 count, u64 first, u64 a3 = 0) {
     if (t.worker) {
-        if (kind != 0 || !NativeDraw::IssueWorkerDraw(reinterpret_cast<u64>(t.base), count, first, a3)) {
+        if (!NativeDraw::IssueWorkerDraw(reinterpret_cast<u64>(t.base), kind == 0 ? 0u : 2u, count, first, a3)) {
             ++t.refused;
         }
         return;
@@ -929,6 +940,7 @@ void IssueDraw(Target& t, u32 kind, u64 count, u64 first, u64 a3 = 0) {
 u64 HandleLookup(u64 render_device, u64 object);
 void ResourceSetStep(Target& t, u64 rd, u64 material, u64 special, bool shadow_ok);
 bool GroupBindNative(Target& t, const BatchLevel& level);
+bool GroupBindWorker(Target& t, const BatchLevel& level);
 
 void Generate(Target& t, const Plan& plan) {
     const u64 rd = plan.render_device;
@@ -941,8 +953,9 @@ void Generate(Target& t, const Plan& plan) {
     t.Set<u64>(0x68, 0);
     bool raster_flag = false; // bVar15: which of the two raster state objects the last primitive asked for
     for (const BatchLevel& level : plan.batches) {
-        if (t.worker && (level.group || level.special != 0 || level.only_580 || !level.worker_any)) {
-            continue; // P1: batches the engine's thread makes
+        if (t.worker && level.special != 0) {
+            ++t.refused; // P1b: the vertex modifier entry binds through the engine's own function (it reads the global device): not on the worker (none in the cascades)
+            continue;
         }
         if (t.split && !level.main_any) {
             continue; // P1: the worker makes all of it
@@ -953,7 +966,13 @@ void Generate(Target& t, const Plan& plan) {
         if (level.only_580) {
             continue;
         }
-        if (level.group) {
+        if (level.group && t.worker) {
+            if (!GroupBindWorker(t, level)) {
+                ++t.group_fail;
+                t.refused += level.step_count;
+                continue;
+            }
+        } else if (level.group) {
             if (Timed(CallId::GroupBind, [&] { return GroupBindNative(t, level); })) {
                 // done natively (the context words below the engine's function would have written, and the uploader)
             } else if (t.live) {
@@ -983,9 +1002,14 @@ void Generate(Target& t, const Plan& plan) {
         }
         for (u32 s = level.first_step; s < level.first_step + level.step_count; ++s) {
             const Step& step = plan.steps[s];
-            if (t.worker ? step.lane == 0 : (t.split && step.lane == 1)) {
+            if (t.split && step.lane == 1) {
                 continue; // P1: the other thread's primitive
             }
+            if (t.worker && (step.variant == 0 || R<u64>(step.variant + 8) == 0 || R<u64>(step.variant + 0x18) == 0)) {
+                ++t.unlearned; // P1b: the scan has no variant for it (first use: the engine's loop runs the next frame of this view and learns it)
+                continue;
+            }
+            t.step_failed = false;
             t.slot_material = step.material;
             if (step.flag != 0) {
                 CopyEarlyBlock(t, step.material);
@@ -1005,7 +1029,7 @@ void Generate(Target& t, const Plan& plan) {
             }
             BindMaterial(t, step.material);
             t.slot_material = 0;
-            if (t.live && !t.worker) {
+            if (t.live) {
                 W<u64>(R<u64>(step.record + 0x28) + 0x48, step.variant); // the loop stores the variant it chose behind the primitive record
             }
             SetShader(t, 0x4698, R<u64>(step.variant + 8), 1);
@@ -1021,7 +1045,7 @@ void Generate(Target& t, const Plan& plan) {
                 }
             }
             if (level.visibility) {
-                if (t.worker || t.split) {
+                if (t.split) {
                     if (plan.culled[s] != 0) {
                         continue; // P1: the answer read when the pass was handed over
                     }
@@ -1031,6 +1055,10 @@ void Generate(Target& t, const Plan& plan) {
             }
             if (t.split && step.lane == 2) {
                 continue; // P1: the state only; the worker draws it (and the counters were added when the pass was handed over)
+            }
+            if (t.worker && t.step_failed) {
+                ++t.refused;
+                continue;
             }
             const s32 triangles = R<s32>(step.record + 0x14);
             if (t.live) {
@@ -1045,7 +1073,8 @@ void Generate(Target& t, const Plan& plan) {
                 Core::Vkb::Graphics::ClearStepHint();
             }
             if (t.worker) {
-                // P1: the counters were added on the engine's thread
+                ++t.draws; // P1b: added to the device's counters by the engine's thread at its next hand-over
+                t.triangles += triangles;
             } else if (t.live) {
                 W<s32>(rd + 0x10, R<s32>(rd + 0x10) + 1);
                 W<s32>(rd + 0x14, R<s32>(rd + 0x14) + triangles);
@@ -1593,13 +1622,41 @@ bool NativeResourceSetOn() {
     }();
     return on;
 }
+/// P1b: the worker's pieces of its ring block (256 byte aligned; null when the block is used up: the caller leaves the draw out)
+constexpr u32 ParStageBytes = 4096;
+constexpr u32 ParCloneBytes = 0x200;
+u8* WorkerAlloc(Target& t, u64 size) {
+    const u64 at = (t.arena_used + 255) & ~u64{255};
+    t.arena_need = std::max(t.arena_need, at + size);
+    if (t.ring == nullptr || at + size > t.arena_size) {
+        t.arena_used = at + size;
+        return nullptr;
+    }
+    t.arena_used = at + size;
+    return t.ring + at;
+}
+/// What the context's UpdateSubresource of a dynamic buffer writes into the buffer object (the descriptor's address and size, the stamp, a new version)
+void WriteRename(u64 object, u64 address, u32 size, u32 stamp) {
+    const u64 holder = R<u64>(Global(GlobalDeviceHolder));
+    W<u32>(object + 0x2c, stamp);
+    W<u32>(object + 0x60, static_cast<u32>(address));
+    W<u32>(object + 0x64, static_cast<u32>(address >> 32) & 0xfffu | 0x100000u);
+    W<u32>(object + 0x6c, 0x20077facu);
+    W<u32>(object + 0x68, (size + 0xfu) >> 4);
+    W<s64>(object + 0x160, reinterpret_cast<std::atomic<s64>*>(holder + 0x302a0)->fetch_add(1));
+}
 void ResourceSetStep(Target& t, u64 rd, u64 material, u64 special, bool shadow_ok) {
     const u64 rd2910 = rd + 0x2910;
     const auto engine = [&] { reinterpret_cast<GuestBind>(Global(FunctionBindResources))(rd2910, reinterpret_cast<u64>(t.base), material, special); };
-    const bool native = NativeResourceSetOn() && special == 0;
+    const bool native = (NativeResourceSetOn() || t.worker) && special == 0;
     if (!native) {
         if (special != 0 && NativeResourceSetOn()) {
             RsStats().engine_special.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (t.worker) {
+            t.step_failed = true;
+            ++t.rs_fail;
+            return;
         }
         if (t.live) {
             engine();
@@ -1616,6 +1673,11 @@ void ResourceSetStep(Target& t, u64 rd, u64 material, u64 special, bool shadow_o
     const u64 buffer = R<u64>(rd2910 + 0xef0);
     if (buffer == 0 || R<s32>(buffer + 0x124) != 1 || (R<u8>(buffer + 0x188) & 4) == 0 || R<u32>(buffer + 0x180) < 112) {
         RsStats().engine_shape.fetch_add(1, std::memory_order_relaxed);
+        if (t.worker) {
+            t.step_failed = true;
+            ++t.rs_fail;
+            return;
+        }
         if (t.live) {
             engine();
         }
@@ -1665,6 +1727,25 @@ void ResourceSetStep(Target& t, u64 rd, u64 material, u64 special, bool shadow_o
         }
     }
     const u32 size = R<u32>(buffer + 0x180);
+    if (t.worker) {
+        // P1b: the same into the worker's own copies: its staging block, a piece of its ring block, its copy of the buffer object (the engine's thread keeps renaming the real one)
+        u8* block = size <= ParStageBytes && t.rs_clone != nullptr ? WorkerAlloc(t, size) : nullptr;
+        if (block == nullptr) {
+            t.step_failed = true;
+            ++t.rs_fail;
+            return;
+        }
+        if (n != 0) {
+            std::memcpy(t.rs_stage, matrices.data(), n * 16);
+        }
+        std::memcpy(block, t.rs_stage, size);
+        const u64 clone = reinterpret_cast<u64>(t.rs_clone);
+        WriteRename(clone, reinterpret_cast<u64>(block), size, t.Get<u32>(0x47ac));
+        t.Set<u64>(0x2e0, clone);
+        t.Set<u64>(0x360, clone);
+        RsStats().native.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
     if (t.live) {
         // UpdateSubresource on the dynamic buffer: the whole block at renderDev + 0x3790 goes to a block of the frame ring, the buffer's descriptor points at it
         if (n != 0) {
@@ -1759,6 +1840,49 @@ bool GroupBindNative(Target& t, const BatchLevel& level) {
     }
     t.Put(0x800, level.gtable.data(), level.table_dwords * 8);
     GbStats().native.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+/// P1b: FUN_01ee4e50 on the worker: the context words and the table as GroupBindNative writes them; the staged instance data goes straight into a piece of the worker's ring
+/// block and the worker's copy of the node's buffer object points at it. The uploader's double buffer and node are the engine thread's (left as they are: they only stage CPU data).
+bool GroupBindWorker(Target& t, const BatchLevel& level) {
+    const u64 uploader = R<u64>(level.group_object + 0xf0);
+    u64 buffer = 0, staged = 0, value = 0;
+    s32 staged_bytes = 0;
+    if (uploader != 0) {
+        const u64 node = R<u64>(uploader);
+        buffer = R<u64>(node + 0x10);
+        const s32 index = R<s32>(uploader + 0x28);
+        value = R<u64>(uploader + 0x18 + static_cast<u64>(index & 1) * 8);
+        staged = R<u64>(uploader + 8);
+        staged_bytes = R<s32>(uploader + 0x10);
+        if ((index != 0 && index != 1) || buffer == 0 || R<s32>(buffer + 0x124) != 1 || (R<u8>(buffer + 0x188) & 4) == 0 || R<u32>(buffer + 0x180) == 0 || staged_bytes < 0 ||
+            level.g340 != buffer || t.group_clone == nullptr) {
+            return false;
+        }
+    }
+    t.Set<u64>(0x70, level.g70);
+    t.Set<u64>(0x78, level.g78);
+    t.Set<u32>(0x170, level.g170);
+    t.Set<u32>(0x174, level.g174);
+    t.Set<u64>(0x1f0, 0);
+    if (uploader != 0) {
+        const u32 size = R<u32>(buffer + 0x180);
+        u8* block = WorkerAlloc(t, size);
+        if (block == nullptr) {
+            return false;
+        }
+        const u32 from_staged = std::min<u32>(static_cast<u32>(staged_bytes), size);
+        std::memcpy(block, reinterpret_cast<const void*>(staged), from_staged);
+        if (from_staged < size && value != 0) {
+            std::memcpy(block + from_staged, reinterpret_cast<const void*>(value + from_staged), size - from_staged); // (the rest of the engine's half, as its copy takes it)
+        }
+        std::memcpy(t.group_clone, reinterpret_cast<const void*>(buffer), ParCloneBytes);
+        const u64 clone = reinterpret_cast<u64>(t.group_clone);
+        WriteRename(clone, reinterpret_cast<u64>(block), size, t.Get<u32>(0x47ac));
+        t.Set<u64>(0x340, clone);
+    }
+    t.Put(0x800, level.gtable.data(), level.table_dwords * 8);
     return true;
 }
 
@@ -4656,13 +4780,14 @@ void R7Finish() {
 }
 
 // ------------------------------------------------------------------------------------------------------------------------------- P1: parallel passes
-// TLG_VKB_PAR_ZPASS=1 (experiment, branch experimental-native-passes; needs TLG_ZPASS_GEN=1 TLG_ZPASS_GEN_VIEWS=1+2): a shadow cascade pass the generator takes over is handed to a
-// worker thread. The engine's thread copies the device context (the pass's start state), puts a placeholder into our stream (Stream::OpenSplice) and gives the worker the plan;
-// the worker writes the pass into its private context copy and draws from it (its jobs fill the placeholder; the resolver waits there, so the GPU order is the API order).
-// A depth pass's result does not depend on the order of its draws, so the primitives whose binding writes engine memory shared with later passes (instance groups,
-// resource sets, the vertex modifier entry) stay on the engine's thread,
-// drawn there as before. The engine's thread also makes every engine-visible side effect of the worker's primitives (the variant stored behind each record, the device's
-// counters) and the context's end state (the last primitive's state, the epilogue), so the engine sees the pass as the loop leaves it.
+// TLG_VKB_PAR_ZPASS=1 (experiment, branch experimental-native-passes; with TLG_ZPASS_GEN=1 TLG_ZPASS_GEN_VIEWS=1+2): a shadow cascade pass (Z pass, view types 1 and 2) runs on a
+// worker thread. The engine's thread only copies the device context (the pass's start state), makes the context's end state (the loop's prologue and epilogue words: what the next
+// pass relies on), adds the counters of the worker's earlier passes, takes a block of the frame ring for the worker, puts a placeholder into our stream (Stream::OpenSplice) and
+// returns. The worker scans the pass, writes it into its private context copy and draws from it: its jobs fill the placeholder; the resolver waits there, so the GPU order is the
+// API order. The per-primitive matrices (FUN_01c92f30) and the instance data (FUN_01ee4e50) go into the worker's own copies of the engine's buffer objects and its ring block
+// (the engine's thread keeps renaming the real ones for its own passes). What the scan cannot take yet (a variant not learned, mesh render data or a visibility cache entry not
+// made: the engine's loop makes them at first use) is left out of this frame's pass and the next pass of that view runs on the engine's thread (the loop, and the generator learns).
+// Another reason the scan declines switches the view back to the engine's thread for good.
 namespace {
 bool ParOn() {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_PAR_ZPASS"); return e != nullptr && e[0] == '1'; }();
@@ -4670,10 +4795,13 @@ bool ParOn() {
 }
 constexpr size_t ParCtxBytes = 0x13100; // the device context's words our draw path reads (the highest: + 0x130e8)
 constexpr u32 ParSlots = 4;
+constexpr u64 ParArenaMin = 64 << 10, ParArenaMax = 2 << 20;
 struct ParTask {
-    std::shared_ptr<const Plan> plan;
-    u32 slot{};
+    u64 rd{}, desc{};
+    u32 view{}, slot{};
     Core::Vkb::Stream::Splice* splice{};
+    u8* arena{};
+    u64 arena_size{};
 };
 struct ParState {
     std::mutex m;
@@ -4681,12 +4809,104 @@ struct ParState {
     std::deque<ParTask> tasks;
     std::array<std::vector<u8>, ParSlots> snapshots;
     std::array<std::atomic<bool>, ParSlots> busy{};
-    std::atomic<u64> calls{0}, passes{0}, serial{0}, no_slot{0}, no_worker_steps{0}, copy_faults{0}, steps_main{0}, steps_worker{0}, refused{0}, worker_faults{0}, worker_ns{0};
+    std::array<std::atomic<bool>, 16> serial_next{}, view_off{};
+    std::array<std::atomic<u64>, 16> need{};
+    std::atomic<s64> pend_draws{0}, pend_triangles{0};
+    std::atomic<u64> calls{0}, passes{0}, no_slot{0}, copy_faults{0}, scan_faults{0}, worker_faults{0}, learn_frames{0}, views_off{0};
+    std::atomic<u64> steps{0}, drawn{0}, refused{0}, unlearned{0}, rs_fail{0}, group_fail{0}, arena_short{0}, worker_ns{0};
+    std::mutex reasons_mutex;
+    std::map<std::string, u64> reasons;
+    std::vector<u8> rs_clone = std::vector<u8>(0x200), group_clone = std::vector<u8>(0x200), rs_stage = std::vector<u8>(4096);
     bool started{false};
 };
 ParState& PS() {
     static ParState state;
     return state;
+}
+bool Learnable(const char* reason) {
+    for (const char* prefix : {"mesh render data not created yet", "variant key not learned yet", "visibility cache entry missing"}) {
+        if (std::strncmp(reason, prefix, std::strlen(prefix)) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+void ParWork(ParTask& task) {
+    ParState& ps = PS();
+    State& s = S();
+    Plan plan;
+    ScanArgs scan_args{&plan, task.rd, task.desc, &s.table, true};
+    {
+        std::scoped_lock lock{s.mutex};
+        CacheArgs cache_args{&s, task.rd};
+        (void)NativeDraw::GuardedCall([](void* p) { CheckCacheImpl(*static_cast<CacheArgs*>(p)); }, &cache_args);
+        if (!NativeDraw::GuardedCall([](void* p) { ScanImpl(*static_cast<ScanArgs*>(p)); }, &scan_args)) {
+            plan.scanned = false;
+        }
+    }
+    if (!plan.scanned) {
+        ps.scan_faults.fetch_add(1, std::memory_order_relaxed);
+        ps.serial_next[task.view].store(true, std::memory_order_relaxed);
+        return;
+    }
+    bool learn = false, off = false;
+    for (const char* r : plan.reasons) {
+        (Learnable(r) ? learn : off) = true;
+        std::scoped_lock lock{ps.reasons_mutex};
+        ++ps.reasons[r];
+    }
+    if (off) {
+        ps.view_off[task.view].store(true, std::memory_order_relaxed);
+        ps.views_off.fetch_add(1, std::memory_order_relaxed);
+    } else if (learn) {
+        ps.serial_next[task.view].store(true, std::memory_order_relaxed);
+        ps.learn_frames.fetch_add(1, std::memory_order_relaxed);
+    }
+    struct Args {
+        Target t;
+        const Plan* plan;
+        u64 rd;
+    } args{};
+    Target& t = args.t;
+    t.live = true;
+    t.worker = true;
+    t.base = ps.snapshots[task.slot].data();
+    t.ring = task.arena;
+    t.arena_size = task.arena_size;
+    t.rs_clone = ps.rs_clone.data();
+    t.group_clone = ps.group_clone.data();
+    t.rs_stage = ps.rs_stage.data();
+    args.plan = &plan;
+    args.rd = task.rd;
+    if (!NativeDraw::GuardedCall(
+            [](void* p) {
+                auto* a = static_cast<Args*>(p);
+                // the worker's copies of the resource set's buffer object and of its staging block (renamed / filled per primitive below)
+                const u64 rs_buffer = R<u64>(a->rd + 0x2910 + 0xef0);
+                if (rs_buffer != 0) {
+                    std::memcpy(a->t.rs_clone, reinterpret_cast<const void*>(rs_buffer), 0x200);
+                    const u32 size = std::min<u32>(R<u32>(rs_buffer + 0x180), 4096);
+                    std::memcpy(a->t.rs_stage, reinterpret_cast<const void*>(a->rd + 0x2910 + 0xe80), size);
+                } else {
+                    a->t.rs_clone = nullptr;
+                }
+                Generate(a->t, *a->plan);
+            },
+            &args)) {
+        ps.worker_faults.fetch_add(1, std::memory_order_relaxed);
+    }
+    ps.pend_draws.fetch_add(t.draws, std::memory_order_relaxed);
+    ps.pend_triangles.fetch_add(t.triangles, std::memory_order_relaxed);
+    ps.need[task.view].store(t.arena_need, std::memory_order_relaxed);
+    if (t.arena_need > t.arena_size) {
+        ps.arena_short.fetch_add(1, std::memory_order_relaxed);
+    }
+    ps.steps.fetch_add(plan.steps.size(), std::memory_order_relaxed);
+    ps.drawn.fetch_add(static_cast<u64>(t.draws), std::memory_order_relaxed);
+    ps.refused.fetch_add(t.refused, std::memory_order_relaxed);
+    ps.unlearned.fetch_add(t.unlearned, std::memory_order_relaxed);
+    ps.rs_fail.fetch_add(t.rs_fail, std::memory_order_relaxed);
+    ps.group_fail.fetch_add(t.group_fail, std::memory_order_relaxed);
 }
 void ParWorkerMain() {
 #ifdef _WIN32
@@ -4698,86 +4918,59 @@ void ParWorkerMain() {
         {
             std::unique_lock lock{ps.m};
             ps.cv.wait(lock, [&] { return !ps.tasks.empty(); });
-            task = std::move(ps.tasks.front());
+            task = ps.tasks.front();
             ps.tasks.pop_front();
         }
         const auto t0 = std::chrono::steady_clock::now();
         Core::Vkb::Graphics::SetDepthPass(true);
         Core::Vkb::Stream::SinkTo(task.splice);
-        struct Args {
-            Target t;
-            const Plan* plan;
-        } args{};
-        args.t.live = true;
-        args.t.worker = true;
-        args.t.base = ps.snapshots[task.slot].data();
-        args.plan = task.plan.get();
-        if (!NativeDraw::GuardedCall([](void* p) { auto* a = static_cast<Args*>(p); Generate(a->t, *a->plan); }, &args)) {
-            ps.worker_faults.fetch_add(1, std::memory_order_relaxed);
-        }
+        ParWork(task);
         Core::Vkb::Graphics::FlushBatch();
         Core::Vkb::Graphics::SetDepthPass(false);
         Core::Vkb::Stream::SinkTo(nullptr);
         Core::Vkb::Stream::CloseSplice(task.splice);
-        ps.refused.fetch_add(args.t.refused, std::memory_order_relaxed);
-        task.plan.reset();
         ps.busy[task.slot].store(false, std::memory_order_release);
         ps.worker_ns.fetch_add(static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count()), std::memory_order_relaxed);
     }
 }
-struct ClassifyArgs {
-    Plan* plan;
-    u32 main_steps{0}, worker_steps{0};
-};
-/// The lanes of a pass's primitives and the visibility answers (engine memory read: guarded)
-void ClassifyImpl(ClassifyArgs& a) {
-    Plan& plan = *a.plan;
-    plan.culled.assign(plan.steps.size(), 0);
-    s32 last = -1;
-    for (BatchLevel& level : plan.batches) {
-        level.main_any = level.only_580;
-        level.worker_any = false;
-        const bool main_batch = level.group || level.special != 0;
-        for (u32 s = level.first_step; s < level.first_step + level.step_count; ++s) {
-            Step& step = plan.steps[s];
-            // (no fetch shader case: the pass's prologue clears the input layout, ctx + 0x68, so the engine's draw path never makes one here)
-            const bool main = main_batch || (step.flag != 0 && !level.bvar54) || R<u64>(step.variant + 8) == 0;
-            step.lane = main ? 0 : 1;
-            if (level.visibility) {
-                if (const u64 node = VisibilityNode(plan.visibility_owner, step.record); node != 0 && R<s32>(node + 8) == 2) {
-                    plan.culled[s] = 1;
-                }
-            }
-            level.main_any |= main;
-            level.worker_any |= !main;
-            ++(main ? a.main_steps : a.worker_steps);
-            last = static_cast<s32>(s);
-        }
-    }
-    if (last >= 0 && plan.steps[last].lane == 1) {
-        plan.steps[last].lane = 2;
-        for (BatchLevel& level : plan.batches) {
-            if (static_cast<u32>(last) >= level.first_step && static_cast<u32>(last) < level.first_step + level.step_count) {
-                level.main_any = true;
-            }
-        }
-    }
-}
-/// The engine's thread: hand the pass to the worker. False: nothing done (the caller generates the pass itself).
-void ParPublish();
-bool ParallelPass(std::unique_ptr<Plan>& owned) {
+void ParPublish() {
     ParState& ps = PS();
-    Plan& plan = *owned;
+    nlohmann::json reasons = nlohmann::json::object();
+    {
+        std::scoped_lock lock{ps.reasons_mutex};
+        for (const auto& [r, n] : ps.reasons) {
+            reasons[r] = n;
+        }
+    }
+    nlohmann::json out = {{"calls", ps.calls.load()}, {"passes", ps.passes.load()}, {"no_slot", ps.no_slot.load()}, {"copy_faults", ps.copy_faults.load()},
+                          {"scan_faults", ps.scan_faults.load()}, {"worker_faults", ps.worker_faults.load()}, {"learn_frames", ps.learn_frames.load()},
+                          {"views_off", ps.views_off.load()}, {"steps", ps.steps.load()}, {"drawn", ps.drawn.load()}, {"refused", ps.refused.load()},
+                          {"unlearned", ps.unlearned.load()}, {"rs_fail", ps.rs_fail.load()}, {"group_fail", ps.group_fail.load()}, {"arena_short", ps.arena_short.load()},
+                          {"worker_ms", static_cast<double>(ps.worker_ns.load()) / 1e6}, {"reasons", reasons}, {"draw", NativeDraw::WorkerDrawStats()}};
+    DebugServer::Publish("par_zpass", std::move(out));
+}
+/// The engine's thread: hand the pass to the worker. False: nothing done (the caller runs the pass as before).
+bool ParKick(u64 rd, u64 desc, u32 view) {
+    ParState& ps = PS();
     if ((ps.calls.fetch_add(1, std::memory_order_relaxed) & 255) == 0) {
         ParPublish();
     }
-    ClassifyArgs ca{&plan};
-    if (!NativeDraw::GuardedCall([](void* p) { ClassifyImpl(*static_cast<ClassifyArgs*>(p)); }, &ca)) {
-        ps.serial.fetch_add(1, std::memory_order_relaxed);
+    if (ps.view_off[view].load(std::memory_order_relaxed) || ps.serial_next[view].exchange(false, std::memory_order_relaxed)) {
         return false;
     }
-    if (ca.worker_steps == 0) {
-        ps.no_worker_steps.fetch_add(1, std::memory_order_relaxed);
+    struct Head {
+        u64 rd, desc, ctx;
+        bool ok;
+    } head{rd, desc, 0, false};
+    // what the scan would refuse for the whole pass, read here (the worker has no way back once the pass is handed over)
+    if (!NativeDraw::GuardedCall(
+            [](void* p) {
+                auto* h = static_cast<Head*>(p);
+                h->ctx = R<u64>(h->rd + 0x2d8);
+                h->ok = h->ctx != 0 && R<u64>(h->desc) != 0 && R<u32>(h->desc + 0x10) == 3 && R<u64>(h->rd + 0x8930) == 0;
+            },
+            &head) ||
+        !head.ok) {
         return false;
     }
     u32 slot = ParSlots;
@@ -4799,13 +4992,12 @@ bool ParallelPass(std::unique_ptr<Plan>& owned) {
     struct CopyArgs {
         u8* dst;
         u64 src;
-    } copy{snap.data(), plan.ctx};
+    } copy{snap.data(), head.ctx};
     if (!NativeDraw::GuardedCall([](void* p) { auto* c = static_cast<CopyArgs*>(p); std::memcpy(c->dst, reinterpret_cast<const void*>(c->src), ParCtxBytes); }, &copy)) {
         ps.busy[slot].store(false, std::memory_order_release);
         ps.copy_faults.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
-    NativeDraw::HandOverTargets(plan.ctx);
     {
         std::scoped_lock lock{ps.m};
         if (!ps.started) {
@@ -4813,49 +5005,38 @@ bool ParallelPass(std::unique_ptr<Plan>& owned) {
             std::thread{ParWorkerMain}.detach();
         }
     }
-    std::shared_ptr<const Plan> shared{owned.release()};
+    NativeDraw::HandOverTargets(head.ctx);
+    const u64 ctx = head.ctx;
+    // the context as the loop leaves it: its prologue (the stage mode word and its dirty bit, no input layout) and its epilogue (no material block, the default raster state)
+    if (R<u32>(ctx + 0x4480) != 4) {
+        W<u32>(ctx + 0x4480, 4);
+        W<u8>(ctx + 0x447c, R<u8>(ctx + 0x447c) | 1);
+    }
+    W<u64>(ctx + 0x68, 0);
+    W<u64>(ctx + 0x980, 0);
+    if (const u64 raster = R<u64>(rd + 0x3bf0); R<u64>(ctx + 0x46c8) != raster) {
+        W<u64>(ctx + 0x46c8, raster);
+        W<u8>(ctx + 0x46d8, 1);
+    }
+    // the device's counters: the draws of the worker's earlier passes
+    if (const s64 d = ps.pend_draws.exchange(0, std::memory_order_relaxed); d != 0) {
+        W<s32>(rd + 0x10, R<s32>(rd + 0x10) + static_cast<s32>(d));
+    }
+    if (const s64 tr = ps.pend_triangles.exchange(0, std::memory_order_relaxed); tr != 0) {
+        W<s32>(rd + 0x14, R<s32>(rd + 0x14) + static_cast<s32>(tr));
+    }
+    // the worker's block of the frame ring: twice what this view needed last time
+    const u64 bytes = std::clamp<u64>(ps.need[view].load(std::memory_order_relaxed) * 2, ParArenaMin, ParArenaMax);
+    const u64 holder = R<u64>(Global(GlobalDeviceHolder));
+    u8* arena = reinterpret_cast<u8*>(reinterpret_cast<u64(PS4_SYSV_ABI*)(u64, u64, u64)>(Global(FunctionAllocFrameGarlic))(R<u64>(holder + 0x10238), bytes, 0x100));
     Core::Vkb::Stream::Splice* splice = Core::Vkb::Stream::OpenSplice();
     {
         std::scoped_lock lock{ps.m};
-        ps.tasks.push_back({shared, slot, splice});
+        ps.tasks.push_back({rd, desc, view, slot, splice, arena, arena != nullptr ? bytes : 0});
     }
     ps.cv.notify_one();
-    // the worker's primitives' engine-visible side effects: the variant behind each record, the device's counters
-    const u64 rd = shared->render_device;
-    s32 draws = 0;
-    s64 triangles = 0;
-    for (u32 s = 0; s < shared->steps.size(); ++s) {
-        const Step& step = shared->steps[s];
-        if (step.lane == 0) {
-            continue;
-        }
-        W<u64>(R<u64>(step.record + 0x28) + 0x48, step.variant);
-        if (shared->culled[s] == 0) {
-            ++draws;
-            triangles += R<s32>(step.record + 0x14);
-        }
-    }
-    W<s32>(rd + 0x10, R<s32>(rd + 0x10) + draws);
-    W<s32>(rd + 0x14, R<s32>(rd + 0x14) + static_cast<s32>(triangles));
-    // this thread's primitives and the context's end state
-    Target t;
-    t.live = true;
-    t.split = true;
-    t.base = reinterpret_cast<u8*>(shared->ctx);
-    Timed(CallId::PassDepth, [&] { Generate(t, *shared); });
-    const u64 n = ps.passes.fetch_add(1, std::memory_order_relaxed) + 1;
-    ps.steps_main.fetch_add(ca.main_steps, std::memory_order_relaxed);
-    ps.steps_worker.fetch_add(ca.worker_steps, std::memory_order_relaxed);
-    (void)n;
+    ps.passes.fetch_add(1, std::memory_order_relaxed);
     return true;
-}
-void ParPublish() {
-    ParState& ps = PS();
-    nlohmann::json out = {{"calls", ps.calls.load()}, {"passes", ps.passes.load()}, {"classify_faults", ps.serial.load()}, {"no_slot", ps.no_slot.load()},
-                          {"no_worker_steps", ps.no_worker_steps.load()}, {"copy_faults", ps.copy_faults.load()}, {"steps_main", ps.steps_main.load()},
-                          {"steps_worker", ps.steps_worker.load()}, {"refused", ps.refused.load()}, {"worker_faults", ps.worker_faults.load()},
-                          {"worker_ms", static_cast<double>(ps.worker_ns.load()) / 1e6}, {"draw", NativeDraw::WorkerDrawStats()}};
-    DebugServer::Publish("par_zpass", std::move(out));
 }
 } // namespace
 
@@ -4865,6 +5046,16 @@ bool HandlePass(u64 render_device, u64 desc, u64 original_loop) {
         return false;
     }
     using Loop = void(PS4_SYSV_ABI*)(u64, u64);
+    if (ParOn() && Core::Vkb::Stream::RecorderOn()) { // P1: the cascades on the worker
+        struct ViewArgs {
+            u64 desc;
+            u32 view;
+        } va{desc, 0xffffffffu};
+        if (NativeDraw::GuardedCall([](void* p) { auto* v = static_cast<ViewArgs*>(p); v->view = static_cast<u32>(R<u64>(v->desc + 8)); }, &va) && (va.view == 1 || va.view == 2) &&
+            cfg.views[va.view] && ParKick(render_device, desc, va.view)) {
+            return true;
+        }
+    }
     State& s = S();
     Plan plan;
     ScanArgs scan_args{&plan, render_device, desc, &s.table};
@@ -4922,20 +5113,6 @@ bool HandlePass(u64 render_device, u64 desc, u64 original_loop) {
         if (plan.Ok()) {
             ++stats->eligible;
         }
-    }
-    if (plan.Ok() && ParOn() && Core::Vkb::Stream::RecorderOn() && (plan.view_type == 1 || plan.view_type == 2)) {
-        const u64 batches = plan.batches.size(), steps = plan.steps.size(), groups = plan.group_batches, groups_skipped = plan.group_batches_skipped;
-        auto owned = std::make_unique<Plan>(std::move(plan));
-        if (ParallelPass(owned)) {
-            std::scoped_lock lock{s.mutex};
-            ++stats->generated;
-            stats->generated_batches += batches;
-            stats->generated_draws += steps;
-            stats->group_batches += groups;
-            stats->group_batches_skipped += groups_skipped;
-            return true;
-        }
-        plan = std::move(*owned);
     }
     if (plan.Ok()) {
         Target live;
