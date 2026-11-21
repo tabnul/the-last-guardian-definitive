@@ -133,9 +133,10 @@ u64 PS4_SYSV_ABI ContinuousStep(GuestHooks::MidContext* context) {
     }
     float step;
     std::memcpy(&step, reinterpret_cast<const void*>(context->rdi + 0x19c), sizeof(step)); // (not yet overwritten: the hooked store writes it)
-    // TLG_GAME_STEP_AVG=N (test): one shared step for the world, characters, animation and physics (they must match: a separate physics step made the boy slide,
+    // TLG_GAME_STEP_AVG=N: one shared step for the world, characters, animation and physics (they must match: a separate physics step made the boy slide,
     // 2026-11-21), the average of the last N raw steps: steadier for Havok, close to the real time for the camera. Pause (step 0) resets the history.
-    static const u32 avg_n = [] { const char* e = std::getenv("TLG_GAME_STEP_AVG"); const int n = e != nullptr ? std::atoi(e) : 1; return static_cast<u32>(std::clamp(n, 1, 8)); }();
+    // default 3 since 2026-11-21 (owner play OK: boy walks normally, contacts steadier); TLG_GAME_STEP_AVG=1: the raw step
+    static const u32 avg_n = [] { const char* e = std::getenv("TLG_GAME_STEP_AVG"); const int n = e != nullptr ? std::atoi(e) : 3; return static_cast<u32>(std::clamp(n, 1, 8)); }();
     if (avg_n > 1) {
         static float history[8]{};
         static u32 count = 0, at = 0;
