@@ -274,10 +274,10 @@ def backend_on(settings):
     return settings.get('renderer', 'default') == 'vulkan'
 
 
-# Picking the engine-to-Vulkan backend in the launcher sets these (the owner's settings for it, 2026-11-16):
-# 4K, a fixed 120 FPS (not the uncapped mode) and the boot logos skipped.
+# Picking the engine-to-Vulkan backend in the launcher sets these (the owner's settings for it, 2026-11-16; unlocked since
+# 2026-11-21: the real-time game step makes it smooth): 4K, unlocked FPS and the boot logos skipped.
 # Each can be changed afterwards; picking the backend again sets them again.
-BACKEND_DEFAULTS = {'resolution': '3840x2160', 'frame_rate': '120', 'skip_logos': True}
+BACKEND_DEFAULTS = {'resolution': '3840x2160', 'frame_rate': 'unlocked', 'skip_logos': True}
 
 
 def their_renderer_flag(name):

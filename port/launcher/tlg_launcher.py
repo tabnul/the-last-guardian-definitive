@@ -1298,7 +1298,7 @@ class Launcher:
 
     def renderer_changed(self):
         """Renderer picked: their options greyed, or back under their own rules (the rows read tlg.ini again).
-        Picking the backend also sets its defaults (tlg_run.BACKEND_DEFAULTS: 4K, uncapped up to 120, logos skipped)."""
+        Picking the backend also sets its defaults (tlg_run.BACKEND_DEFAULTS: 4K, unlocked FPS, logos skipped)."""
         if self.settings.get('renderer') == 'vulkan':
             self.settings.update(tlg_run.BACKEND_DEFAULTS)
             tlg_run.save_settings(self.settings)
