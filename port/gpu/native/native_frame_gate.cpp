@@ -57,7 +57,10 @@ struct Config {
 
 Config LoadConfig() {
     Config config;
-    int depth = 0; // default 0 since 2026-10-31 (the owner played it at 120 fps)
+    // default 0 since 2026-10-31 (the owner played it at 120 fps); with the engine-to-Vulkan backend (TLG_VKB=1) 1 since 2026-11-21: every backend
+    // measurement and owner play ran with it (the CPU prepares the next frame while the GPU draws this one; owner: "make 1 the default")
+    const int default_depth = [] { const char* e = std::getenv("TLG_VKB"); return e != nullptr && e[0] == '1' ? 1 : 0; }();
+    int depth = default_depth;
     int game_waits = -1;
     int presenter_waits = -1;
     const char* source = "default";
@@ -67,7 +70,7 @@ Config LoadConfig() {
             nlohmann::json config;
             std::ifstream in(path);
             in >> config;
-            depth = config.value("frames_in_flight", 0);
+            depth = config.value("frames_in_flight", default_depth);
             game_waits = config.value("game_waits_own_frame", -1);
             presenter_waits = config.value("presenter_waits_own_frame", -1);
             source = "json";
@@ -91,6 +94,7 @@ Config LoadConfig() {
     config.presenter_waits = presenter_waits >= 0 ? presenter_waits != 0 : clamped == 0;
     LOG_INFO(Core, "frame gate: frames in flight {} ({}{}), game wait mode {}, presenter waits for its own frame {}", clamped, source,
              clamped != depth ? ", clamped" : "", config.game_wait, config.presenter_waits);
+    std::printf("Frames in flight: %d (%s)\n", clamped, source); // (the log's header: LOG_INFO is filtered in player logs)
     return config;
 }
 
