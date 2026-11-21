@@ -1,12 +1,19 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
 #include "native/shadps4/shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "native/shadps4/shader_recompiler/backend/spirv/spirv_emit_context.h"
 
 namespace VkbShader::Backend::SPIRV {
 
 Id Decorate(EmitContext& ctx, IR::Inst* inst, Id op) {
+    // shader study (TLG_VKB_CONTRACT=1, bound test): pixel and compute shaders without NoContraction, so the driver may fuse multiply and add (FMA). Vertex stages keep
+    // it: positions computed by different passes' shaders must stay bit-identical (depth-equal tests). Rounding differs in the last bit; the picture is checked.
+    static const bool contract = [] { const char* e = std::getenv("TLG_VKB_CONTRACT"); return e != nullptr && e[0] == '1'; }();
+    if (contract && (ctx.sw_stage == SwStage::Fragment || ctx.sw_stage == SwStage::Compute)) {
+        return op;
+    }
     ctx.Decorate(op, spv::Decoration::NoContraction);
     return op;
 }
