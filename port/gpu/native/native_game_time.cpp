@@ -11,6 +11,7 @@
 // The frame time is the engine clock's raw frame time (`[0x069a1b40 (ghidra)] + 0x190`, written by FUN_01d16480 every frame, before smoothing, the snap and the pause / slow motion
 // scale), so a paused game keeps its environment animating as the console does. Switch: `TLG_GAME_TIME=0` turns it off (the factor is 1).
 
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
@@ -132,6 +133,25 @@ u64 PS4_SYSV_ABI ContinuousStep(GuestHooks::MidContext* context) {
     }
     float step;
     std::memcpy(&step, reinterpret_cast<const void*>(context->rdi + 0x19c), sizeof(step)); // (not yet overwritten: the hooked store writes it)
+    // TLG_GAME_STEP_AVG=N (test): one shared step for the world, characters, animation and physics (they must match: a separate physics step made the boy slide,
+    // 2026-11-21), the average of the last N raw steps: steadier for Havok, close to the real time for the camera. Pause (step 0) resets the history.
+    static const u32 avg_n = [] { const char* e = std::getenv("TLG_GAME_STEP_AVG"); const int n = e != nullptr ? std::atoi(e) : 1; return static_cast<u32>(std::clamp(n, 1, 8)); }();
+    if (avg_n > 1) {
+        static float history[8]{};
+        static u32 count = 0, at = 0;
+        if (step < 1e-5f) {
+            count = 0, at = 0;
+        } else {
+            history[at] = step;
+            at = (at + 1) % avg_n;
+            count = std::min(count + 1, avg_n);
+            float sum = 0.0f;
+            for (u32 i = 0; i < count; ++i) {
+                sum += history[i];
+            }
+            step = sum / static_cast<float>(count);
+        }
+    }
     std::memcpy(context->ymm[0], &step, sizeof(step));
     if (context->rax != 0) {
         std::memcpy(reinterpret_cast<void*>(context->rax + 0x39c), &step, sizeof(step));
