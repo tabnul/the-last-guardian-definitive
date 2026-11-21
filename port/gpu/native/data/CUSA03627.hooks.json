@@ -333,6 +333,13 @@
       "expect": "554889e541574156"
     },
     {
+      "name": "QueryCarryAfterReset",
+      "ghidra": "0x12770b0",
+      "mode": "call",
+      "handler": "query_carry_after_reset",
+      "expect": "554889e541574156"
+    },
+    {
       "name": "K2_FrameDataReset",
       "ghidra": "0x1dfdea0",
       "mode": "call",

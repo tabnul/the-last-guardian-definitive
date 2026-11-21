@@ -21,6 +21,8 @@
 /// Open backend switch (2026-11-18, api-contract.md K1): TLG_LEGACY_LABEL_UNITS=1 lets an older compute submit unit's end records write a shared label after a newer submit.
 /// Deleted 2026-11-19 (api-contract.md K2): the AABB reader guard (TLG_LEGACY_AABB_GUARD) and the pass flags (TLG_READBACK_PASS_FLAGS): fix A (AnimQueryOrder, default)
 /// removed the soldiers' late readback queries behind the crash after the shield flashback.
+/// Since 2026-11-21 (api-contract.md K2 step 6): TLG_LEGACY_ANIM_QUERY_WAIT=1 = fix A (the recording waits for the next AnimationTick's query producers); default:
+///   QueryCarry keeps the groups registered after the recording for the next one (native_draw.cpp), nothing waits (furthest save 76-80 -> ~125 fps).
 /// Open backend switch (2026-11-18, api-contract.md S10): TLG_LEGACY_DEPTH_BIAS=1 applies the rasterizer description's depth bias (the engine never enables polygon offset).
 /// Open backend switch (2026-11-18, api-contract.md R8): TLG_LEGACY_VIEW_IDENTITY=1 creates every view with the identity channel mapping instead of the T#'s selects.
 /// Open engine switch (2026-11-19, issue 36 log cause E): TLG_AABB_TABLE_LOCK=0 lets the AABB checks read the engine's group table without the engine's own lock (a group

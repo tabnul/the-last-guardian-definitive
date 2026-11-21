@@ -9356,8 +9356,12 @@ void Post() {
 } // namespace SchedulerWake
 
 namespace AnimQueryOrder {
+/// Fix A (2026-11-19): the recording waits for the next AnimationTick's unlocked query producers. LEGACY since 2026-11-21: with soldiers in the scene it waited
+/// ~3.4 ms nearly every frame and held the frame chain (furthest save 76-80 fps, 123-131 without the wait); QueryCarry (below) keeps the late groups instead.
+/// TLG_LEGACY_ANIM_QUERY_WAIT=1: fix A again (and no carry).
 bool On() {
-    return true; // default since 2026-11-19 (owner plays: late 22,989 -> ~29, no crash, AABB guard deleted); the old order (no wait) is gone
+    static const bool on = [] { const char* e = std::getenv("TLG_LEGACY_ANIM_QUERY_WAIT"); return e != nullptr && e[0] == '1'; }();
+    return on;
 }
 std::mutex mutex;
 std::condition_variable cv;
@@ -9404,11 +9408,6 @@ void QueryReset() {
     reset_generation = generation;
 }
 void BeforeRecording() {
-    // TLG_VKB_TEST_NO_ANIM_ORDER=1: kill experiment (2026-11-21, furthest save: 3.4 ms waits with soldiers), never a default (the K2 race comes back)
-    static const bool test_skip = [] { const char* e = std::getenv("TLG_VKB_TEST_NO_ANIM_ORDER"); return e != nullptr && e[0] == '1'; }();
-    if (test_skip) {
-        return;
-    }
     std::unique_lock lock{mutex};
     const u64 target = reset_generation + 1; // the AnimationTick that follows this cycle's reset
     std::erase_if(exts, [&](const auto& kv) { return kv.second.producer_generation + 4 < target && kv.second.done_generation + 4 < target; }); // gone or idle extensions
@@ -9480,6 +9479,148 @@ void BeforeRecording() {
     }
 }
 } // namespace AnimQueryOrder
+
+/// K2 fix B (2026-11-21, api-contract.md K2 step 6): readback groups registered into the query frame data (registry slot 19 + 0x28) after its recording are kept
+/// for the next recording instead of being dropped by the next reset. The soldiers' animation jobs register after the recording above 30 fps (the K2 race): on the
+/// PS4 at 30 fps 91 % came in time, the rest were dropped; now none is dropped, the late ones are recorded one cycle later, and nothing waits.
+/// Table B (frame data + 0x31e60: array, + 0x31e68 count, + 0x31e6c capacity, + 0x31e74 lock word): each entry holds one reference of its group. The carry moves
+/// entries out before FrameData_Reset (so the reset does not release them) and back after it (the table owns the same references again): no reference changes.
+namespace QueryCarry {
+bool On() {
+    return !AnimQueryOrder::On();
+}
+constexpr u32 MaxCarried = 256;
+constexpr u32 DeadRef = 0xdeadc0de; ///< the engine's "no reference counting" mark in a group's + 8
+std::mutex mutex;
+u64 query_frame = 0;      ///< the query frame data seen at the last reset (mutex)
+bool recorded = false;    ///< a recording of query_frame ran since the last reset (mutex)
+u32 recorded_count = 0;   ///< table B's count when that recording started (mutex)
+std::vector<u64> parked;  ///< entries taken out before the reset, put back after it (mutex)
+bool carried_last = false; ///< the last cycle put entries back: the next recording removes duplicates (mutex)
+std::atomic<u64> c_cycles{0}, c_carried{0}, c_cycles_with_carry{0}, c_no_recording{0}, c_duplicates{0}, c_overflow{0}, c_capped{0};
+
+/// BeginRecording of a frame data that records, its table lock held: remove entries that name the same group twice (a carried group its producer
+/// registered again in time), then note the count the recording sees
+void AtRecording(u64 frame) {
+    std::scoped_lock lock{mutex};
+    if (frame != query_frame || query_frame == 0) {
+        return;
+    }
+    const u64 array = Rd<u64>(frame, 0x31e60);
+    u32 count = Rd<u32>(frame, 0x31e68);
+    if (carried_last && IsHeapPointer(array) && count > 1) {
+        std::unordered_set<u64> seen;
+        u32 out = 0;
+        for (u32 i = 0; i < count; ++i) {
+            const u64 group = Rd<u64>(array, i * 8);
+            if (group != 0 && !seen.insert(group).second) {
+                // the other entry keeps its reference, so this release never ends the group
+                auto* const ref = reinterpret_cast<std::atomic<u32>*>(group + 8);
+                if (ref->load(std::memory_order_relaxed) != DeadRef) {
+                    ref->fetch_sub(1, std::memory_order_acq_rel);
+                }
+                c_duplicates.fetch_add(1, std::memory_order_relaxed);
+                continue;
+            }
+            *reinterpret_cast<u64*>(array + static_cast<u64>(out) * 8) = group;
+            ++out;
+        }
+        for (u32 i = out; i < count; ++i) {
+            *reinterpret_cast<u64*>(array + static_cast<u64>(i) * 8) = 0;
+        }
+        count = out;
+        *reinterpret_cast<u32*>(frame + 0x31e68) = count;
+    }
+    carried_last = false;
+    recorded = true;
+    recorded_count = count;
+}
+
+/// FrameData_Reset of the query frame data (DelayPrepareTick 012530a0, the call returning to 01253293): take the entries added after the recording out
+void BeforeReset(u64 frame) {
+    if (!IsHeapPointer(frame)) {
+        return;
+    }
+    const GroupTableLock table(frame);
+    std::scoped_lock lock{mutex};
+    if (const u64 n = c_cycles.fetch_add(1, std::memory_order_relaxed) + 1; n % 1800 == 0) {
+        TLG_LOG(CP, Warn, "query carry: {} cycles, {} with late groups, {} groups carried, {} without a recording, {} duplicates removed, {} capped, {} overflow", n,
+                c_cycles_with_carry.load(), c_carried.load(), c_no_recording.load(), c_duplicates.load(), c_capped.load(), c_overflow.load());
+    }
+    parked.clear();
+    const bool same = frame == query_frame;
+    query_frame = frame;
+    if (!same || !recorded) {
+        // no recording of this table since the last reset (start, a new table, a paused step): the engine's own drop
+        c_no_recording.fetch_add(1, std::memory_order_relaxed);
+        recorded = false;
+        return;
+    }
+    recorded = false;
+    const u64 array = Rd<u64>(frame, 0x31e60);
+    const u32 count = Rd<u32>(frame, 0x31e68);
+    if (!IsHeapPointer(array) || count <= recorded_count) {
+        return;
+    }
+    for (u32 i = recorded_count; i < count; ++i) {
+        const u64 group = Rd<u64>(array, static_cast<u64>(i) * 8);
+        if (group == 0) {
+            continue;
+        }
+        if (parked.size() >= MaxCarried) {
+            c_capped.fetch_add(1, std::memory_order_relaxed); // left in the table: the reset releases it (the engine's drop)
+            continue;
+        }
+        parked.push_back(group);
+        *reinterpret_cast<u64*>(array + static_cast<u64>(i) * 8) = 0; // the reset skips empty entries: the reference stays with us
+    }
+}
+
+/// Right after that reset (its next call, 012770b0, returning to 01253298): put the parked entries back
+void AfterReset() {
+    u64 frame = 0;
+    {
+        std::scoped_lock lock{mutex};
+        if (parked.empty() || !IsHeapPointer(query_frame)) {
+            parked.clear();
+            return;
+        }
+        frame = query_frame;
+    }
+    const GroupTableLock table(frame); // the table's lock first, then ours: the order of BeforeReset and AtRecording
+    std::scoped_lock lock{mutex};
+    if (frame != query_frame) {
+        parked.clear();
+        return;
+    }
+    const u64 array = Rd<u64>(query_frame, 0x31e60);
+    u32 count = Rd<u32>(query_frame, 0x31e68);
+    const u32 capacity = Rd<u32>(query_frame, 0x31e6c);
+    u32 put = 0;
+    for (const u64 group : parked) {
+        if (!IsHeapPointer(array) || count >= capacity) {
+            c_overflow.fetch_add(1, std::memory_order_relaxed); // never expected: the table keeps its capacity across the reset; the reference stays (a leak, counted)
+            continue;
+        }
+        *reinterpret_cast<u64*>(array + static_cast<u64>(count) * 8) = group;
+        ++count, ++put;
+    }
+    *reinterpret_cast<u32*>(query_frame + 0x31e68) = count;
+    c_carried.fetch_add(put, std::memory_order_relaxed);
+    c_cycles_with_carry.fetch_add(put != 0 ? 1 : 0, std::memory_order_relaxed);
+    carried_last = put != 0;
+    parked.clear();
+}
+} // namespace QueryCarry
+
+/// Call hook at 012770b0: called right after DelayPrepareTick's reset of the query frame data (return 01253298); the carry puts its groups back
+u64 PS4_SYSV_ABI QueryCarryAfterReset(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 ret) {
+    (void)a0, (void)a1, (void)a2, (void)a3, (void)a4, (void)a5;
+    if (QueryCarry::On() && ret - ImageBase() + 0x1000000 == 0x1253298) {
+        Guarded([&]() -> u64 { QueryCarry::AfterReset(); return 0; });
+    }
+    return 0;
+}
 
 /// Mid hook right after the scheduler ran a job's callback (01e4bb59, r12 = the job): the end of an AnimationTick module job (callback 01caa310, its object at job + 0x40)
 u64 PS4_SYSV_ABI AnimJobDone(Core::GuestHooks::MidContext* c) {
@@ -9656,6 +9797,9 @@ u64 PS4_SYSV_ABI K2FrameReset(u64 frame, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5,
     if (AnimQueryOrder::On() && ret - ImageBase() + 0x1000000 == 0x1253293) {
         AnimQueryOrder::QueryReset(); // the world step (DelayPostPhysicsComputeGather) resets the query frame data
     }
+    if (QueryCarry::On() && ret - ImageBase() + 0x1000000 == 0x1253293) {
+        Guarded([&]() -> u64 { QueryCarry::BeforeReset(frame); return 0; });
+    }
     if (K2Census::On()) {
         Guarded([&]() -> u64 { K2Census::Reset(frame, ret); return 0; });
     }
@@ -9681,6 +9825,9 @@ u64 PS4_SYSV_ABI RecordingWrites(u64 device, u64 a1, u64 a2, u64 a3, u64 a4, u64
             g_aabb_count_buffer.store(Rd<u64>(device, 0x27a8), std::memory_order_relaxed);
             g_rec_frame.store(a1, std::memory_order_relaxed);
             const GroupTableLock lock(a1); // BeginRecording takes this lock itself after its entry (our hook point)
+            if (QueryCarry::On()) {
+                QueryCarry::AtRecording(a1);
+            }
             g_rec_groups.store(Rd<u32>(a1, 0x31e68), std::memory_order_relaxed);
             g_rec_groups_at_dispatch.store(Rd<u32>(a1, 0x31e68), std::memory_order_relaxed);
             g_rec_active.store(ActiveGroups(a1), std::memory_order_relaxed);
@@ -12345,6 +12492,9 @@ u64 FindHandler(const std::string& name) {
     }
     if (name == "k2_frame_reset") {
         return reinterpret_cast<u64>(&K2FrameReset);
+    }
+    if (name == "query_carry_after_reset") {
+        return reinterpret_cast<u64>(&QueryCarryAfterReset);
     }
     if (name == "tag_copy_structure_count") {
         return reinterpret_cast<u64>(&TagCopyStructureCount);
