@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdint>
+#include "native/native_shaders/cull_a3c4525b.h"
 #include "native/native_vkb_aa.h"
 #include "native/native_vkb_shader_dump.h"
 #include "native/native_framewalk.h"
@@ -78,6 +80,7 @@ struct Variant {
     bool has_flat{}, multi_binding{};
     bool async{}; ///< compiled for the async compute context
     bool ok{};
+    u32 grid_x{0}; ///< native replacement module (research section 13): the game's 1x1x1 dispatch runs as grid_x groups (0: as the game asks)
     std::vector<Core::Vkb::WriteWindow::Window> windows; ///< R5 (note 38): per buffer binding, the range one dispatch can write
 };
 
@@ -87,6 +90,15 @@ bool WriteWindowsOn() {
     return on;
 }
 std::atomic<u64> c_window_narrowed{0}, c_window_whole{0}, c_window_empty{0};
+
+/// Native parallel shaders (research section 13): the game's single-workgroup loops rewritten to step over a grid. TLG_VKB_NATIVE_CULL=1 (test)
+bool NativeCullOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_NATIVE_CULL"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+constexpr u64 CullShaderA3c4525b = 0xa3c4525b;
+constexpr u32 CullGrid = 64;
+std::atomic<u64> c_native_cull_modules{0}, c_native_cull_dispatches{0};
 
 std::mutex mutex;
 std::unordered_map<u64, std::unique_ptr<Variant>> variants; ///< by variant key
@@ -288,6 +300,12 @@ void Compile(u64 ctx, u64 shader, Variant& v) {
             return;
         }
         spv = VkbShader::Backend::SPIRV::EmitSPIRV(profile, runtime, program, binding);
+        if (v.info->pgm_hash == CullShaderA3c4525b && NativeCullOn()) {
+            // the same bindings and push data as the recompiled module (decompiled from it), the loop over the grid (native_shaders/cull_a3c4525b.comp)
+            spv.assign(std::begin(kCullA3c4525b), std::end(kCullA3c4525b));
+            v.grid_x = CullGrid;
+            c_native_cull_modules.fetch_add(1, std::memory_order_relaxed);
+        }
         // debug (tint hunt, 2026-11-16): TLG_VKB_DUMP_SPV=<shader hashes, hex, comma separated> writes each variant's module to log/vkb_spv/cs_<hash>_<n>.spv (compare with the
         // fork renderer's TLG_DUMP_SHADERS=1 dumps)
         static const std::vector<u64> dump_spv = [] { // comma separated hashes
@@ -676,6 +694,10 @@ void LanternDrawReadImpl(u64 address, u64 size, u64 vs_hash, u64 ps_hash, u32 st
     }
 }
 void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_address) {
+    if (v.grid_x != 0 && indirect_address == 0 && x == 1 && y == 1 && z == 1) {
+        x = v.grid_x;
+        c_native_cull_dispatches.fetch_add(1, std::memory_order_relaxed);
+    }
     if (Core::Vkb::FillReadersOn() || Core::Vkb::R3dTraceSize() != 0) {
         Core::Vkb::CensusTag((1ull << 63) | shader); // note 49 census: compute, the engine's shader id
     }
@@ -1330,6 +1352,7 @@ nlohmann::json Report() {
             {"shaders", shaders},
             {"most_variants_of_one_shader", most},
             {"compiled", compiled},
+            {"native_cull", {{"on", NativeCullOn()}, {"modules", c_native_cull_modules.load()}, {"dispatches", c_native_cull_dispatches.load()}}},
             {"failed", c_failed.load()},
             {"failed_unsupported_input_type", c_failed_unsupported_input.load()},
             {"failed_translation", c_failed_translation.load()},

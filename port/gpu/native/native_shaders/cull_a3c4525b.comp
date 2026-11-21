@@ -1,0 +1,360 @@
+// Native parallel version of the game's GPU culling shader 0xa3c4525b (2026-11-21, parallel-passes-research.md section 13).
+// Source: our recompiler's SPIR-V of the GCN shader, decompiled with spirv-cross (bindings and push data unchanged). The game dispatches it as one
+// workgroup of 64 threads that loops over every item (normal cone + bounds test, atomic append to the visible list); this version starts at the global
+// thread id and steps by the whole grid, so the backend can dispatch many groups. Each item is still tested once; the list order is atomic-ordered (as on the PS4).
+// Rebuild: glslangValidator -V --target-env vulkan1.3 --vn kCullA3c4525b -o cull_a3c4525b.h cull_a3c4525b.comp
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#extension GL_EXT_shader_8bit_storage : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+#extension GL_EXT_shader_16bit_storage : require
+#if defined(GL_ARB_gpu_shader_int64)
+#extension GL_ARB_gpu_shader_int64 : require
+#else
+#error No extension available for 64-bit integers.
+#endif
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+struct full_result_i32x2
+{
+    int _m0;
+    int _m1;
+};
+
+struct full_result_u32x2
+{
+    uint _m0;
+    uint _m1;
+};
+
+struct frexp_result_f32
+{
+    float _m0;
+    int _m1;
+};
+
+layout(set = 0, binding = 0, std430) readonly buffer ssbo_1
+{
+    uint data[];
+} ssbo_1_1;
+
+layout(set = 0, binding = 1, std430) readonly buffer ssbo_2
+{
+    uint data[];
+} ssbo_2_1;
+
+layout(set = 0, binding = 2, std430) readonly buffer ssbo_3
+{
+    uint data[];
+} ssbo_3_1;
+
+layout(set = 0, binding = 3, std430) readonly buffer ssbo_4
+{
+    uint data[];
+} ssbo_4_1;
+
+layout(set = 0, binding = 4, std430) readonly buffer ssbo_5
+{
+    uint data[];
+} ssbo_5_1;
+
+layout(set = 0, binding = 4, std430) readonly buffer ssbo_5_2
+{
+    float data[];
+} ssbo_5_3;
+
+layout(set = 0, binding = 4, std430) readonly buffer ssbo_5_4
+{
+    uint16_t data[];
+} ssbo_5_5;
+
+layout(set = 0, binding = 4, std430) readonly buffer ssbo_5_6
+{
+    uint8_t data[];
+} ssbo_5_7;
+
+layout(set = 0, binding = 5, std430) readonly buffer ssbo_6
+{
+    uint data[];
+} ssbo_6_1;
+
+layout(set = 0, binding = 5, std430) readonly buffer ssbo_6_2
+{
+    float data[];
+} ssbo_6_3;
+
+layout(set = 0, binding = 5, std430) readonly buffer ssbo_6_4
+{
+    uint16_t data[];
+} ssbo_6_5;
+
+layout(set = 0, binding = 5, std430) readonly buffer ssbo_6_6
+{
+    uint8_t data[];
+} ssbo_6_7;
+
+layout(set = 0, binding = 6, std430) readonly buffer ssbo_7
+{
+    uint data[];
+} ssbo_7_1;
+
+layout(set = 0, binding = 6, std430) readonly buffer ssbo_7_2
+{
+    float data[];
+} ssbo_7_3;
+
+layout(set = 0, binding = 6, std430) readonly buffer ssbo_7_4
+{
+    uint16_t data[];
+} ssbo_7_5;
+
+layout(set = 0, binding = 6, std430) readonly buffer ssbo_7_6
+{
+    uint8_t data[];
+} ssbo_7_7;
+
+layout(set = 0, binding = 7, std430) coherent buffer ssbo_8
+{
+    uint data[];
+} ssbo_8_1;
+
+layout(set = 0, binding = 8, std430) coherent buffer ssbo_9
+{
+    uint data[];
+} ssbo_9_1;
+
+layout(set = 0, binding = 8, std430) coherent buffer ssbo_9_2
+{
+    float data[];
+} ssbo_9_3;
+
+layout(set = 0, binding = 8, std430) coherent buffer ssbo_9_4
+{
+    uint16_t data[];
+} ssbo_9_5;
+
+layout(set = 0, binding = 8, std430) coherent buffer ssbo_9_6
+{
+    uint8_t data[];
+} ssbo_9_7;
+
+layout(set = 0, binding = 9, std430) readonly buffer srt_flatbuf
+{
+    uint data[];
+} srt_flatbuf_1;
+
+layout(push_constant, std430) uniform AuxData
+{
+    layout(offset = 0) float xoffset;
+    layout(offset = 4) float yoffset;
+    layout(offset = 8) float xscale;
+    layout(offset = 12) float yscale;
+    layout(offset = 16) uvec4 buf_offsets0;
+    layout(offset = 32) uvec4 buf_offsets1;
+    layout(offset = 48) uvec2 buf_offsets2;
+    layout(offset = 80) uint row_base;
+} push_data;
+
+void main()
+{
+    uint buf0_dword_off = bitfieldExtract(push_data.buf_offsets0.x, int(0u), int(8u)) >> 2u;
+    uint buf1_dword_off = bitfieldExtract(push_data.buf_offsets0.x, int(8u), int(8u)) >> 2u;
+    uint buf2_dword_off = bitfieldExtract(push_data.buf_offsets0.x, int(16u), int(8u)) >> 2u;
+    uint buf3_dword_off = bitfieldExtract(push_data.buf_offsets0.x, int(24u), int(8u)) >> 2u;
+    uint buf4_off = bitfieldExtract(push_data.buf_offsets0.y, int(0u), int(8u));
+    uint buf4_dword_off = buf4_off >> 2u;
+    uint buf5_off = bitfieldExtract(push_data.buf_offsets0.y, int(8u), int(8u));
+    uint buf5_dword_off = buf5_off >> 2u;
+    uint buf6_off = bitfieldExtract(push_data.buf_offsets0.y, int(16u), int(8u));
+    uint buf6_dword_off = buf6_off >> 2u;
+    uint buf7_dword_off = bitfieldExtract(push_data.buf_offsets0.y, int(24u), int(8u)) >> 2u;
+    uint buf8_off = bitfieldExtract(push_data.buf_offsets0.z, int(0u), int(8u));
+    uint buf8_dword_off = buf8_off >> 2u;
+    uint ud_12 = srt_flatbuf_1.data[12u];
+    uint ud_13 = srt_flatbuf_1.data[13u];
+    uint _162 = 1u + buf0_dword_off;
+    uint _165 = 2u + buf0_dword_off;
+    uint _183 = gl_GlobalInvocationID.x; // native: every group of the grid starts at its own items
+    uint _184 = ssbo_1_1.data[_165] * 64u;
+    uint _189 = (_184 + 880u) >> 2u;
+    float _224 = uintBitsToFloat(ssbo_2_1.data[2u + buf1_dword_off]);
+    uint _225 = (_184 + 912u) >> 2u;
+    precise float _242 = uintBitsToFloat(ssbo_3_1.data[_189 + buf2_dword_off]) * _224;
+    precise float _244 = uintBitsToFloat(ssbo_3_1.data[(_189 + 4u) + buf2_dword_off]) * _224;
+    precise float _246 = uintBitsToFloat(ssbo_3_1.data[_225 + buf2_dword_off]) * _224;
+    uint _248 = ssbo_1_1.data[_165] * 96u;
+    float _249 = uintBitsToFloat(ssbo_2_1.data[6u + buf1_dword_off]);
+    precise float _254 = uintBitsToFloat(ssbo_3_1.data[(_189 + 1u) + buf2_dword_off]) * _249;
+    precise float _255 = _254 + _242;
+    precise float _257 = uintBitsToFloat(ssbo_3_1.data[(_189 + 5u) + buf2_dword_off]) * _249;
+    precise float _258 = _257 + _244;
+    precise float _260 = uintBitsToFloat(ssbo_3_1.data[(_225 + 1u) + buf2_dword_off]) * _249;
+    precise float _261 = _260 + _246;
+    float _262 = uintBitsToFloat(ssbo_2_1.data[10u + buf1_dword_off]);
+    precise float _264 = uintBitsToFloat(ssbo_3_1.data[(_189 + 2u) + buf2_dword_off]) * _262;
+    precise float _265 = _264 + _255;
+    precise float _267 = uintBitsToFloat(ssbo_3_1.data[(_189 + 6u) + buf2_dword_off]) * _262;
+    precise float _268 = _267 + _258;
+    precise float _270 = uintBitsToFloat(ssbo_3_1.data[(_225 + 2u) + buf2_dword_off]) * _262;
+    precise float _271 = _270 + _261;
+    uint _272 = ssbo_1_1.data[_165] * 6u;
+    float _273 = uintBitsToFloat(ssbo_2_1.data[14u + buf1_dword_off]);
+    precise float _275 = uintBitsToFloat(ssbo_3_1.data[(_189 + 3u) + buf2_dword_off]) * _273;
+    precise float _276 = _275 + _265;
+    precise float _278 = uintBitsToFloat(ssbo_3_1.data[(_189 + 7u) + buf2_dword_off]) * _273;
+    precise float _279 = _278 + _268;
+    uint _280 = (_248 + 80u) >> 2u;
+    uint _281 = _280 + buf2_dword_off;
+    uint _285 = (_280 + 1u) + buf2_dword_off;
+    uint _289 = (_280 + 2u) + buf2_dword_off;
+    uint _293 = (_280 + 3u) + buf2_dword_off;
+    uint _297 = (_280 + 4u) + buf2_dword_off;
+    uint _301 = (_280 + 5u) + buf2_dword_off;
+    uint _305 = (_280 + 6u) + buf2_dword_off;
+    uint _309 = (_280 + 7u) + buf2_dword_off;
+    precise float _313 = uintBitsToFloat(ssbo_3_1.data[(_225 + 3u) + buf2_dword_off]) * _273;
+    precise float _314 = _313 + _271;
+    uint _315 = (_248 + 16u) >> 2u;
+    uint _316 = _315 + buf2_dword_off;
+    uint _320 = (_315 + 1u) + buf2_dword_off;
+    uint _324 = (_315 + 2u) + buf2_dword_off;
+    uint _328 = (_315 + 3u) + buf2_dword_off;
+    uint _332 = (_315 + 4u) + buf2_dword_off;
+    uint _336 = (_315 + 5u) + buf2_dword_off;
+    uint _340 = (_315 + 6u) + buf2_dword_off;
+    uint _344 = (_315 + 7u) + buf2_dword_off;
+    uint _348 = (_315 + 8u) + buf2_dword_off;
+    uint _353 = (_315 + 9u) + buf2_dword_off;
+    uint _357 = (_315 + 10u) + buf2_dword_off;
+    uint _362 = (_315 + 11u) + buf2_dword_off;
+    uint _366 = (_315 + 12u) + buf2_dword_off;
+    uint _370 = (_315 + 13u) + buf2_dword_off;
+    uint _374 = (_315 + 14u) + buf2_dword_off;
+    uint _379 = (_315 + 15u) + buf2_dword_off;
+    bool _385;
+    uint _632;
+    uint _382 = _183;
+    bool _383 = true;
+    for (;;)
+    {
+        _385 = _383 && (ssbo_1_1.data[_162] >= _382);
+        if (!_385)
+        {
+            break;
+        }
+        else
+        {
+            uint _389 = (_382 * 20u) + 16u;
+            uint _390 = _389 + buf3_dword_off;
+            uvec3 _401 = uvec3(ssbo_4_1.data[_390], ssbo_4_1.data[_390 + 1u], ssbo_4_1.data[_390 + 2u]);
+            uint _405 = _382 * 20u;
+            uint _406 = _405 + buf3_dword_off;
+            uvec3 _417 = uvec3(ssbo_4_1.data[_406], ssbo_4_1.data[_406 + 1u], ssbo_4_1.data[_406 + 2u]);
+            float _424 = ssbo_5_3.data[(_382 * 4u) + buf4_dword_off];
+            uint _438 = floatBitsToUint(vec4(vec4(ssbo_6_3.data[((_401.x << 3u) + 5u) + buf5_dword_off], 0.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).y).x);
+            uint _446 = floatBitsToUint(vec4(vec4(ssbo_6_3.data[((_401.y << 3u) + 5u) + buf5_dword_off], 0.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).y).x);
+            uint _455 = floatBitsToUint(vec4(vec4(ssbo_6_3.data[((_401.z << 3u) + 5u) + buf5_dword_off], 0.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).y).x);
+            float _459 = uintBitsToFloat(_417.x);
+            precise float _460 = float(int(uint(bitfieldExtract(int(_438), int(0u), int(8u))))) * _459;
+            float _462 = uintBitsToFloat(_417.y);
+            precise float _463 = float(int(uint(bitfieldExtract(int(_446), int(0u), int(8u))))) * _462;
+            precise float _464 = _463 + _460;
+            float _467 = uintBitsToFloat(_417.z);
+            precise float _468 = _467 * float(int(uint(bitfieldExtract(int(_455), int(0u), int(8u)))));
+            precise float _469 = _468 + _464;
+            precise float _473 = float(int(uint(bitfieldExtract(int(_438), int(8u), int(8u))))) * _459;
+            precise float _482 = float(int(uint(bitfieldExtract(int(_446), int(8u), int(8u))))) * _462;
+            precise float _483 = _482 + _473;
+            precise float _484 = float(int(uint(bitfieldExtract(int(_438), int(16u), int(8u))))) * _459;
+            precise float _485 = float(int(uint(bitfieldExtract(int(_455), int(8u), int(8u))))) * _467;
+            precise float _486 = _485 + _483;
+            precise float _488 = 0.0078740157186985015869140625 * _469;
+            precise float _490 = float(int(uint(bitfieldExtract(int(_446), int(16u), int(8u))))) * _462;
+            precise float _491 = _490 + _484;
+            precise float _492 = 0.0078740157186985015869140625 * _486;
+            precise float _493 = float(int(uint(bitfieldExtract(int(_455), int(16u), int(8u))))) * _467;
+            precise float _494 = _493 + _491;
+            precise float _495 = _488 * _488;
+            precise float _496 = _488 * _276;
+            precise float _497 = 0.0078740157186985015869140625 * _494;
+            precise float _498 = _492 * _492;
+            precise float _499 = _498 + _495;
+            precise float _500 = _279 * _492;
+            precise float _501 = _500 + _496;
+            precise float _502 = _497 * _497;
+            precise float _503 = _502 + _499;
+            precise float _504 = _314 * _497;
+            precise float _505 = _504 + _501;
+            precise float _508 = inversesqrt(_503) * _505;
+            bool _511 = _385 && (_508 > (-vec4(vec4(_424, 0.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).y).x));
+            if (_511)
+            {
+                uint _512 = _382 << 5u;
+                vec4 _518 = vec4(vec4(ssbo_7_3.data[(_512 + 3u) + buf6_dword_off], 0.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).y);
+                float _519 = _518.x;
+                vec4 _525 = vec4(vec4(ssbo_7_3.data[(_512 + 11u) + buf6_dword_off], 0.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).y);
+                float _526 = _525.x;
+                vec4 _532 = vec4(vec4(ssbo_7_3.data[(_512 + 7u) + buf6_dword_off], 0.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).y);
+                float _533 = _532.x;
+                precise float _549 = uintBitsToFloat(ssbo_3_1.data[_316]) * _519;
+                precise float _550 = _549 + uintBitsToFloat(ssbo_3_1.data[_328]);
+                precise float _552 = uintBitsToFloat(ssbo_3_1.data[_332]) * _519;
+                precise float _553 = _552 + uintBitsToFloat(ssbo_3_1.data[_344]);
+                precise float _555 = uintBitsToFloat(ssbo_3_1.data[_348]) * _519;
+                precise float _556 = _555 + uintBitsToFloat(ssbo_3_1.data[_362]);
+                precise float _558 = uintBitsToFloat(ssbo_3_1.data[_320]) * _533;
+                precise float _559 = _558 + _550;
+                precise float _561 = uintBitsToFloat(ssbo_3_1.data[_336]) * _533;
+                precise float _562 = _561 + _553;
+                precise float _563 = 1.0 + vec4(vec4(ssbo_7_3.data[(_512 + 31u) + buf6_dword_off], 0.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).y).x;
+                precise float _565 = uintBitsToFloat(ssbo_3_1.data[_324]) * _526;
+                precise float _566 = _565 + _559;
+                precise float _568 = uintBitsToFloat(ssbo_3_1.data[_340]) * _526;
+                precise float _569 = _568 + _562;
+                precise float _571 = uintBitsToFloat(ssbo_3_1.data[_353]) * _533;
+                precise float _572 = _571 + _556;
+                precise float _574 = uintBitsToFloat(ssbo_3_1.data[_366]) * _519;
+                precise float _575 = _574 + uintBitsToFloat(ssbo_3_1.data[_379]);
+                precise float _579 = _533 * uintBitsToFloat(ssbo_3_1.data[_370]);
+                precise float _580 = _579 + _575;
+                precise float _582 = uintBitsToFloat(ssbo_3_1.data[_357]) * _526;
+                precise float _583 = _582 + _572;
+                precise float _585 = uintBitsToFloat(ssbo_3_1.data[_281]) * _519;
+                precise float _586 = _585 + uintBitsToFloat(ssbo_3_1.data[_293]);
+                precise float _588 = uintBitsToFloat(ssbo_3_1.data[_297]) * _519;
+                precise float _589 = _588 + uintBitsToFloat(ssbo_3_1.data[_309]);
+                precise float _593 = uintBitsToFloat(ssbo_3_1.data[_374]) * _526;
+                precise float _594 = _593 + _580;
+                precise float _596 = uintBitsToFloat(ssbo_3_1.data[_285]) * _533;
+                precise float _597 = _596 + _586;
+                precise float _599 = uintBitsToFloat(ssbo_3_1.data[_289]) * _526;
+                precise float _600 = _599 + _597;
+                precise float _602 = uintBitsToFloat(ssbo_3_1.data[_301]) * _533;
+                precise float _603 = _602 + _589;
+                precise float _607 = uintBitsToFloat(ssbo_3_1.data[_305]) * _526;
+                precise float _608 = _607 + _603;
+                bool _615 = _511 && (!((((((_566 > _563) || (_569 > _563)) || (_583 > _563)) || (_594 > _563)) || (_600 > _563)) || (_608 > _563)));
+                if (_615)
+                {
+                    uint _619 = atomicAdd(ssbo_8_1.data[(_272 + 1u) + buf7_dword_off], 1u);
+                    if (_615 && (srt_flatbuf_1.data[26u] > _619))
+                    {
+                        ssbo_9_3.data[_619 + buf8_dword_off] = vec4(vec4(uintBitsToFloat(_382), 0.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x, vec4(0.0, 1.0, 0.0, 0.0).x).x;
+                    }
+                }
+            }
+            _632 = _382 + 64u * gl_NumWorkGroups.x; // native: the stride is the whole grid (the game's 1x1x1 dispatch walked every item with 64 threads)
+            if (true)
+            {
+                _382 = _632;
+                _383 = _385;
+                continue;
+            }
+            else
+            {
+                break;
+            }
+        }
+    }
+}
+
