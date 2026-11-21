@@ -97,6 +97,8 @@ struct BufferWindow {
 bool FindBuffer(u64 address, u64 size, BufferWindow& out);
 /// tier-2 gap pass (debug): the buffer lives in our device memory (its engine memory is not updated by the GPU). No side effects.
 bool BufferOnDevice(u64 address, u64 size);
+/// Lantern census (debug): the device buffer under the range is one the GPU writes (bound as an unordered access view); false for a dynamic buffer (the CPU writes it, uploaded at Unmap)
+bool BufferGpuWrites(u64 address, u64 size);
 /// R3a: the window of engine memory at [address, address + size) as a copy source: our frame ring in device memory, else the in-place import (null buffer: none)
 BufferWindow SourceWindow(u64 address, u64 size);
 /// V4h census: a bind of a found window by kind (0 compute descriptor, 1 graphics descriptor, 2 vertex buffer, 3 index buffer); counted per frame, in place or device, unique bytes

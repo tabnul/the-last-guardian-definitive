@@ -2410,6 +2410,14 @@ bool BufferOnDevice(u64 address, u64 size) {
     return DeviceBufferOf(address, std::max<u64>(size, 1), start, straddle) != nullptr;
 }
 
+bool BufferGpuWrites(u64 address, u64 size) {
+    std::scoped_lock lock{mutex};
+    u64 start = 0;
+    bool straddle = false;
+    const DeviceBuffer* d = DeviceBufferOf(address, std::max<u64>(size, 1), start, straddle);
+    return d != nullptr && d->gpu_writes;
+}
+
 bool FindBuffer(u64 address, u64 size, BufferWindow& out) {
     const LookupTimer lookup_timer{1};
     FillReadersCheck(address, size, 0);

@@ -21,6 +21,8 @@
 #include <memory>
 #include <filesystem>
 #include <mutex>
+#include <map>
+#include <set>
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
@@ -508,6 +510,155 @@ void FrameDumpDispatch(u64 ctx, const Variant& v, std::vector<std::pair<u64, std
     }
 }
 
+
+/// Lantern census (debug, TLG_VKB_LANTERN_CENSUS=1): the four particle shaders tabnul's lantern change skips the waits between (0x1171c360, 0xa4f2ed2d, 0x82c47ba4,
+/// 0x7a83ef95; note 38: data-indexed read-modify-write). For an exact rule (a wait only where two dispatches really touch the same entries) the CPU must be able to read
+/// each dispatch's index data before it runs. Per (shader, binding): binds, written by the shader, kept on our device (the CPU's copy is stale), overlapping a range some
+/// compute dispatch wrote earlier (GPU-written), CPU-readable (none of these). Plus a binary dump of the first dispatches (log/lantern_census.bin): per dispatch its
+/// shader, groups, the first 128 dwords of its constant buffer 0 and every read-only binding that is CPU-readable (its first 64 KB), for an offline overlap check.
+namespace {
+constexpr std::array<u64, 4> LanternShaders{0x1171c360, 0xa4f2ed2d, 0x82c47ba4, 0x7a83ef95};
+bool LanternCensusOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_LANTERN_CENSUS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+struct LanternStat {
+    u64 binds{}, written{}, on_device{}, gpu_written{}, cpu_readable{}, size_max{};
+    u32 kind{}, slot{};
+};
+std::mutex lantern_mutex;
+std::map<std::pair<u64, u32>, LanternStat> lantern_stats;
+struct WrittenRange {
+    u64 begin, end, submit;
+};
+std::vector<WrittenRange> lantern_written; ///< ranges compute dispatches wrote (any shader), newest last, kept 8 submits
+u64 lantern_dispatches = 0, lantern_dumped = 0, lantern_bytes = 0;
+std::set<std::pair<u64, u64>> lantern_snaps; ///< (submit, address) already written
+std::FILE* lantern_file = nullptr;
+void LanternNote(u64 hash, const Variant& v, const boost::container::small_vector<std::pair<u64, u64>, 16>& guest_of, u32 x, u32 y, u32 z) {
+    const u64 submit = Core::Vkb::GraphicsSubmits();
+    const bool lantern = std::find(LanternShaders.begin(), LanternShaders.end(), hash) != LanternShaders.end();
+    std::scoped_lock lock{lantern_mutex};
+    // every dispatch's written ranges (the GPU-written check)
+    while (!lantern_written.empty() && lantern_written.front().submit + 8 < submit) {
+        lantern_written.erase(lantern_written.begin());
+    }
+    if (lantern_written.size() > 200000) {
+        lantern_written.erase(lantern_written.begin(), lantern_written.begin() + 100000);
+    }
+    if (!lantern) {
+        for (u32 i = 0; i < guest_of.size() && i < v.info->buffers.size(); ++i) {
+            if (v.info->buffers[i].is_written && guest_of[i].first != 0) {
+                lantern_written.push_back({guest_of[i].first, guest_of[i].first + guest_of[i].second, submit});
+            }
+        }
+        return;
+    }
+    ++lantern_dispatches;
+    const bool dump = lantern_dumped < 40000;
+    if (dump && lantern_file == nullptr) {
+        const auto path = Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "lantern_census.bin";
+        lantern_file = std::fopen(path.string().c_str(), "wb");
+    }
+    std::vector<u8> record;
+    const auto put = [&](const void* p, size_t n) { record.insert(record.end(), static_cast<const u8*>(p), static_cast<const u8*>(p) + n); };
+    if (dump) {
+        const u32 magic = 0x4c414e54; // 'LANT'
+        put(&magic, 4);
+        put(&submit, 8);
+        put(&hash, 8);
+        put(&x, 4), put(&y, 4), put(&z, 4);
+    }
+    u32 cb0_binding = ~0u;
+    for (u32 i = 0; i < v.buffers.size() && i < guest_of.size() && i < v.info->buffers.size(); ++i) {
+        const Source& src = v.buffers[i];
+        const bool written = v.info->buffers[i].is_written;
+        const u64 address = guest_of[i].first, size = guest_of[i].second;
+        LanternStat& s = lantern_stats[{hash, i}];
+        s.kind = src.cls == Source::Class::Slot ? src.kind : 100 + static_cast<u32>(src.cls);
+        s.slot = src.slot;
+        ++s.binds;
+        s.size_max = std::max(s.size_max, size);
+        if (src.cls == Source::Class::Slot && src.kind == 3 && src.slot == 0) {
+            cb0_binding = i;
+        }
+        if (written) {
+            ++s.written;
+        }
+        bool on_device = false, gpu_written = false;
+        if (address != 0 && size != 0) {
+            on_device = Core::Vkb::BufferOnDevice(address, size);
+            for (const WrittenRange& r : lantern_written) {
+                if (r.begin < address + size && address < r.end) {
+                    gpu_written = true;
+                    break;
+                }
+            }
+        }
+        s.on_device += on_device ? 1 : 0;
+        s.gpu_written += gpu_written ? 1 : 0;
+        const bool readable = !written && !on_device && !gpu_written && address != 0 && size != 0;
+        s.cpu_readable += readable ? 1 : 0;
+        if (written && address != 0) {
+            lantern_written.push_back({address, address + size, submit});
+        }
+    }
+    if (dump) {
+        std::array<u32, 128> cb0{};
+        if (cb0_binding == ~0u && !guest_of.empty() && guest_of[0].first != 0 && guest_of[0].second <= 4096) {
+            cb0_binding = 0;
+        }
+        if (cb0_binding != ~0u && guest_of[cb0_binding].first != 0) {
+            const u64 n = std::min<u64>(guest_of[cb0_binding].second, sizeof(cb0));
+            std::memcpy(cb0.data(), reinterpret_cast<const void*>(guest_of[cb0_binding].first), n);
+        }
+        put(cb0.data(), sizeof(cb0));
+        u32 count = 0;
+        for (u32 i = 0; i < guest_of.size() && i < v.info->buffers.size(); ++i) {
+            count += i != cb0_binding && guest_of[i].first != 0 ? 1 : 0;
+        }
+        put(&count, 4);
+        for (u32 i = 0; i < guest_of.size() && i < v.info->buffers.size(); ++i) {
+            if (i == cb0_binding || guest_of[i].first == 0) {
+                continue;
+            }
+            const u64 address = guest_of[i].first, size = guest_of[i].second;
+            const u32 written = v.info->buffers[i].is_written ? 1 : 0;
+            const u32 device = Core::Vkb::BufferOnDevice(address, size) ? (Core::Vkb::BufferGpuWrites(address, size) ? 1u : 2u) : 0u;
+            put(&i, 4), put(&address, 8), put(&size, 8), put(&written, 4), put(&device, 4);
+            // a CPU-readable buffer's bytes once per submission (up to 8 MB; the file stops at 768 MB)
+            if (!written && device != 1 && lantern_snaps.insert({submit, address}).second && lantern_bytes < (768ull << 20)) {
+                const u32 bytes = static_cast<u32>(std::min<u64>(size, 8ull << 20));
+                std::vector<u8> snap;
+                const u32 smagic = 0x534e4150; // 'SNAP'
+                snap.insert(snap.end(), reinterpret_cast<const u8*>(&smagic), reinterpret_cast<const u8*>(&smagic) + 4);
+                snap.insert(snap.end(), reinterpret_cast<const u8*>(&submit), reinterpret_cast<const u8*>(&submit) + 8);
+                snap.insert(snap.end(), reinterpret_cast<const u8*>(&address), reinterpret_cast<const u8*>(&address) + 8);
+                snap.insert(snap.end(), reinterpret_cast<const u8*>(&bytes), reinterpret_cast<const u8*>(&bytes) + 4);
+                snap.insert(snap.end(), reinterpret_cast<const u8*>(address), reinterpret_cast<const u8*>(address) + bytes);
+                if (lantern_file != nullptr) {
+                    std::fwrite(snap.data(), 1, snap.size(), lantern_file);
+                }
+                lantern_bytes += snap.size();
+            }
+        }
+        if (lantern_file != nullptr) {
+            std::fwrite(record.data(), 1, record.size(), lantern_file);
+            if (++lantern_dumped % 500 == 0 || lantern_dumped == 40000) {
+                std::fflush(lantern_file);
+            }
+        }
+    }
+    if (lantern_dispatches % 3000 == 1) {
+        std::string text;
+        for (const auto& [key, s] : lantern_stats) {
+            text += fmt::format(" | {:#x} b{} k{} s{}: binds {} written {} device {} gpu_written {} cpu_readable {} max {}B", key.first, key.second, s.kind, s.slot, s.binds,
+                                s.written, s.on_device, s.gpu_written, s.cpu_readable, s.size_max);
+        }
+        LOG_WARNING(Render_Vulkan, "lantern census: {} dispatches, {} dumped{}", lantern_dispatches, lantern_dumped, text);
+    }
+}
+} // namespace
 void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_address) {
     if (Core::Vkb::FillReadersOn() || Core::Vkb::R3dTraceSize() != 0) {
         Core::Vkb::CensusTag((1ull << 63) | shader); // note 49 census: compute, the engine's shader id
@@ -675,6 +826,9 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
             c_skip_buffer.fetch_add(1, std::memory_order_relaxed);
             return;
         }
+    }
+    if (LanternCensusOn() && v.info) {
+        LanternNote(v.info->pgm_hash, v, guest_of, x, y, z);
     }
     if (WriteWindowsOn() && !v.windows.empty()) {
         const auto read_cb = [&](u32 binding, u32 index, u64& out) {
