@@ -52,6 +52,7 @@ struct Job {
     bool locked{true};
     s8 query{}; ///< R4a: +1 opens an occlusion query, -1 ends it (no submission is cut inside one)
     u32 weight{1}; ///< G2: the jobs it stands for in the submission split (a batch: its draws)
+    bool splice{false}; ///< P1 (parallel passes): a Splice placeholder (the resolver waits for its jobs and handles them in its place)
     std::vector<Transition> transitions;
     std::atomic<Job*> queue_next{nullptr}; ///< note 60: the lock-free hand-over queue's link
 };
@@ -111,6 +112,22 @@ struct FnJob final : Job {
     F f;
 };
 void Enqueue(std::unique_ptr<Job> job);
+/// P1 (parallel passes, TLG_VKB_PAR_ZPASS): a placeholder the engine's thread puts into the stream where a pass belongs; another thread makes the pass's jobs into it
+/// (SinkTo), then Close. The resolver waits at the placeholder until it is closed and handles its jobs there, so the GPU order stays the API order.
+struct Splice final : Job {
+    Splice() {
+        splice = true;
+    }
+    void Run(vk::CommandBuffer) override {}
+    std::vector<std::unique_ptr<Job>> jobs;
+    std::atomic<u32> closed{0};
+};
+/// The engine's thread: a new placeholder, enqueued now (the caller's open batch goes first). The pointer stays valid until Close.
+Splice* OpenSplice();
+/// The filling thread: its jobs go into `splice` (nullptr: into the stream again)
+void SinkTo(Splice* splice);
+/// The filling thread, after its last job (its open batch flushed): the resolver may handle the placeholder
+void CloseSplice(Splice* splice);
 /// R3b: called (on the enqueuing thread) before any job is enqueued or a submission is made: the caller's open batch of draws goes first (API order)
 void SetBeforeEnqueue(void (*hook)(u32 work)); ///< (`work`: the job's Work kind, ~0u at a submission)
 /// R3b: enqueue without calling the hook (the batch itself)

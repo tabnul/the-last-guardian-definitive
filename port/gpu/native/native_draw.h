@@ -141,6 +141,11 @@ bool IsGuarded();
 bool GuardedCall(void (*fn)(void*), void* argument);
 /// N6.3i (cascade generator): issues `DrawIndexedCommon(ctx, count, first, 0, 1)` as the depth pass loop does at its call site, through the draw hook (the tag, then the engine's function).
 void IssueIndexedDraw(u64 ctx, u64 count, u64 first, u64 site_ghidra, u64 a4, u64 a3 = 0);
+/// P1 (parallel passes): an indexed draw from a private copy of the device context, on a thread other than the engine's (false: not drawn, see native_draw.cpp)
+bool IssueWorkerDraw(u64 ctx, u64 count, u64 first, u64 a3);
+/// P1: the engine-visible side effects of the bound targets, made on the engine's thread when a pass is handed to another thread
+void HandOverTargets(u64 ctx);
+nlohmann::json WorkerDrawStats();
 
 /// Native at the source S2b (`TLG_NDD=1`, shadow): what the native draw description of a generator's draw holds for the raster thread, by the record number of the draw.
 /// `key`: the draw's identity from the description alone (shaders, fixed state, input layout, targets, every binding with a frame ring constant by its size only, the

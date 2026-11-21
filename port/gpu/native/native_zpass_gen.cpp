@@ -45,6 +45,11 @@
 #include "native/native_site_gen.h"
 #include "native/native_debug_server.h"
 #include "native/native_vkb_graphics.h"
+#include "native/native_vkb_stream.h"
+#include <chrono>
+#include <condition_variable>
+#include <deque>
+#include <memory>
 
 namespace Core::NativeZPassGen {
 /// note 57: under the engine-to-Vulkan backend (TLG_VKB=1) the generators are off by default: the engine's own pass loops call the API, and our backend takes the
@@ -211,6 +216,7 @@ struct BatchLevel {
     bool g340_set{false};
     u32 table_dwords{0};
     std::array<u64, 64> gtable{};
+    bool main_any{false}, worker_any{false}; // P1: the batch has steps the engine's thread makes / the worker makes
 };
 
 struct Step {
@@ -220,6 +226,7 @@ struct Step {
     u64 key{};
     u64 variant{};  // the variant object learned for the key
     u32 flag{};     // material + 0xd4 & 1
+    u8 lane{0};     // P1: 0 the engine's thread draws it, 1 the worker, 2 the worker draws it and the engine's thread sets its state (the pass's last primitive: the context's end state)
 };
 
 struct Plan {
@@ -233,6 +240,7 @@ struct Plan {
     std::vector<BatchLevel> batches;
     std::vector<Step> steps;
     u32 group_batches{0}, group_batches_skipped{0};
+    std::vector<u8> culled; // P1: per step, the visibility cache's answer read on the engine's thread when the pass was handed over
     bool Ok() const { return scanned && reasons.empty(); }
     void Decline(const char* reason) {
         for (const char* r : reasons) {
@@ -312,6 +320,9 @@ struct Mark {
 /// Where the generator writes: the live device context, or a private copy of it that logs every write (the verify run).
 struct Target {
     bool live{true};
+    bool worker{false}; // P1: the worker's run (a private copy of the context; lanes 1 and 2; no engine-visible side effects but its draws)
+    bool split{false};  // P1: the engine's thread's run of a handed-over pass (lanes 0 and 2's state)
+    u32 refused{0};     // P1: worker draws not drawn (fetch shader missing)
     u8* base{nullptr};
     std::vector<u8> arena; // shadow: entries [u32 offset][u32 size][bytes]
     std::vector<Mark> marks;
@@ -405,7 +416,7 @@ void SetShader(Target& t, u32 offset, u64 object, u8 dirty_bit) {
     if (current == object) {
         return;
     }
-    if (t.live) {
+    if (t.live && !t.worker) { // (the worker's private context holds no references)
         if (current != 0) {
             auto* count = reinterpret_cast<std::atomic<s64>*>(current + 8);
             if (count->fetch_sub(1) == 1) {
@@ -878,6 +889,12 @@ void CountReuse(const Target& t) {
 }
 
 void IssueDraw(Target& t, u32 kind, u64 count, u64 first, u64 a3 = 0) {
+    if (t.worker) {
+        if (kind != 0 || !NativeDraw::IssueWorkerDraw(reinterpret_cast<u64>(t.base), count, first, a3)) {
+            ++t.refused;
+        }
+        return;
+    }
     if (t.live && CensusOn()) {
         CountReuse(t);
     }
@@ -924,6 +941,12 @@ void Generate(Target& t, const Plan& plan) {
     t.Set<u64>(0x68, 0);
     bool raster_flag = false; // bVar15: which of the two raster state objects the last primitive asked for
     for (const BatchLevel& level : plan.batches) {
+        if (t.worker && (level.group || level.special != 0 || level.only_580 || !level.worker_any)) {
+            continue; // P1: batches the engine's thread makes
+        }
+        if (t.split && !level.main_any) {
+            continue; // P1: the worker makes all of it
+        }
         t.batch_owner = level.batch;
         t.Set<u64>(0x580, level.value_580);
         t.batch_owner = 0;
@@ -960,6 +983,9 @@ void Generate(Target& t, const Plan& plan) {
         }
         for (u32 s = level.first_step; s < level.first_step + level.step_count; ++s) {
             const Step& step = plan.steps[s];
+            if (t.worker ? step.lane == 0 : (t.split && step.lane == 1)) {
+                continue; // P1: the other thread's primitive
+            }
             t.slot_material = step.material;
             if (step.flag != 0) {
                 CopyEarlyBlock(t, step.material);
@@ -979,7 +1005,7 @@ void Generate(Target& t, const Plan& plan) {
             }
             BindMaterial(t, step.material);
             t.slot_material = 0;
-            if (t.live) {
+            if (t.live && !t.worker) {
                 W<u64>(R<u64>(step.record + 0x28) + 0x48, step.variant); // the loop stores the variant it chose behind the primitive record
             }
             SetShader(t, 0x4698, R<u64>(step.variant + 8), 1);
@@ -995,9 +1021,16 @@ void Generate(Target& t, const Plan& plan) {
                 }
             }
             if (level.visibility) {
-                if (const u64 node = VisibilityNode(plan.visibility_owner, step.record); node != 0 && R<s32>(node + 8) == 2) {
+                if (t.worker || t.split) {
+                    if (plan.culled[s] != 0) {
+                        continue; // P1: the answer read when the pass was handed over
+                    }
+                } else if (const u64 node = VisibilityNode(plan.visibility_owner, step.record); node != 0 && R<s32>(node + 8) == 2) {
                     continue; // culled by the cache: the loop leaves the primitive after its state is set, before the draw and the counters
                 }
+            }
+            if (t.split && step.lane == 2) {
+                continue; // P1: the state only; the worker draws it (and the counters were added when the pass was handed over)
             }
             const s32 triangles = R<s32>(step.record + 0x14);
             if (t.live) {
@@ -1011,7 +1044,9 @@ void Generate(Target& t, const Plan& plan) {
             if (t.live) {
                 Core::Vkb::Graphics::ClearStepHint();
             }
-            if (t.live) {
+            if (t.worker) {
+                // P1: the counters were added on the engine's thread
+            } else if (t.live) {
                 W<s32>(rd + 0x10, R<s32>(rd + 0x10) + 1);
                 W<s32>(rd + 0x14, R<s32>(rd + 0x14) + triangles);
             } else {
@@ -4620,6 +4655,210 @@ void R7Finish() {
     }
 }
 
+// ------------------------------------------------------------------------------------------------------------------------------- P1: parallel passes
+// TLG_VKB_PAR_ZPASS=1 (experiment, branch experimental-native-passes; needs TLG_ZPASS_GEN=1 TLG_ZPASS_GEN_VIEWS=1+2): a shadow cascade pass the generator takes over is handed to a
+// worker thread. The engine's thread copies the device context (the pass's start state), puts a placeholder into our stream (Stream::OpenSplice) and gives the worker the plan;
+// the worker writes the pass into its private context copy and draws from it (its jobs fill the placeholder; the resolver waits there, so the GPU order is the API order).
+// A depth pass's result does not depend on the order of its draws, so the primitives whose binding writes engine memory shared with later passes (instance groups,
+// resource sets, the vertex modifier entry) stay on the engine's thread,
+// drawn there as before. The engine's thread also makes every engine-visible side effect of the worker's primitives (the variant stored behind each record, the device's
+// counters) and the context's end state (the last primitive's state, the epilogue), so the engine sees the pass as the loop leaves it.
+namespace {
+bool ParOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_PAR_ZPASS"); return e != nullptr && e[0] == '1'; }();
+    return on;
+}
+constexpr size_t ParCtxBytes = 0x13100; // the device context's words our draw path reads (the highest: + 0x130e8)
+constexpr u32 ParSlots = 4;
+struct ParTask {
+    std::shared_ptr<const Plan> plan;
+    u32 slot{};
+    Core::Vkb::Stream::Splice* splice{};
+};
+struct ParState {
+    std::mutex m;
+    std::condition_variable cv;
+    std::deque<ParTask> tasks;
+    std::array<std::vector<u8>, ParSlots> snapshots;
+    std::array<std::atomic<bool>, ParSlots> busy{};
+    std::atomic<u64> calls{0}, passes{0}, serial{0}, no_slot{0}, no_worker_steps{0}, copy_faults{0}, steps_main{0}, steps_worker{0}, refused{0}, worker_faults{0}, worker_ns{0};
+    bool started{false};
+};
+ParState& PS() {
+    static ParState state;
+    return state;
+}
+void ParWorkerMain() {
+#ifdef _WIN32
+    SetThreadDescription(GetCurrentThread(), L"vkb:Pass1");
+#endif
+    ParState& ps = PS();
+    for (;;) {
+        ParTask task;
+        {
+            std::unique_lock lock{ps.m};
+            ps.cv.wait(lock, [&] { return !ps.tasks.empty(); });
+            task = std::move(ps.tasks.front());
+            ps.tasks.pop_front();
+        }
+        const auto t0 = std::chrono::steady_clock::now();
+        Core::Vkb::Graphics::SetDepthPass(true);
+        Core::Vkb::Stream::SinkTo(task.splice);
+        struct Args {
+            Target t;
+            const Plan* plan;
+        } args{};
+        args.t.live = true;
+        args.t.worker = true;
+        args.t.base = ps.snapshots[task.slot].data();
+        args.plan = task.plan.get();
+        if (!NativeDraw::GuardedCall([](void* p) { auto* a = static_cast<Args*>(p); Generate(a->t, *a->plan); }, &args)) {
+            ps.worker_faults.fetch_add(1, std::memory_order_relaxed);
+        }
+        Core::Vkb::Graphics::FlushBatch();
+        Core::Vkb::Graphics::SetDepthPass(false);
+        Core::Vkb::Stream::SinkTo(nullptr);
+        Core::Vkb::Stream::CloseSplice(task.splice);
+        ps.refused.fetch_add(args.t.refused, std::memory_order_relaxed);
+        task.plan.reset();
+        ps.busy[task.slot].store(false, std::memory_order_release);
+        ps.worker_ns.fetch_add(static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count()), std::memory_order_relaxed);
+    }
+}
+struct ClassifyArgs {
+    Plan* plan;
+    u32 main_steps{0}, worker_steps{0};
+};
+/// The lanes of a pass's primitives and the visibility answers (engine memory read: guarded)
+void ClassifyImpl(ClassifyArgs& a) {
+    Plan& plan = *a.plan;
+    plan.culled.assign(plan.steps.size(), 0);
+    s32 last = -1;
+    for (BatchLevel& level : plan.batches) {
+        level.main_any = level.only_580;
+        level.worker_any = false;
+        const bool main_batch = level.group || level.special != 0;
+        for (u32 s = level.first_step; s < level.first_step + level.step_count; ++s) {
+            Step& step = plan.steps[s];
+            // (no fetch shader case: the pass's prologue clears the input layout, ctx + 0x68, so the engine's draw path never makes one here)
+            const bool main = main_batch || (step.flag != 0 && !level.bvar54) || R<u64>(step.variant + 8) == 0;
+            step.lane = main ? 0 : 1;
+            if (level.visibility) {
+                if (const u64 node = VisibilityNode(plan.visibility_owner, step.record); node != 0 && R<s32>(node + 8) == 2) {
+                    plan.culled[s] = 1;
+                }
+            }
+            level.main_any |= main;
+            level.worker_any |= !main;
+            ++(main ? a.main_steps : a.worker_steps);
+            last = static_cast<s32>(s);
+        }
+    }
+    if (last >= 0 && plan.steps[last].lane == 1) {
+        plan.steps[last].lane = 2;
+        for (BatchLevel& level : plan.batches) {
+            if (static_cast<u32>(last) >= level.first_step && static_cast<u32>(last) < level.first_step + level.step_count) {
+                level.main_any = true;
+            }
+        }
+    }
+}
+/// The engine's thread: hand the pass to the worker. False: nothing done (the caller generates the pass itself).
+void ParPublish();
+bool ParallelPass(std::unique_ptr<Plan>& owned) {
+    ParState& ps = PS();
+    Plan& plan = *owned;
+    if ((ps.calls.fetch_add(1, std::memory_order_relaxed) & 255) == 0) {
+        ParPublish();
+    }
+    ClassifyArgs ca{&plan};
+    if (!NativeDraw::GuardedCall([](void* p) { ClassifyImpl(*static_cast<ClassifyArgs*>(p)); }, &ca)) {
+        ps.serial.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    if (ca.worker_steps == 0) {
+        ps.no_worker_steps.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    u32 slot = ParSlots;
+    for (u32 i = 0; i < ParSlots; ++i) {
+        bool expected = false;
+        if (ps.busy[i].compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot == ParSlots) {
+        ps.no_slot.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    std::vector<u8>& snap = ps.snapshots[slot];
+    if (snap.size() != ParCtxBytes) {
+        snap.assign(ParCtxBytes, 0);
+    }
+    struct CopyArgs {
+        u8* dst;
+        u64 src;
+    } copy{snap.data(), plan.ctx};
+    if (!NativeDraw::GuardedCall([](void* p) { auto* c = static_cast<CopyArgs*>(p); std::memcpy(c->dst, reinterpret_cast<const void*>(c->src), ParCtxBytes); }, &copy)) {
+        ps.busy[slot].store(false, std::memory_order_release);
+        ps.copy_faults.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    NativeDraw::HandOverTargets(plan.ctx);
+    {
+        std::scoped_lock lock{ps.m};
+        if (!ps.started) {
+            ps.started = true;
+            std::thread{ParWorkerMain}.detach();
+        }
+    }
+    std::shared_ptr<const Plan> shared{owned.release()};
+    Core::Vkb::Stream::Splice* splice = Core::Vkb::Stream::OpenSplice();
+    {
+        std::scoped_lock lock{ps.m};
+        ps.tasks.push_back({shared, slot, splice});
+    }
+    ps.cv.notify_one();
+    // the worker's primitives' engine-visible side effects: the variant behind each record, the device's counters
+    const u64 rd = shared->render_device;
+    s32 draws = 0;
+    s64 triangles = 0;
+    for (u32 s = 0; s < shared->steps.size(); ++s) {
+        const Step& step = shared->steps[s];
+        if (step.lane == 0) {
+            continue;
+        }
+        W<u64>(R<u64>(step.record + 0x28) + 0x48, step.variant);
+        if (shared->culled[s] == 0) {
+            ++draws;
+            triangles += R<s32>(step.record + 0x14);
+        }
+    }
+    W<s32>(rd + 0x10, R<s32>(rd + 0x10) + draws);
+    W<s32>(rd + 0x14, R<s32>(rd + 0x14) + static_cast<s32>(triangles));
+    // this thread's primitives and the context's end state
+    Target t;
+    t.live = true;
+    t.split = true;
+    t.base = reinterpret_cast<u8*>(shared->ctx);
+    Timed(CallId::PassDepth, [&] { Generate(t, *shared); });
+    const u64 n = ps.passes.fetch_add(1, std::memory_order_relaxed) + 1;
+    ps.steps_main.fetch_add(ca.main_steps, std::memory_order_relaxed);
+    ps.steps_worker.fetch_add(ca.worker_steps, std::memory_order_relaxed);
+    (void)n;
+    return true;
+}
+void ParPublish() {
+    ParState& ps = PS();
+    nlohmann::json out = {{"calls", ps.calls.load()}, {"passes", ps.passes.load()}, {"classify_faults", ps.serial.load()}, {"no_slot", ps.no_slot.load()},
+                          {"no_worker_steps", ps.no_worker_steps.load()}, {"copy_faults", ps.copy_faults.load()}, {"steps_main", ps.steps_main.load()},
+                          {"steps_worker", ps.steps_worker.load()}, {"refused", ps.refused.load()}, {"worker_faults", ps.worker_faults.load()},
+                          {"worker_ms", static_cast<double>(ps.worker_ns.load()) / 1e6}, {"draw", NativeDraw::WorkerDrawStats()}};
+    DebugServer::Publish("par_zpass", std::move(out));
+}
+} // namespace
+
 bool HandlePass(u64 render_device, u64 desc, u64 original_loop) {
     const Config& cfg = Cfg();
     if (!cfg.on || original_loop == 0) {
@@ -4683,6 +4922,20 @@ bool HandlePass(u64 render_device, u64 desc, u64 original_loop) {
         if (plan.Ok()) {
             ++stats->eligible;
         }
+    }
+    if (plan.Ok() && ParOn() && Core::Vkb::Stream::RecorderOn() && (plan.view_type == 1 || plan.view_type == 2)) {
+        const u64 batches = plan.batches.size(), steps = plan.steps.size(), groups = plan.group_batches, groups_skipped = plan.group_batches_skipped;
+        auto owned = std::make_unique<Plan>(std::move(plan));
+        if (ParallelPass(owned)) {
+            std::scoped_lock lock{s.mutex};
+            ++stats->generated;
+            stats->generated_batches += batches;
+            stats->generated_draws += steps;
+            stats->group_batches += groups;
+            stats->group_batches_skipped += groups_skipped;
+            return true;
+        }
+        plan = std::move(*owned);
     }
     if (plan.Ok()) {
         Target live;

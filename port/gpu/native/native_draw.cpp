@@ -6918,6 +6918,27 @@ u64 TakeDrawImpl(u64 ctx, u64 a1, u64 a2, u64 a3, u32 kind, bool inline_draw) {
     ExecSideEffects(ctx, kind, a1, a2, a3);
     return 1;
 }
+/// P1 (parallel passes, TLG_VKB_PAR_ZPASS): an indexed draw of a pass made on another thread from a private copy of the device context (`ctx`). What TakeDrawImpl does for an
+/// indexed draw, without what belongs to the engine's thread: the target side effects (the engine's thread made them when it handed the pass over), the per-context state
+/// table, the census. False: not drawn (the vertex shader's fetch shader is not made yet: the engine's own path must run once; the caller keeps such draws on its thread).
+std::atomic<u64> worker_draws{0}, worker_refused{0};
+bool TakeDrawWorker(u64 ctx, u64 count, u64 first, u64 a3) {
+    if (const u64 vs = Rd<u64>(ctx, Ctx::VertexShader); vs != 0 && Rd<u64>(ctx, Ctx::InputLayout) != 0 && Rd<u64>(vs + 0x30, 0xe0) == 0) {
+        worker_refused.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    if (Rd<u32>(ctx, 0x4724) != 1) {
+        Wr<u32>(ctx, 0x4724, 1);
+    }
+    draws.fetch_add(1, std::memory_order_relaxed);
+    worker_draws.fetch_add(1, std::memory_order_relaxed);
+    Core::Vkb::Graphics::Draw(ctx, 0, count, first, a3);
+    ExecSideEffects(ctx, 0, count, first, a3);
+    return true;
+}
+void NoteTargetsHandedOver(u64 ctx) {
+    ApplyTargetSideEffects(ctx);
+}
 /// A dispatch of the device context (direct, fenced: the fence is an in-stream scratch label, see TagDispatchFenced; or indirect).
 u64 TakeDispatchImpl(u64 ctx, u64 x, u64 y, u64 z, bool indirect, u64 args_address);
 u64 TakeDispatch(u64 ctx, u64 x, u64 y, u64 z, bool indirect, u64 args_address = 0) {
@@ -13575,6 +13596,15 @@ void IssueIndirectDraw(u64 ctx, u64 buffer, u64 offset, u64 site_ghidra) {
     }
 }
 
+bool IssueWorkerDraw(u64 ctx, u64 count, u64 first, u64 a3) {
+    return Vkb::TakeDrawWorker(ctx, count, first, a3);
+}
+void HandOverTargets(u64 ctx) {
+    Vkb::NoteTargetsHandedOver(ctx);
+}
+nlohmann::json WorkerDrawStats() {
+    return {{"worker_draws", Vkb::worker_draws.load()}, {"worker_refused", Vkb::worker_refused.load()}};
+}
 void IssueIndexedDraw(u64 ctx, u64 count, u64 first, u64 site_ghidra, u64 a4, u64 a3) {
     L6Timers::Scope l6_scope{g_l6_draw_ns, g_l6_draw_n};
     // the draw a pass loop makes at its call site (return address `site_ghidra`; a4 is its fifth argument: the depth loop passes 1, the G-buffer loop 0), so the draw hook sees the same call site

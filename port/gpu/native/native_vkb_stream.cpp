@@ -152,6 +152,8 @@ RangeSet frame_written; ///< V4i: engine memory our GPU work wrote in place this
 std::mutex frame_written_mutex; ///< R4a: noted by the recording threads
 std::mutex ring_mutex; ///< V4g: the host ring (filled where calls are resolved, reset at the submit)
 thread_local std::vector<Transition> pending_transitions;
+thread_local Splice* t_sink = nullptr; ///< P1: this thread's jobs go into a placeholder
+std::atomic<u64> c_splices{0}, c_splice_jobs{0}, c_splice_waits{0}, c_splice_wait_us{0};
 /// note 60: the hand-over from the engine's threads to the recording thread is a lock-free multi-producer queue (Vyukov's intrusive MPSC: a producer links its job
 /// with one atomic exchange, call order kept); the recorder is woken only when it sleeps, and the flip's Drain waits on an idle counter. Before: a mutex, a deque and
 /// two condition variables, locked and notified per job by both threads (note 59: about 9 % of the render thread in lock waits and SRW locks).
@@ -1307,6 +1309,31 @@ void RecorderThread() {
             while (std::chrono::steady_clock::now() < until) {
             }
         }
+        if (job->splice) { // P1: wait for the pass made on another thread, then its jobs in this place
+            auto* sp = static_cast<Splice*>(job.get());
+            if (sp->closed.load(std::memory_order_acquire) == 0) {
+                c_splice_waits.fetch_add(1, std::memory_order_relaxed);
+                const u64 w0 = RecNs();
+                if (Recorders() > 1) {
+                    FlushBatch(); // what is resolved so far goes to its recording thread while we wait
+                }
+                while (sp->closed.load(std::memory_order_acquire) == 0) {
+                    sp->closed.wait(0, std::memory_order_acquire);
+                }
+                c_splice_wait_us.fetch_add((RecNs() - w0) / 1000, std::memory_order_relaxed);
+            }
+            c_splices.fetch_add(1, std::memory_order_relaxed);
+            c_splice_jobs.fetch_add(sp->jobs.size(), std::memory_order_relaxed);
+            for (auto& inner : sp->jobs) {
+                if (Recorders() > 1) {
+                    Resolve(std::move(inner));
+                } else {
+                    RunJob(*inner);
+                }
+            }
+            sp->jobs.clear();
+            continue;
+        }
         const u32 kind = job->locked ? static_cast<u32>(job->work) : static_cast<u32>(Work::Count);
         if (Recorders() > 1) {
             Resolve(std::move(job));
@@ -1351,10 +1378,28 @@ void Enqueue(std::unique_ptr<Job> job) {
     EnqueueImpl(std::move(job));
     c_enqueue_ns.fetch_add(RecNs() - e0, std::memory_order_relaxed);
 }
+Splice* OpenSplice() {
+    auto job = std::make_unique<Splice>();
+    job->work = Work::Draw;
+    Splice* p = job.get();
+    Enqueue(std::move(job));
+    return p;
+}
+void SinkTo(Splice* splice) {
+    t_sink = splice;
+}
+void CloseSplice(Splice* splice) {
+    splice->closed.store(1, std::memory_order_release);
+    splice->closed.notify_all();
+}
 void EnqueueImpl(std::unique_ptr<Job> job) {
     job->transitions.swap(pending_transitions);
     pending_transitions.clear();
     c_jobs.fetch_add(1, std::memory_order_relaxed);
+    if (t_sink != nullptr) { // P1: a pass made on another thread
+        t_sink->jobs.push_back(std::move(job));
+        return;
+    }
     if (!RecorderOn()) {
         RunJob(*job);
         return;
@@ -2173,7 +2218,7 @@ nlohmann::json Report() {
                                t["enqueue_on_producers"] = c_enqueue_ns.load() / 1000000;
                                return t;
                            }()}, {"most_queued", c_jobs_most.load()}, {"producer_waits_queue_full", c_job_waits_full.load()},
-                          {"drains", c_drains.load()}, {"split_submits", c_splits.load()},
+                          {"drains", c_drains.load()}, {"splices", c_splices.load()}, {"splice_jobs", c_splice_jobs.load()}, {"splice_waits", c_splice_waits.load()}, {"splice_wait_us", c_splice_wait_us.load()}, {"split_submits", c_splits.load()},
                           {"r4a_recorders_submissions_jobs_transition_jobs_worker_waits_batches", {Recorders(), c_r4a_submissions.load(), c_r4a_jobs.load(), c_r4a_transition_jobs.load(), c_r4a_worker_waits.load(), c_r4a_batches.load()}},
                           {"stage_own_overlap", c_stage_own_overlap.load()},
                           {"drain_wait_ms_mean", c_drains.load() ? static_cast<double>(c_drain_us.load()) / 1e3 / static_cast<double>(c_drains.load()) : 0.0}}},
