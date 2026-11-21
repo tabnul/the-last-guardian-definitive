@@ -202,7 +202,8 @@ TEXT = {
     'fps_30': '30 FPS (as on PS4)',
     'deck_preset': 'Steam Deck (experimental)',
     'fps_60': '60 FPS',
-    'fps_unlocked': 'Unlocked (up to the display)',
+    'fps_120': '120 FPS',
+    'fps_unlocked': 'Unlocked (experimental, no limit)',
     'fps_hint': ('60/unlocked patch eboot 1.03 in memory. Unlocked lowers the base frame rate by about '
                  '10 FPS against 60 at the same spot; pick 60 unless your PC runs well above 60'),
     'skip_logos': 'Skip the boot logos',

@@ -137,7 +137,7 @@
     "launcher.fps_30": "30 FPS (wie auf PS4)",
     "launcher.deck_preset": "Steam Deck (experimentell)",
     "launcher.fps_60": "60 FPS",
-    "launcher.fps_unlocked": "Unbegrenzt (bis zum Bildschirm)",
+    "launcher.fps_unlocked": "Unbegrenzt (experimentell, ohne Limit)",
     "launcher.fps_hint": "60/Unbegrenzt-Patch für eboot 1.03 im Speicher. Unbegrenzt senkt die Grund-Bildrate an derselben Stelle um etwa 10 FPS gegenüber 60; wähle 60, außer dein PC schafft deutlich mehr als 60",
     "launcher.skip_logos": "Boot-Logos überspringen",
     "launcher.debug": "Debug (beim Start)",
