@@ -9404,6 +9404,11 @@ void QueryReset() {
     reset_generation = generation;
 }
 void BeforeRecording() {
+    // TLG_VKB_TEST_NO_ANIM_ORDER=1: kill experiment (2026-11-21, furthest save: 3.4 ms waits with soldiers), never a default (the K2 race comes back)
+    static const bool test_skip = [] { const char* e = std::getenv("TLG_VKB_TEST_NO_ANIM_ORDER"); return e != nullptr && e[0] == '1'; }();
+    if (test_skip) {
+        return;
+    }
     std::unique_lock lock{mutex};
     const u64 target = reset_generation + 1; // the AnimationTick that follows this cycle's reset
     std::erase_if(exts, [&](const auto& kv) { return kv.second.producer_generation + 4 < target && kv.second.done_generation + 4 < target; }); // gone or idle extensions
