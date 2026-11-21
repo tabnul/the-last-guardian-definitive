@@ -1140,6 +1140,10 @@ def build_env(settings, extra=None):
     # The renderer (M3 (7)): with the backend, the default renderer's own variables are left out.
     if backend_on(settings):
         env.setdefault('TLG_VKB', '1')
+        # One frame in flight (the CPU prepares the next frame while the GPU draws this one): what every backend measurement and
+        # owner play ran with (tools/dev/play_start.ps1); the launcher had left the frame gate's default 0 (owner, 2026-11-21:
+        # "more fps when you launch it"). TLG_FRAMES_IN_FLIGHT set outside wins.
+        env.setdefault('TLG_FRAMES_IN_FLIGHT', '1')
         for key in THEIR_RENDERER_ENV:
             if key not in os.environ:
                 env.pop(key, None)
