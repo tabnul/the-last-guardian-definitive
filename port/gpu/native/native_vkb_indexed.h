@@ -26,6 +26,8 @@ namespace Core::Vkb::Indexed {
 /// Our object is being destroyed (the GPU is done with it): its slots are free again
 void ForgetBuffer(vk::Buffer buffer);
 void ForgetView(vk::ImageView view);
+/// Changes whenever a slot is freed (G3: a row kept by pointer is remade then)
+[[nodiscard]] u64 Epoch();
 [[nodiscard]] nlohmann::json Report();
 
 } // namespace Core::Vkb::Indexed

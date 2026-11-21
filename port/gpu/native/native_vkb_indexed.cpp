@@ -348,6 +348,10 @@ u32 SamplerSlotLocked(vk::Sampler sampler) {
     return slot;
 }
 
+u64 Epoch() {
+    return g_epoch.load(std::memory_order_acquire);
+}
+
 void ForgetBuffer(vk::Buffer buffer) {
     Forget(BuffersTable, BuffersTable, reinterpret_cast<u64>(static_cast<VkBuffer>(buffer)));
 }

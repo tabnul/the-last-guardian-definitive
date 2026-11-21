@@ -232,6 +232,7 @@ bool Enabled() noexcept {
 }
 
 void NoteResource(u64 object) {
+    Core::Vkb::ObjectPointerChanged(object); // G3: rows by pointer
     if (!Enabled()) {
         return;
     }
@@ -248,6 +249,7 @@ void NoteResource(u64 object) {
 }
 
 void NoteView(Kind kind, u64 view_object, u64 desc) {
+    Core::Vkb::ObjectPointerChanged(view_object); // G3: rows by pointer
     if (!Enabled() || view_object == 0) {
         return;
     }
@@ -318,6 +320,7 @@ u32 TextureAtCreationMode() noexcept {
 }
 
 void NoteTextureCreated(u64 object) {
+    Core::Vkb::ObjectPointerChanged(object); // G3: rows by pointer
     const u32 mode = TextureAtCreationMode();
     if (mode == 0 || object == 0) {
         return;
@@ -380,6 +383,7 @@ void NoteTextureCreated(u64 object) {
 }
 
 void NoteDelete(u64 object) {
+    Core::Vkb::ObjectPointerChanged(object); // G3: rows by pointer
     if (!Enabled() || object == 0) {
         return;
     }

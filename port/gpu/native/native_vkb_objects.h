@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <array>
+#include <atomic>
+
 #include <string>
 #include <nlohmann/json_fwd.hpp>
 #include "common/types.h"
@@ -105,6 +108,19 @@ struct BufferWindow {
 bool FindBuffer(u64 address, u64 size, BufferWindow& out);
 /// tier-2 gap pass (debug): the buffer lives in our device memory (its engine memory is not updated by the GPU). No side effects.
 bool BufferOnDevice(u64 address, u64 size);
+/// Rows by pointer (G3): a generation per engine object pointer (hashed), bumped whenever an engine object is created or deleted at that pointer (the creation and
+/// delete hooks of native_device.cpp). A table entry made for an object pointer holds while the pointer's generation is the one it was made with, so a draw finds its
+/// rows from the pointers in the context without reading the engine objects. Collisions only bump more often (an entry is remade, never kept wrongly).
+inline std::array<std::atomic<u32>, 1u << 16> g_object_gen{};
+inline u32 ObjectGenSlot(u64 object) {
+    return static_cast<u32>((object * 0x9e3779b97f4a7c15ull) >> 48);
+}
+inline void ObjectPointerChanged(u64 object) {
+    g_object_gen[ObjectGenSlot(object)].fetch_add(1, std::memory_order_release);
+}
+inline u32 ObjectPointerGen(u64 object) {
+    return g_object_gen[ObjectGenSlot(object)].load(std::memory_order_acquire);
+}
 /// Lantern census (debug): the device buffer under the range is one the GPU writes (bound as an unordered access view); false for a dynamic buffer (the CPU writes it, uploaded at Unmap)
 bool BufferGpuWrites(u64 address, u64 size);
 /// R3a: the window of engine memory at [address, address + size) as a copy source: our frame ring in device memory, else the in-place import (null buffer: none)

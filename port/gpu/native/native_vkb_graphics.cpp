@@ -1605,6 +1605,8 @@ bool BuildRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector
                 if (address != 0 && size != 0) {
                     if (Core::Vkb::ConstantInRing(address, size, w)) {
                         ok = true;
+                    } else if (Core::Vkb::R7NoCopy()) { // bound / bisect (TLG_VKB_R7_NO_CB_COPY=1): in place, not copied
+                        ok = Core::Vkb::FindBuffer(address, size, w);
                     } else if (size <= 65536) { // R7: copied at the draw (a D3D11 driver's per-draw version)
                         const Stream::Slice slice = RowSlice(size);
                         std::memcpy(slice.data, reinterpret_cast<const void*>(address), size);
@@ -2778,6 +2780,8 @@ u64 CurrentBatchSerial() {
 /// Switches: TLG_VKB_FAST_ROW (default on since 2026-11-21, =0 off), TLG_VKB_FAST_ROW_VERIFY=1 (both rows made, the old one drawn, differences counted).
 struct FastBuf {
     u64 id{}, object{}, buffer{}, memory{};
+    u32 gen{};
+    u64 epoch{};
     vk::Buffer vk_buffer{};
     u32 slot{}, offset{}, size{};
     u64 use_offset{}, use_size{};
@@ -2786,6 +2790,8 @@ struct FastBuf {
 };
 struct FastImg {
     u64 id{}, object{};
+    u32 gen{};
+    u64 epoch{};
     u32 want{}, key{}, slot{};
     vk::Image image{};
     u64 serial{};
@@ -2815,6 +2821,12 @@ inline u32 FastHash(u64 id, u64 extra = 0) {
 }
 bool FastRowOn() {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_FAST_ROW"); return e == nullptr || e[0] != '0'; }();
+    return on;
+}
+/// G3 (TLG_VKB_ROW_BY_POINTER=1, off: verified 0 differences in 6.58 M rows, but no fps (106.9 off / 106.2 on, 2026-11-21)): buffer views, images and index buffers found by their pointer in the context, checked by the pointer's
+/// generation (native_vkb_objects.h) and the global set's free epoch, without reading the engine objects (each a likely cache miss)
+bool RowByPointer() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_ROW_BY_POINTER"); return e != nullptr && e[0] == '1'; }();
     return on;
 }
 bool FastRowVerify() {
@@ -2863,6 +2875,16 @@ bool FastRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<
                 if (size > 65536) {
                     return false;
                 }
+                if (Core::Vkb::R7NoCopy()) { // bound / bisect (TLG_VKB_R7_NO_CB_COPY=1): in place, not copied
+                    if (!Core::Vkb::FindBuffer(address, size, w) || !w.buffer || (w.offset & 3) != 0) {
+                        return false;
+                    }
+                    row[at++] = Core::Vkb::Indexed::BufferSlot(w.buffer);
+                    row[at++] = static_cast<u32>(w.offset);
+                    row[at++] = static_cast<u32>(size);
+                    uses.push_back(Stream::BufferUse(w.buffer, w.offset, size, false));
+                    continue;
+                }
                 if (t_fast_verifying) { // (verify: the old row made its own copy; this entry is not compared)
                     row[at++] = ~0u, row[at++] = ~0u, row[at++] = ~0u;
                     continue;
@@ -2881,11 +2903,21 @@ bool FastRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<
             continue;
         }
         // a buffer view
-        const u64 id = Rd<u64>(object, 0x10);
-        const u64 buffer = Rd<u64>(object, 0x30);
-        const u64 memory = buffer != 0 ? Rd<u64>(buffer, 0x30) : 0;
-        FastBuf& e = f.bufs[FastHash(id) & (f.bufs.size() - 1)];
-        if (e.id == id && e.object == object && e.buffer == buffer && e.memory == memory && e.vk_buffer) {
+        const bool by_pointer = RowByPointer();
+        const u32 gen = by_pointer ? Core::Vkb::ObjectPointerGen(object) : 0;
+        const u64 epoch = by_pointer ? Core::Vkb::Indexed::Epoch() : 0;
+        FastBuf* hit = nullptr;
+        if (by_pointer) {
+            FastBuf& p = f.bufs[FastHash(object) & (f.bufs.size() - 1)];
+            if (p.object == object && p.gen == gen && p.epoch == epoch && p.vk_buffer) {
+                hit = &p;
+            }
+        }
+        const u64 id = hit != nullptr ? hit->id : Rd<u64>(object, 0x10);
+        const u64 buffer = hit != nullptr ? hit->buffer : Rd<u64>(object, 0x30);
+        const u64 memory = hit != nullptr ? hit->memory : (buffer != 0 ? Rd<u64>(buffer, 0x30) : 0);
+        FastBuf& e = hit != nullptr ? *hit : f.bufs[FastHash(by_pointer ? object : id) & (f.bufs.size() - 1)];
+        if (hit != nullptr || (!by_pointer && e.id == id && e.object == object && e.buffer == buffer && e.memory == memory && e.vk_buffer)) {
             ++f.hits;
         } else {
             ++f.misses;
@@ -2917,7 +2949,7 @@ bool FastRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<
             if (slot == 0) {
                 return false;
             }
-            e = {id, object, buffer, memory, w.buffer, slot, static_cast<u32>(w.offset), static_cast<u32>(size), w.offset, size, 0, true};
+            e = {id, object, buffer, memory, gen, epoch, w.buffer, slot, static_cast<u32>(w.offset), static_cast<u32>(size), w.offset, size, 0, true};
         }
         row[at++] = e.slot;
         row[at++] = e.offset;
@@ -2933,15 +2965,18 @@ bool FastRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<
         if (object == 0) {
             return false;
         }
-        const u64 id = Rd<u64>(object, 0x10);
         const u32 want = static_cast<u32>(st.image_types[i]);
         const u32 key = info.images[i].array_key;
         const bool written = info.images[i].is_written;
-        FastImg& e = f.imgs[FastHash(id, want | key << 8) & (f.imgs.size() - 1)];
-        if (e.id == id && e.object == object && e.want == want && e.key == key && e.slot != 0) {
+        const bool by_pointer = RowByPointer();
+        const u32 gen = by_pointer ? Core::Vkb::ObjectPointerGen(object) : 0;
+        const u64 epoch = by_pointer ? Core::Vkb::Indexed::Epoch() : 0;
+        FastImg& e = f.imgs[FastHash(object, want | key << 8) & (f.imgs.size() - 1)];
+        if (e.object == object && e.want == want && e.key == key && e.slot != 0 && (by_pointer ? (e.gen == gen && e.epoch == epoch) : e.id == Rd<u64>(object, 0x10))) {
             ++f.hits;
         } else {
             ++f.misses;
+            const u64 id = Rd<u64>(object, 0x10);
             vk::ImageView view{};
             vk::Image image{};
             if (!Core::Vkb::ViewForCompute(id, st.image_types[i], vk::CommandBuffer{}, view, &image)) {
@@ -2951,7 +2986,7 @@ bool FastRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<
             if (slot == 0) {
                 return false;
             }
-            e = {id, object, want, key, slot, image, 0};
+            e = {id, object, gen, epoch, want, key, slot, image, 0};
         }
         row[at++] = e.slot;
         if (written || e.serial != serial) {
@@ -2993,11 +3028,23 @@ bool FastRow(u64 ctx, const Stage& st, u32* row, boost::container::small_vector<
 /// G1: the index buffer of a cascade draw from the table by the index buffer's id (its device or in-place window from its start; the range of this draw on top)
 bool FastIndex(u64 view, u64 index_range, Core::Vkb::BufferWindow& w, boost::container::small_vector<Stream::Use, 64>& uses, u64 serial) {
     FastTables& f = Fast();
+    const bool by_pointer = RowByPointer();
+    const u32 gen = by_pointer ? Core::Vkb::ObjectPointerGen(view) : 0;
+    const u64 epoch = by_pointer ? Core::Vkb::Indexed::Epoch() : 0;
+    FastBuf& e = f.idx[FastHash(view, 3) & (f.idx.size() - 1)];
+    if (by_pointer && e.object == view && e.gen == gen && e.epoch == epoch && e.vk_buffer && index_range <= e.use_size) {
+        ++f.hits;
+        w.buffer = e.vk_buffer, w.offset = e.use_offset, w.device = e.device;
+        if (e.serial != serial) {
+            uses.push_back(Stream::BufferUse(e.vk_buffer, e.use_offset, e.use_size, false));
+            e.serial = serial;
+        }
+        return true;
+    }
     const u64 id = Rd<u64>(view, 0x10);
     const u64 memory = Rd<u64>(view, 0x30);
     const u64 bytes = Rd<u32>(view, 0x180);
-    FastBuf& e = f.idx[FastHash(id, 3) & (f.idx.size() - 1)];
-    if (e.id == id && e.object == view && e.memory == memory && e.vk_buffer && index_range <= e.use_size) {
+    if (!by_pointer && e.id == id && e.object == view && e.memory == memory && e.vk_buffer && index_range <= e.use_size) {
         ++f.hits;
     } else {
         ++f.misses;
@@ -3014,7 +3061,7 @@ bool FastIndex(u64 view, u64 index_range, Core::Vkb::BufferWindow& w, boost::con
             uses.push_back(Stream::BufferUse(w.buffer, w.offset, index_range, false));
             return true;
         }
-        e = {id, view, view, memory, whole.buffer, 0, 0, 0, whole.offset, std::max<u64>(bytes, index_range), 0, true};
+        e = {id, view, view, memory, gen, epoch, whole.buffer, 0, 0, 0, whole.offset, std::max<u64>(bytes, index_range), 0, true};
     }
     w.buffer = e.vk_buffer, w.offset = e.use_offset, w.device = e.device;
     if (e.serial != serial) {
@@ -3674,7 +3721,7 @@ void LeanWords(u64 ctx, u32 kind, u64 vs, u64 ps, std::array<u64, 24>& w) {
                     const u32 slot = half * 64 + static_cast<u32>(std::countr_zero(bits));
                     const u64 object = Rd<u64>(ctx, SrvTable(stage) + slot * 8);
                     h = (h ^ object ^ (u64{slot} << 56)) * 0x100000001b3ull;
-                    h = (h ^ (object != 0 ? Rd<u64>(object, 0x10) : 0)) * 0x100000001b3ull;
+                    h = (h ^ (object == 0 ? 0 : RowByPointer() ? u64{Core::Vkb::ObjectPointerGen(object)} | (1ull << 40) : Rd<u64>(object, 0x10))) * 0x100000001b3ull; // G3: no read of the object
                 }
             }
         }
