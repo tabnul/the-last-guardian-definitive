@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include <cstdint>
-#include "native/native_shaders/cull_a3c4525b.h"
 #include "native/native_vkb_aa.h"
 #include "native/native_vkb_shader_dump.h"
 #include "native/native_framewalk.h"
@@ -91,14 +89,10 @@ bool WriteWindowsOn() {
 }
 std::atomic<u64> c_window_narrowed{0}, c_window_whole{0}, c_window_empty{0};
 
-/// Native parallel shaders (research section 13): the game's single-workgroup loops rewritten to step over a grid. Default on since 2026-11-21 (owner play OK);
-/// TLG_VKB_NATIVE_CULL=0: the recompiled module, as the game dispatches it
+/// Native parallel shaders (research section 13): removed 2026-11-21 (the module was decompiled from the game's shader); Variant::grid_x stays for a run-time version
 bool NativeCullOn() {
-    static const bool on = [] { const char* e = std::getenv("TLG_VKB_NATIVE_CULL"); return e == nullptr || e[0] != '0'; }();
-    return on;
+    return false;
 }
-constexpr u64 CullShaderA3c4525b = 0xa3c4525b;
-constexpr u32 CullGrid = 64;
 std::atomic<u64> c_native_cull_modules{0}, c_native_cull_dispatches{0};
 
 std::mutex mutex;
@@ -301,12 +295,8 @@ void Compile(u64 ctx, u64 shader, Variant& v) {
             return;
         }
         spv = VkbShader::Backend::SPIRV::EmitSPIRV(profile, runtime, program, binding);
-        if (v.info->pgm_hash == CullShaderA3c4525b && NativeCullOn()) {
-            // the same bindings and push data as the recompiled module (decompiled from it), the loop over the grid (native_shaders/cull_a3c4525b.comp)
-            spv.assign(std::begin(kCullA3c4525b), std::end(kCullA3c4525b));
-            v.grid_x = CullGrid;
-            c_native_cull_modules.fetch_add(1, std::memory_order_relaxed);
-        }
+        // (2026-11-21: the native parallel culling module for 0xa3c4525b was removed: it was decompiled from the game's shader and must not ship. To come back
+        // made at run time from the player's own game files (a SPIR-V patch of the recompiled module: start = global id, stride = the whole grid).)
         // debug (tint hunt, 2026-11-16): TLG_VKB_DUMP_SPV=<shader hashes, hex, comma separated> writes each variant's module to log/vkb_spv/cs_<hash>_<n>.spv (compare with the
         // fork renderer's TLG_DUMP_SHADERS=1 dumps)
         static const std::vector<u64> dump_spv = [] { // comma separated hashes
