@@ -9,6 +9,7 @@
 #include "native/native_vkb.h"
 #include "native/native_framewalk.h"
 #include "native/native_timeline.h"
+#include "native/native_game_time.h"
 #include "native/native_draw.h"
 #include "native/native_frame_gate.h"
 #include "native/shadps4/core/libraries/gnmdriver/gnm_error.h"
@@ -2389,6 +2390,7 @@ s32 PS4_SYSV_ABI sceGnmSubmitAndFlipCommandBuffersForWorkload(
     LOG_DEBUG(Lib_GnmDriver, "called [buf = {}]", buf_idx);
     Core::FrameWalk::AtSubmit(); // the frame walk freeze (F5): the game's render thread waits here, at a frame boundary
     Core::FrameTimeline::Submitted(Core::FrameTimeline::SubmitFlip);
+    Core::NativeGameTime::NoteClock(); // frame pacing study: the engine clock at each game frame
 
     if (count != 0) {
         if (!dcb_gpu_addrs) {

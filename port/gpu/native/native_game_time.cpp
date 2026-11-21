@@ -22,6 +22,7 @@
 #include "native/native_debug_server.h"
 #include "native/native_game_time.h"
 #include "native/native_hooks.h"
+#include "native/native_timeline.h"
 
 namespace Core::NativeGameTime {
 
@@ -91,6 +92,25 @@ u64 PS4_SYSV_ABI ScaleRegister(GuestHooks::MidContext* context) {
     return 0;
 }
 } // namespace
+
+void NoteClock() {
+    const u64 image = GuestHooks::EbootBase();
+    if (image == 0) {
+        return;
+    }
+    const u64 clock = *reinterpret_cast<const u64*>(image + ClockSlotImageOffset);
+    if (clock == 0) {
+        return;
+    }
+    u32 raw = 0, step = 0, error = 0, smooth = 0;
+    std::memcpy(&raw, reinterpret_cast<const void*>(clock + 0x190), 4);
+    std::memcpy(&step, reinterpret_cast<const void*>(clock + 0x19c), 4);
+    std::memcpy(&error, reinterpret_cast<const void*>(clock + 0x1a4), 4);
+    if (const u64 filter = *reinterpret_cast<const u64*>(clock + 0xb0); filter != 0) {
+        std::memcpy(&smooth, reinterpret_cast<const void*>(filter + 0x3a0), 4);
+    }
+    FrameTimeline::Record(FrameTimeline::GameClock, u64{raw} | (u64{step} << 32), FrameTimeline::Now(), u64{error} | (u64{smooth} << 32));
+}
 
 u64 FindHandler(const char* name) {
     const std::string_view n{name};

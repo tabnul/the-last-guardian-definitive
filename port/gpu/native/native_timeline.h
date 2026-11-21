@@ -58,6 +58,7 @@ enum Type : u32 {
     ThumbFrame = 37,  ///< present thread: a thumbnail of a presented frame was queued: arg = thumbnail id (matches thumbs.bin), arg2 = presented frame count
     GlitchMark = 38,  ///< the owner pressed F6 / F7: arg = presented frame count, arg2 = mode (1 full, 2 light)
     WriterHit = 39,   ///< a data breakpoint armed by the byte audit fired: arg = written address, arg2 = instruction rva (Ghidra address) | first return address << 32
+    GameClock = 40,   ///< at each SubmitFlip (render thread): the engine clock (FUN_01d16480's object): arg = raw frame time (f32 bits, + 0x190) | step the game uses << 32 (+ 0x19c, smoothed and cut to 1/360 s), arg2 = carried error (+ 0x1a4) | smoothed time << 32 (+ 0xb0 -> + 0x3a0)
     SchedNode = 28,   ///< a node: arg = node pointer, arg2 = 1 finished waiting node seen by a poll, 2 dispatch: 2 | state << 8 | pending << 16 | flags << 32
 };
 

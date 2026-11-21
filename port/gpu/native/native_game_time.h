@@ -11,5 +11,7 @@ namespace Core::NativeGameTime {
 u64 FindHandler(const char* name);
 /// Publishes the counters to the debug server (/stats key "game_time").
 void Report();
+/// Frame pacing study: records the engine clock's raw frame time, the step the game uses, its carried error and smoothed time as a timeline event (GameClock)
+void NoteClock();
 
 } // namespace Core::NativeGameTime
