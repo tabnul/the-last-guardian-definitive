@@ -328,6 +328,7 @@ struct Rec {
     bool pass_open = false;
     Pass open_pass{};
     RangeSet written_since, read_since; ///< V4d: what the commands since the last barrier wrote and read
+    bool quiet_chain = false;           ///< every write noted since the last full release came from a QuietChain shader (lantern waits)
     RangeSet cmd_written;               ///< V4h: what this command buffer's GPU work wrote (not cleared by barriers)
     u32 stat_count = 0;
     bool stat_open = false;
@@ -358,6 +359,7 @@ void FullBarrierLocked(vk::CommandBuffer cmd) {
     cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &barrier});
     t_rec->written_since.clear();
     t_rec->read_since.clear();
+    t_rec->quiet_chain = true; // nothing is outstanding
 }
 struct PassKey {
     u8 kind;
@@ -634,6 +636,21 @@ void SetHazardTag(u64 tag) {
     hazard_tag = tag;
 }
 namespace {
+/// Lantern waits (live issue #98): the game updates the lantern flames with ~150 tiny dispatches of these shaders per frame on the terrace
+/// (s04 FA_b01). Each one writes buffers the ones before it wrote, so each got a full wait, ~2.7 ms per frame on an RTX 5090.
+/// Measured 11-21: the dispatches never touch the same particle records or the per-particle side records (readback of every
+/// dispatch's range, 451 submissions, 0 shared), so among themselves they need no wait. What they do need is the work before
+/// them: the first one after any other command keeps its wait, made full so that only these shaders' writes stay outstanding.
+/// After that, a write-after-write between two of them is skipped. TLG_VKB_LANTERN_WAITS=0 turns it off.
+constexpr std::array<u64, 4> kQuietChain{0x1171c360, 0xa4f2ed2d, 0x82c47ba4, 0x7a83ef95};
+bool QuietChainOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_LANTERN_WAITS"); return e == nullptr || e[0] != '0'; }();
+    return on;
+}
+bool IsQuietChain(u64 tag) {
+    return std::find(kQuietChain.begin(), kQuietChain.end(), tag) != kQuietChain.end();
+}
+std::atomic<u64> c_quiet_skipped{0};
 /// R5 census (note 70, `TLG_VKB_BARRIER_BY_SHADER=1`, debug only): per dispatch shader (the hazard tag), the commands checked, the barriers they got and the first cause
 struct ShaderBarriers {
     u64 checked{}, barriers{};
@@ -739,6 +756,15 @@ bool Hazard(vk::CommandBuffer cmd, std::span<const Use> uses, Agent agent) {
     if (src != 0 && skip_cs_waw && only_cs_buffer_waw) {
         src = 0;
     }
+    const bool quiet = cls == 2 && QuietChainOn() && IsQuietChain(hazard_tag);
+    if (src != 0 && quiet && only_cs_buffer_waw && t_rec->quiet_chain) {
+        src = 0; // only the earlier lantern dispatches' writes are outstanding, and they never overlap with this one's
+        c_quiet_skipped.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (src != 0 && quiet) {
+        src = 7; // the wait it keeps releases everything, so only lantern writes stay outstanding after it
+    }
+    const bool released_all = src == 7;
     if (src != 0) {
         LogHazard(uses);
         EndPassLocked(EndWhy::Barrier);
@@ -763,6 +789,7 @@ bool Hazard(vk::CommandBuffer cmd, std::span<const Use> uses, Agent agent) {
         c_barrier_src[src & 7].fetch_add(1, std::memory_order_relaxed);
         c_hazard_barriers.fetch_add(1, std::memory_order_relaxed);
     }
+    t_rec->quiet_chain = quiet && (t_rec->quiet_chain || released_all);
     for (const Use& u : uses) {
         if (u.handle != 0) {
             Note(u.write ? t_rec->written_since : t_rec->read_since, u, cls);
@@ -2125,7 +2152,7 @@ nlohmann::json Report() {
                  }
                  return j;
              }()},
-            {"barriers", {{"legacy_rule", LegacyBarriers()}, {"full_barriers", FullBarriers()}, {"commands_checked", c_hazard_checks.load()}, {"barriers_for_a_hazard", c_hazard_barriers.load()},
+            {"barriers", {{"legacy_rule", LegacyBarriers()}, {"full_barriers", FullBarriers()}, {"commands_checked", c_hazard_checks.load()}, {"barriers_for_a_hazard", c_hazard_barriers.load()}, {"lantern_waits_skipped", c_quiet_skipped.load()},
                           {"barriers_at_command_buffer_begin", c_begin_barriers.load()}}},
             {"submits", c_submits.load()},
             {"submits_with_nothing_recorded", c_empty_submits.load()},
