@@ -133,20 +133,8 @@ u64 PS4_SYSV_ABI ContinuousStep(GuestHooks::MidContext* context) {
     float step;
     std::memcpy(&step, reinterpret_cast<const void*>(context->rdi + 0x19c), sizeof(step)); // (not yet overwritten: the hooked store writes it)
     std::memcpy(context->ymm[0], &step, sizeof(step));
-    // The physics world (the object at clock + 0xb0, FUN_01db8e10 / FUN_01db9040) steps Havok by its + 0x39c. Havok wants a steady step: on the PS4 the smoothed
-    // step cut to 1/360 s made it constant (12/360 s at 30 FPS); the raw frame time changes every frame (7-10 ms at 120 FPS) and made Trico's contacts with objects
-    // jerky (owner, 2026-11-21). So physics gets the game's own smoothed step (+ 0x3a0, the filter's output, time scales included) without the 1/360 cut; the world,
-    // camera and animation keep the raw step. TLG_PHYSICS_STEP=raw: the raw step for physics too (the first version).
-    static const bool physics_raw = [] { const char* e = std::getenv("TLG_PHYSICS_STEP"); return e != nullptr && std::string_view{e} == "raw"; }();
-    if (context->rax != 0 && step >= 1e-5f) { // (below: paused, the engine wrote 0 for physics)
-        float physics = step;
-        if (!physics_raw) {
-            std::memcpy(&physics, reinterpret_cast<const void*>(context->rax + 0x3a0), sizeof(physics));
-            if (!(physics > 0.0f && physics < 0.25f)) {
-                physics = step;
-            }
-        }
-        std::memcpy(reinterpret_cast<void*>(context->rax + 0x39c), &physics, sizeof(physics));
+    if (context->rax != 0) {
+        std::memcpy(reinterpret_cast<void*>(context->rax + 0x39c), &step, sizeof(step));
     }
     c_continuous.fetch_add(1, std::memory_order_relaxed);
     return 0;
