@@ -1836,6 +1836,45 @@ inline u64 RtvHash(u64 ctx) {
     }
     return h;
 }
+/// F1c: the draw's AA sub-pixel offset (the scene geometry is jittered), decided in game order; the job path and the lean batch path (issue 134) both use it
+bool AaDrawJitter(u64 ctx, const Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u64 a1, u64 a2, u64 a3, u32 instances, std::array<float, 2>& jitter) {
+    const u64 dsv = Rd<u64>(ctx, CtxDepthStencilView);
+    // the depth texture's id (+0x30 resource, +0x10 id): the motion pass and the G-buffer bind the same depth through different view objects
+    const u64 dsv_resource = dsv != 0 && IsHeapPointer(dsv) ? Rd<u64>(dsv, 0x30) : 0;
+    const u64 dsv_id = dsv_resource != 0 && IsHeapPointer(dsv_resource) ? Rd<u64>(dsv_resource, 0x10) : 0;
+    const u64 ps = v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0ull;
+    if (ps == Core::Vkb::Aa::MotionPassPs) {
+        Core::Vkb::Aa::NoteSceneDepth(dsv_id);
+    }
+    const bool geometry = (kind == 2) || a1 > 6 || instances > 1;
+    // issue 54: a mesh is its index data, as the normal renderer's rule (vk_rasterizer.cpp: index address and count): the address of the first index and
+    // the index count (an indirect draw: the index data and its arguments), whatever shader draws it, so a second pass of a surface with another vertex shader
+    // matches its shifted pre-pass. Not indexed: no mesh. TLG_VKB_AA_MESH_KEY=0: the old key (counts and the vertex shader; it never matched, issue 54)
+    u64 mesh = 0;
+    if (!Core::Vkb::Aa::MeshKeySwitch()) {
+        mesh = Mix(Mix(Mix(a1, a2), a3), v.vs.info ? v.vs.info->pgm_hash : 0ull);
+    } else if (const u64 index_view = Rd<u64>(ctx, 0x58); (kind == 0 || kind == 2) && index_view != 0) {
+        const u64 index_address = static_cast<u64>(Rd<u32>(index_view, 0x64) & 0xff) << 32 | (Rd<u32>(index_view, 0x60) & 0xfffffffeu);
+        const u64 index_bytes = Rd<u32>(ctx, 0x64) == 1 ? 4 : 2;
+        mesh = index_address == 0 ? 0 : kind == 0 ? Mix(index_address + a2 * index_bytes, a1) : Mix(Mix(index_address, a1), a2);
+    }
+    // does the pixel shader read a scene depth (decals, lights): its used texture slots' resources against the scene depth ids
+    bool samples_depth = false;
+    const u64 ps_object = Rd<u64>(ctx, CtxPixelShader);
+    if (Core::Vkb::Aa::IsSceneDepth(dsv_id) && ps_object != 0 && IsHeapPointer(ps_object)) {
+        const u64 masks[2] = {Rd<u64>(ps_object, 0x30 + 0xc0), Rd<u64>(ps_object, 0x30 + 0xc8)};
+        for (u32 half = 0; half < 2 && !samples_depth; ++half) {
+            for (u64 bits = masks[half]; bits != 0 && !samples_depth; bits &= bits - 1) {
+                const u32 s = half * 64 + static_cast<u32>(std::countr_zero(bits));
+                const u64 view = Rd<u64>(ctx, SrvTable(1) + s * 8);
+                const u64 resource = view != 0 && IsHeapPointer(view) ? Rd<u64>(view, 0x30) : 0;
+                samples_depth = resource != 0 && IsHeapPointer(resource) && Core::Vkb::Aa::IsSceneDepth(Rd<u64>(resource, 0x10));
+            }
+        }
+    }
+    return Core::Vkb::Aa::DrawJitter(dsv_id, fixed.depth_write, geometry, samples_depth, mesh, jitter);
+}
+
 void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u64 a1, u64 a2, u64 a3) {
     if (Core::Vkb::FillReadersOn() || Core::Vkb::R3dTraceSize() != 0) {
         Core::Vkb::CensusTag((v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0x10000000000ull) | (v.vs.info ? u64{v.vs.info->pgm_hash} << 32 : 0)); // note 49 census: a draw, its pixel shader (debug R3d trace: vertex shader above)
@@ -2391,41 +2430,7 @@ void Record(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u
     job->first_vertex = kind == 2 ? 0u : VulkanFirstVertex(ctx, v, static_cast<u32>(kind == 0 ? a3 : a2));
     job->jittered = false;
     if (Core::Vkb::Aa::On()) [[unlikely]] { // F1c: decided here, in game order (two recording threads must not see different offsets within a frame)
-        const u64 dsv = Rd<u64>(ctx, CtxDepthStencilView);
-        // the depth texture's id (+0x30 resource, +0x10 id): the motion pass and the G-buffer bind the same depth through different view objects
-        const u64 dsv_resource = dsv != 0 && IsHeapPointer(dsv) ? Rd<u64>(dsv, 0x30) : 0;
-        const u64 dsv_id = dsv_resource != 0 && IsHeapPointer(dsv_resource) ? Rd<u64>(dsv_resource, 0x10) : 0;
-        const u64 ps = v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0ull;
-        if (ps == Core::Vkb::Aa::MotionPassPs) {
-            Core::Vkb::Aa::NoteSceneDepth(dsv_id);
-        }
-        const bool geometry = (kind == 2) || a1 > 6 || instances > 1;
-        // issue 54: a mesh is its index data, as the normal renderer's rule (vk_rasterizer.cpp: index address and count): the address of the first index and
-        // the index count (an indirect draw: the index data and its arguments), whatever shader draws it, so a second pass of a surface with another vertex shader
-        // matches its shifted pre-pass. Not indexed: no mesh. TLG_VKB_AA_MESH_KEY=0: the old key (counts and the vertex shader; it never matched, issue 54)
-        u64 mesh = 0;
-        if (!Core::Vkb::Aa::MeshKeySwitch()) {
-            mesh = Mix(Mix(Mix(a1, a2), a3), v.vs.info ? v.vs.info->pgm_hash : 0ull);
-        } else if (const u64 index_view = Rd<u64>(ctx, 0x58); (kind == 0 || kind == 2) && index_view != 0) {
-            const u64 index_address = static_cast<u64>(Rd<u32>(index_view, 0x64) & 0xff) << 32 | (Rd<u32>(index_view, 0x60) & 0xfffffffeu);
-            const u64 index_bytes = Rd<u32>(ctx, 0x64) == 1 ? 4 : 2;
-            mesh = index_address == 0 ? 0 : kind == 0 ? Mix(index_address + a2 * index_bytes, a1) : Mix(Mix(index_address, a1), a2);
-        }
-        // does the pixel shader read a scene depth (decals, lights): its used texture slots' resources against the scene depth ids
-        bool samples_depth = false;
-        const u64 ps_object = Rd<u64>(ctx, CtxPixelShader);
-        if (Core::Vkb::Aa::IsSceneDepth(dsv_id) && ps_object != 0 && IsHeapPointer(ps_object)) {
-            const u64 masks[2] = {Rd<u64>(ps_object, 0x30 + 0xc0), Rd<u64>(ps_object, 0x30 + 0xc8)};
-            for (u32 half = 0; half < 2 && !samples_depth; ++half) {
-                for (u64 bits = masks[half]; bits != 0 && !samples_depth; bits &= bits - 1) {
-                    const u32 s = half * 64 + static_cast<u32>(std::countr_zero(bits));
-                    const u64 view = Rd<u64>(ctx, SrvTable(1) + s * 8);
-                    const u64 resource = view != 0 && IsHeapPointer(view) ? Rd<u64>(view, 0x30) : 0;
-                    samples_depth = resource != 0 && IsHeapPointer(resource) && Core::Vkb::Aa::IsSceneDepth(Rd<u64>(resource, 0x10));
-                }
-            }
-        }
-        job->jittered = Core::Vkb::Aa::DrawJitter(dsv_id, fixed.depth_write, geometry, samples_depth, mesh, job->jitter);
+        job->jittered = AaDrawJitter(ctx, v, fixed, kind, a1, a2, a3, instances, job->jitter);
     }
     job->ps_hash = v.has_ps && v.ps.info ? v.ps.info->pgm_hash : 0ull;
     job->color_format0 = static_cast<u32>(v.color_formats[0]);
@@ -3081,7 +3086,15 @@ inline void BatchCutIfFull() {
     }
 }
 bool LeanAppend(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kind, u64 a1, u64 a2, u64 a3) {
-    if (!BatchMatches(ctx) || (v.key.num_color_attachments != 0 && !RecordAll()) || Core::Vkb::Aa::On() || (kind != 0 && kind != 2)) {
+    // issue 134: with AA on, the lean path takes the job path's jitter decision (AaDrawJitter, same game order); before, AA sent every draw down the job path (DLAA
+    // and FSR 3.1 condor 112 fps against 120 with AA off, the GPU half idle). The motion pass and SMAA stay on the job path (their recording-time notes).
+    // TLG_VKB_AA_LEAN=0: the old rule (no lean draws with AA on)
+    static const bool aa_lean = [] { const char* e = std::getenv("TLG_VKB_AA_LEAN"); return e == nullptr || e[0] != '0'; }();
+    const bool aa = Core::Vkb::Aa::On();
+    if (!BatchMatches(ctx) || (v.key.num_color_attachments != 0 && !RecordAll()) || (kind != 0 && kind != 2)) {
+        return false;
+    }
+    if (aa && (!aa_lean || (v.has_ps && v.ps.info && v.ps.info->pgm_hash == Core::Vkb::Aa::MotionPassPs) || (v.vs.info && v.vs.info->pgm_hash == Core::Vkb::Aa::SmaaVs))) {
         return false;
     }
     const u64 serial = t_batch->serial;
@@ -3222,6 +3235,9 @@ bool LeanAppend(u64 ctx, Variant& v, const VkbVulkan::FixedState& fixed, u32 kin
     }
     if (!t_batch || t_batch->serial != serial) { // a job went into the stream while the row was made (it flushed the batch): the generic path
         return false;
+    }
+    if (aa) [[unlikely]] { // issue 134: decided last, so a refused draw is decided once (by the job path)
+        d.jittered = AaDrawJitter(ctx, v, fixed, kind, a1, a2, a3, d.instances, d.jitter);
     }
     t_batch->uses.insert(t_batch->uses.end(), uses.begin(), uses.end());
     t_batch->draws.push_back(d);
