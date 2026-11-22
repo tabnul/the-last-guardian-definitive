@@ -28,6 +28,10 @@ int tlggpu_quit_requested(void);
 uintptr_t tlggpu_resolve(const char *scoped_nid);
 /* Called first by the loader's SIGSEGV handler: 1 when a GPU page-tracking fault was handled. */
 int tlggpu_handle_fault(void *ucontext, void *address);
+/* Debug switch TLG_VKB_GPU_READ_TRAP (issue 83): asked first by the loader's fault handler. 1 when the fault was an access to
+ * memory the graphics card writes (noted, then single-stepped) or the single step after it. Linux: the ucontext, SIGSEGV or
+ * SIGTRAP and the fault address; Windows: the EXCEPTION_POINTERS (sig and address unused). 0 at once when the switch is off. */
+int tlggpu_read_trap(void *info, int sig, void *address);
 /* TLG_WRITE_LOG=1: prints the logged GPU-side writes to guest memory near the fault. */
 void tlggpu_dump_guest_writes(void *ucontext);
 /* Keyboard text entry through the game window (IME dialog). begin returns 0 when

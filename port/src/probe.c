@@ -213,6 +213,9 @@ static void isa_context_regs(CONTEXT *c, IsaRegs *regs, int to_context) {
 static LONG CALLBACK vectored_fault(EXCEPTION_POINTERS *info) {
     const EXCEPTION_RECORD *record=info->ExceptionRecord;
     DWORD code=record->ExceptionCode;
+    /* Debug read trap (TLG_VKB_GPU_READ_TRAP): an access to memory the graphics card writes, or the single step after it. */
+    if (gpu_enabled && (code==EXCEPTION_ACCESS_VIOLATION || code==EXCEPTION_SINGLE_STEP) && tlggpu_read_trap(info,0,NULL))
+        return EXCEPTION_CONTINUE_EXECUTION;
     if (code==EXCEPTION_BREAKPOINT && isa_table) {
         /* An int3 ISA site: emulated here; any other breakpoint goes on to the report below. */
         IsaRegs regs;
@@ -314,6 +317,8 @@ static void clobber_below(ucontext_t *uc) {
     if (n > 0) { ssize_t written_ = write(2, line, (size_t)n); (void)written_; }
 }
 static void fault(int sig, siginfo_t *info, void *context) {
+    /* Debug read trap (TLG_VKB_GPU_READ_TRAP): an access to memory the graphics card writes, or the single step after it. */
+    if (gpu_enabled && (sig == SIGSEGV || sig == SIGTRAP) && tlggpu_read_trap(context, sig, info->si_addr)) return;
     if (sig == SIGTRAP && isa_table) {
         /* An int3 ISA site (RIP is past the CC byte); any other trap ends in the report below. */
         greg_t *g = ((ucontext_t *)context)->uc_mcontext.gregs;
