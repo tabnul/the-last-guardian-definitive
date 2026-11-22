@@ -7700,6 +7700,12 @@ u64 PS4_SYSV_ABI TagAscCsCopy(u64 jcc, u64 destination, u64 source, u64 bytes_ar
     return 1;
 }
 
+/// issue 83 P4 (TLG_VKB_COUNTER_VALUE_STREAM, default on; 0: the old processor write at record time): a counter's value as a fill in the frame stream
+inline bool CounterValueInStream() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_COUNTER_VALUE_STREAM"); return e == nullptr || e[0] != '0'; }();
+    return on;
+}
+
 using GuestFunction6 = u64(PS4_SYSV_ABI*)(u64, u64, u64, u64, u64, u64);
 bool StripPackets(u64 begin, u64 end);
 
@@ -7771,12 +7777,26 @@ u64 PS4_SYSV_ABI TagAscCounterReadback(u64 jcc, u64 buffer, u64 view, u64 a3, u6
         }
         tags_written.fetch_add(1, std::memory_order_relaxed);
     } else {
-        // CPU write of the counter's value
+        // the counter's value (no GPU counter, or a start value set on the context): the engine writes it into the buffer's memory
         u32 value = pending;
         if (slot == 0xffffffffu) {
             value = Rd<u32>(view, 0x88) != 0xffffffffu ? Rd<u32>(view, 0x88) : 0;
         }
-        Wr<u32>(memory, 0, value);
+        // issue 83 P4: with Vkb on the GPU owns this buffer (a counter buffer; its other case above is a GPU copy from GDS), so the value is a 4-byte
+        // fill at this point of the frame stream, in the game's order, like the copy from GDS. The engine's own processor write landed at record time, while
+        // earlier work on the buffer could still be in flight, and never reached a device copy of it. TLG_VKB_COUNTER_VALUE_STREAM=0: that old write.
+        if (Vkb::On() && CounterValueInStream()) [[unlikely]] {
+            if (Core::Vkb::FillBuffer(memory, sizeof(u32), value)) {
+                Live().counter_value_stream.fetch_add(1, std::memory_order_relaxed);
+            } else { // not one of our buffers (counted; the engine's write is the only way left)
+                if (Live().counter_value_not_ours.fetch_add(1, std::memory_order_relaxed) == 0) {
+                    LOG_WARNING(Render_Vulkan, "vkb counter value: the counter buffer at {:#x} is not one of our buffers; the value is written by the processor (counted)", memory);
+                }
+                Wr<u32>(memory, 0, value);
+            }
+        } else {
+            Wr<u32>(memory, 0, value);
+        }
     }
     Wr<u32>(buffer, 0x2c, Rd<u32>(jcc, 0x22fc));
     Live().counter_readback.fetch_add(1, std::memory_order_relaxed);

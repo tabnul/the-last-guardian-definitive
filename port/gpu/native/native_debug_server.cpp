@@ -165,6 +165,7 @@ nlohmann::json Native(const Params&) {
     j["clear_exec"] = live.clear_exec.load();
     j["asc_begin_stripped"] = live.asc_begin_stripped.load();
     j["counter_readback"] = live.counter_readback.load();
+    j["counter_value"] = {{"stream", live.counter_value_stream.load()}, {"not_ours", live.counter_value_not_ours.load()}};
     j["async_copy_exec"] = live.async_copy_exec.load();
     j["device_begin_stripped"] = live.device_begin_stripped.load();
     j["sync_units_stripped"] = live.sync_units_stripped.load();
