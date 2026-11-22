@@ -472,7 +472,20 @@
     "pad.quit_key_bad": "不能用這個鍵：請用 Ctrl 或 Alt 加字母或數字，或 F 鍵",
     "pad.quit_key_off": "關",
     "pad.off_button": "關閉",
-    "pad.hide_hints": "隱藏按鍵提示（教學仍在執行，不會略過任何內容）"
+    "pad.hide_hints": "隱藏按鍵提示（教學仍在執行，不會略過任何內容）",
+    "launcher.game_trophy_test": "獎盃測試",
+    "launcher.game_trophy_test_hint": "僅供測試：啟動 20 秒後會解鎖下一個獎盃，方便查看彈出通知與選單中的獎盃分頁。測試解鎖存於 trophies_test.txt，不會進入你真正的獎盃清單。預設關閉。",
+    "launcher.trophies_section": "獎盃",
+    "launcher.trophy_key": "PS4 獎盃金鑰",
+    "launcher.trophy_key_save": "使用金鑰",
+    "launcher.trophy_popup": "解鎖時彈出通知和音效",
+    "launcher.trophy_popup_note": "顯示獎盃名稱需要獎盃金鑰。沒有金鑰時，彈出通知只顯示編號。",
+    "launcher.trophy_key_ok": "金鑰有效：找到 {names} 個獎盃名稱。已儲存。",
+    "launcher.trophy_key_wrong": "此金鑰無法開啟獎盃檔案。未儲存。",
+    "launcher.trophy_key_format": "金鑰為 32 位十六進位數字（0-9、A-F）。未儲存。",
+    "launcher.trophy_key_nofile": "已儲存，但未檢查：遊戲資料夾中沒有獎盃檔案。",
+    "launcher.trophy_key_cleared": "已移除金鑰：獎盃以編號顯示。",
+    "launcher.trophy_key_hint": "選用：輸入 PS4 獎盃金鑰（32 位十六進位）即可顯示獎盃名稱。本移植版不附帶此金鑰。也可在遊戲內選單（獎盃分頁）中設定。"
   },
   "items": {
     "menu:sharpen": {
@@ -1199,6 +1212,18 @@
     "Press the key, for example Ctrl+X...": "請按鍵，例如 Ctrl+X...",
     "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "不能用這個鍵：請用 Ctrl 或 Alt 加字母或數字，或 F 鍵。",
     "Hide button hints": "隱藏按鍵提示",
-    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "遊戲的按鍵提示框將始終不顯示。教學仍在背景執行，因此不會略過任何內容。"
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "遊戲的按鍵提示框將始終不顯示。教學仍在背景執行，因此不會略過任何內容。",
+    "Trophies": "獎盃",
+    "Trophy %d": "獎盃 %d",
+    "Trophy unlocked": "已獲得獎盃",
+    "Hidden trophy": "隱藏獎盃",
+    "%d of %d trophies unlocked": "已獲得 %d / %d 個獎盃",
+    "Trophy key": "獎盃金鑰",
+    "This trophy key does not open the trophy file.": "此獎盃金鑰無法開啟獎盃檔案。",
+    "Optional: the PS4 trophy key (32 hex digits) shows the trophy names. The port does not include it.": "選用：輸入 PS4 獎盃金鑰（32 位十六進位）即可顯示獎盃名稱。本移植版不附帶此金鑰。",
+    "Use key": "使用金鑰",
+    "Pop-up and sound on unlock": "解鎖時彈出通知和音效",
+    "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "關閉：遊戲時沒有彈出通知和音效。解鎖仍會儲存並在此列出。",
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "顯示獎盃名稱需要獎盃金鑰。沒有金鑰時，彈出通知只顯示編號。"
   }
 }

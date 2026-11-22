@@ -472,7 +472,20 @@
     "pad.quit_key_bad": "Не ця клавіша: використайте Ctrl або Alt з літерою чи цифрою, або клавішу F",
     "pad.quit_key_off": "вимк.",
     "pad.off_button": "Вимк.",
-    "pad.hide_hints": "Сховати підказки кнопок (навчання працює далі, нічого не пропускається)"
+    "pad.hide_hints": "Сховати підказки кнопок (навчання працює далі, нічого не пропускається)",
+    "launcher.game_trophy_test": "Тест трофеїв",
+    "launcher.game_trophy_test_hint": "Лише для тесту: через 20 секунд після запуску відкривається наступний трофей, щоб ви побачили сповіщення і вкладку «Трофеї» в меню. Тестові трофеї записуються в trophies_test.txt, а не у ваш справжній список. Типово вимкнено.",
+    "launcher.trophies_section": "Трофеї",
+    "launcher.trophy_key": "Ключ трофеїв PS4",
+    "launcher.trophy_key_save": "Використати ключ",
+    "launcher.trophy_popup": "Сповіщення і звук під час отримання",
+    "launcher.trophy_popup_note": "Для назв трофеїв потрібен ключ трофеїв. Без нього сповіщення показує лише номер.",
+    "launcher.trophy_key_ok": "Ключ підходить: знайдено назв трофеїв: {names}. Збережено.",
+    "launcher.trophy_key_wrong": "Цей ключ не відкриває файл трофеїв. Не збережено.",
+    "launcher.trophy_key_format": "Ключ — це 32 шістнадцяткові цифри (0-9, A-F). Не збережено.",
+    "launcher.trophy_key_nofile": "Збережено, але не перевірено: у теці гри немає файлу трофеїв.",
+    "launcher.trophy_key_cleared": "Ключ видалено: трофеї пронумеровано.",
+    "launcher.trophy_key_hint": "Необов'язково: ключ трофеїв PS4 (32 шістнадцяткові цифри) показує назви трофеїв. Порт його не містить. Також у меню гри (вкладка «Трофеї»)."
   },
   "items": {
     "menu:sharpen": {
@@ -1199,6 +1212,18 @@
     "Press the key, for example Ctrl+X...": "Натисніть клавішу, наприклад Ctrl+X...",
     "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Не ця клавіша: використайте Ctrl або Alt з літерою чи цифрою, або клавішу F.",
     "Hide button hints": "Сховати підказки кнопок",
-    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Рамки з підказками кнопок у грі ніколи не показуються. Навчання й далі працює у фоні, тож нічого не пропускається."
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Рамки з підказками кнопок у грі ніколи не показуються. Навчання й далі працює у фоні, тож нічого не пропускається.",
+    "Trophies": "Трофеї",
+    "Trophy %d": "Трофей %d",
+    "Trophy unlocked": "Трофей отримано",
+    "Hidden trophy": "Прихований трофей",
+    "%d of %d trophies unlocked": "Отримано трофеїв: %d з %d",
+    "Trophy key": "Ключ трофеїв",
+    "This trophy key does not open the trophy file.": "Цей ключ не відкриває файл трофеїв.",
+    "Optional: the PS4 trophy key (32 hex digits) shows the trophy names. The port does not include it.": "Необов'язково: ключ трофеїв PS4 (32 шістнадцяткові цифри) показує назви трофеїв. Порт його не містить.",
+    "Use key": "Використати ключ",
+    "Pop-up and sound on unlock": "Сповіщення і звук під час отримання",
+    "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Вимкнено: без сповіщення і звуку під час гри. Отримані трофеї все одно зберігаються і показуються тут.",
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Для назв трофеїв потрібен ключ трофеїв. Без нього сповіщення показує лише номер."
   }
 }

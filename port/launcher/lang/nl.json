@@ -472,7 +472,20 @@
     "pad.quit_key_bad": "Niet deze toets: gebruik Ctrl of Alt met een letter of cijfer, of een F-toets",
     "pad.quit_key_off": "uit",
     "pad.off_button": "Uit",
-    "pad.hide_hints": "Knophints verbergen (de tutorial loopt door, er wordt niets overgeslagen)"
+    "pad.hide_hints": "Knophints verbergen (de tutorial loopt door, er wordt niets overgeslagen)",
+    "launcher.game_trophy_test": "Trofeetest",
+    "launcher.game_trophy_test_hint": "Alleen voor testen: 20 seconden na de start wordt de volgende trofee behaald, zodat je de melding en het tabblad Trofeeën in het menu ziet. Testtrofeeën gaan naar trophies_test.txt, niet naar je echte trofeeënlijst. Standaard uit.",
+    "launcher.trophies_section": "Trofeeën",
+    "launcher.trophy_key": "PS4-trofeesleutel",
+    "launcher.trophy_key_save": "Sleutel gebruiken",
+    "launcher.trophy_popup": "Melding en geluid bij behalen",
+    "launcher.trophy_popup_note": "Voor trofeenamen is de trofeesleutel nodig. Zonder sleutel toont de melding alleen een nummer.",
+    "launcher.trophy_key_ok": "Sleutel werkt: {names} trofeenamen gevonden. Opgeslagen.",
+    "launcher.trophy_key_wrong": "Deze sleutel opent het trofeeënbestand niet. Niet opgeslagen.",
+    "launcher.trophy_key_format": "Een sleutel is 32 hexadecimale cijfers (0-9, A-F). Niet opgeslagen.",
+    "launcher.trophy_key_nofile": "Opgeslagen, maar niet gecontroleerd: geen trofeeënbestand in de spelmap.",
+    "launcher.trophy_key_cleared": "Sleutel verwijderd: de trofeeën worden genummerd.",
+    "launcher.trophy_key_hint": "Optioneel: de PS4-trofeesleutel (32 hexadecimale tekens) toont de namen van de trofeeën. De port levert hem niet mee. Ook in het menu in de game (tabblad Trofeeën)."
   },
   "items": {
     "menu:sharpen": {
@@ -1199,6 +1212,18 @@
     "Press the key, for example Ctrl+X...": "Druk op de toets, bijvoorbeeld Ctrl+X...",
     "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Niet deze toets: gebruik Ctrl of Alt met een letter of cijfer, of een F-toets.",
     "Hide button hints": "Knophints verbergen",
-    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "De knophintvakken van het spel worden nooit getoond. De tutorial loopt op de achtergrond door, er wordt dus niets overgeslagen."
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "De knophintvakken van het spel worden nooit getoond. De tutorial loopt op de achtergrond door, er wordt dus niets overgeslagen.",
+    "Trophies": "Trofeeën",
+    "Trophy %d": "Trofee %d",
+    "Trophy unlocked": "Trofee behaald",
+    "Hidden trophy": "Verborgen trofee",
+    "%d of %d trophies unlocked": "%d van %d trofeeën behaald",
+    "Trophy key": "Trofeesleutel",
+    "This trophy key does not open the trophy file.": "Deze trofeesleutel opent het trofeebestand niet.",
+    "Optional: the PS4 trophy key (32 hex digits) shows the trophy names. The port does not include it.": "Optioneel: de PS4-trofeesleutel (32 hexadecimale tekens) toont de namen van de trofeeën. De port levert hem niet mee.",
+    "Use key": "Sleutel gebruiken",
+    "Pop-up and sound on unlock": "Melding en geluid bij behalen",
+    "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Uit: geen melding en geen geluid tijdens het spelen. Behaalde trofeeën worden wel opgeslagen en hier getoond.",
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Voor trofeenamen is de trofeesleutel nodig. Zonder sleutel toont de melding alleen een nummer."
   }
 }

@@ -30,6 +30,7 @@ import logtail  # noqa: E402
 import pad_page  # noqa: E402
 import preset_share  # noqa: E402
 import tlg_run  # noqa: E402
+import trophy_key  # noqa: E402
 import update_check  # noqa: E402
 import savemanager  # noqa: E402,F401  (puts scripts/ on sys.path)
 import soundtrack  # noqa: E402
@@ -100,6 +101,19 @@ TEXT = {
     'flag_granule': 'Group buffer memory',
     'flag_granule_hint': "Fix for issue #79: takes buffer memory from the graphics driver in larger pieces instead of many small ones. Older AMD cards on Windows can crash with \"out of memory\" without it. On by default.",
     'flags_game': 'Experimental game fixes',
+    'game_trophy_test': 'Trophy test',
+    'game_trophy_test_hint': 'Test only: 20 seconds after the start the next trophy unlocks, so you can see the pop-up and the Trophies tab in the menu. Test unlocks go to trophies_test.txt, not into your real trophy list. Off by default.',
+    'trophies_section': 'Trophies',
+    'trophy_key': 'PS4 trophy key',
+    'trophy_key_save': 'Use key',
+    'trophy_popup': 'Pop-up and sound on unlock',
+    'trophy_popup_note': 'Trophy names need the trophy key. Without it the pop-up only shows a number.',
+    'trophy_key_ok': 'Key works: {names} trophy names found. Saved.',
+    'trophy_key_wrong': 'This key does not open the trophy file. Not saved.',
+    'trophy_key_format': 'A key is 32 hex digits (0-9, A-F). Not saved.',
+    'trophy_key_nofile': 'Saved, but not checked: no trophy file in the game folder.',
+    'trophy_key_cleared': 'Key removed: the trophies are numbered.',
+    'trophy_key_hint': 'Optional: the PS4 trophy key (32 hex digits) shows the trophy names. The port does not include it. Also in the in-game menu (Trophies tab).',
     'game_tail_climb': "Trico's tail climbing fix",
     'game_tail_climb_hint': "Experimental: the boy should no longer climb in place on Trico's moving tail. Changes the game's climbing code, so it works on every graphics card. Not fully tested: letting go, shake-offs, ropes and chains may behave differently. By @YsraEstudos. On by default.",
     'flags_rdna': 'RDNA2: possible improvements',
@@ -1369,12 +1383,46 @@ class Launcher:
         self.vars['update_check'] = update_var
         ttk.Checkbutton(launcher, text=self.t('update_check'), variable=update_var,
                         command=self.changed).pack(side='left', padx=(12, 0))
+        self.build_trophy_key(right)
         debug = section(right, self.t('debug'))
         debug.grid(sticky='ew')
         self.check(debug, 0, 'level_select')
         self.hint(debug, 0, 3, 'debug_hint')
         self.check(debug, 2, 'debug_logging')
         self.hint(debug, 2, 3, 'debug_logging_hint')
+
+    def build_trophy_key(self, parent):
+        """The PS4 trophy key (tlg.ini trophy_key, issue #60; also in the in-game menu's Trophies tab).
+        Kept in tlg.ini only, like the sound device, so a key entered in the game stays."""
+        ini_path = tlg_run.USER_DIR / 'tlg.ini'
+        box = section(parent, self.t('trophies_section'))
+        box.grid(sticky='ew', pady=(0, 8))
+        ttk.Label(box, text=self.t('trophy_key')).grid(row=0, column=0, sticky='w')
+        key = tk.StringVar(value=tlg_run.read_ini(ini_path).get('trophy_key', ''))
+        ttk.Entry(box, textvariable=key, show='*', width=36).grid(row=1, column=0, sticky='w', pady=2)
+
+        status = tk.StringVar()
+
+        def save():
+            # Checked against the game's own trophy file first; a key that does not open it is not kept.
+            npbind = art_path(self.settings, 'npbind.dat')
+            result, names = trophy_key.check(npbind.parent if npbind else '', key.get())
+            status.set(self.t('trophy_key_' + result, names=names))
+            if result in ('format', 'wrong'):
+                return
+            tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
+            tlg_run.update_ini(ini_path, {'trophy_key': ''.join(key.get().split())})
+
+        ttk.Button(box, text=self.t('trophy_key_save'), command=save).grid(row=1, column=1, sticky='w', padx=(6, 0))
+        self.hint(box, 1, 2, 'trophy_key_hint')
+        ttk.Label(box, textvariable=status, wraplength=420).grid(row=2, column=0, columnspan=3, sticky='w')
+        # Pop-up and chime on an unlock (tlg.ini trophy_popup; live, also in the Trophies tab).
+        popup = tk.BooleanVar(value=tlg_run.read_ini(ini_path).get('trophy_popup', '0') != '0')
+        ttk.Checkbutton(box, text=self.t('trophy_popup'), variable=popup,
+                        command=lambda: tlg_run.update_ini(ini_path, {'trophy_popup': int(popup.get())})
+                        ).grid(row=3, column=0, columnspan=3, sticky='w', pady=(4, 0))
+        ttk.Label(box, text=self.t('trophy_popup_note'), foreground='#e0605a', wraplength=420
+                  ).grid(row=4, column=0, columnspan=3, sticky='w')
 
     def build_sound_output(self, parent):
         """Output device and 'Always send 7.1' (tlg.ini audio_device / audio_surround, also in the

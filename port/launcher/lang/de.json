@@ -465,7 +465,20 @@
     "pad.quit_key_bad": "Diese Taste geht nicht: Ctrl oder Alt mit einem Buchstaben oder einer Zahl, oder eine F-Taste",
     "pad.quit_key_off": "aus",
     "pad.off_button": "Aus",
-    "pad.hide_hints": "Tastenhinweise ausblenden (das Tutorial läuft weiter, nichts wird übersprungen)"
+    "pad.hide_hints": "Tastenhinweise ausblenden (das Tutorial läuft weiter, nichts wird übersprungen)",
+    "launcher.game_trophy_test": "Trophäen-Test",
+    "launcher.game_trophy_test_hint": "Nur zum Testen: 20 Sekunden nach dem Start wird die nächste Trophäe freigeschaltet, damit du das Pop-up und den Tab Trophäen im Menü sehen kannst. Test-Freischaltungen landen in trophies_test.txt, nicht in deiner echten Trophäenliste. Standardmäßig aus.",
+    "launcher.trophies_section": "Trophäen",
+    "launcher.trophy_key": "PS4-Trophäen-Schlüssel",
+    "launcher.trophy_key_save": "Schlüssel verwenden",
+    "launcher.trophy_popup": "Pop-up und Ton beim Freischalten",
+    "launcher.trophy_popup_note": "Trophäennamen brauchen den Trophäenschlüssel. Ohne ihn zeigt das Pop-up nur eine Nummer.",
+    "launcher.trophy_key_ok": "Schlüssel passt: {names} Trophäennamen gefunden. Gespeichert.",
+    "launcher.trophy_key_wrong": "Dieser Schlüssel öffnet die Trophäendatei nicht. Nicht gespeichert.",
+    "launcher.trophy_key_format": "Ein Schlüssel hat 32 Hex-Ziffern (0-9, A-F). Nicht gespeichert.",
+    "launcher.trophy_key_nofile": "Gespeichert, aber nicht geprüft: keine Trophäendatei im Spielordner.",
+    "launcher.trophy_key_cleared": "Schlüssel entfernt: die Trophäen werden nummeriert.",
+    "launcher.trophy_key_hint": "Optional: Der PS4-Trophäen-Schlüssel (32 Hex-Ziffern) zeigt die Namen der Trophäen. Der Port enthält ihn nicht. Auch im Spielmenü (Tab Trophäen)."
   },
   "items": {
     "menu:sharpen": {
@@ -1186,6 +1199,18 @@
     "Press the key, for example Ctrl+X...": "Taste drücken, zum Beispiel Ctrl+X...",
     "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Diese Taste geht nicht: Ctrl oder Alt mit einem Buchstaben oder einer Zahl, oder eine F-Taste.",
     "Hide button hints": "Tastenhinweise ausblenden",
-    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Die Tastenhinweis-Kästen des Spiels werden nie angezeigt. Das Tutorial läuft im Hintergrund weiter, es wird also nichts übersprungen."
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Die Tastenhinweis-Kästen des Spiels werden nie angezeigt. Das Tutorial läuft im Hintergrund weiter, es wird also nichts übersprungen.",
+    "Trophies": "Trophäen",
+    "Trophy %d": "Trophäe %d",
+    "Trophy unlocked": "Trophäe freigeschaltet",
+    "Hidden trophy": "Versteckte Trophäe",
+    "%d of %d trophies unlocked": "%d von %d Trophäen freigeschaltet",
+    "Trophy key": "Trophäen-Schlüssel",
+    "This trophy key does not open the trophy file.": "Dieser Trophäen-Schlüssel öffnet die Trophäendatei nicht.",
+    "Optional: the PS4 trophy key (32 hex digits) shows the trophy names. The port does not include it.": "Optional: Der PS4-Trophäen-Schlüssel (32 Hex-Ziffern) zeigt die Namen der Trophäen. Der Port enthält ihn nicht.",
+    "Use key": "Schlüssel verwenden",
+    "Pop-up and sound on unlock": "Pop-up und Ton beim Freischalten",
+    "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Aus: kein Pop-up und kein Ton beim Spielen. Freischaltungen werden trotzdem gespeichert und hier aufgelistet.",
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Trophäennamen brauchen den Trophäenschlüssel. Ohne ihn zeigt das Pop-up nur eine Nummer."
   }
 }

@@ -472,7 +472,20 @@
     "pad.quit_key_bad": "Bu tuş olmaz: Ctrl veya Alt ile bir harf ya da rakam, veya bir F tuşu kullanın",
     "pad.quit_key_off": "kapalı",
     "pad.off_button": "Kapalı",
-    "pad.hide_hints": "Tuş ipuçlarını gizle (eğitim devam eder, hiçbir şey atlanmaz)"
+    "pad.hide_hints": "Tuş ipuçlarını gizle (eğitim devam eder, hiçbir şey atlanmaz)",
+    "launcher.game_trophy_test": "Kupa testi",
+    "launcher.game_trophy_test_hint": "Yalnızca test için: başlangıçtan 20 saniye sonra sıradaki kupa açılır; böylece bildirimi ve menüdeki Kupalar sekmesini görebilirsin. Test kupaları gerçek kupa listene değil, trophies_test.txt dosyasına yazılır. Varsayılan olarak kapalı.",
+    "launcher.trophies_section": "Kupalar",
+    "launcher.trophy_key": "PS4 kupa anahtarı",
+    "launcher.trophy_key_save": "Anahtarı kullan",
+    "launcher.trophy_popup": "Açılınca bildirim ve ses",
+    "launcher.trophy_popup_note": "Kupa adları için kupa anahtarı gerekir. Anahtar yoksa bildirimde yalnızca bir numara görünür.",
+    "launcher.trophy_key_ok": "Anahtar çalışıyor: {names} kupa adı bulundu. Kaydedildi.",
+    "launcher.trophy_key_wrong": "Bu anahtar kupa dosyasını açmıyor. Kaydedilmedi.",
+    "launcher.trophy_key_format": "Anahtar 32 onaltılık basamaktır (0-9, A-F). Kaydedilmedi.",
+    "launcher.trophy_key_nofile": "Kaydedildi ama denetlenmedi: oyun klasöründe kupa dosyası yok.",
+    "launcher.trophy_key_cleared": "Anahtar kaldırıldı: kupalar numaralandırılır.",
+    "launcher.trophy_key_hint": "İsteğe bağlı: PS4 kupa anahtarı (32 onaltılık hane) kupa adlarını gösterir. Port bunu içermez. Oyun içi menüde de var (Kupalar sekmesi)."
   },
   "items": {
     "menu:sharpen": {
@@ -1199,6 +1212,18 @@
     "Press the key, for example Ctrl+X...": "Tuşa basın, örneğin Ctrl+X...",
     "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Bu tuş olmaz: Ctrl veya Alt ile bir harf ya da rakam, veya bir F tuşu kullanın.",
     "Hide button hints": "Tuş ipuçlarını gizle",
-    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Oyunun tuş ipucu kutuları hiç gösterilmez. Eğitim arka planda çalışmaya devam eder, yani hiçbir şey atlanmaz."
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Oyunun tuş ipucu kutuları hiç gösterilmez. Eğitim arka planda çalışmaya devam eder, yani hiçbir şey atlanmaz.",
+    "Trophies": "Kupalar",
+    "Trophy %d": "Kupa %d",
+    "Trophy unlocked": "Kupa kazanıldı",
+    "Hidden trophy": "Gizli kupa",
+    "%d of %d trophies unlocked": "%d / %d kupa kazanıldı",
+    "Trophy key": "Kupa anahtarı",
+    "This trophy key does not open the trophy file.": "Bu kupa anahtarı kupa dosyasını açmıyor.",
+    "Optional: the PS4 trophy key (32 hex digits) shows the trophy names. The port does not include it.": "İsteğe bağlı: PS4 kupa anahtarı (32 onaltılık hane) kupa adlarını gösterir. Port bunu içermez.",
+    "Use key": "Anahtarı kullan",
+    "Pop-up and sound on unlock": "Açılınca bildirim ve ses",
+    "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Kapalı: oynarken bildirim ve ses yok. Açılan kupalar yine kaydedilir ve burada listelenir.",
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Kupa adları için kupa anahtarı gerekir. Anahtar yoksa bildirimde yalnızca bir numara görünür."
   }
 }

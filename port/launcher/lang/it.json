@@ -472,7 +472,20 @@
     "pad.quit_key_bad": "Non questo tasto: usa Ctrl o Alt con una lettera o un numero, oppure un tasto F",
     "pad.quit_key_off": "no",
     "pad.off_button": "No",
-    "pad.hide_hints": "Nascondi suggerimenti dei tasti (il tutorial continua, non si salta nulla)"
+    "pad.hide_hints": "Nascondi suggerimenti dei tasti (il tutorial continua, non si salta nulla)",
+    "launcher.game_trophy_test": "Test trofei",
+    "launcher.game_trophy_test_hint": "Solo per test: 20 secondi dopo l'avvio si sblocca il trofeo successivo, così vedi il popup e la scheda Trofei nel menu. Gli sblocchi di prova finiscono in trophies_test.txt, non nella tua vera lista dei trofei. Disattivato di default.",
+    "launcher.trophies_section": "Trofei",
+    "launcher.trophy_key": "Chiave dei trofei PS4",
+    "launcher.trophy_key_save": "Usa chiave",
+    "launcher.trophy_popup": "Avviso e suono allo sblocco",
+    "launcher.trophy_popup_note": "I nomi dei trofei richiedono la chiave dei trofei. Senza, l’avviso mostra solo un numero.",
+    "launcher.trophy_key_ok": "La chiave funziona: trovati {names} nomi dei trofei. Salvata.",
+    "launcher.trophy_key_wrong": "Questa chiave non apre il file dei trofei. Non salvata.",
+    "launcher.trophy_key_format": "Una chiave ha 32 cifre esadecimali (0-9, A-F). Non salvata.",
+    "launcher.trophy_key_nofile": "Salvata, ma non verificata: nessun file dei trofei nella cartella del gioco.",
+    "launcher.trophy_key_cleared": "Chiave rimossa: i trofei sono numerati.",
+    "launcher.trophy_key_hint": "Facoltativo: la chiave dei trofei PS4 (32 cifre esadecimali) mostra i nomi dei trofei. Il port non la include. Anche nel menu di gioco (scheda Trofei)."
   },
   "items": {
     "menu:sharpen": {
@@ -1199,6 +1212,18 @@
     "Press the key, for example Ctrl+X...": "Premi il tasto, per esempio Ctrl+X...",
     "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Non questo tasto: usa Ctrl o Alt con una lettera o un numero, oppure un tasto F.",
     "Hide button hints": "Nascondi suggerimenti dei tasti",
-    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "I riquadri dei suggerimenti dei tasti del gioco non vengono mai mostrati. Il tutorial continua in background, quindi non si salta nulla."
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "I riquadri dei suggerimenti dei tasti del gioco non vengono mai mostrati. Il tutorial continua in background, quindi non si salta nulla.",
+    "Trophies": "Trofei",
+    "Trophy %d": "Trofeo %d",
+    "Trophy unlocked": "Trofeo sbloccato",
+    "Hidden trophy": "Trofeo nascosto",
+    "%d of %d trophies unlocked": "%d trofei sbloccati su %d",
+    "Trophy key": "Chiave dei trofei",
+    "This trophy key does not open the trophy file.": "Questa chiave non apre il file dei trofei.",
+    "Optional: the PS4 trophy key (32 hex digits) shows the trophy names. The port does not include it.": "Facoltativo: la chiave dei trofei PS4 (32 cifre esadecimali) mostra i nomi dei trofei. Il port non la include.",
+    "Use key": "Usa chiave",
+    "Pop-up and sound on unlock": "Avviso e suono allo sblocco",
+    "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Disattivato: nessun avviso né suono mentre giochi. Gli sblocchi vengono comunque salvati ed elencati qui.",
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "I nomi dei trofei richiedono la chiave dei trofei. Senza, l’avviso mostra solo un numero."
   }
 }

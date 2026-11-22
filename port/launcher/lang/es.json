@@ -465,7 +465,20 @@
     "pad.quit_key_bad": "Esta tecla no: usa Ctrl o Alt con una letra o un número, o una tecla F",
     "pad.quit_key_off": "desactivado",
     "pad.off_button": "Desactivado",
-    "pad.hide_hints": "Ocultar indicaciones de botones (el tutorial sigue funcionando, no se salta nada)"
+    "pad.hide_hints": "Ocultar indicaciones de botones (el tutorial sigue funcionando, no se salta nada)",
+    "launcher.game_trophy_test": "Prueba de trofeos",
+    "launcher.game_trophy_test_hint": "Solo para pruebas: 20 segundos después del inicio se desbloquea el siguiente trofeo, para que veas el aviso y la pestaña Trofeos del menú. Los desbloqueos de prueba van a trophies_test.txt, no a tu lista real de trofeos. Desactivado por defecto.",
+    "launcher.trophies_section": "Trofeos",
+    "launcher.trophy_key": "Clave de trofeos de PS4",
+    "launcher.trophy_key_save": "Usar clave",
+    "launcher.trophy_popup": "Aviso y sonido al desbloquear",
+    "launcher.trophy_popup_note": "Los nombres de los trofeos necesitan la clave de trofeos. Sin ella, el aviso solo muestra un número.",
+    "launcher.trophy_key_ok": "La clave funciona: {names} nombres de trofeos encontrados. Guardada.",
+    "launcher.trophy_key_wrong": "Esta clave no abre el archivo de trofeos. No guardada.",
+    "launcher.trophy_key_format": "Una clave tiene 32 dígitos hexadecimales (0-9, A-F). No guardada.",
+    "launcher.trophy_key_nofile": "Guardada, pero sin comprobar: no hay archivo de trofeos en la carpeta del juego.",
+    "launcher.trophy_key_cleared": "Clave eliminada: los trofeos se numeran.",
+    "launcher.trophy_key_hint": "Opcional: la clave de trofeos de PS4 (32 dígitos hexadecimales) muestra los nombres de los trofeos. El port no la incluye. También en el menú del juego (pestaña Trofeos)."
   },
   "items": {
     "menu:sharpen": {
@@ -1186,6 +1199,18 @@
     "Press the key, for example Ctrl+X...": "Pulsa la tecla, por ejemplo Ctrl+X...",
     "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Esta tecla no: usa Ctrl o Alt con una letra o un número, o una tecla F.",
     "Hide button hints": "Ocultar indicaciones de botones",
-    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Los recuadros de indicaciones de botones del juego no se muestran nunca. El tutorial sigue funcionando en segundo plano, así que no se salta nada."
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Los recuadros de indicaciones de botones del juego no se muestran nunca. El tutorial sigue funcionando en segundo plano, así que no se salta nada.",
+    "Trophies": "Trofeos",
+    "Trophy %d": "Trofeo %d",
+    "Trophy unlocked": "Trofeo desbloqueado",
+    "Hidden trophy": "Trofeo oculto",
+    "%d of %d trophies unlocked": "%d de %d trofeos desbloqueados",
+    "Trophy key": "Clave de trofeos",
+    "This trophy key does not open the trophy file.": "Esta clave de trofeos no abre el archivo de trofeos.",
+    "Optional: the PS4 trophy key (32 hex digits) shows the trophy names. The port does not include it.": "Opcional: la clave de trofeos de PS4 (32 dígitos hexadecimales) muestra los nombres de los trofeos. El port no la incluye.",
+    "Use key": "Usar clave",
+    "Pop-up and sound on unlock": "Aviso y sonido al desbloquear",
+    "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Desactivado: sin aviso ni sonido mientras juegas. Los desbloqueos se siguen guardando y aparecen aquí.",
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Los nombres de los trofeos necesitan la clave de trofeos. Sin ella, el aviso solo muestra un número."
   }
 }

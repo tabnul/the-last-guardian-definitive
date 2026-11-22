@@ -41,6 +41,11 @@ No game files are included. You need your own copy, dumped from your own PS4.
   combo or the keyboard, no menus. The game's pause menu shows the buttons.
 - **[Hide button hints](#controllers-and-languages):** switch the game's button hint boxes off,
   for a clean screen. The tutorial still runs in the background, so nothing is skipped.
+- **Trophies:** the game's trophies are unlocked as you play and saved next to your saves. The
+  in-game menu's **Trophies** tab lists them, with your unlock dates and the icons from your own
+  game files. A pop-up with our own chime is optional (off by default). Trophy names need your
+  PS4 trophy key (32 hex digits) in the launcher or the menu; the port does not include it, so
+  without the key the trophies are numbered.
 - **[Trico Tricks](docs/fun.md#trico-tricks-make-trico-move):** 49 of Trico's own moves on a bar (**F12**) in coloured
   groups, with your own favourites, the poses of the game's press shots and E3 demos, and the
   throw-up animation the developers sealed.
@@ -438,6 +443,8 @@ Thanks to everyone whose work this builds on.
 - Xbox button icons: the method (swap the game's pad pictures, move the glow) comes from
   [@SulphurS16](https://github.com/SulphurS16)'s [TLG-Port](https://github.com/SulphurS16/TLG-Port).
   Thank you! The Xbox pad drawing and the code are our own.
+- Trophies: the idea, and checking the trophy key right away, also come from
+  [@SulphurS16](https://github.com/SulphurS16)'s TLG-Port (#60). Our own code and chime.
 
 ## License
 

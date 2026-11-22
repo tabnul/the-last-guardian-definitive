@@ -32,6 +32,7 @@
 #include "core/memory.h"
 #include "core/signals.h"
 #include "sdl_window.h"
+#include "tlg_trophy.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
@@ -533,6 +534,31 @@ extern "C" void tlggpu_save_progress(int kind, int active, int percent, const ch
 
 extern "C" void tlggpu_save_toast(int kind) {
     if (g_window) TlgOverlay::SaveToast(kind);
+}
+
+extern "C" void tlggpu_trophy_setup(const void* trp, uint64_t trp_size, const void* npbind, uint64_t npbind_size,
+                                    const char* store, int language) {
+    const auto* t = static_cast<const unsigned char*>(trp);
+    const auto* n = static_cast<const unsigned char*>(npbind);
+    TlgTrophy::Setup(t ? std::vector<unsigned char>(t, t + trp_size) : std::vector<unsigned char>{},
+                     n ? std::vector<unsigned char>(n, n + npbind_size) : std::vector<unsigned char>{},
+                     store ? store : "trophies.txt", language);
+}
+
+extern "C" int tlggpu_trophy_unlock(int id) {
+    return TlgTrophy::Unlock(id) ? 1 : 0;
+}
+
+extern "C" void tlggpu_trophy_flags(uint32_t flags[4]) {
+    TlgTrophy::UnlockFlags(flags);
+}
+
+extern "C" int tlggpu_trophy_count(void) {
+    return TlgTrophy::Count();
+}
+
+extern "C" int tlggpu_trophy_next_locked(void) {
+    return TlgTrophy::NextLocked();
 }
 
 extern "C" int tlggpu_text_input_poll(char* out, uint64_t size) {
