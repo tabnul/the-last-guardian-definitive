@@ -373,6 +373,21 @@ local function TreeWind(pct)
   end
   B.twd=pct~=100
 end
+-- Brain room dome (s17_SentinelTower ST_010_BrainRoom, issue #100): BrainControlExt heals the dome
+-- by darkDomeHealFastSpeed/SlowSpeed per frame, tuned for the PS4's 30 FPS, so at 120 FPS it grew
+-- back 4x as fast. Scaled by the frame time to the 30 FPS pace (tested live 11-22: a quarter at
+-- 120 FPS plays right); never above the game's own value, so 30 FPS and below stay as shipped.
+local DOME='F:game/stages/s17_SentinelTower/props/darkDome | EXT:BrainControlExt'
+local function Dome()
+  local okd,dt=pcall(MSC_GetGameDelta)
+  if not okd or type(dt)~='number' or dt<=0 then return end
+  B.domedt=(B.domedt or dt)*0.8+dt*0.2
+  local oko,o=pcall(MS.SearchObject,DOME)
+  if not oko or not o then return end
+  local pct=math.min(100,B.domedt*3000)
+  Scale(o,'domef','darkDomeHealFastSpeed',pct)
+  Scale(o,'domes','darkDomeHealSlowSpeed',pct)
+end
 )";
 
 // The start of the function the tick runs: objects are looked up again every run.
@@ -748,7 +763,7 @@ std::string SetChunk() {
                   std::clamp(s.trico_fur.load(), 0, 500), s.fov.load(),
                   s.grass_smooth.load() ? "true" : "false", s.boy_wind.load(), s.tree_wind.load());
     code += line;
-    code += "Drool(" + std::to_string(std::clamp(s.trico_drool.load(), 0, 2)) + ")\n";
+    code += "Drool(" + std::to_string(std::clamp(s.trico_drool.load(), 0, 2)) + ") Dome()\n";
     code += std::string("Plays(") + (s.mod_plays.load() ? "true" : "false") + ") ThrowUp(" +
             std::to_string(s.mod_throw_up.load() ? 1 : 0) + ") _TLGHINTS=" +
             (s.mod_hints.load() ? "true" : "false") + " _TLGHIDEHINTS=" +
