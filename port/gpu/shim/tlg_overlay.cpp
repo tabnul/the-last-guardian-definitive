@@ -427,6 +427,7 @@ const char* UpscalerLabel(int upscaler) {
     case TlgSettings::UpscalerFsr411: return "FSR 4.1.1";
     case TlgSettings::UpscalerTaa: return "TAA";
     case TlgSettings::UpscalerDlss: return "DLSS";
+    case TlgSettings::UpscalerXess: return "XeSS";
     default: return "";
     }
 }
@@ -595,25 +596,27 @@ void ImageTab() {
         // method Off). DLSS needs tlg_dlss.dll and an NVIDIA RTX card, FSR 4 a
         // card with its shader features; both grey out when the card lacks them.
         // TAA (test 2026-11-07): our own light temporal AA, native size only.
-        enum Method { MethodOff, MethodBuiltIn, MethodDlss, MethodFsr3, MethodFsr4, MethodCount };
+        // XeSS (issue #62): Intel's libxess.dll, any card with its shader features; Windows only.
+        enum Method { MethodOff, MethodBuiltIn, MethodDlss, MethodFsr3, MethodFsr4, MethodXess, MethodCount };
         static const char* const method_labels[MethodCount] = {TR("Off"), TR("Built-in (game)"), "DLSS (NVIDIA)",
-                                                               "FSR 3.1", "FSR 4"};
+                                                               "FSR 3.1", "FSR 4", "XeSS (Intel)"};
         static const int method_upscalers[MethodCount] = {-1, S::UpscalerOff, S::UpscalerDlss, S::UpscalerFsr3,
-                                                          S::UpscalerFsr4};
+                                                          S::UpscalerFsr4, S::UpscalerXess};
         const int upscaler = S::SelectedUpscaler() == S::UpscalerFsr411 ? int(S::UpscalerFsr4) : S::SelectedUpscaler();
         const int preset = std::clamp(s.preset.load(), 0, int(S::UltraPerformance));
         int method = MethodOff;
         if (preset == S::NativeAA || upscaler == S::UpscalerTaa) {
             method = MethodOff;  // TAA always runs at native size (RenderPreset)
         } else {
-            for (int i = MethodBuiltIn; i <= MethodFsr4; ++i) {
+            for (int i = MethodBuiltIn; i < MethodCount; ++i) {
                 if (method_upscalers[i] == upscaler) method = i;
             }
         }
         Row(TR("Upscale method"));
         if (ImGui::BeginCombo("##value", method_labels[method])) {
             for (int i = 0; i < MethodCount; ++i) {
-                const bool supported = (i != MethodDlss || s.dlss_supported) && (i != MethodFsr4 || s.fsr4_supported);
+                const bool supported = (i != MethodDlss || s.dlss_supported) && (i != MethodFsr4 || s.fsr4_supported) &&
+                                       (i != MethodXess || s.xess_supported);
                 ImGui::BeginDisabled(!supported);
                 if (ImGui::Selectable(method_labels[i], i == method) && i != method) {
                     if (i == MethodOff) {
@@ -630,7 +633,7 @@ void ImageTab() {
         }
         Help(!s.dlss_supported && s.dlss_problem.load()
                  ? s.dlss_problem.load()
-                 : TR("How the image gets its size. Off: drawn at the screen's size. Built-in, DLSS, FSR 3.1 and FSR 4: drawn smaller and enlarged, for more speed; DLSS needs an NVIDIA RTX card, FSR 4 any recent card (not only AMD; sharper and steadier than FSR 3.1), FSR 3.1 runs on any card, Built-in is the game's own upscale pass. An upscaler also smooths the edges itself. F8 switches between Built-in and your choice in game."),
+                 : TR("How the image gets its size. Off: drawn at the screen's size. Built-in, DLSS, FSR 3.1, FSR 4 and XeSS: drawn smaller and enlarged, for more speed; DLSS needs an NVIDIA RTX card, FSR 4 any recent card (not only AMD; sharper and steadier than FSR 3.1), XeSS any recent card on Windows (best on Intel Arc), FSR 3.1 runs on any card, Built-in is the game's own upscale pass. An upscaler also smooths the edges itself. F8 switches between Built-in and your choice in game."),
              {method_labels[MethodOff], ""});
         ImGui::PopID();
         static const char* const quality_labels[S::UltraPerformance + 1] = {
@@ -671,25 +674,32 @@ void ImageTab() {
         ImGui::EndDisabled();
         Help(quality_help.c_str());
         ImGui::PopID();
-        static const char* const aa_labels[] = {TR("Off (game's own)"), "DLAA (NVIDIA)", "FSR 3.1", "FSR 4", "TAA"};
-        static const int aa_values[] = {S::UpscalerOff, S::UpscalerDlss, S::UpscalerFsr3, S::UpscalerFsr4,
-                                        S::UpscalerTaa};
+        // Off: no anti-aliasing at all (the game's SMAA cleared too, user 2026-11-22); Game's own:
+        // the game's SMAA only. Both are upscaler Off, told apart by game_smaa.
+        static const char* const aa_labels[] = {TR("Off"), TR("Game's own (SMAA)"), "DLAA (NVIDIA)", "FSR 3.1",
+                                                "FSR 4", "TAA", "XeSS Native AA"};
+        static const int aa_values[] = {S::UpscalerOff, S::UpscalerOff, S::UpscalerDlss, S::UpscalerFsr3,
+                                        S::UpscalerFsr4, S::UpscalerTaa, S::UpscalerXess};
         constexpr int aa_count = int(std::size(aa_values));
+        constexpr int aa_game = 1;
         // An upscaler as the method: the row shows Off, greyed out (user, 2026-11-10).
         const bool aa_free = method == MethodOff;
         int aa_index = 0;
-        for (int i = 0; i < aa_count && aa_free; ++i) {
+        for (int i = aa_game + 1; i < aa_count && aa_free; ++i) {
             if (aa_values[i] == upscaler) aa_index = i;
         }
+        if (aa_free && upscaler == S::UpscalerOff && s.game_smaa) aa_index = aa_game;
         Row(TR("Anti-aliasing"));
         ImGui::BeginDisabled(method != MethodOff);
         if (ImGui::BeginCombo("##value", aa_labels[aa_index])) {
             for (int i = 0; i < aa_count; ++i) {
                 const bool supported = (aa_values[i] != S::UpscalerDlss || s.dlss_supported) &&
-                                       (aa_values[i] != S::UpscalerFsr4 || s.fsr4_supported);
+                                       (aa_values[i] != S::UpscalerFsr4 || s.fsr4_supported) &&
+                                       (aa_values[i] != S::UpscalerXess || s.xess_supported);
                 ImGui::BeginDisabled(!supported);
                 if (ImGui::Selectable(aa_labels[i], i == aa_index) && i != aa_index) {
                     S::SetUpscaler(aa_values[i]);
+                    if (i == 0) s.game_smaa = false;
                     dirty = true;
                 }
                 ImGui::EndDisabled();
@@ -697,8 +707,8 @@ void ImageTab() {
             ImGui::EndCombo();
         }
         ImGui::EndDisabled();
-        Help(TR("Smooths jagged edges. Yours to choose with Upscale method Off; an upscaler does its own. DLAA (NVIDIA RTX cards) and FSR 4 (any recent card) are the sharpest, FSR 3.1 runs on any card, TAA is lighter and softer. Off keeps only the game's own."),
-             {s.dlss_supported ? "DLAA (NVIDIA)" : aa_labels[s.fsr4_supported ? 3 : 2], ""});
+        Help(TR("Smooths jagged edges. Yours to choose with Upscale method Off; an upscaler does its own. DLAA (NVIDIA RTX cards) and FSR 4 (any recent card) are the sharpest, XeSS Native AA (any recent card, Windows only) is close, FSR 3.1 runs on any card, TAA is lighter and softer. Game's own keeps only the game's SMAA, Off smooths nothing."),
+             {s.dlss_supported ? "DLAA (NVIDIA)" : aa_labels[s.fsr4_supported ? 4 : 3], ""});
         ImGui::PopID();
         CheckRow("SMAA 1x", s.smaa,
                  TR("Smooths jagged edges (feathers, grass, railings) on the final image. The game draws its HUD and subtitles into the same image, so text edges are smoothed too. About 0.2 to 0.4 ms per frame at 1080p (RTX 2060)."), d.smaa, false);
