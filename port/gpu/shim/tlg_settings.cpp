@@ -56,6 +56,9 @@ bool dlss_checked = false;
 int dlss_supported_file = -1;
 // dlss_fg_supported in tlg.ini: the game's last DLSS frame generation check, for the launcher (-1: none).
 int dlss_fg_supported_file = -1;
+// ConfigureXessSupport ran / xess_supported in tlg.ini (-1: none), as for DLSS.
+bool xess_checked = false;
+int xess_supported_file = -1;
 // The upscaler tlg.ini selected before a fallback to FSR 3.1 (-1: none): Save writes it back.
 int selected_upscaler = -1;
 // fsr4_default in tlg.ini: the one-time switch from FSR 3.1 to FSR 4 native AA on a card that
@@ -66,6 +69,7 @@ int fsr4_supported_file = -1;
 
 void DlssFallback(Values& v) {
     if (v.upscaler == UpscalerDlss && dlss_checked && !v.dlss_supported) FallBackToFsr3();
+    if (v.upscaler == UpscalerXess && xess_checked && !v.xess_supported) FallBackToFsr3();
 }
 
 void Set(Values& v, const std::string& key, const std::string& value) {
@@ -104,6 +108,9 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         aa_row_file = i != 0;
     } else if (key == "dlss_supported") {
         dlss_supported_file = i != 0;
+        return;
+    } else if (key == "xess_supported") {
+        xess_supported_file = i != 0;
         return;
     } else if (key == "dlss_fg_supported") {
         dlss_fg_supported_file = i != 0;
@@ -205,6 +212,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.rcas = i != 0;
     } else if (key == "rcas_strength") {
         v.rcas_strength = TlgGraphics::ParseRcasStrength(value.empty() ? -1 : i);
+    } else if (key == "game_smaa") {
+        v.game_smaa = i != 0;
     } else if (key == "dlaa") {
         v.dlaa = i != 0;
     } else if (key == "level_select") {
@@ -493,7 +502,8 @@ void Load() {
     // other upscalers, load as DLSS. The quality (preset) is the render size the launcher
     // patches in (startup); the menu keeps it for the next launch.
     if (!aa_row_file || (v.upscaler != UpscalerTaa && v.upscaler != UpscalerFsr3 &&
-                         v.upscaler != UpscalerFsr4 && v.upscaler != UpscalerOff)) {
+                         v.upscaler != UpscalerFsr4 && v.upscaler != UpscalerXess &&
+                         v.upscaler != UpscalerOff)) {
         v.upscaler = UpscalerDlss;
     }
     // tlg: the AA row is gone (2026-11-07); a file with AA off keeps its picture as Built-in.
@@ -733,6 +743,25 @@ void ConfigureDlssSupport(bool available, const char* problem) {
     if (!keys.empty()) WriteKeys(keys);
 }
 
+void ConfigureXessSupport(bool available, const char* problem) {
+    auto& v = Get();
+    v.xess_supported = available;
+    xess_checked = true;
+    if (xess_supported_file != int(available)) {
+        // Only this line changes: the launcher greys XeSS out from it.
+        if (WriteKeys({{"xess_supported", std::to_string(int(available))}}))
+            xess_supported_file = available;
+    }
+    static std::string kept;
+    kept = problem ? problem : "";
+    v.xess_problem = available || kept.empty() ? nullptr : kept.c_str();
+    if (v.upscaler == UpscalerXess && !available) {
+        std::printf("Upscaler: XeSS unavailable (%s); falling back to FSR 3.1\n",
+                    kept.empty() ? "libxess.dll missing" : kept.c_str());
+        FallBackToFsr3();
+    }
+}
+
 void FallBackToFsr3() {
     auto& v = Get();
     if (v.upscaler != UpscalerFsr3) selected_upscaler = v.upscaler;
@@ -755,8 +784,10 @@ void SetUpscaler(int upscaler) {
     auto& v = Get();
     v.upscaler = std::clamp(upscaler, 0, UpscalerCount - 1);
     v.dlaa = v.upscaler != UpscalerOff;
+    v.game_smaa = true;  // the AA row's Off sets it false after this call
     selected_upscaler = -1;
     if (v.upscaler == UpscalerDlss && !v.dlss_supported) FallBackToFsr3();
+    if (v.upscaler == UpscalerXess && !v.xess_supported) FallBackToFsr3();
 }
 
 bool FixedRenderSession() {
@@ -842,6 +873,7 @@ void Save() {
                  int(v.dlaa.load()),v.shadow_scale.load(), int(v.smaa.load()),
                  int(v.color_adjust.load()), v.brightness.load(), v.contrast.load(),
                  v.saturation.load(), v.color_gamma.load());
+    std::fprintf(file, "game_smaa=%d\n", int(v.game_smaa.load()));
     std::fprintf(file, "level_select=%d\n", int(v.level_select.load()));
     std::fprintf(file, "photo_hdr=%d\n", int(v.photo_hdr.load()));
     std::fprintf(file, "pad_combo_quit=%s\npad_combo_menu=%s\npad_combo_qa=%s\npad_combo_photo=%s\n",
@@ -874,6 +906,8 @@ void Save() {
                  pack > 0 ? TexturePackNames()[pack - 1].c_str() : "off");
     if (dlss_checked || dlss_supported_file >= 0)
         std::fprintf(file, "dlss_supported=%d\n", dlss_checked ? int(v.dlss_supported.load()) : dlss_supported_file);
+    if (xess_checked || xess_supported_file >= 0)
+        std::fprintf(file, "xess_supported=%d\n", xess_checked ? int(v.xess_supported.load()) : xess_supported_file);
     if (const int fg = v.dlss_fg_supported >= 0 ? v.dlss_fg_supported.load() : dlss_fg_supported_file; fg >= 0)
         std::fprintf(file, "dlss_fg_supported=%d\n", fg);
     if (fsr4_supported_file >= 0) std::fprintf(file, "fsr4_supported=%d\n", fsr4_supported_file);
@@ -990,6 +1024,7 @@ void ApplyGraphicsPreset(int index) {
     // dlaa=1 on Built-in picks the card's best upscaler.
     if (!v.dlaa && SelectedUpscaler() != UpscalerOff) SetUpscaler(UpscalerOff);
     if (v.dlaa && v.upscaler == UpscalerOff) SetUpscaler(DefaultAaUpscaler());
+    v.game_smaa = true;  // Stock is the game as shipped: its own SMAA (launcher preset_picked too)
 }
 
 int MatchingGraphicsPreset() {
@@ -1049,7 +1084,7 @@ void PresetRenderSize(int preset, int output_width, int output_height, int& widt
 }
 
 const char* UpscalerName(int upscaler) {
-    static constexpr const char* names[UpscalerCount] = {"off", "fsr3", "fsr4", "fsr411", "taa", "dlss"};
+    static constexpr const char* names[UpscalerCount] = {"off", "fsr3", "fsr4", "fsr411", "taa", "dlss", "xess"};
     return names[std::clamp(upscaler, 0, UpscalerCount - 1)];
 }
 
@@ -1057,6 +1092,7 @@ int AaModeOf() {
     const auto& v = Get();
     if (!AaOn() || v.upscaler == UpscalerTaa || v.upscaler == UpscalerOff) return AaOff;
     if (v.upscaler == UpscalerFsr3) return AaFsr3Native;
+    if (v.upscaler == UpscalerXess) return AaXessNative;
     return v.upscaler == UpscalerFsr4 ? AaFsr4Native : AaDlaa;
 }
 
@@ -1065,7 +1101,10 @@ void SetAaMode(int mode) {
     mode = std::clamp(mode, 0, AaModeCount - 1);
     v.dlaa = mode != AaOff;
     if (mode == AaOff) return;
-    v.upscaler = mode == AaDlaa ? UpscalerDlss : mode == AaFsr4Native ? UpscalerFsr4 : UpscalerFsr3;
+    v.upscaler = mode == AaDlaa         ? UpscalerDlss
+                 : mode == AaFsr4Native ? UpscalerFsr4
+                 : mode == AaXessNative ? UpscalerXess
+                                        : UpscalerFsr3;
     selected_upscaler = -1;
     v.preset = NativeAA;
 }
@@ -1073,11 +1112,13 @@ void SetAaMode(int mode) {
 bool AaModeSupported(int mode) {
     if (mode == AaDlaa) return Get().dlss_supported;
     if (mode == AaFsr4Native) return Get().fsr4_supported;
+    if (mode == AaXessNative) return Get().xess_supported;
     return true;
 }
 
 const char* AaModeName(int mode) {
-    static constexpr const char* names[AaModeCount] = {"Off", "DLAA", "FSR 3.1 Native AA", "FSR 4 Native AA"};
+    static constexpr const char* names[AaModeCount] = {"Off", "DLAA", "FSR 3.1 Native AA", "FSR 4 Native AA",
+                                                                "XeSS Native AA"};
     return names[std::clamp(mode, 0, AaModeCount - 1)];
 }
 

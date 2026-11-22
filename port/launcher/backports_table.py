@@ -54,10 +54,10 @@ MENU = [
     _menu('Image', 'smaa', 'bool', '0', 'SMAA 1x anti-aliasing',
           'Smooths jagged edges on the final image (a little GPU time).'),
     _menu('Image', 'upscaler', 'choice', 'dlss', 'Upscaler',
-          ('Draws the image at the chosen quality: DLSS (NVIDIA RTX), FSR 4 (any recent card), FSR 3.1 (any card), TAA (any card, lighter, native size only) '
-           "or the game's own pass (Built-in). At Native AA quality it is the anti-aliasing."),
+          ('Draws the image at the chosen quality: DLSS (NVIDIA RTX), FSR 4 (any recent card), FSR 3.1 (any card), TAA (any card, lighter, native size only), '
+           "XeSS (any recent card, Windows only) or the game's own pass (Built-in). At Native AA quality it is the anti-aliasing."),
           choices=(('off', 'Built-in (game)'), ('dlss', 'DLSS'),
-                   ('fsr3', 'FSR 3.1'), ('fsr4', 'FSR 4'), ('taa', 'TAA'))),
+                   ('fsr3', 'FSR 3.1'), ('fsr4', 'FSR 4'), ('taa', 'TAA'), ('xess', 'XeSS'))),
     _menu('Image', 'preset', 'choice', '0', 'Quality (requires restart)',
           ('The render size: Quality 1/1.5, Balanced 1/1.7, Performance 1/2, Ultra Performance 1/3 of the output '
            'on each side, upscaled by the upscaler. Applied at start.'),

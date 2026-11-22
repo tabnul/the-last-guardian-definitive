@@ -298,11 +298,13 @@ TEXT = {
     'up_fsr3': 'FSR 3.1 (any card)',
     'up_fsr4': 'FSR 4 (any recent card)',
     'up_taa': 'TAA (any card)',
+    'up_xess': 'XeSS (Intel, Windows)',
     'aa': 'Anti-aliasing',
-    'aa_game': "Off (game's own)",
+    'aa_game': "Game's own (SMAA)",
     'aa_dlaa': 'DLAA (NVIDIA RTX)',
-    'aa_hint': "Smooths jagged edges. Yours to choose with Upscale method Off; an upscaler does its own. DLAA (NVIDIA RTX cards) and FSR 4 (any recent card) are the sharpest, FSR 3.1 runs on any card, TAA is lighter and softer. Off keeps only the game's own.",
-    'upscaler_hint': "How the image gets its size. Off: drawn at the screen's size. Built-in, DLSS, FSR 3.1 and FSR 4: drawn smaller and enlarged, for more speed; DLSS needs an NVIDIA RTX card, FSR 4 any recent card (not only AMD; sharper and steadier than FSR 3.1), FSR 3.1 runs on any card, Built-in is the game's own upscale pass. An upscaler also smooths the edges itself. F8 switches between Built-in and your choice in game.",
+    'aa_xess': 'XeSS Native AA (Windows)',
+    'aa_hint': "Smooths jagged edges. Yours to choose with Upscale method Off; an upscaler does its own. DLAA (NVIDIA RTX cards) and FSR 4 (any recent card) are the sharpest, XeSS Native AA (any recent card, Windows only) is close, FSR 3.1 runs on any card, TAA is lighter and softer. Game's own keeps only the game's SMAA, Off smooths nothing.",
+    'upscaler_hint': "How the image gets its size. Off: drawn at the screen's size. Built-in, DLSS, FSR 3.1, FSR 4 and XeSS: drawn smaller and enlarged, for more speed; DLSS needs an NVIDIA RTX card, FSR 4 any recent card (not only AMD; sharper and steadier than FSR 3.1), XeSS any recent card on Windows (best on Intel Arc), FSR 3.1 runs on any card, Built-in is the game's own upscale pass. An upscaler also smooths the edges itself. F8 switches between Built-in and your choice in game.",
     'quality': 'Upscale quality',
     'preset_native': 'Off',
     'preset_quality': 'Quality',
@@ -319,6 +321,7 @@ TEXT = {
     'fg_blocked': 'Off: the game runs at 30 FPS (frame rate or frame rate limit), too low for frame generation. Your choice comes back at a higher frame rate.',
     'aa_no_dlss': 'No DLSS on this GPU: it runs as FSR 3.1',
     'aa_no_fsr4': 'This GPU cannot run FSR 4: it runs as FSR 3.1',
+    'aa_no_xess': 'XeSS is not available here (Windows only, needs libxess.dll): it runs as FSR 3.1',
     'sharpening': 'Sharpening',
     'sharpening_hint': ('Sharpens the image. With DLSS, FSR or TAA it is their own sharpening (scene only); with '
                         "Built-in it is AMD CAS on the final picture. Up to 100% the upscaler's own sharpening; "
@@ -576,14 +579,20 @@ INI_DEFAULTS = {'smaa': '0', 'sharpen': '1', 'sharpness': '1.75', 'color_adjust'
 # on any card; off is the game's own upscale pass. At Native AA quality the upscaler is the
 # anti-aliasing, below it the upscaler is too (no separate AA checkbox; dlaa = not Built-in).
 # TAA (2026-11-07): our own light temporal AA at native size, between SMAA and DLAA in cost.
-UPSCALERS = [('up_off', 'off'), ('up_dlss', 'dlss'), ('up_fsr3', 'fsr3'), ('up_fsr4', 'fsr4'), ('up_taa', 'taa')]
+# XeSS (issue #62): Intel's libxess.dll, Windows only; the game checks it as DLSS and FSR 4.
+UPSCALERS = [('up_off', 'off'), ('up_dlss', 'dlss'), ('up_fsr3', 'fsr3'), ('up_fsr4', 'fsr4'), ('up_taa', 'taa'),
+             ('up_xess', 'xess')]
 # The Video page's three rows (as the in-game menu). Upscale method: Off or an upscaler
 # (supersampling removed, user 2026-11-10); Upscale quality: the render size; Anti-aliasing: free
 # to choose only with method Off (an upscaler is its own). Stored as before: tlg.ini preset (0 off,
 # 1-4 upscaling) and upscaler (the upscaler, or the anti-aliasing).
-METHODS = [('preset_native', None), ('up_off', 'off'), ('up_dlss', 'dlss'), ('up_fsr3', 'fsr3'), ('up_fsr4', 'fsr4')]
+METHODS = [('preset_native', None), ('up_off', 'off'), ('up_dlss', 'dlss'), ('up_fsr3', 'fsr3'), ('up_fsr4', 'fsr4'),
+           ('up_xess', 'xess')]
 METHOD_OFF = 0
-AA_CHOICES = [('aa_game', 'off'), ('aa_dlaa', 'dlss'), ('up_fsr3', 'fsr3'), ('up_fsr4', 'fsr4'), ('up_taa', 'taa')]
+# Off: no anti-aliasing at all ('none': tlg.ini upscaler off + game_smaa=0, the game's SMAA cleared
+# too, user 2026-11-22); Game's own: upscaler off, the game's SMAA only.
+AA_CHOICES = [('aa_off', 'none'), ('aa_game', 'off'), ('aa_dlaa', 'dlss'), ('up_fsr3', 'fsr3'), ('up_fsr4', 'fsr4'), ('up_taa', 'taa'),
+              ('aa_xess', 'xess')]
 
 
 def fg_mode_of(ini):
@@ -622,6 +631,11 @@ def fsr4_unsupported(ini):
     return ini.get('fsr4_supported') == '0'
 
 
+def xess_unsupported(ini):
+    # The game writes its XeSS check (xess_supported); XeSS is Windows only (libxess.dll).
+    return sys.platform != 'win32' or ini.get('xess_supported') == '0'
+
+
 def upscaler_of(ini):
     # The UPSCALERS index tlg.ini picks (TlgSettings::Load: a file from before the row, and every
     # other upscaler, loads as DLSS; anti-aliasing off loads as Built-in).
@@ -629,12 +643,21 @@ def upscaler_of(ini):
         return 1
     if ini.get('dlaa', '1') in ('0', ''):
         return 0
-    return {'off': 0, 'fsr3': 2, 'fsr4': 3, 'taa': 4}.get(ini.get('upscaler'), 1)
+    return {'off': 0, 'fsr3': 2, 'fsr4': 3, 'taa': 4, 'xess': 5}.get(ini.get('upscaler'), 1)
+
+
+def aa_value_of(ini):
+    """The upscaler value the video rows show: UPSCALERS' value, or 'none' for the AA row's Off
+    (upscaler off at native size with game_smaa=0)."""
+    upscaler = UPSCALERS[upscaler_of(ini)][1]
+    if upscaler == 'off' and ini.get('game_smaa') == '0' and tlg_run.quality_preset(ini) <= 0:
+        return 'none'
+    return upscaler
 
 
 def method_of(preset, upscaler):
     """The METHODS index of a tlg.ini preset and upscaler (TAA runs at native size only)."""
-    if preset <= 0 or upscaler == 'taa':
+    if preset <= 0 or upscaler in ('taa', 'none'):
         return METHOD_OFF
     return [value for _, value in METHODS].index(upscaler)
 
@@ -1242,8 +1265,10 @@ class Launcher:
     def update_aa_note(self, ini):
         # DLSS or FSR 4 stays the choice in tlg.ini; the game runs FSR 3.1 while the card lacks it.
         mode = self.video_state[1]
-        if (mode == 'dlss' and dlss_unsupported(ini)) or (mode == 'fsr4' and fsr4_unsupported(ini)):
-            self.aa_note.configure(text=self.t('aa_no_dlss' if mode == 'dlss' else 'aa_no_fsr4'))
+        notes = {'dlss': (dlss_unsupported, 'aa_no_dlss'), 'fsr4': (fsr4_unsupported, 'aa_no_fsr4'),
+                 'xess': (xess_unsupported, 'aa_no_xess')}
+        if mode in notes and notes[mode][0](ini):
+            self.aa_note.configure(text=self.t(notes[mode][1]))
             self.aa_note.grid()
         else:
             self.aa_note.grid_remove()
@@ -1582,7 +1607,7 @@ class Launcher:
         self.hint(video, 11, 2, 'aa_hint')
         self.aa_note = ttk.Label(video, text=self.t('aa_no_dlss'), foreground=MUTED, wraplength=320)
         self.aa_note.grid(row=12, column=0, columnspan=2, sticky='w')
-        self.show_video_rows(tlg_run.quality_preset(ini), UPSCALERS[upscaler_of(ini)][1])
+        self.show_video_rows(tlg_run.quality_preset(ini), aa_value_of(ini))
         self.update_aa_note(ini)
         ttk.Label(video, text=self.t('fg_mode')).grid(row=14, column=0, sticky='w', pady=(6, 0))
         self.fg_box = ttk.Combobox(video, state='readonly', width=20)
@@ -2341,7 +2366,7 @@ class Launcher:
     def reload_ini(self):
         """The rows that show tlg.ini values read it again."""
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
-        self.show_video_rows(tlg_run.quality_preset(ini), UPSCALERS[upscaler_of(ini)][1])
+        self.show_video_rows(tlg_run.quality_preset(ini), aa_value_of(ini))
         self.update_fg(ini)
         self.update_aa_note(ini)
         self.hdr_var.set(ini.get('hdr', '1') != '0')
@@ -2398,7 +2423,7 @@ class Launcher:
         if index < 0:
             return
         tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
-        tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', self.presets[index][1])
+        tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {**self.presets[index][1], 'game_smaa': 1})  # as the in-game menu (SetUpscaler)
         self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
         if index == preset_share.DECK_INDEX:  # the Steam Deck entry: its resolution and frame rate too
             self.settings.update(preset_share.DECK_SETTINGS)
@@ -2422,11 +2447,20 @@ class Launcher:
             values['frame_generation'] = picked
         preset, upscaler = video_choice(self.video_state, self.method_box.current(), self.quality_box.current(),
                                         self.aa_box.current())
+        # XeSS is Windows only: off Windows the pick is refused (the in-game menu greys it out;
+        # a Tk list cannot grey one entry), the rows go back and the note says why.
+        refused = upscaler == 'xess' and sys.platform != 'win32'
+        if refused:
+            preset, upscaler = self.video_state
         self.show_video_rows(preset, upscaler)
         self.update_aa_note(current_ini)
+        if refused:
+            self.aa_note.configure(text=self.t('aa_no_xess'))
+            self.aa_note.grid()
         self.update_strength(current_ini)
         # tlg.ini dlaa: anti-aliasing or upscaling by something else than the game's own.
-        values.update(upscaler=upscaler, aa_row=1, preset=preset, dlaa=int(upscaler != 'off'))
+        values.update(upscaler='off' if upscaler == 'none' else upscaler, aa_row=1, preset=preset,
+                      dlaa=int(upscaler not in ('off', 'none')), game_smaa=int(upscaler != 'none'))
         for key, (low, high) in COLOR_RANGES.items():
             try:
                 value = min(max(float(self.ini_vars[key].get().replace(',', '.')), low), high)

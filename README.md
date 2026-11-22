@@ -92,7 +92,7 @@ No game files are included. You need your own copy, dumped from your own PS4.
 **Added by the port:**
 
 - Windows and Linux builds
-- DLSS, FSR 4 and FSR 3.1 anti-aliasing and upscaling, and DLSS or FSR frame generation
+- DLSS, FSR 4, FSR 3.1 and XeSS anti-aliasing and upscaling, and DLSS or FSR frame generation
 - Any resolution including 21:9 ultrawide (32:9 experimental), and 30, 60 or unlocked FPS
 - An in-game settings menu (**Insert**) with presets, shadows, field of view, effects, colour and HDR10
 - Shader recipes against stutter and calmer wind
@@ -127,7 +127,8 @@ longer and slower CPUs may see short hitches when the game streams new areas. If
 space, a plain folder is still the fastest choice.
 
 You need a Vulkan 1.3 graphics card with at least 8 GB of video memory. DLSS needs an NVIDIA RTX
-card and FSR 4 a recent card; FSR 3.1 runs on any card.
+card, FSR 4 a recent card and XeSS a recent card on Windows (best on Intel Arc); FSR 3.1 runs on
+any card.
 
 **Error 4551 on Windows 11:** Smart App Control blocks programs without a digital signature, and
 this port is not signed. Turn it off under Windows Security > App & browser control > Smart App
@@ -155,7 +156,9 @@ Each setting shows what the game originally used and what we recommend.
 - **Resolution:** the game renders at your window size, 21:9 and 32:9 included. At 21:9 the menus
   and subtitles are laid out for the wider screen. 32:9 is experimental: some overlays and menus
   are still off.
-- **Anti-aliasing and upscaling:** DLSS, FSR 4 or FSR 3.1, using the game's own motion vectors.
+- **Anti-aliasing and upscaling:** DLSS, FSR 4, FSR 3.1 or Intel XeSS, using the game's own
+  motion vectors. XeSS (XeSS Native AA, or Quality to Performance) is Windows only: Intel ships it
+  as a Windows library, so on Linux the choice is greyed out.
   The default renders at full size and replaces the game's SMAA, which removes most of the
   shimmer on feathers, grass and fences. Quality to Ultra Performance render lower for more FPS,
   while menus and subtitles stay sharp. **F8** switches back to the game's own AA to compare.
@@ -437,6 +440,8 @@ Thanks to everyone whose work this builds on.
 - [4x-UltraSharp](https://huggingface.co/Kim2091/UltraSharp) by Kim2091 (CC BY-NC-SA 4.0), the
   default texture upscale model, and Microsoft's [DirectXTex](https://github.com/microsoft/DirectXTex).
 - NVIDIA DLSS, under the NVIDIA DLSS license.
+- Intel XeSS (`libxess.dll`, XeSS SDK 3.0), shipped unmodified under the Intel Simplified Software
+  License (`XESS-LICENSE.txt`).
 - Packed games (.zar): [ZArchive](https://github.com/Exzap/ZArchive) by Exzap (MIT-0), and the
   idea and design from [@R-V-L](https://github.com/R-V-L)'s ZArchive build of
   [gow3_pc](https://github.com/R-V-L/gow3_pc). Thanks to @dwaynevn-git for asking for it (#72).
