@@ -4,14 +4,16 @@
 
 <p align="center">
   <a href="https://github.com/tabnul/the-last-guardian-definitive/releases/latest"><img src="https://img.shields.io/github/v/release/tabnul/the-last-guardian-definitive?label=download&style=for-the-badge&color=d9a441" alt="Latest release"></a>
-  <img src="https://img.shields.io/badge/Windows%20%7C%20Linux-native-2f6f4f?style=for-the-badge" alt="Windows and Linux">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-2f6f4f?style=for-the-badge" alt="Windows and Linux">
   <a href="port/LICENSE"><img src="https://img.shields.io/badge/license-GPL--2.0-555?style=for-the-badge" alt="GPL-2.0"></a>
 </p>
 
 <p align="center"><i>A fan project, by fans, for fans.</i></p>
 
-A native Windows and Linux port of The Last Guardian (PS4). It adds DLSS and FSR, frame generation,
-ultrawide support, an optional texture pack, an in-game graphics menu and a [photo mode](#photo-mode).
+An unofficial Windows and Linux PC port of The Last Guardian (PS4). The game code runs natively on
+your CPU. The graphics still go through a translation layer based on the shadPS4 emulator. It adds
+DLSS and FSR, frame generation, ultrawide support, an optional texture pack, an in-game graphics menu
+and a [photo mode](#photo-mode).
 It also brings back many
 things the developers cut or hid in the game's files, which you can't find in any other version:
 see [Cut and hidden content](#cut-and-hidden-content) and the [full guide](docs/fun.md).
@@ -84,7 +86,7 @@ No game files are included. You need your own copy, dumped from your own PS4.
 
 **Added by the port:**
 
-- Native Windows and Linux builds
+- Windows and Linux builds
 - DLSS, FSR 4 and FSR 3.1 anti-aliasing and upscaling, and DLSS or FSR frame generation
 - Any resolution including 21:9 ultrawide (32:9 experimental), and 30, 60 or unlocked FPS
 - An in-game settings menu (**Insert**) with presets, shadows, field of view, effects, colour and HDR10
