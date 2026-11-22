@@ -472,7 +472,20 @@
     "pad.quit_key_bad": "이 키는 안 됩니다: Ctrl 또는 Alt와 문자나 숫자, 또는 F 키를 쓰세요",
     "pad.quit_key_off": "끔",
     "pad.off_button": "끔",
-    "pad.hide_hints": "버튼 안내 숨기기 (튜토리얼은 계속 진행되며 건너뛰는 것은 없습니다)"
+    "pad.hide_hints": "버튼 안내 숨기기 (튜토리얼은 계속 진행되며 건너뛰는 것은 없습니다)",
+    "launcher.game_trophy_test": "트로피 테스트",
+    "launcher.game_trophy_test_hint": "테스트 전용: 시작 20초 후 다음 트로피가 획득되어 알림과 메뉴의 트로피 탭을 확인할 수 있습니다. 테스트 획득은 trophies_test.txt에 저장되며 실제 트로피 목록에는 들어가지 않습니다. 기본값은 꺼짐.",
+    "launcher.trophies_section": "트로피",
+    "launcher.trophy_key": "PS4 트로피 키",
+    "launcher.trophy_key_save": "키 사용",
+    "launcher.trophy_popup": "획득 시 팝업과 소리",
+    "launcher.trophy_popup_note": "트로피 이름을 보려면 트로피 키가 필요합니다. 키가 없으면 팝업에 번호만 표시됩니다.",
+    "launcher.trophy_key_ok": "키가 맞습니다: 트로피 이름 {names}개를 찾았습니다. 저장했습니다.",
+    "launcher.trophy_key_wrong": "이 키로는 트로피 파일을 열 수 없습니다. 저장하지 않았습니다.",
+    "launcher.trophy_key_format": "키는 16진수 32자리입니다(0-9, A-F). 저장하지 않았습니다.",
+    "launcher.trophy_key_nofile": "저장했지만 확인하지 못했습니다: 게임 폴더에 트로피 파일이 없습니다.",
+    "launcher.trophy_key_cleared": "키를 지웠습니다: 트로피가 번호로 표시됩니다.",
+    "launcher.trophy_key_hint": "선택 사항: PS4 트로피 키(16진수 32자리)를 넣으면 트로피 이름이 표시됩니다. 이 포트에는 포함되어 있지 않습니다. 게임 내 메뉴(트로피 탭)에서도 설정할 수 있습니다."
   },
   "items": {
     "menu:sharpen": {
@@ -1199,6 +1212,18 @@
     "Press the key, for example Ctrl+X...": "키를 누르세요, 예: Ctrl+X...",
     "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "이 키는 안 됩니다: Ctrl 또는 Alt와 문자나 숫자, 또는 F 키를 쓰세요.",
     "Hide button hints": "버튼 안내 숨기기",
-    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "게임의 버튼 안내 상자가 표시되지 않습니다. 튜토리얼은 백그라운드에서 계속 진행되므로 건너뛰는 것은 없습니다."
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "게임의 버튼 안내 상자가 표시되지 않습니다. 튜토리얼은 백그라운드에서 계속 진행되므로 건너뛰는 것은 없습니다.",
+    "Trophies": "트로피",
+    "Trophy %d": "트로피 %d",
+    "Trophy unlocked": "트로피 획득",
+    "Hidden trophy": "숨겨진 트로피",
+    "%d of %d trophies unlocked": "트로피 %d / %d개 획득",
+    "Trophy key": "트로피 키",
+    "This trophy key does not open the trophy file.": "이 트로피 키로는 트로피 파일을 열 수 없습니다.",
+    "Optional: the PS4 trophy key (32 hex digits) shows the trophy names. The port does not include it.": "선택 사항: PS4 트로피 키(16진수 32자리)를 넣으면 트로피 이름이 표시됩니다. 이 포트에는 포함되어 있지 않습니다.",
+    "Use key": "키 사용",
+    "Pop-up and sound on unlock": "획득 시 팝업과 소리",
+    "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "끄기: 플레이 중 팝업과 소리가 없습니다. 획득 기록은 그대로 저장되고 여기에 표시됩니다.",
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "트로피 이름을 보려면 트로피 키가 필요합니다. 키가 없으면 팝업에 번호만 표시됩니다."
   }
 }

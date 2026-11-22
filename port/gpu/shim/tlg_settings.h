@@ -166,6 +166,9 @@ struct Values {
     /// Hide the game's button hints (issue #84; tlg.ini hide_hints, env TLG_HIDE_HINTS wins): the
     /// hint boxes are never shown, the game's tutorial logic runs on (tlg_lua.cpp HideHints). Live.
     std::atomic<bool> hide_hints{false};
+    /// The trophy pop-up and chime on an unlock (issue #60; tlg.ini trophy_popup). Off: unlocks are
+    /// still saved and listed in the Trophies tab, only the pop-up and sound are left out. Live.
+    std::atomic<bool> trophy_popup{false};
     /// Not a setting: the controller used last is an Xbox-style one (runtime_pad.c, tlggpu_pad_kind).
     std::atomic<bool> pad_is_xbox{false};
     /// The hints show an Xbox pad: picture swapped in vk_texture_pack.cpp, glow moved in tlg_lua.cpp.
@@ -241,6 +244,7 @@ struct Values {
     /// Sound output (src/runtime_audio.c through tlggpu_audio_settings), applied at the next start:
     /// the playback device's name (empty = system default) and "always send 7.1".
     std::string audio_device;
+    std::string trophy_key; // tlg: PS4 trophy key, 32 hex digits (issue #60); empty = numbered trophies
     std::atomic<bool> audio_surround{false};
     /// Controller button combos (Controls tab + launcher Controller page, tlg.ini pad_combo_*):
     /// PadCombo bits. Quit game (held 2 s, tlg_overlay.cpp), our menu (tlg_overlay.cpp) and the

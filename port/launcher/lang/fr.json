@@ -465,7 +465,20 @@
     "pad.quit_key_bad": "Pas cette touche : utilisez Ctrl ou Alt avec une lettre ou un chiffre, ou une touche F",
     "pad.quit_key_off": "désactivé",
     "pad.off_button": "Désactivé",
-    "pad.hide_hints": "Masquer les aides de boutons (le tutoriel continue, rien n'est sauté)"
+    "pad.hide_hints": "Masquer les aides de boutons (le tutoriel continue, rien n'est sauté)",
+    "launcher.game_trophy_test": "Test des trophées",
+    "launcher.game_trophy_test_hint": "Test uniquement : 20 secondes après le démarrage, le trophée suivant se débloque, pour voir la notification et l'onglet Trophées du menu. Les déblocages de test vont dans trophies_test.txt, pas dans ta vraie liste de trophées. Désactivé par défaut.",
+    "launcher.trophies_section": "Trophées",
+    "launcher.trophy_key": "Clé des trophées PS4",
+    "launcher.trophy_key_save": "Utiliser la clé",
+    "launcher.trophy_popup": "Notification et son au déblocage",
+    "launcher.trophy_popup_note": "Les noms des trophées nécessitent la clé des trophées. Sans elle, la notification n’affiche qu’un numéro.",
+    "launcher.trophy_key_ok": "La clé fonctionne : {names} noms de trophées trouvés. Enregistrée.",
+    "launcher.trophy_key_wrong": "Cette clé n'ouvre pas le fichier des trophées. Non enregistrée.",
+    "launcher.trophy_key_format": "Une clé compte 32 chiffres hexadécimaux (0-9, A-F). Non enregistrée.",
+    "launcher.trophy_key_nofile": "Enregistrée, mais non vérifiée : aucun fichier de trophées dans le dossier du jeu.",
+    "launcher.trophy_key_cleared": "Clé supprimée : les trophées sont numérotés.",
+    "launcher.trophy_key_hint": "Facultatif : la clé des trophées PS4 (32 chiffres hexadécimaux) affiche le nom des trophées. Le portage ne la fournit pas. Aussi dans le menu du jeu (onglet Trophées)."
   },
   "items": {
     "menu:sharpen": {
@@ -1186,6 +1199,18 @@
     "Press the key, for example Ctrl+X...": "Appuyez sur la touche, par exemple Ctrl+X...",
     "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Pas cette touche : utilisez Ctrl ou Alt avec une lettre ou un chiffre, ou une touche F.",
     "Hide button hints": "Masquer les aides de boutons",
-    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Les encadrés d'aide aux boutons du jeu ne s'affichent jamais. Le tutoriel continue en arrière-plan, rien n'est donc sauté."
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Les encadrés d'aide aux boutons du jeu ne s'affichent jamais. Le tutoriel continue en arrière-plan, rien n'est donc sauté.",
+    "Trophies": "Trophées",
+    "Trophy %d": "Trophée %d",
+    "Trophy unlocked": "Trophée débloqué",
+    "Hidden trophy": "Trophée caché",
+    "%d of %d trophies unlocked": "%d trophées débloqués sur %d",
+    "Trophy key": "Clé des trophées",
+    "This trophy key does not open the trophy file.": "Cette clé n'ouvre pas le fichier des trophées.",
+    "Optional: the PS4 trophy key (32 hex digits) shows the trophy names. The port does not include it.": "Facultatif : la clé des trophées PS4 (32 chiffres hexadécimaux) affiche le nom des trophées. Le portage ne la fournit pas.",
+    "Use key": "Utiliser la clé",
+    "Pop-up and sound on unlock": "Notification et son au déblocage",
+    "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Désactivé : ni notification ni son pendant le jeu. Les déblocages sont quand même enregistrés et listés ici.",
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Les noms des trophées nécessitent la clé des trophées. Sans elle, la notification n’affiche qu’un numéro."
   }
 }

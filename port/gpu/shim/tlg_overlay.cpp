@@ -26,6 +26,7 @@
 #include "tlg_fun_points.h"
 #include "tlg_graphics.h"
 #include "tlg_perf_stats.h"
+#include "tlg_trophy.h"
 extern "C" void runtime_restart(void); // src/probe.c: starts the launch again, ends this process
 #include "common/elf_info.h"
 #include "imgui.h"
@@ -1693,6 +1694,208 @@ int RestartChanges() {
            (s.hdr != s.startup_hdr) + (s.preset != s.startup_preset);
 }
 
+// tlg: Trophies tab and unlock pop-up (issue #60). Icons from the player's trophy file, made into
+// textures on first use (present thread, imgui_mutex held). Names need the PS4 trophy key.
+std::vector<std::pair<int, ImTextureData*>> trophy_icons;
+TlgTrophy::Entry trophy_toast;
+std::chrono::steady_clock::time_point trophy_toast_since{}, trophy_toast_until{};
+
+ImTextureData* TrophyIcon(int id) {
+    for (const auto& [icon_id, tex] : trophy_icons) {
+        if (icon_id == id) {
+            return tex;
+        }
+    }
+    ImTextureData* tex = nullptr;
+    const auto png = TlgTrophy::IconPng(id);
+    TlgPng::Image image;
+    if (!png.empty() && TlgPng::DecodeRgba(png.data(), png.size(), image) && !image.rgba.empty()) {
+        tex = IM_NEW(ImTextureData)();
+        tex->Create(ImTextureFormat_RGBA32, image.width, image.height);
+        std::memcpy(tex->GetPixels(), image.rgba.data(), image.rgba.size());
+        ImGui::RegisterUserTexture(tex);
+    }
+    trophy_icons.emplace_back(id, tex);
+    return tex;
+}
+
+std::string TrophyName(const TlgTrophy::Entry& e) {
+    if (!e.name.empty()) {
+        return e.name;
+    }
+    char text[64];
+    std::snprintf(text, sizeof(text), TR("Trophy %d"), e.id + 1);
+    return text;
+}
+
+// The grade as a colour (no words, so nothing to translate): platinum, gold, silver, bronze.
+ImVec4 TrophyGradeColor(char grade) {
+    switch (grade) {
+    case 'P': return ImVec4(0.78f, 0.84f, 0.95f, 1.0f);
+    case 'G': return ImVec4(0.95f, 0.78f, 0.32f, 1.0f);
+    case 'S': return ImVec4(0.80f, 0.80f, 0.82f, 1.0f);
+    case 'B': return ImVec4(0.80f, 0.55f, 0.35f, 1.0f);
+    default: return ImVec4(0.85f, 0.72f, 0.45f, 1.0f);
+    }
+}
+
+bool TrophyToastOn() {
+    if (!TlgSettings::Get().trophy_popup) {
+        // Switched off: no pop-up or chime; drop the waiting ones so they don't all show when it
+        // is switched on again. The unlocks themselves are already saved.
+        TlgTrophy::Entry skipped;
+        while (TlgTrophy::TakeUnlockToast(skipped)) {
+        }
+        trophy_toast_until = {};
+        return false;
+    }
+    return std::chrono::steady_clock::now() < trophy_toast_until || TlgTrophy::HasToast();
+}
+
+// Top left, like the console's: icon, "Trophy unlocked", the name, and the chime. 5 s each, one
+// after another.
+void TrophyToastBox() {
+    const auto now = std::chrono::steady_clock::now();
+    if (now >= trophy_toast_until) {
+        if (!TlgTrophy::TakeUnlockToast(trophy_toast)) {
+            return;
+        }
+        trophy_toast_since = now;
+        trophy_toast_until = now + std::chrono::seconds(5);
+        TlgTrophy::PlayChime();
+    }
+    const float in = std::chrono::duration<float>(now - trophy_toast_since).count();
+    const float out = std::chrono::duration<float>(trophy_toast_until - now).count();
+    const float alpha = std::clamp(std::min(in / 0.25f, out / 0.5f), 0.0f, 1.0f);
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float k = viewport->WorkSize.y / 720.0f;
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    ImFont* font = ImGui::GetFont();
+    const std::string name = TrophyName(trophy_toast);
+    const char* title = TR("Trophy unlocked");
+    const float icon = 44 * k, pad = 10 * k, big = 15 * k, small = 13 * k;
+    const float text_w = std::max(font->CalcTextSizeA(big, FLT_MAX, 0, name.c_str()).x,
+                                  font->CalcTextSizeA(small, FLT_MAX, 0, title).x);
+    // Top right, like the PS4; below the FPS counter / AA label when they sit in that corner.
+    const float box_w = pad * 3 + icon + text_w;
+    const float left = viewport->WorkPos.x + viewport->WorkSize.x - 28 * k - box_w;
+    float top = viewport->WorkPos.y + 24 * k;
+    for (const char* other : {"##fps", "##aa_label"}) {
+        const ImGuiWindow* w = ImGui::FindWindowByName(other);
+        if (w && (w->Active || w->WasActive) && w->Pos.y < viewport->WorkPos.y + viewport->WorkSize.y * 0.5f &&
+            w->Pos.x + w->Size.x > left) {
+            top = std::max(top, w->Pos.y + w->Size.y + 8 * k);
+        }
+    }
+    const ImVec2 a(left, top);
+    const ImVec2 b(a.x + box_w, a.y + pad * 2 + icon);
+    auto col = [&](ImVec4 c, float x) { c.w *= alpha * x; return ImGui::GetColorU32(c); };
+    draw->AddRectFilled(a, b, col(ImVec4(0.07f, 0.07f, 0.08f, 1), 0.92f), 12 * k);
+    draw->AddRect(a, b, col(TrophyGradeColor(trophy_toast.grade), 0.9f), 12 * k, 0, 1.5f * k);
+    const ImVec2 ia(a.x + pad, a.y + pad);
+    if (ImTextureData* tex = TrophyIcon(trophy_toast.id)) {
+        draw->AddImageRounded(tex->GetTexRef(), ia, ImVec2(ia.x + icon, ia.y + icon), ImVec2(0, 0), ImVec2(1, 1),
+                              col(ImVec4(1, 1, 1, 1), 1.0f), 6 * k);
+    }
+    const float tx = ia.x + icon + pad;
+    draw->AddText(font, small, ImVec2(tx, ia.y + 3 * k), col(TrophyGradeColor(trophy_toast.grade), 1.0f), title);
+    draw->AddText(font, big, ImVec2(tx, ia.y + icon - big - 4 * k), col(ImVec4(0.94f, 0.92f, 0.87f, 1), 1.0f),
+                  name.c_str());
+}
+
+// The key field (tlg.ini trophy_key). An empty field + "Use key" removes the key.
+void TrophyKeyRows(int key_state) {
+    auto& s = TlgSettings::Get();
+    static char key_text[80] = {};
+    static bool loaded = false;
+    if (!loaded) {
+        std::snprintf(key_text, sizeof(key_text), "%s", s.trophy_key.c_str());
+        loaded = true;
+    }
+    ImGui::SeparatorText(TR("Trophy key"));
+    if (key_state == -1) {
+        ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.4f, 1), "%s", TR("This trophy key does not open the trophy file."));
+    }
+    ImGui::SetNextItemWidth(std::min(ImGui::GetContentRegionAvail().x * 0.5f, 360.0f * base_scale));
+    ImGui::InputText("##trophy_key", key_text, sizeof(key_text), ImGuiInputTextFlags_Password);
+    Help(TR("Optional: the PS4 trophy key (32 hex digits) shows the trophy names. The port does not include it."));
+    ImGui::SameLine();
+    if (ImGui::Button(TR("Use key"))) {
+        std::string text;
+        for (const char* c = key_text; *c; ++c) {
+            if (!std::isspace((unsigned char)*c)) text += *c;
+        }
+        s.trophy_key = text;
+        TlgSettings::Save();
+        TlgTrophy::Reload();
+    }
+}
+
+void TrophiesTab() {
+    int key_state = 0;
+    std::string title;
+    const auto list = TlgTrophy::List(&key_state, &title);
+    if (!list.empty()) {
+        int done = 0;
+        for (const auto& e : list) done += e.unlocked_at != 0;
+        ImGui::Text(TR("%d of %d trophies unlocked"), done, int(list.size()));
+        ImGui::ProgressBar(float(done) / float(list.size()), ImVec2(-1, 0), "");
+    }
+    const float icon = 48.0f * base_scale;
+    if (!list.empty() && ImGui::BeginTable("##trophies", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
+        ImGui::TableSetupColumn("##icon", ImGuiTableColumnFlags_WidthFixed, icon);
+        ImGui::TableSetupColumn("##text", ImGuiTableColumnFlags_WidthStretch);
+        for (const auto& e : list) {
+            const bool locked = e.unlocked_at == 0;
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            if (ImTextureData* tex = TrophyIcon(e.id)) {
+                ImGui::ImageWithBg(tex->GetTexRef(), ImVec2(icon, icon), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0),
+                                   locked ? ImVec4(0.35f, 0.35f, 0.35f, 0.8f) : ImVec4(1, 1, 1, 1));
+            } else {
+                ImGui::Dummy(ImVec2(icon, icon));
+            }
+            ImGui::TableNextColumn();
+            if (e.grade) {
+                // A dot in the grade colour.
+                const float size = ImGui::GetTextLineHeight();
+                const ImVec2 at = ImGui::GetCursorScreenPos();
+                ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(at.x + size * 0.5f, at.y + size * 0.5f), size * 0.3f,
+                                                            ImGui::GetColorU32(TrophyGradeColor(e.grade)));
+                ImGui::Dummy(ImVec2(size, size));
+                ImGui::SameLine();
+            }
+            const bool secret = locked && e.hidden;
+            const std::string name = secret ? std::string(TR("Hidden trophy")) : TrophyName(e);
+            if (locked) {
+                ImGui::TextDisabled("%s", name.c_str());
+            } else {
+                ImGui::TextUnformatted(name.c_str());
+            }
+            if (!e.detail.empty() && !secret) {
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextDisabled("%s", e.detail.c_str());
+                ImGui::PopTextWrapPos();
+            }
+            if (!locked) {
+                char when[64] = "";
+                const std::time_t t = std::time_t(e.unlocked_at);
+                if (const std::tm* tm = std::localtime(&t)) std::strftime(when, sizeof(when), "%Y-%m-%d %H:%M", tm);
+                ImGui::TextColored(ImVec4(0.55f, 0.8f, 0.5f, 1), "%s", when);
+            }
+        }
+        ImGui::EndTable();
+    }
+    if (BeginRows("##trophy_rows")) {
+        CheckRow(TR("Pop-up and sound on unlock"), TlgSettings::Get().trophy_popup,
+                 TR("Off: no pop-up or sound while you play. Unlocks are still saved and listed here."), true);
+        ImGui::EndTable();
+    }
+    ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.4f, 1), "%s",
+                       TR("Trophy names need the trophy key. Without it the pop-up only shows a number."));
+    TrophyKeyRows(key_state);
+}
+
 void Menu() {
     auto& s = TlgSettings::Get();
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -1716,7 +1919,7 @@ void Menu() {
         return;
     }
     footer_help = nullptr;
-    constexpr int TabCount = 6; // tlg: Lab tab out of the menu (user 2026-11-05)
+    constexpr int TabCount = 7; // tlg: Lab tab out of the menu (user 2026-11-05); Trophies (issue #60)
     const ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput) {
         const int step = ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false) || ImGui::IsKeyPressed(ImGuiKey_E, false) ? 1
@@ -1734,7 +1937,7 @@ void Menu() {
     if (ImGui::BeginTabBar("##tabs")) {
         static const char* const tabs[TabCount] = {"Overlay", TR("Image"), TR("Performance"),
                                                    TR("Controls"), TR("Fun"),
-                                                   "Trico Tricks"};
+                                                   "Trico Tricks", TR("Trophies")};
         for (int tab = 0; tab < TabCount; ++tab) {
             const ImGuiTabItemFlags flags = requested_tab == tab ? ImGuiTabItemFlags_SetSelected : 0;
             if (!ImGui::BeginTabItem(tabs[tab], nullptr, flags)) {
@@ -1751,6 +1954,7 @@ void Menu() {
                 case 3: ControlsTab(); break;
                 case 4: FunTab(); break;
                 case 5: TricksTab(); break;
+                case 6: TrophiesTab(); break;
                 default: OverlayTab(); break;
                 }
             }
@@ -3175,7 +3379,7 @@ bool Visible() {
                            message_active || progress_on || now < progress_until || now < toast_until || AaLabelOn() ||
                            NoticeActive() || quit_hold_start != 0 || pause_menu_open ||
                            choice_retiring || s.show_fps || move_bar_open ||
-                           TlgFun::PhotoModeOn());
+                           TlgFun::PhotoModeOn() || TrophyToastOn());
 }
 
 void SetGameButtons(u32 buttons) {
@@ -3339,6 +3543,9 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     }
     if (NoticeActive() && !menu_open) {
         NoticeBox();
+    }
+    if (TrophyToastOn() && !loading && !TlgFun::PhotoModeOn()) {
+        TrophyToastBox();
     }
     PhotoPadSync();
     if (TlgFun::PhotoModeOn() && !menu_open && !loading && !photo_help_hidden) {

@@ -472,7 +472,20 @@
     "pad.quit_key_bad": "Nie ten klawisz: użyj Ctrl lub Alt z literą lub cyfrą albo klawisza F",
     "pad.quit_key_off": "wył.",
     "pad.off_button": "Wył.",
-    "pad.hide_hints": "Ukryj podpowiedzi przycisków (samouczek działa dalej, nic nie zostaje pominięte)"
+    "pad.hide_hints": "Ukryj podpowiedzi przycisków (samouczek działa dalej, nic nie zostaje pominięte)",
+    "launcher.game_trophy_test": "Test trofeów",
+    "launcher.game_trophy_test_hint": "Tylko do testów: 20 sekund po starcie zdobywasz kolejne trofeum, żeby zobaczyć powiadomienie i kartę Trofea w menu. Testowe trofea trafiają do trophies_test.txt, nie do Twojej prawdziwej listy. Domyślnie wyłączone.",
+    "launcher.trophies_section": "Trofea",
+    "launcher.trophy_key": "Klucz trofeów PS4",
+    "launcher.trophy_key_save": "Użyj klucza",
+    "launcher.trophy_popup": "Powiadomienie i dźwięk po zdobyciu",
+    "launcher.trophy_popup_note": "Nazwy trofeów wymagają klucza trofeów. Bez niego powiadomienie pokazuje tylko numer.",
+    "launcher.trophy_key_ok": "Klucz działa: znaleziono {names} nazw trofeów. Zapisano.",
+    "launcher.trophy_key_wrong": "Ten klucz nie otwiera pliku trofeów. Nie zapisano.",
+    "launcher.trophy_key_format": "Klucz to 32 cyfry szesnastkowe (0-9, A-F). Nie zapisano.",
+    "launcher.trophy_key_nofile": "Zapisano, ale nie sprawdzono: brak pliku trofeów w folderze gry.",
+    "launcher.trophy_key_cleared": "Klucz usunięty: trofea są numerowane.",
+    "launcher.trophy_key_hint": "Opcjonalnie: klucz trofeów PS4 (32 cyfry szesnastkowe) pokazuje nazwy trofeów. Port go nie zawiera. Również w menu gry (karta Trofea)."
   },
   "items": {
     "menu:sharpen": {
@@ -1199,6 +1212,18 @@
     "Press the key, for example Ctrl+X...": "Naciśnij klawisz, na przykład Ctrl+X...",
     "Not this key: use Ctrl or Alt with a letter or number, or an F key.": "Nie ten klawisz: użyj Ctrl lub Alt z literą lub cyfrą albo klawisza F.",
     "Hide button hints": "Ukryj podpowiedzi przycisków",
-    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Ramki z podpowiedziami przycisków nigdy się nie pojawiają. Samouczek nadal działa w tle, więc nic nie zostaje pominięte."
+    "The game's button hint boxes are never shown. The tutorial still runs in the background, so nothing is skipped.": "Ramki z podpowiedziami przycisków nigdy się nie pojawiają. Samouczek nadal działa w tle, więc nic nie zostaje pominięte.",
+    "Trophies": "Trofea",
+    "Trophy %d": "Trofeum %d",
+    "Trophy unlocked": "Zdobyto trofeum",
+    "Hidden trophy": "Ukryte trofeum",
+    "%d of %d trophies unlocked": "Zdobyte trofea: %d z %d",
+    "Trophy key": "Klucz trofeów",
+    "This trophy key does not open the trophy file.": "Ten klucz nie otwiera pliku trofeów.",
+    "Optional: the PS4 trophy key (32 hex digits) shows the trophy names. The port does not include it.": "Opcjonalnie: klucz trofeów PS4 (32 cyfry szesnastkowe) pokazuje nazwy trofeów. Port go nie zawiera.",
+    "Use key": "Użyj klucza",
+    "Pop-up and sound on unlock": "Powiadomienie i dźwięk po zdobyciu",
+    "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Wyłączone: bez powiadomienia i dźwięku podczas gry. Zdobyte trofea są nadal zapisywane i widoczne tutaj.",
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Nazwy trofeów wymagają klucza trofeów. Bez niego powiadomienie pokazuje tylko numer."
   }
 }

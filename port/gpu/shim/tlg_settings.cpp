@@ -97,7 +97,7 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         return;
     }
     if (key == "menu_tab") {
-        v.menu_tab = i >= 0 && i <= 5 ? i : 0;
+        v.menu_tab = i >= 0 && i <= 6 ? i : 0;
         return;
     }
     if (key == "aa_row") {
@@ -121,6 +121,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     }
     if (key == "audio_device") {
         v.audio_device = value;
+        return;
+    }
+    if (key == "trophy_key") {
+        v.trophy_key = value;
         return;
     }
     if (key == "pad_combo_quit" || key == "pad_combo_menu" || key == "pad_combo_qa" ||
@@ -256,6 +260,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.button_icons = value == "playstation" ? 1 : value == "xbox" ? 2 : i == 1 || i == 2 ? i : 0;
     } else if (key == "hide_hints") {
         v.hide_hints = i != 0;
+    } else if (key == "trophy_popup") {
+        v.trophy_popup = i != 0;
     } else if (key == "trico_favourites") {
         v.trico_favourites = value;
     } else if (key == "trico_bar_group") {
@@ -821,6 +827,7 @@ void Save() {
                  int(v.restart_unconfirmed.load()));
     std::fprintf(file, "frame_generation=%d\n", v.frame_generation.load());
     std::fprintf(file, "audio_device=%s\naudio_surround=%d\n", v.audio_device.c_str(), int(v.audio_surround.load()));
+    std::fprintf(file, "trophy_key=%s\ntrophy_popup=%d\n", v.trophy_key.c_str(), int(v.trophy_popup.load()));
     std::fprintf(file, "keep_gpu_textures=%d\n", int(v.keep_gpu_textures.load()));
     std::fprintf(file, "arena_release=%d\ngc_live_budget=%d\n", int(v.arena_release.load()),
                  int(v.gc_live_budget.load()));
