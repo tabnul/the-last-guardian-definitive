@@ -1042,6 +1042,9 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
     }
     const bool dump_buffers = !dump_views.empty(); // the TLG_VKB_IMAGE_DUMP_CS dump only (the frame dump takes images alone)
     FrameDumpDispatch(ctx, v, dump_views);
+    if (v.info->pgm_hash == Core::Vkb::Aa::CombineCs) [[unlikely]] {
+        Core::Vkb::Aa::FollowMenu(); // live AA switching: the in-game Anti-aliasing choice, read in game order
+    }
     const bool aa_combine = v.info->pgm_hash == Core::Vkb::Aa::CombineCs && Core::Vkb::Aa::On();
     const std::array<float, 2> aa_jitter = aa_combine ? Core::Vkb::Aa::OnCombineQueued() : std::array<float, 2>{};
     const bool aa_cut = aa_combine && Core::Vkb::Aa::TakeFrameCut(); // K4: the frame's camera cut, taken in game order with its jitter
@@ -1054,7 +1057,7 @@ void Record(u64 ctx, u64 shader, Variant& v, u32 x, u32 y, u32 z, u64 indirect_a
             Stream::Hazard(cmd, {Stream::BufferUse(Stream::GdsBuffer(), offset, 4, true)}, Stream::Agent::Transfer);
             cmd.fillBuffer(Stream::GdsBuffer(), offset, 4, init);
         }
-        if (hash == Core::Vkb::Aa::CombineCs && Core::Vkb::Aa::On()) [[unlikely]] { // F1: native AA writes the scene colour the combine reads
+        if (hash == Core::Vkb::Aa::CombineCs && (Core::Vkb::Aa::On() || Core::Vkb::Aa::SwitchDue())) [[unlikely]] { // F1: native AA writes the scene colour the combine reads
             Core::Vkb::Aa::BeforeCombine(cmd, aa_jitter, aa_cut);
         }
         // V4d: a barrier only when the dispatch touches what earlier work since the last barrier wrote (or writes what it read)

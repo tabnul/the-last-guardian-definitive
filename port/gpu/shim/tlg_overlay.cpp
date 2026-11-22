@@ -761,13 +761,20 @@ void ImageTab() {
                                         S::UpscalerTaa};
         constexpr int aa_count = int(std::size(aa_values));
         // An upscaler as the method: the row shows Off, greyed out (user, 2026-11-10).
-        const bool aa_free = method == MethodOff;
+        // VKB: the backend has no upscaling (always native size) but switches its AA live (native_vkb_aa.cpp FollowMenu), so this row stays usable
+        // under it while the rest of the block is greyed (TLG_VKB_AA_LIVE=0: greyed as before)
+        static const bool backend_aa_live = BackendRuns() && [] {
+            const char* e = std::getenv("TLG_VKB_AA_LIVE"); // the rule of DlssGlue::LiveAaSwitch
+            return e == nullptr || e[0] != '0';
+        }();
+        const bool aa_free = method == MethodOff || backend_aa_live;
         int aa_index = 0;
         for (int i = 0; i < aa_count && aa_free; ++i) {
             if (aa_values[i] == upscaler) aa_index = i;
         }
         Row(TR("Anti-aliasing"));
-        ImGui::BeginDisabled(method != MethodOff);
+        if (backend_aa_live) EndTheirs();
+        ImGui::BeginDisabled(!aa_free);
         if (ImGui::BeginCombo("##value", aa_labels[aa_index])) {
             for (int i = 0; i < aa_count; ++i) {
                 const bool supported = (aa_values[i] != S::UpscalerDlss || s.dlss_supported) &&
@@ -782,6 +789,7 @@ void ImageTab() {
             ImGui::EndCombo();
         }
         ImGui::EndDisabled();
+        if (backend_aa_live) BeginTheirs();
         Help(TR("Smooths jagged edges. Yours to choose with Upscale method Off; an upscaler does its own. DLAA (NVIDIA RTX cards) and FSR 4 (any recent card) are the sharpest, FSR 3.1 runs on any card, TAA is lighter and softer. Off keeps only the game's own."),
              {s.dlss_supported ? "DLAA (NVIDIA)" : aa_labels[s.fsr4_supported ? 3 : 2], ""});
         ImGui::PopID();
