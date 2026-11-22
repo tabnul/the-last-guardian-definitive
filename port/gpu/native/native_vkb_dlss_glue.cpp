@@ -49,10 +49,23 @@ bool AnyFgWanted() {
     return FgWanted() || FsrFgWanted();
 }
 
+bool LiveAaSwitch() {
+    static const bool on = [] {
+        const char* e = std::getenv("TLG_VKB_AA_LIVE");
+        return e == nullptr || e[0] != '0';
+    }();
+    return on;
+}
+
 bool Wanted() {
+    // live AA switching (native_vkb_aa.cpp FollowMenu): DLAA can be picked in game whatever the start choice, so NGX is set up whenever the DLLs are
+    // there, as the normal renderer does (their vk_platform.cpp / vk_instance.cpp). TLG_VKB_AA_LIVE=0: the old rule (only with TLG_VKB_AA=dlaa)
     static const bool wanted = [] {
+        if (Vulkan::Dlss::Get() == nullptr) {
+            return false;
+        }
         const char* e = std::getenv("TLG_VKB_AA");
-        return (e != nullptr && std::strcmp(e, "dlaa") == 0 && Vulkan::Dlss::Get() != nullptr) || FgWanted();
+        return LiveAaSwitch() || (e != nullptr && std::strcmp(e, "dlaa") == 0) || FgWanted();
     }();
     return wanted;
 }

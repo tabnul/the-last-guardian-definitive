@@ -25,6 +25,10 @@ constexpr u64 MotionPassPs = 0x5fce13a4, CombineCs = 0x252f2091, SmaaVs = 0x0a44
 void Init(const VkbVulkan::Instance& instance);
 /// The chosen AA (none: false); one relaxed load
 [[nodiscard]] bool On();
+/// Live switching: the game's render thread, at the combine's capture: reads the in-game Anti-aliasing choice; a change makes SwitchDue true until
+/// BeforeCombine (recording thread) switches the AA
+void FollowMenu();
+[[nodiscard]] bool SwitchDue();
 /// On, not failed, and run at least once (the game's SMAA is cleared only then)
 [[nodiscard]] bool Running();
 /// Recording thread, recording lock held: a draw of the motion pass with its pass's attachments (colours, then depth)

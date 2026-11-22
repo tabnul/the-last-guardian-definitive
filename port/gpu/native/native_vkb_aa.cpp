@@ -243,6 +243,45 @@ Kind Resolve(const VkbVulkan::Instance& inst) {
     return HandOver(From::Choice, inst, fmt::format("anti-aliasing '{}' is not a choice the new engine knows", v), true);
 }
 
+/// Live switching (owner hand test 2026-11-22: "it needs to be swappable"): TLG_VKB_AA is the AA at the start; a change of the in-game Anti-aliasing row
+/// (or of tlg.ini with a settings reload) switches the AA on the next frame, with the same rules as the start (Resolve). TLG_VKB_AA_LIVE=0: the old way
+/// (the start choice for the whole session). The menu is read on the game's render thread (FollowMenu, at the combine); the switch itself (resources freed
+/// and the new AA made) happens on the recording thread in BeforeCombine, where every AA resource is made and used.
+int menu_code = -1;                       ///< the menu's AA when last read (game's render thread)
+std::atomic<int> requested_code{-1};      ///< the menu's AA to switch to
+std::atomic<bool> switch_due{false};      ///< a switch waits for the recording thread
+std::atomic<u64> c_switches{0};
+
+/// The menu's AA as one code: its upscaler with "native AA" on (TlgSettings::SetUpscaler keeps dlaa = upscaler != Off), else off
+int MenuCode() {
+    const auto& v = TlgSettings::Get();
+    return v.dlaa.load() ? v.upscaler.load() : int(TlgSettings::UpscalerOff);
+}
+
+const char* KindName(Kind k) {
+    return k == Kind::Fsr3 ? "FSR 3.1" : k == Kind::Dlaa ? "DLAA" : k == Kind::Fsr4 ? "FSR 4" : k == Kind::Taa ? "TAA" : "off";
+}
+
+/// A menu choice to the engine's AA, the rules of Resolve
+Kind MenuKind(int code, const VkbVulkan::Instance& inst) {
+    switch (code) {
+    case TlgSettings::UpscalerDlss:
+        if (Core::Vkb::DlssGlue::Wanted()) {
+            return DlaaOrFallback(inst);
+        }
+        return HandOver(From::Dlaa, inst, "tlg_dlss.dll / nvngx_dlss.dll are not next to the executable", false);
+    case TlgSettings::UpscalerFsr4:
+    case TlgSettings::UpscalerFsr411: // the new engine has one FSR 4
+        return Fsr4Switch() ? Kind::Fsr4 : Kind::Fsr3;
+    case TlgSettings::UpscalerTaa:
+        return TaaSwitch() ? Kind::Taa : HandOver(From::Choice, inst, "TAA was chosen, but the new engine has no TAA yet (TLG_VKB_TAA=0)", true);
+    case TlgSettings::UpscalerFsr3:
+        return Kind::Fsr3;
+    default:
+        return Kind::Off;
+    }
+}
+
 const VkbVulkan::Instance* instance = nullptr;
 
 struct Input {
@@ -814,6 +853,33 @@ void RcasPass(vk::CommandBuffer cmd, vk::ImageView src, vk::ImageView dst, u32 w
 void Init(const VkbVulkan::Instance& instance_) {
     instance = &instance_;
     active.store(Resolve(instance_), std::memory_order_relaxed);
+    if (Core::Vkb::DlssGlue::LiveAaSwitch()) {
+        // the in-game menu greys out what the card cannot run; the normal renderer sets these (their vk_temporal_upscaler.cpp), the new engine did not, so
+        // DLAA and FSR 4 were greyed out in its menu. One FSR 4 here: both FSR 4 rows run it.
+        const bool fsr4 = Fsr4Switch() && instance_.IsFsr4Int8Supported();
+        TlgSettings::ConfigureUpscalerSupport(fsr4, fsr4);
+        std::string why;
+        const bool dlss = Core::Vkb::DlssGlue::Usable(why);
+        TlgSettings::ConfigureDlssSupport(dlss, dlss ? nullptr : why.c_str());
+        menu_code = MenuCode(); // the start value is not a switch
+    }
+}
+
+void FollowMenu() {
+    if (!Core::Vkb::DlssGlue::LiveAaSwitch() || instance == nullptr) {
+        return;
+    }
+    const int code = MenuCode();
+    if (code == menu_code) {
+        return;
+    }
+    menu_code = code;
+    requested_code.store(code, std::memory_order_relaxed);
+    switch_due.store(true, std::memory_order_release);
+}
+
+bool SwitchDue() {
+    return switch_due.load(std::memory_order_acquire);
 }
 
 bool On() {
@@ -943,6 +1009,21 @@ void NoteMotionPass(std::span<const vk::Image> attachments, u32 color_count, boo
 }
 
 void BeforeCombine(vk::CommandBuffer cmd, std::array<float, 2> jitter, bool camera_cut) {
+    if (instance != nullptr && switch_due.exchange(false, std::memory_order_acq_rel)) [[unlikely]] {
+        const Kind before = Chosen();
+        DestroyContext(); // idles the device first: frames already sent may still use the old AA's images
+        if (before == Kind::Dlaa) {
+            Core::Vkb::DlssGlue::Release(instance->GetDevice());
+        }
+        failed = false; // a new choice gets a new try
+        frame_id = 0;
+        ctx_w = ctx_h = 0;
+        const Kind next = MenuKind(requested_code.load(std::memory_order_relaxed), *instance);
+        active.store(next, std::memory_order_relaxed);
+        c_switches.fetch_add(1, std::memory_order_relaxed);
+        LOG_INFO(Render_Vulkan, "vkb aa: the menu's anti-aliasing changed ({}): {} -> {}", TlgSettings::UpscalerName(requested_code.load(std::memory_order_relaxed)),
+                 KindName(before), KindName(next));
+    }
     if (!On() || instance == nullptr || failed) {
         return;
     }
@@ -1316,6 +1397,8 @@ nlohmann::json Report() {
     return {{"on", On()},
             {"kind", Chosen() == Kind::Fsr3 ? "fsr3" : Chosen() == Kind::Dlaa ? "dlaa" : Chosen() == Kind::Fsr4 ? "fsr4" : Chosen() == Kind::Taa ? "taa" : "off"},
             {"asked", asked},
+            {"live", {{"switch", Core::Vkb::DlssGlue::LiveAaSwitch()}, {"switches", c_switches.load()},
+                      {"menu", menu_code < 0 ? "" : TlgSettings::UpscalerName(menu_code)}}},
             {"choice", {{"switch", ChoiceSwitch()}, {"faults", c_handover_faults[u32(From::Choice)].load()}, {"fault", Why(handover_fault, From::Choice)}}},
             {"fsr4", {{"switch", Fsr4Switch()}, {"device_supported", instance != nullptr && instance->IsFsr4Int8Supported()},
                       {"rdna4", instance != nullptr && IsRdna4(*instance)}, {"model_missing", c_handover_quiet[u32(From::Fsr4)].load() != 0}, {"runs", c_fsr4_runs.load()},

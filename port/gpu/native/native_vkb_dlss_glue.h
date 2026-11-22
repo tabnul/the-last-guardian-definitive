@@ -20,8 +20,10 @@ struct Image {
     u32 width{}, height{};
 };
 
-/// TLG_VKB_AA=dlaa or TLG_VKB_FG=dlss, and the DLLs present (their Dlss::Get): NGX is set up with our instance
+/// the DLLs present (their Dlss::Get) and live AA switching on, TLG_VKB_AA=dlaa or TLG_VKB_FG=dlss: NGX is set up with our instance
 [[nodiscard]] bool Wanted();
+/// live AA switching (the in-game Anti-aliasing row): on unless TLG_VKB_AA_LIVE=0
+[[nodiscard]] bool LiveAaSwitch();
 /// F2: TLG_VKB_FG=dlss and the DLLs present
 [[nodiscard]] bool FgWanted();
 /// F2: TLG_VKB_FG=fsr (AMD FSR 3 frame generation, vkb_fsr_fg.h; needs no DLSS)
