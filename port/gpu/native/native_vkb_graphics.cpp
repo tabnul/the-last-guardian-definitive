@@ -52,6 +52,7 @@
 #include "native/shadps4/shader_recompiler/profile.h"
 #include "native/shadps4/shader_recompiler/recompiler.h"
 #include "native/shadps4/shader_recompiler/runtime_info.h"
+#include "native/shadps4/shader_recompiler/specialization.h"
 #include "native/shadps4/video_core/amdgpu/regs_shader.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_fixed_state.h"
 #include "native/native_vkb_pipeline.h"
@@ -526,6 +527,85 @@ u64 VariantKeyFull(u64 ctx, u64 vs, u64 ps, u64 fetch, const VkbVulkan::FixedSta
     return h;
 }
 
+/// issue 135: the reuse list of translated stages. A stage of the same code (hash, length, address), stage and mode is taken again when the shadPS4 stage
+/// specialization (runtime info, fetch shader, binding start, the kinds of the bound buffers, images and samplers) matches, plus the formats and number
+/// conversions of the buffers and vertex attributes. TLG_VKB_TRANSLATE_REUSE=0 turns it off.
+bool TranslationReuseOn() {
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_TRANSLATE_REUSE"); return e == nullptr || e[0] != '0'; }();
+    return on;
+}
+std::vector<u32> TranslationExtra(const VkbShader::Info& info) {
+    std::vector<u32> extra;
+    if (info.sw_stage == VkbShader::SwStage::Vertex) {
+        if (VkbShader::Gcn::FetchShaderData fetch{}; VkbShader::Gcn::ParseFetchShader(info, fetch)) {
+            for (const auto& attribute : fetch.attributes) {
+                const auto sharp = attribute.GetSharp(info);
+                extra.push_back(static_cast<u32>(sharp.GetDataFmt()) << 16 | static_cast<u32>(sharp.GetNumberFmt()) << 8 | static_cast<u32>(sharp.GetNumberConversion()));
+            }
+        }
+    }
+    for (const auto& b : info.buffers) {
+        const auto sharp = b.GetSharp(info);
+        extra.push_back(static_cast<u32>(sharp.GetDataFmt()) << 24 | static_cast<u32>(sharp.GetNumberFmt()) << 16 | sharp.GetStride() << 1 | (sharp ? 1u : 0u));
+    }
+    return extra;
+}
+struct TranslationEntry {
+    VkbShader::Info info;
+    VkbShader::StageSpecialization spec;
+    std::vector<u32> extra;
+    VkbShader::RuntimeInfo runtime_out;
+    VkbShader::Backend::Bindings binding_out;
+    std::vector<u32> spv;
+    explicit TranslationEntry(const VkbShader::RuntimeInfo& runtime) : runtime_out{runtime} {}
+};
+std::mutex translation_mutex;
+std::unordered_map<u64, std::vector<std::unique_ptr<TranslationEntry>>> translations;
+constexpr size_t MaxTranslationsPerKey = 16;
+bool TranslationReuseFind(u64 key, VkbShader::Info& info, VkbShader::RuntimeInfo& runtime, VkbShader::Backend::Bindings& binding, std::vector<u32>& spv) {
+    std::scoped_lock lock{translation_mutex};
+    const auto it = translations.find(key);
+    if (it == translations.end()) {
+        return false;
+    }
+    for (const auto& e : it->second) {
+        VkbShader::Info candidate = e->info; // the translated layout, with this draw's user data
+        candidate.user_data = info.user_data;
+        candidate.pgm_base = info.pgm_base;
+        candidate.indexed = info.indexed;
+        candidate.constant_offsets = info.constant_offsets;
+        candidate.RefreshFlatBuf();
+        if (!e->spec.Matches(candidate, runtime, binding) || TranslationExtra(candidate) != e->extra) {
+            continue;
+        }
+        info = std::move(candidate);
+        runtime = e->runtime_out;
+        binding = e->binding_out;
+        spv = e->spv;
+        return true;
+    }
+    return false;
+}
+void TranslationReuseAdd(u64 key, VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime_in, const VkbShader::RuntimeInfo& runtime_out,
+                         const VkbShader::Backend::Bindings& binding_in, const VkbShader::Backend::Bindings& binding_out, const std::vector<u32>& spv) {
+    if (info.translation_failed || info.sw_stage == VkbShader::SwStage::TessellationControl || info.sw_stage == VkbShader::SwStage::TessellationEval) {
+        return;
+    }
+    info.RefreshFlatBuf();
+    auto e = std::make_unique<TranslationEntry>(runtime_out);
+    e->info = info;
+    e->spec = VkbShader::StageSpecialization(info, runtime_in, profile, binding_in);
+    e->spec.info = &e->info;
+    e->extra = TranslationExtra(info);
+    e->binding_out = binding_out;
+    e->spv = spv;
+    std::scoped_lock lock{translation_mutex};
+    auto& list = translations[key];
+    if (list.size() < MaxTranslationsPerKey) {
+        list.push_back(std::move(e));
+    }
+}
+
 /// Compiles one stage (mutex held): its user data, program, translation, module and slot map
 std::atomic<u32> next_constant_id{1}; ///< issue 42: the session-unique numbers of the shaders' constant S#s (Stage::constant_ids)
 bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, VkbShader::Backend::Bindings& binding, bool record = false) {
@@ -556,7 +636,13 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
     out.info->constant_offsets = record; // (the row layout's two entries behind a read-only guest buffer's slot)
     out.row_start = binding.indexed;
     std::vector<u32> spv;
-    {
+    // issue 135: a stage translated before with the same code, settings and resource kinds is taken from the reuse list (the event-start hitches were mostly translations)
+    static const u64 probe_ps = [] { const char* e = std::getenv("TLG_VKB_TEST_PS_PROBE"); return e != nullptr ? std::strtoull(e, nullptr, 16) : 0ull; }();
+    const bool reuse = TranslationReuseOn() && probe_ps == 0 && !Core::Vkb::FlatCensus::On();
+    const u64 reuse_key = Mix(Mix(Mix(binary.shader_hash, binary.length), params.Base()), static_cast<u64>(stage) << 1 | (record ? 1u : 0u));
+    const VkbShader::RuntimeInfo runtime_in = out.runtime;
+    const VkbShader::Backend::Bindings binding_in = binding;
+    if (!reuse || !TranslationReuseFind(reuse_key, *out.info, out.runtime, binding, spv)) {
         const auto program = VkbShader::TranslateProgram(params.code, *pools, *out.info, out.runtime, stage_profile);
         if (out.info->translation_failed) {
             c_fail[FailTranslation].fetch_add(1, std::memory_order_relaxed);
@@ -598,6 +684,9 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
             LOG_WARNING(Render_Vulkan, "vkb ps probe {:#x}: coordinates {} found, {} exports patched", probe, coords != nullptr, patched);
         }
         spv = VkbShader::Backend::SPIRV::EmitSPIRV(stage_profile, out.runtime, program, binding);
+        if (reuse) {
+            TranslationReuseAdd(reuse_key, *out.info, runtime_in, out.runtime, binding_in, binding, spv);
+        }
     }
     { // debug: TLG_VKB_DUMP_SPV=<hashes, hex, comma separated>: each compiled stage of those shaders -> log/vkb_spv/<vs|ps>_<hash>_<n>.spv, its GCN code (.gcn) and user data (.ud)
         static const std::vector<u64> dump_spv = [] {
