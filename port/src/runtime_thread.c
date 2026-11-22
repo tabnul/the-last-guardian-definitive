@@ -24,6 +24,7 @@
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <asm/prctl.h>
+#include <link.h>
 #endif
 #define ERR(n) ((int32_t)(UINT32_C(0x80020000)|(n)))
 #define ATTR_MAGIC UINT32_C(0x41545452)
@@ -528,6 +529,28 @@ static ABI int32_t attr_set_guard(ThreadAttr **slot,uint64_t size) {
     a->guard=size; return 0;
 }
 
+#ifndef _WIN32
+/* glibc puts a new thread's descriptor and the static TLS of every library loaded at start at the top of
+ * the stack it is handed (pthread_attr_setstack), so that part is not stack. The GPU library alone holds
+ * about 270 KB of thread_local data: counted inside STACK_MARGIN it left sndx_out_thread ~50 KB, and its
+ * 64 KB audio output frame ran into the mapping below. The TLS is added on top of the margin instead. */
+static int add_tls(struct dl_phdr_info *info,size_t size,void *data) {
+    (void)size;
+    for (int i=0;i<info->dlpi_phnum;++i) if (info->dlpi_phdr[i].p_type==PT_TLS) {
+        size_t align=info->dlpi_phdr[i].p_align ? info->dlpi_phdr[i].p_align : 1;
+        *(size_t *)data+=(info->dlpi_phdr[i].p_memsz+align-1)/align*align;
+    }
+    return 0;
+}
+static size_t tls_bytes;
+/* + 16 KB for the descriptor, glibc's static TLS surplus and alignment; whole pages. */
+static void count_tls(void) { dl_iterate_phdr(add_tls,&tls_bytes); tls_bytes=(tls_bytes+16*1024+4095)&~(size_t)4095; }
+static size_t static_tls_bytes(void) {
+    static pthread_once_t once=PTHREAD_ONCE_INIT;
+    pthread_once(&once,count_tls);
+    return tls_bytes;
+}
+#endif
 /* Linux thread names hold 15 characters; longer ones would be rejected. */
 static void set_host_name(const char *name) {
     char host[16]={0};
@@ -580,6 +603,7 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
      * guest code has no stack probes and would step over the guard page. */
     pthread_attr_setstacksize(&host,stack_bytes);
 #else
+    stack_bytes+=static_tls_bytes();
     void *stack_memory=runtime_low_map(stack_bytes,PROT_READ|PROT_WRITE);
     if (stack_memory) pthread_attr_setstack(&host,stack_memory,stack_bytes);
     else pthread_attr_setstacksize(&host,stack_bytes);
