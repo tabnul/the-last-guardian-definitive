@@ -684,6 +684,9 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
             LOG_WARNING(Render_Vulkan, "vkb ps probe {:#x}: coordinates {} found, {} exports patched", probe, coords != nullptr, patched);
         }
         spv = VkbShader::Backend::SPIRV::EmitSPIRV(stage_profile, out.runtime, program, binding);
+        if (reuse) {
+            TranslationReuseAdd(reuse_key, *out.info, runtime_in, out.runtime, binding_in, binding, spv);
+        }
     }
     { // debug: TLG_VKB_DUMP_SPV=<hashes, hex, comma separated>: each compiled stage of those shaders -> log/vkb_spv/<vs|ps>_<hash>_<n>.spv, its GCN code (.gcn) and user data (.ud)
         static const std::vector<u64> dump_spv = [] {
