@@ -4,6 +4,7 @@
 #include "native/vkb_core/vkb_device.h"
 #include "native/native_vkb_objects.h"
 #include "native/native_vkb_indexed.h"
+#include "native/native_gpu_read_trap.h"
 #include "native/native_desc.h"
 #include "native/native_tsharp_watch.h"
 #include "native/native_vkb_util.h"
@@ -741,6 +742,11 @@ void NoteGpuWrite(u64 address, u64 size) {
     std::scoped_lock lock{mutex};
     if (Watched* w = WatchedAt(address, size)) {
         w->gpu_written = true;
+        if (GpuReadTrap::On()) { // debug (issue 83): its memory is now written by the graphics card
+            if (const auto start = watched_by_id.find(w->id); start != watched_by_id.end()) {
+                GpuReadTrap::Watch(w->id, start->second, w->end - start->second, GpuReadTrap::Kind::CopyTarget);
+            }
+        }
     }
 }
 
@@ -1118,6 +1124,13 @@ bool UploadContents(u64 id, bool fresh) {
 void TextureCreated(const Object& texture) {
     if (!On() || !Ready()) {
         return;
+    }
+    if (GpuReadTrap::On()) { // debug (issue 83, mode 2): a texture the graphics card draws or writes into is watched from its creation on
+        if ((texture.bind & (BindRenderTarget | BindDepthStencil | BindUnorderedAccess)) != 0) {
+            GpuReadTrap::Watch(texture.id, texture.address, texture.bytes, GpuReadTrap::Kind::Texture);
+        } else {
+            GpuReadTrap::CpuObjectMade(texture.address, texture.bytes);
+        }
     }
     bool fresh = false;
     NewImage fresh_image{};
@@ -1617,6 +1630,13 @@ void BufferCreated(const Object& buffer) {
     if (!On() || !Ready()) {
         return;
     }
+    if (GpuReadTrap::On()) { // debug (issue 83): a buffer the graphics card writes is watched from its creation on
+        if ((buffer.bind & BindUnorderedAccess) != 0) {
+            GpuReadTrap::Watch(buffer.id, buffer.address, buffer.bytes, GpuReadTrap::Kind::UavBuffer);
+        } else {
+            GpuReadTrap::CpuObjectMade(buffer.address, buffer.bytes);
+        }
+    }
     c_buffers.fetch_add(1, std::memory_order_relaxed);
     const bool dynamic_device = DynamicDeviceOn() && buffer.usage == UsageDynamic && (buffer.cpu_access & 0x20000) == 0; // (never one the CPU reads)
     if (((buffer.bind & BindUnorderedAccess) != 0 || dynamic_device) && buffer.address != 0 && buffer.bytes != 0) {
@@ -1730,6 +1750,7 @@ void ObjectDeleted(u64 id) {
     if (!On() || !device_ready) {
         return;
     }
+    GpuReadTrap::Unwatch(id); // debug (issue 83): at the call, before the engine can reuse the memory
     static const bool now = [] { const char* e = std::getenv("TLG_VKB_DELETE_NOW"); return e != nullptr && e[0] == '1'; }();
     if (now || !Stream::RecorderOn()) {
         ObjectDeletedNow(id);
@@ -2307,7 +2328,9 @@ namespace {
 /// api-contract.md Y7 census (debug, with TLG_VKB_CONTRACT_CENSUS=1): the guest memory under each GPU-written device buffer, hashed every 60 graphics submits; a change
 /// no BufferCpuWritten announced is a CPU write (or a file read) our device copy never gets
 void DeviceBufferWriteCheck() {
-    if (!ContractCensusOn() || (GraphicsSubmits() % 60) != 0) {
+    // (with the read trap on, debug issue 83, this memory is protected and every processor write to it is caught by the trap itself; the hash here
+    // would only trap on its own reads)
+    if (!ContractCensusOn() || GpuReadTrap::On() || (GraphicsSubmits() % 60) != 0) {
         return;
     }
     std::vector<std::tuple<u64, u64, u64>> ranges; // start, end, id
@@ -2347,6 +2370,7 @@ void ObjectsTick() {
     DestroyDue(static_cast<u32>(GraphicsSubmits()), false);
     CensusFrame();
     DeviceBufferWriteCheck();
+    GpuReadTrap::Tick();
     if (DeviceBuffersMode() != 0) {
         std::vector<std::pair<u64, u64>> marks;
         {
@@ -4678,6 +4702,7 @@ nlohmann::json ObjectsReport() {
 #endif
                           {"changed_pages", Changed::Report()},
                           {"contract_census", ContractReport()},
+                          {"gpu_read_trap", GpuReadTrap::Report()},
                           {"display_texture", g_display_texture.load(std::memory_order_relaxed)},
                           {"images_live", live_images},
                           {"images_created", made},
