@@ -59,6 +59,8 @@ struct LiveCounters {
     std::atomic<u64> gfx_tags{}, gfx_exec{};
     std::atomic<u64> compute_tags{}, compute_exec{};
     std::atomic<u64> asc_exec{}, asc_packet{}, asc_no_record{}, fill_exec{}, mode_switch_exec{}, asc_barrier_exec{}, clear_exec{}, asc_begin_stripped{}, counter_readback{}, async_copy_exec{}, device_begin_stripped{};
+    /// issue 83 P4: counter values written as a fill in the frame stream; counter buffers that were not ours (the value written by the processor instead)
+    std::atomic<u64> counter_value_stream{}, counter_value_not_ours{};
     /// synchronization packets taken out of the stream: scratch barrier units (label, end of shader event, wait on the label,
     /// cache acquire), stand-alone cache acquires and no-op events
     /// draws of a shader without a fetch object yet (`native_sdk_strip` bit 2147483648): the game's draw function ran, the record was built again afterwards
