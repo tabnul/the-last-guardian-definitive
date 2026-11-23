@@ -71,6 +71,8 @@ in the Trico Tricks bar, gold and at the end of the **Sealed and unique features
 
 <p align="center">▶️ <a href="https://youtu.be/uQKJ5CMcbLg"><b>Watch the video:</b> the foxtail toy and Trico's pounce</a></p>
 
+More about the cut foxtail on the [Team ICO wiki](https://teamico.fandom.com/wiki/Unused_Content_%28The_Last_Guardian%29#Green_Foxtail_plant_%28nekojarashi%29).
+
 ## Trico's drool
 
 The developers gave Trico drool, then switched it off just before release. The drool model, its

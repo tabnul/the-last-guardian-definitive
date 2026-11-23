@@ -316,6 +316,8 @@ launcher like the ICO horns. Tick **Foxtail toy** on the launcher's Extras page,
 
 <p align="center">▶️ <a href="https://youtu.be/uQKJ5CMcbLg"><b>Watch the video:</b> the foxtail toy and Trico's pounce</a></p>
 
+More about the cut foxtail on the [Team ICO wiki](https://teamico.fandom.com/wiki/Unused_Content_%28The_Last_Guardian%29#Green_Foxtail_plant_%28nekojarashi%29).
+
 **Trico's toilet.** Trico does need to go, but the game's scripts make sure you almost never see
 it. He has to have eaten enough barrels, then 30 minutes of play must pass, then he waits until
 the boy is more than 10 metres away and Trico's head has been out of the camera's view for 3
