@@ -9,7 +9,7 @@ here changes the story or your save on its own.
 Open the in-game menu with **Insert** (or **R3 + L2** on a controller) and go to the **Extras** or
 **Trico Tricks** tab.
 
-![The Extras tab](screenshots/fun/fun-tab.png)
+![The Extras tab](screenshots/extras/fun-tab.png)
 
 ## Contents
 
@@ -36,7 +36,7 @@ Only in this port. One of the boy's treasure outfits, Horned Apparel, is the Ico
 own script calls it "the horned garment", yet the boy never had any horns. So we gave him a pair,
 just like Ico.
 
-<p align="center"><img src="screenshots/fun/ico-horns-before-after.jpg" width="60%" alt="Horned Apparel without and with the ICO horns"><br><sub>Horned Apparel, before and after</sub></p>
+<p align="center"><img src="screenshots/extras/ico-horns-before-after.jpg" width="60%" alt="Horned Apparel without and with the ICO horns"><br><sub>Horned Apparel, before and after</sub></p>
 
 Tick **ICO horns** on the launcher's Extras page. After that you can also switch them on and off in
 the in-game menu. They go with every outfit, not only the Ico one.
@@ -67,7 +67,7 @@ in the Trico Tricks bar, gold and at the end of the **Sealed and unique features
 
 **Play like a cat**, in the same group, is Trico's pounce on its own, the way the game left it.
 
-<p align="center"><a href="https://youtu.be/uQKJ5CMcbLg"><img src="screenshots/fun/foxtail-video.jpg" width="100%" alt="Video: Trico pounces at the foxtail toy the boy holds out"></a></p>
+<p align="center"><a href="https://youtu.be/uQKJ5CMcbLg"><img src="screenshots/extras/foxtail-video.jpg" width="100%" alt="Video: Trico pounces at the foxtail toy the boy holds out"></a></p>
 
 <p align="center">▶️ <a href="https://youtu.be/uQKJ5CMcbLg"><b>Watch the video:</b> the foxtail toy and Trico's pounce</a></p>
 
@@ -96,24 +96,24 @@ code runs right up to the point where it would show the drool, and then stops:
 Set it in the launcher on the **Extras** page, or in game on the Extras tab. A change works at once,
 also while you play, and the choice is kept for the next start. Off by default.
 
-![Trico drooling](screenshots/fun/drool.jpg)
-![Trico drooling, close up](screenshots/fun/drool2.jpg)
+![Trico drooling](screenshots/extras/drool.jpg)
+![Trico drooling, close up](screenshots/extras/drool2.jpg)
 
 ## Outfits
 
 Find the treasures and the boy gets new clothes. Add the [ICO horns](#made-for-ico-fans-ico-horns)
 to any of them.
 
-<p align="center"><img src="screenshots/fun/treasures.jpg" width="100%" alt="The Items menu with all the treasures"></p>
+<p align="center"><img src="screenshots/extras/treasures.jpg" width="100%" alt="The Items menu with all the treasures"></p>
 
-<p align="center"><img src="screenshots/fun/outfits.jpg" width="100%" alt="The boy in Enduring Attire, Homecoming, Warrior, Horned Apparel, and Horned Apparel with ICO horns, and from behind with the Featherpainter idol"></p>
+<p align="center"><img src="screenshots/extras/outfits.jpg" width="100%" alt="The boy in Enduring Attire, Homecoming, Warrior, Horned Apparel, and Horned Apparel with ICO horns, and from behind with the Featherpainter idol"></p>
 
 <p align="center"><sub>Enduring Attire · Homecoming Costume · Warrior's Clothes · Horned Apparel · Horned Apparel + ICO horns · the Fine Featherpainter on his back</sub></p>
 
 Trico gets one too: the **Badge of Honour**, around his neck. He may not have earned it yet, but he
 sure can wear it in our port.
 
-<p align="center"><img src="screenshots/fun/badge-of-honor.jpg" width="70%" alt="Trico wearing the Badge of Honour"></p>
+<p align="center"><img src="screenshots/extras/badge-of-honor.jpg" width="70%" alt="Trico wearing the Badge of Honour"></p>
 
 ## Trico's size
 
@@ -121,12 +121,12 @@ Makes the story's Trico bigger or smaller, from half to twice his normal size. A
 fit through narrow spots: make him normal again (**Normal size**) to pass. A jump or a new stage
 brings back his normal size.
 
-![A giant Trico](screenshots/fun/big.jpg)
-![A giant Trico, the boy on his back](screenshots/fun/big2.jpg)
-![Climbing a giant Trico](screenshots/fun/big3.jpg)
-![A small Trico](screenshots/fun/small.jpg)
-![The boy riding a small Trico](screenshots/fun/small2.jpg)
-![A small Trico next to the big one](screenshots/fun/baby-trico.jpg)
+![A giant Trico](screenshots/extras/big.jpg)
+![A giant Trico, the boy on his back](screenshots/extras/big2.jpg)
+![Climbing a giant Trico](screenshots/extras/big3.jpg)
+![A small Trico](screenshots/extras/small.jpg)
+![The boy riding a small Trico](screenshots/extras/small2.jpg)
+![A small Trico next to the big one](screenshots/extras/baby-trico.jpg)
 
 ## Trico's coat
 
@@ -135,7 +135,7 @@ port's menu (**Insert**), Extras tab, or on the launcher's Extras page. 100% is 
 (default and recommended), up to 250% gives a very fluffy Trico, down to 50% a thin one. It
 changes while you play and is kept for the next start. Just for fun.
 
-![A very fluffy Trico on a cliff edge, with the subtitle: Oh. You can't fly? Are your wings broken?](screenshots/fun/fluffy.jpg)
+![A very fluffy Trico on a cliff edge, with the subtitle: Oh. You can't fly? Are your wings broken?](screenshots/extras/fluffy.jpg)
 
 <sub>No, he is just too feathered to fly.</sub>
 
@@ -150,7 +150,7 @@ changes nothing.
 The story sets Trico's look about 30 times: horns, tail, wings, dirt and helmet. We only swap the
 helmet, so the rest still follows the story. Extra Tricos keep their own helmet.
 
-![Trico in the armour helmet on a wooden platform high up in the tower](screenshots/fun/trico-helmet.jpg)
+![Trico in the armour helmet on a wooden platform high up in the tower](screenshots/extras/trico-helmet.jpg)
 
 ## Extra Tricos
 
@@ -161,7 +161,7 @@ takes them all away again.
 At most 8 extra: with more, the game's physics runs out of room and the game crashes. They are for
 fun only: they do not follow the story and can block the way. A jump or another stage ends them.
 
-![An armoured Trico](screenshots/fun/armored-trico.jpg)
+![An armoured Trico](screenshots/extras/armored-trico.jpg)
 
 ## Trico's eyes
 
@@ -171,7 +171,7 @@ fun only: they do not follow the story and can block the way. A jump or another 
 
 A jump turns the effect off.
 
-![Trico with coloured eyes](screenshots/fun/eye-colour.jpg)
+![Trico with coloured eyes](screenshots/extras/eye-colour.jpg)
 
 ## Photo mode
 
@@ -206,11 +206,11 @@ still. All
 photo buttons can be changed in the menu (Controls) and in the launcher. A jump to another place
 turns photo mode off.
 
-![Photo mode: the camera hangs above the gorge, looking down on Trico](screenshots/fun/photo-mode.jpg)
+![Photo mode: the camera hangs above the gorge, looking down on Trico](screenshots/extras/photo-mode.jpg)
 
-![Photo mode with the button hints on: Trico climbs down to the boy on a broken bridge](screenshots/fun/photo-mode-hints.jpg)
+![Photo mode with the button hints on: Trico climbs down to the boy on a broken bridge](screenshots/extras/photo-mode-hints.jpg)
 
-![Photo mode with the button hints on: Trico rests his head in the grass next to the boy](screenshots/fun/photo-mode-rest.jpg)
+![Photo mode with the button hints on: Trico rests his head in the grass next to the boy](screenshots/extras/photo-mode-rest.jpg)
 
 ## Free camera
 
@@ -218,7 +218,7 @@ The developers' own camera: it lets go of the normal camera that follows the boy
 at the scene from anywhere. Turn it off to get the normal camera back. A jump or a new stage turns
 it off.
 
-![The free camera looking down on a crowd of Tricos](screenshots/fun/free-camera.jpg)
+![The free camera looking down on a crowd of Tricos](screenshots/extras/free-camera.jpg)
 
 ## Tricopilot
 
@@ -282,7 +282,7 @@ a roll can push the boy off a ledge.
   at the end, in gold, **Foxtail** and **Foxtail play**, which only this port has. See
   [The foxtail toy](#the-foxtail-toy).
 
-![Trico doing a happy jump next to the boy, with the Trico Tricks bar (F12) and its group buttons](screenshots/fun/trico-tricks-bar.jpg)
+![Trico doing a happy jump next to the boy, with the Trico Tricks bar (F12) and its group buttons](screenshots/extras/trico-tricks-bar.jpg)
 
 ## Trico's toilet
 
@@ -302,8 +302,8 @@ boy can pick them up and carry them (second picture).
 
 **Toilet** in the Trico Tricks tab skips all of that: he does it right away, in front of you.
 
-![Trico's droppings, green dung balls next to him](screenshots/fun/toilet.jpg)
-![The boy holding one of Trico's dung balls](screenshots/fun/toilet2.jpg)
+![Trico's droppings, green dung balls next to him](screenshots/extras/toilet.jpg)
+![The boy holding one of Trico's dung balls](screenshots/extras/toilet2.jpg)
 
 ## Jump to a place
 
