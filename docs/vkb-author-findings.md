@@ -99,9 +99,9 @@ Correction by the box: the reader said the new hook entries have no duplicate ad
 
 Source: issue 137 (dark scenes, part 3): halving of the author's commits between 8dc4dcd and c9b65dc on this box (AMD
 Linux), one photo per commit of SD_a01_Open_Door_01, SD_a01_B1F_01 and ST_000_Start, scored as the share of pixels off
-by more than 16 against the normal renderer. Same faults as issue 130 (handed to the author). The author's newest
-commit 5c21c57 turns both changes off by default; with it the three scenes are right again (0.6, 0.1 and 5.2 percent).
-What stays open is the cause behind each switch, for when they are turned on again.
+by more than 16 against the normal renderer (one photo each, AMD Linux only). Same faults as issue 130 (handed to the author). The author's newest
+commit 5c21c57 turns off by default the two switches named below and a third one (`TLG_VKB_QUERY_CARRY`, not part of these faults); with it the three scenes are right again (0.6, 0.1 and 5.2 percent; ST_000_Start was 5.7 at the last good commit 8dc4dcd).
+The other eight dark scenes are right with 5c21c57 too (0.5 to 7.5 percent, all within or near the normal renderer's own take-to-take spread). All numbers and pictures: issue 137, box comment "dark scenes part 3" of 2026-11-23. What stays open is the cause behind each switch, for when they are turned on again.
 
 | Commit / area | Principle | What |
 |---|---|---|
