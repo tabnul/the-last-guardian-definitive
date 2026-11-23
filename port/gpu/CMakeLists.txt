@@ -376,6 +376,16 @@ if (WIN32)
 endif()
 set_source_files_properties(../tests/test_pipeline_binary_cache.cpp PROPERTIES
     COMPILE_OPTIONS "-fvisibility=hidden;-fvisibility-inlines-hidden")
+# The test takes the runtime stubs itself (after the renderer headers, which give Windows its
+# sigjmp_buf), so it needs none of the forced Windows header the C++ tests above use.
+add_executable(recipe-import-test EXCLUDE_FROM_ALL ../tests/test_recipe_import.cpp)
+target_include_directories(recipe-import-test PRIVATE shim shadps4 third_party/gcn/include)
+target_link_libraries(recipe-import-test PRIVATE tlggpu)
+if (WIN32)
+    target_compile_definitions(recipe-import-test PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_sources(recipe-import-test PRIVATE ../src/compat_win.c)
+    target_link_libraries(recipe-import-test PRIVATE onecore)
+endif()
 add_executable(motion-history-test EXCLUDE_FROM_ALL ../tests/test_motion_history.cpp)
 target_compile_options(motion-history-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_include_directories(motion-history-test PRIVATE ..)
