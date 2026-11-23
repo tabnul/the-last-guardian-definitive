@@ -6,6 +6,7 @@
   <a href="https://github.com/tabnul/the-last-guardian-definitive/releases/latest"><img src="https://img.shields.io/github/v/release/tabnul/the-last-guardian-definitive?label=download&style=for-the-badge&color=d9a441" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-2f6f4f?style=for-the-badge" alt="Windows and Linux">
   <a href="port/LICENSE"><img src="https://img.shields.io/badge/license-GPL--2.0-555?style=for-the-badge" alt="GPL-2.0"></a>
+  <a href="https://playported.com/ports/1466-the-last-guardian/"><img src="https://playported.com/badge.svg" alt="Listed on PlayPorted"></a>
 </p>
 
 <p align="center"><i>A fan project, by fans, for fans.</i></p>
