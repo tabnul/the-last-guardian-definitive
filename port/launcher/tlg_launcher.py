@@ -55,7 +55,7 @@ TEXT = {
     'home_advanced': 'Advanced',
     'home_controller': 'Controller',
     'home_keys': 'Keys & mouse',
-    'home_mods': 'Mods & cheats',
+    'home_mods': 'Extras',
     'home_video': 'Video',
     'home_controls': 'Controls',
     'mouse_section': 'Mouse',
@@ -408,7 +408,7 @@ TEXT = {
     'clear_cache_done': 'Shader cache cleared: {size} freed.',
     'clear_cache_failed': ('{size} freed, but {count} file(s) could not be deleted (in use? Close the game '
                            'and try again).'),
-    'mods': 'Mods / Cheats…',
+    'mods': 'Extras…',
     'menu_note': ("Two menus in game. Insert: the port's graphics menu (every setting applies live). "
                   "Development menu (the game's own QA menu): turn on 'Level select and QA menu' under Debug, "
                   'then in game hold L1 and press L3 (keyboard: hold 1, press Z).'),
@@ -502,7 +502,7 @@ TEXT = {
     'effect_fov_hint': 'Camera field of view. Default 70° is as shipped; higher shows more around the boy.',
     'effect_trico_feathers': 'Trico feather wind',
     'effect_trico_feathers_hint': "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.",
-    'mods_title': 'Mods / Cheats',
+    'mods_title': 'Extras',
     'mods_hint': ('Drop shadPS4/GoldHEN cheat XML files in the mods folder, then turn them on here. '
                   'Nothing here changes the game until you enable it.'),
     'mods_warning': 'A cheat can crash the game or behave oddly; if that happens, turn it off here.',
@@ -1477,9 +1477,9 @@ class Launcher:
             row=4, column=0, sticky='w')
 
     def build_drool(self, parent):
-        """Built-in mods on the Mods page: Trico's drool, with its story in plain sight: the developers built it
+        """Built-in mods on the Extras page: Trico's drool, with its story in plain sight: the developers built it
         and switched it off just before release (tlg.ini trico_drool; the game reads it live, also from
-        the in-game Fun tab)."""
+        the in-game Extras tab)."""
         drool = next(item for item in backports_table.MENU if item.key == 'trico_drool')
         box = section(parent, drool.name)
         box.pack(fill='x', anchor='w', pady=(0, 8))

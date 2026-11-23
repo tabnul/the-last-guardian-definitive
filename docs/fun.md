@@ -1,4 +1,4 @@
-# Fun
+# Extras
 
 Features you will not find in any other version of the game. The game's files still hold things the
 developers built and then cut, hid or kept for themselves: Trico's drool, his throw-up, disco eyes,
@@ -6,10 +6,10 @@ a free camera, test menus. We found them in the game's own scripts and brought t
 together with a Trico you can boss around. All of it is optional and off until you use it. Nothing
 here changes the story or your save on its own.
 
-Open the in-game menu with **Insert** (or **R3 + L2** on a controller) and go to the **Fun** or
+Open the in-game menu with **Insert** (or **R3 + L2** on a controller) and go to the **Extras** or
 **Trico Tricks** tab.
 
-![The Fun tab](screenshots/fun/fun-tab.png)
+![The Extras tab](screenshots/fun/fun-tab.png)
 
 ## Contents
 
@@ -36,7 +36,7 @@ just like Ico.
 
 <p align="center"><img src="screenshots/fun/ico-horns-before-after.jpg" width="60%" alt="Horned Apparel without and with the ICO horns"><br><sub>Horned Apparel, before and after</sub></p>
 
-Tick **ICO horns** on the launcher's Mods page. After that you can also switch them on and off in
+Tick **ICO horns** on the launcher's Extras page. After that you can also switch them on and off in
 the in-game menu. They go with every outfit, not only the Ico one.
 
 We don't ship the horns as a file. When you tick the box, the launcher builds them on your PC: a
@@ -64,7 +64,7 @@ code runs right up to the point where it would show the drool, and then stops:
   smell-pot cart (s04_FirstAntenna and s10_Pit), and fades away when he loses interest. The boy's
   smell bottle was meant to do this too, but it was cut, so the carts are the only trigger.
 
-Set it in the launcher on the **Settings** page, or in game on the Fun tab. A change works at once,
+Set it in the launcher on the **Extras** page, or in game on the Extras tab. A change works at once,
 also while you play, and the choice is kept for the next start. Off by default.
 
 ![Trico drooling](screenshots/fun/drool.jpg)
@@ -102,7 +102,7 @@ brings back his normal size.
 ## Trico's coat
 
 Makes Trico's fur and feathers thicker or thinner: **Trico fur and feather density** in the
-port's menu (**Insert**), Fun tab, or on the launcher's Mods page. 100% is as the game shipped
+port's menu (**Insert**), Extras tab, or on the launcher's Extras page. 100% is as the game shipped
 (default and recommended), up to 250% gives a very fluffy Trico, down to 50% a thin one. It
 changes while you play and is kept for the next start. Just for fun.
 
@@ -151,9 +151,9 @@ shows the controls and is left out of the saved picture.
 
 Screenshots are lossless PNG files at the full render resolution, in `user/screenshots`. With HDR
 on, every photo is saved twice: a normal picture that looks right on any screen, and an HDR picture
-(name ending in `-hdr.png`) for HDR screens; **Also save an HDR picture** in the Fun tab switches
+(name ending in `-hdr.png`) for HDR screens; **Also save an HDR picture** in the Extras tab switches
 the second one off. You can
-also turn photo mode on with **Photo mode** in the Fun tab. **Freeze** chooses how the world
+also turn photo mode on with **Photo mode** in the Extras tab. **Freeze** chooses how the world
 stops: **Pause the game** (everything stops) or **Stop time** (the game's slow motion turned down
 until nothing moves). With **Freeze world on / off** (D-pad down) the world runs on while you keep
 the photo camera, so you can watch events play out from any angle. The game's pause menu does not undo
@@ -180,7 +180,7 @@ it off.
 
 ## Tricopilot
 
-**Start Tricopilot** in the **Fun** tab and Trico drives himself: he wanders the scene, looks for
+**Start Tricopilot** in the **Extras** tab and Trico drives himself: he wanders the scene, looks for
 edges to climb or jump, and the camera follows him around. **Stop Tricopilot** gives him and the
 camera back to you.
 
@@ -264,7 +264,7 @@ boy can pick them up and carry them (second picture).
 
 Starts any stage at any of its start points, as the game's own level select does.
 
-- **In game (Fun tab):** pick a stage and a start point, then **Jump there**. The story continues
+- **In game (Extras tab):** pick a stage and a start point, then **Jump there**. The story continues
   from there, and the game can save there at its next checkpoint: keep a copy of your save
   (launcher: Saves folder) if you want to go back.
 - **In the launcher (Start at…):** starts the game right at the chosen point. Your saves are copied

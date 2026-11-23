@@ -9,7 +9,7 @@
 // install_lua_hook). utils.lua gets a tick that loads "--TLGSET" every 15 frames; that chunk
 // is replaced by code applying the Effects settings to the game's post-process objects, so
 // menu changes apply live, plus the Lab rows (tlg_lab.h). "--TLGLOG <text>" chunks print <text>
-// (data out of Lua; "fun tricos <n>" reports the Fun tab's Trico count); "--TLGVAL <row> <value>" chunks report a Lab row's game value;
+// (data out of Lua; "fun tricos <n>" reports the Extras tab's Trico count); "--TLGVAL <row> <value>" chunks report a Lab row's game value;
 // "--TLGLOADED" marks the end of a stage load.
 // The settings code compiles into a function the tick keeps and runs every time; it is sent
 // again only when its text changes, so a tick compiles nothing and creates few strings.
@@ -425,7 +425,7 @@ std::string DevChunk() {
            text.str() + "\nend\n";
 }
 
-// Fun tab commands (tlg_fun.h): queued by the menu, run once by the next tick, at the top of the
+// Extras tab commands (tlg_fun.h): queued by the menu, run once by the next tick, at the top of the
 // settings chunk like DevChunk (the chunk differs, so it is sent and run; the next one is plain).
 std::mutex fun_mutex;
 std::string fun_queue;
@@ -443,7 +443,7 @@ std::atomic<uint32_t> photo_sticks{0x80808080u}; // the last raw sticks lx|ly<<8
 std::atomic<TlgFun::PhotoFreeze> photo_freeze{TlgFun::PhotoFreeze::Pause};
 std::atomic<bool> pilot{false}; // Tricopilot (TlgFun::Tricopilot)
 // Which camera watches him (TlgFun::PilotCam). Middle is what autoTrico() picks itself, so that
-// stays our default; the launcher and the Fun tab can pick another one, also while he drives.
+// stays our default; the launcher and the Extras tab can pick another one, also while he drives.
 std::atomic<TlgFun::PilotCam> pilot_cam{[] {
     const char* env = std::getenv("TLG_TRICOPILOT_CAM");
     if (env && *env) {
@@ -936,7 +936,7 @@ bool GameEdits(std::string& patched, std::string_view name) {
             patched.insert(at + LoadEnd.size(), Loaded);
             changed = true;
         }
-        // A stage started from the QA menu or the Fun tab is loaded on top of the current one (StartStage
+        // A stage started from the QA menu or the Extras tab is loaded on top of the current one (StartStage
         // unloads nothing), so each switch held two stages and ran the GPU heap out of memory.
         // Do what the game's own restart does: disconnect the stage's regions, preload the new
         // ones, then unload what is still disconnected. The common regions stay.

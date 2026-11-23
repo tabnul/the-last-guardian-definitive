@@ -55,7 +55,7 @@ No game files are included. You need your own copy, dumped from your own PS4.
 - **[Soundtrack](#soundtrack):** a music player in the launcher with all 100 pieces of the game's
   music, from your own game files.
 - **[Start at any point](#for-testers):** over 200 start points, from the first cave to the
-  credits. Pick one on the launcher's **Start at…** page, or in game under Fun >
+  credits. Pick one on the launcher's **Start at…** page, or in game under Extras >
   *Jump to a place*. Your saves are copied first and put back afterwards.
 - **[Texture pack generator](docs/texture-pack.md):** the game started out on PS3, and many of its
   textures look rough up close on a modern screen. Our
@@ -245,7 +245,7 @@ anywhere you like: around Trico, high above the gorge, right up to the boy's fac
 the picture.
 
 - **Start and stop:** with the photo mode buttons (see the table under [Get started](#get-started)),
-  or **Photo mode** in the in-game menu (Fun tab).
+  or **Photo mode** in the in-game menu (Extras tab).
 - **The buttons are on screen:** a help panel lists every photo mode button as you have it set.
   All of them can be changed under Controls in the port's menu or in the launcher.
 - **Fly:** move, look around, go up and down, faster or slower.
@@ -259,7 +259,7 @@ the picture.
 - **HDR and normal, both:** with HDR on, every photo is saved twice. A normal picture that looks
   right on any screen and is easy to share, and an HDR picture (name ending in `-hdr.png`) that
   keeps the full brightness for HDR screens. Chrome and Edge show it in HDR. You can switch the
-  HDR picture off in the in-game menu (Fun tab) or in the launcher.
+  HDR picture off in the in-game menu (Extras tab) or in the launcher.
 
 <p align="center"><a href="docs/fun.md#photo-mode"><img src="docs/screenshots/fun/photo-mode-bridge.jpg" alt="Photo mode: Trico reaches down to the boy on a broken bridge, with the button hints on screen"></a></p>
 
@@ -269,7 +269,7 @@ the picture.
 
 The game's scripts still contain things the developers built and then switched off or kept for
 themselves. This port turns them back on. You won't find them in any other version of the game.
-They are in the in-game menu (**Insert**, the **Fun** and **Trico Tricks** tabs).
+They are in the in-game menu (**Insert**, the **Extras** and **Trico Tricks** tabs).
 
 > **[Read the full guide: everything we found and how to use it →](docs/fun.md)**
 
@@ -283,7 +283,7 @@ that is still in `condorcommonslaver.lua`:
 ```
 
 *"We've been asked to get rid of the drool for now, so I'm getting rid of it."* You can set it to
-**As the developers planned** or **Always**, in the launcher's Settings page or the Fun tab.
+**As the developers planned** or **Always**, in the launcher's Extras page or the Extras tab.
 
 <p align="center"><a href="docs/fun.md#tricos-drool"><img src="docs/screenshots/fun/drool.jpg" width="49%" alt="Trico drooling"></a> <a href="docs/fun.md#tricos-drool"><img src="docs/screenshots/fun/drool2.jpg" width="49%" alt="Trico drooling, close up"></a></p>
 
@@ -292,8 +292,8 @@ that is still in `condorcommonslaver.lua`:
 The Horned Apparel finally gets its horns. One of the boy's
 treasure outfits is the Ico one, and the game's own script calls it "the horned garment", but the
 boy never had any. Now he does, just like Ico. Tick **ICO horns** on
-the launcher's Mods page. They go with every outfit,
-[more on the fun page](docs/fun.md#made-for-ico-fans-ico-horns).
+the launcher's Extras page. They go with every outfit,
+[more in the full guide](docs/fun.md#made-for-ico-fans-ico-horns).
 
 <p align="center"><a href="docs/fun.md#made-for-ico-fans-ico-horns"><img src="docs/screenshots/fun/outfits.jpg" width="100%" alt="The boy in Enduring Attire, Homecoming, Warrior, Horned Apparel, and Horned Apparel with ICO horns, and from behind with the Featherpainter idol"></a></p>
 
@@ -398,7 +398,7 @@ own text and voices are a separate setting.
 
 - **Jump to any scene:** over 200 start points, from the first cave to the credits. Pick one on
   the launcher's **Start at…** page (your saves are copied first and put back afterwards), or in
-  game under Fun > *Jump to a place*.
+  game under Extras > *Jump to a place*.
 - **Level select and QA menu:** tick *Level select and QA menu* under Debug in the launcher. For
   level select, hold L1 while the title menu closes. For the QA menu, hold L1 and press L3 in game
   (keyboard: hold 1, press Z). Based on the GoldHEN patch by @illusionyy and @DanielSvoboda; this

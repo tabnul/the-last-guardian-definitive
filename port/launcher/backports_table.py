@@ -149,7 +149,7 @@ MENU = [
            'only while the slow motion plays, then back. Or skip the slow motion. At 30 FPS nothing changes.'),
           choices=(('0', '30 FPS during slow motion (advised)'),
                    ('1', 'Skip the slow motion'))),
-    # Hack and fun (English only): the same text as the in-game Fun tab (tlg_fun.h DroolHelp).
+    # Hack and fun (English only): the same text as the in-game Extras tab (tlg_fun.h DroolHelp).
     _menu('Fun', 'trico_drool', 'choice', '0', "Trico's drool",
           "A feature the developers built and then switched off just before release: Trico drools. Always: a string of drool hangs from his beak the whole time. As the developers planned: it slowly grows while Trico smells something he wants, a smell-pot cart (s04_FirstAntenna and s10_Pit), and fades away when he loses interest (the boy's smell bottle was cut, so the carts are the only trigger). Stays on through jumps, new stages and extra Tricos, and is kept for the next start.",
           choices=(('0', 'Off (as released)'), ('1', 'Always'),
@@ -157,7 +157,7 @@ MENU = [
     _menu('Fun', 'trico_fur', 'int', '100', 'Trico fur and feather density',
           "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.",
           lo=0, hi=500, unit='%'),
-    # Mods (launcher Mods page, in-game Fun tab; tlg_lua.cpp Treasures / Horns). Same text as tlg_overlay.cpp.
+    # Mods (launcher Extras page, in-game Extras tab; tlg_lua.cpp Treasures / Horns). Same text as tlg_overlay.cpp.
     _menu('Fun', 'mod_treasures', 'bool', '0', 'All treasures',
           'Unlocks every treasure (outfits, Trico\'s feathers) and the Treasures entry in the options menu, '
           'with the developers\' own unlock. Stored in your save: turning it off does not take them back. '

@@ -1218,12 +1218,12 @@ void ControlsTab() {
     SoundRows();
 }
 
-// tlg: Fun tab: jump to any start point of the story (as the game's QA menu does, without
+// tlg: Extras tab: jump to any start point of the story (as the game's QA menu does, without
 // turning it on) and extra Tricos. Commands run at the game's next settings tick.
 // The move bar: all moves of TlgFun::Actions as icons (TlgFunIcons, same order) with the name under
 // each and as a tooltip, one group at a time behind coloured group buttons (user 2026-11-15).
 // Favourites come first: right-click a move to star it (at most 16, tlg.ini trico_favourites).
-// Fun tab and F12.
+// Extras tab and F12.
 void MakeMoveIcons() {
     static bool tried = false;
     if (tried) {
@@ -1451,7 +1451,7 @@ void MoveBarWindow() {
     ImGui::End();
 }
 
-// tlg: Trico Tricks, Trico's moves on their own tab (user 2026-11-05: moves out of the Fun tab).
+// tlg: Trico Tricks, Trico's moves on their own tab (user 2026-11-05: moves out of the Extras tab).
 void TricksTab() {
     ImGui::TextDisabled("%s", TR("Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites."));
     MoveBar(44.0f * base_scale, 12);
@@ -1653,7 +1653,7 @@ void FunTab() {
         ImGui::EndTable();
     }
 
-    // Mods (also on the launcher's Mods page; tlg_lua.cpp Treasures / Horns).
+    // Mods (also on the launcher's Extras page; tlg_lua.cpp Treasures / Horns).
     ImGui::SeparatorText(TR("Mods"));
     if (BeginRows("##mods")) {
         CheckRow(TR("All treasures"), TlgSettings::Get().mod_treasures,
@@ -1662,7 +1662,7 @@ void FunTab() {
                     "Your saves are backed up before the first unlock (the launcher's save manager can restore them). "
                     "Select them in the game's pause menu, under Items."),
                  false);
-        // The horn models only exist after the launcher built them (Mods page); the game mounts
+        // The horn models only exist after the launcher built them (Extras page); the game mounts
         // them at start (runtime_file.c), so check once: without them the checkmark does nothing.
         static const bool horns_built = [] {
             const char* ini = std::getenv("TLG_CONFIG");
@@ -1682,7 +1682,7 @@ void FunTab() {
         ImGui::EndDisabled();
         if (!horns_built) {
             Row("");
-            ImGui::TextDisabled("%s", TR("Turn on ICO horns in the launcher (Mods page) once first."));
+            ImGui::TextDisabled("%s", TR("Turn on ICO horns in the launcher (Extras page) once first."));
             ImGui::PopID();
         }
         CheckRow(TR("Trico plays"), TlgSettings::Get().mod_plays,
@@ -1946,7 +1946,7 @@ void Menu() {
     const float footer = ImGui::GetFrameHeightWithSpacing() * 2.0f + help_height + ImGui::GetStyle().ItemSpacing.y * 3.0f;
     if (ImGui::BeginTabBar("##tabs")) {
         static const char* const tabs[TabCount] = {"Overlay", TR("Image"), TR("Performance"),
-                                                   TR("Controls"), TR("Fun"),
+                                                   TR("Controls"), TR("Extras"),
                                                    "Trico Tricks", TR("Trophies")};
         for (int tab = 0; tab < TabCount; ++tab) {
             const ImGuiTabItemFlags flags = requested_tab == tab ? ImGuiTabItemFlags_SetSelected : 0;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// tlg: the in-game menu's Fun tab (tlg_overlay.cpp): jump to a start point and extra Tricos.
+// tlg: the in-game menu's Extras tab (tlg_overlay.cpp): jump to a start point and extra Tricos.
 // The commands are Lua, run once by the settings tick (tlg_lua.cpp, within 15 frames).
 #pragma once
 #include <cstdint>
@@ -104,7 +104,7 @@ inline constexpr Action Actions[] = {
 void Act(const char* command);
 
 // Trico's drool (setting trico_drool, tlg_lua.cpp Drool): the developers built it, then switched it off
-// before release. The Fun tab and both launchers show this text.
+// before release. The Extras tab and both launchers show this text.
 inline constexpr const char* DroolHelp =
     "A feature the developers built and then switched off just before release: Trico drools. "
     "Always: a string of drool hangs from his beak the whole time. As the developers planned: it slowly "
@@ -182,7 +182,7 @@ inline constexpr const char* TricopilotCamHelp =
     "place the camera can end up inside the rock. Far looks down on the whole area, which is lovely "
     "in a valley and useless indoors, because Trico becomes a dot. Game camera leaves your normal "
     "camera alone: it keeps following the boy while Trico wanders off on his own.";
-// The Fun tab, both launchers and the docs show this text.
+// The Extras tab, both launchers and the docs show this text.
 inline constexpr const char* TricopilotHelp =
     "Trico drives himself: he wanders the scene, looks for edges to climb or jump, and the camera "
     "follows him. It is the developers' own debug tool, still in the game. They used it to leave the "
