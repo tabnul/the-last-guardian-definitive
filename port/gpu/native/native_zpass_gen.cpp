@@ -178,8 +178,11 @@ bool ParZpassSwitch() {
     static const bool on = [] { const char* e = std::getenv("TLG_VKB_PAR_ZPASS"); return e != nullptr ? e[0] == '1' : VkbBackendOn(); }();
     return on;
 }
+/// The G-buffer passes on the workers: OFF by default since 2026-11-23 (tabnul issue 130: black floors and rooms in s17_SentinelTower and _010_Ending_C, a race
+/// after the hand-over; lead: constant buffer bytes copied at the worker's draw while PrepareMaterial rewrites the material blocks). TLG_VKB_PAR_GBUFFER=1 turns
+/// it on until the hand-over is complete. The shadow cascades keep their workers (TLG_VKB_PAR_ZPASS).
 bool ParGbufferSwitch() {
-    static const bool on = [] { const char* e = std::getenv("TLG_VKB_PAR_GBUFFER"); return e != nullptr ? e[0] == '1' : VkbBackendOn(); }();
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_PAR_GBUFFER"); return e != nullptr && e[0] == '1'; }();
     return on;
 }
 const Config& Cfg() {
@@ -4937,7 +4940,7 @@ ParState& PS() {
     static ParState state;
     return state;
 }
-bool ParGOn() { // P2: the G-buffer passes on the workers too; default on under TLG_VKB since 2026-11-21; TLG_VKB_PAR_GBUFFER=0: the engine's loop
+bool ParGOn() { // P2: the G-buffer passes on the workers too; default OFF since 2026-11-23 (issue 130), TLG_VKB_PAR_GBUFFER=1: on
     return ParGbufferSwitch();
 }
 constexpr u32 ParGView = 15; // the G-buffer's entry in the per-view switches

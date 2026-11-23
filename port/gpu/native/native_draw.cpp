@@ -9376,11 +9376,12 @@ void Post() {
 } // namespace SchedulerWake
 
 namespace AnimQueryOrder {
-/// Fix A (2026-11-19): the recording waits for the next AnimationTick's unlocked query producers. LEGACY since 2026-11-21: with soldiers in the scene it waited
-/// ~3.4 ms nearly every frame and held the frame chain (furthest save 76-80 fps, 123-131 without the wait); QueryCarry (below) keeps the late groups instead.
-/// TLG_LEGACY_ANIM_QUERY_WAIT=1: fix A again (and no carry).
+/// Fix A (2026-11-19): the recording waits for the next AnimationTick's unlocked query producers. Default again since 2026-11-23: QueryCarry (fix B, below), which
+/// kept the late groups for the next recording instead of waiting, is the lead for a soldier pushed against the camera flickering (issue 1), so it is off until it
+/// is reimplemented. Cost of fix A: with soldiers in the scene it waits ~3.4 ms nearly every frame (furthest save 76-80 fps against 123-131 with the carry).
+/// TLG_VKB_QUERY_CARRY=1: the carry instead (and no wait).
 bool On() {
-    static const bool on = [] { const char* e = std::getenv("TLG_LEGACY_ANIM_QUERY_WAIT"); return e != nullptr && e[0] == '1'; }();
+    static const bool on = [] { const char* e = std::getenv("TLG_VKB_QUERY_CARRY"); return e == nullptr || e[0] != '1'; }();
     return on;
 }
 std::mutex mutex;
@@ -9506,6 +9507,7 @@ void BeforeRecording() {
 /// Table B (frame data + 0x31e60: array, + 0x31e68 count, + 0x31e6c capacity, + 0x31e74 lock word): each entry holds one reference of its group. The carry moves
 /// entries out before FrameData_Reset (so the reset does not release them) and back after it (the table owns the same references again): no reference changes.
 namespace QueryCarry {
+/// OFF by default since 2026-11-23 (the lead for the soldier flicker, issue 1); TLG_VKB_QUERY_CARRY=1 turns it on (and fix A's wait off)
 bool On() {
     return !AnimQueryOrder::On();
 }
