@@ -45,6 +45,11 @@ void RegisterShaderMeta(const Shader::Info& info,
                         const std::optional<Shader::Gcn::FetchShaderData>& fetch_shader_data,
                         const Shader::StageSpecialization& spec, size_t perm_hash, size_t perm_idx);
 void RegisterShaderBinary(std::vector<u32>&& spv, u64 pgm_hash, size_t perm_idx);
+/// tlg: profile.bin as the cache stores it: the version header, then the device profile.
+std::vector<u8> EncodeCacheHeader(const Shader::Profile& profile);
+/// tlg: the profile of a profile.bin from this build; empty for another build's or a damaged one.
+/// The shader recipe import reads it too, so both always agree on the layout.
+std::optional<Shader::Profile> DecodeCacheHeader(std::span<const u8> data);
 /// tlg: a .meta blob as RegisterShaderMeta stores it (shader recipe import writes it too).
 std::vector<u8> EncodeShaderMeta(const Shader::Info& info, const Shader::StageSpecialization& spec,
                                  size_t perm_hash, size_t perm_idx);

@@ -64,9 +64,13 @@ LANGUAGES_EU = {'en': 1, 'fr': 2, 'es_ES': 3, 'de': 4, 'it': 5, 'nl': 6, 'pt_PT'
 # engine ids follow (ko 9, zh_TW 10, zh_CN 11); one the disc lacks falls back to English.
 LANGUAGES_ASIA = {'en': 1, 'ko': 9, 'zh_TW': 10, 'zh_CN': 11}
 LANGUAGES_BY_TITLE = {'CUSA03627': LANGUAGES_US, 'CUSA03745': LANGUAGES_EU,
-                      'CUSA04936': LANGUAGES_ASIA, 'CUSA04943': LANGUAGES_ASIA}
+                      'CUSA04936': LANGUAGES_ASIA, 'CUSA04937': LANGUAGES_ASIA,
+                      'CUSA04943': LANGUAGES_ASIA}
 DEFAULT_LANGUAGE_BY_TITLE = {'CUSA03627': 'es_LA', 'CUSA03745': 'es_ES',
-                             'CUSA04936': 'ko', 'CUSA04943': 'zh_CN'}
+                             'CUSA04936': 'ko', 'CUSA04937': 'zh_TW', 'CUSA04943': 'zh_CN'}
+# Discs added on a player's request but never run here: the language table and default are a
+# guess (Asia disc, Traditional Chinese assumed). check_game shows a warning until a log confirms.
+UNTESTED_TITLES = {'CUSA04937'}
 
 
 def game_languages(game_dir=''):
@@ -226,6 +230,7 @@ DEBUG_FLAGS = (
     ('flag_sema_fast', 'TLG_SEMA_FAST', None, '0', True),            # #41 (@thearturord)
     ('flag_vk_validation', 'TLG_VK_VALIDATION', '1', None, False),     # needs the Vulkan SDK layer
     ('game_tail_climb', 'TLG_TAIL_CLIMB_FIX', '1', None, True),       # PR #171, eboot patch, every GPU
+    ('game_trophy_test', 'TLG_TROPHY_TEST', 'next', None, False),     # #60: unlock one trophy after 20 s
     # Possible RDNA2 (older AMD) gains, ports of @YsraEstudos PRs #172-#174; no gain on RDNA4 / RTX.
     ('rdna_memory_priority', 'TLG_MEMORY_PRIORITY', '1', None, False),  # PR #172
     ('rdna_wave64', 'TLG_WAVE64_STAGES', '1', None, False),            # PR #173
@@ -452,7 +457,7 @@ def save_settings(settings):
 # Messages about the player's game folder the Qt launcher can show; none blocks only as a
 # warning in this port (check_game reports missing files and the unbuilt probe).
 TEXT = {}
-WARNINGS = {'old_version', 'fps_unsupported'}   # check_game: shown, but Play stays enabled
+WARNINGS = {'old_version', 'fps_unsupported', 'untested_disc'}   # check_game: shown, but Play stays enabled
 
 
 def message(key, **fmt):
@@ -499,6 +504,9 @@ def check_game(game_dir):
     version = game_version(Path(game_image.safe_files_dir(game_dir)))
     if version is not None:
         problems.append(version)
+    title = shader_cache.title_id(game_image.safe_files_dir(game_dir)) if game_dir else None
+    if title in UNTESTED_TITLES:
+        problems.append(('untested_disc', title))
     if not PROBE.is_file():
         problems.append(('not_built', str(PROBE)))
     return problems
@@ -1150,19 +1158,33 @@ def build_env(settings, extra=None):
     return env
 
 
-def build_ico_horns(data, force=False):
-    """Mods > ICO horns: builds the horn models (ico_horns.py) into <user>/mods-builtin, where the game
-    mounts them. Only called when the player turns the horns on. Returns None or the error text."""
-    horns = Path(data) / 'mods-builtin' / 'trico_other.psarc'
-    if horns.is_file() and not force:
+# What the models archive holds; written next to it (trico_other.txt), so an older archive is built
+# again. 1 = ICO horns only (no stamp file), 2 = horns and the foxtail toy. The in-game menu reads it
+# too (tlg_overlay.cpp models_version).
+MODELS_VERSION = 2
+MOD_MODEL_KEYS = ('mod_horns', 'mod_foxtail')   # the mods that need the models
+
+
+def build_mod_models(data, force=False):
+    """Mods > ICO horns and Foxtail toy: builds our own models (foxtail.py, horns included) into
+    <user>/mods-builtin, where the game mounts them. Only called when the player turns one of them on.
+    Returns None or the error text."""
+    models = Path(data) / 'mods-builtin' / 'trico_other.psarc'
+    stamp = models.with_suffix('.txt')
+    try:
+        current = int(stamp.read_text().strip()) if stamp.is_file() else (1 if models.is_file() else 0)
+    except ValueError:
+        current = 0
+    if current >= MODELS_VERSION and models.is_file() and not force:
         return None
     try:
-        import ico_horns
-        horns.parent.mkdir(parents=True, exist_ok=True)
-        ico_horns.write(str(horns))
+        import foxtail
+        models.parent.mkdir(parents=True, exist_ok=True)
+        foxtail.write(str(models))
+        stamp.write_text(f'{MODELS_VERSION}\n')
         return None
-    except Exception as error:  # never blocks the game: only the ICO horns stay away
-        print(f'ICO horns: could not build the models: {error}')
+    except Exception as error:  # never blocks the game: only the ICO horns and the foxtail stay away
+        print(f'Mods: could not build the models: {error}')
         return str(error)
 
 
@@ -1302,8 +1324,9 @@ def launch(settings, seconds=0, extra_env=None, detached=False, header=()):
         'menu_confirm': settings.get('menu_confirm', 'cross'),
         'key_map': key_map_spec(key_map) if isinstance(key_map, dict) else str(key_map),
     })
-    if read_ini(data / 'tlg.ini').get('mod_horns', '0') not in ('0', ''):
-        build_ico_horns(data)   # only for players who turned the horns on; built once
+    ini = read_ini(data / 'tlg.ini')
+    if any(ini.get(key, '0') not in ('0', '') for key in MOD_MODEL_KEYS):
+        build_mod_models(data)   # only for players who turned the horns or the foxtail on; built once
     log = new_log()
     try:   # saves copied aside before every start; never blocks the game
         import savemanager
