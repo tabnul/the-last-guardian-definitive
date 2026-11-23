@@ -263,30 +263,6 @@ void LeafAmbientOcclusionPass(IR::Program& program, const Profile& profile) {
     };
     const IR::F32 depth = IR::F32{ir.CompositeExtract(read(depth_read, coords), 0)};
     const IR::F32 z = view_depth(xf, yf, depth);
-    // the radius in pixels: world units per screen half-width at depth z
-    const IR::F32 scale = ir.FPSqrt(ir.FPAdd(ir.FPAdd(ir.FPMul(sx, sx), ir.FPMul(sy, sy)), ir.FPMul(sz, sz)));
-    const IR::F32 radius_px = ir.FPMin(ir.FPMax(ir.FPMul(ir.FPDiv(ir.Imm32(profile.leaf_ao_radius), ir.FPMax(ir.FPMul(scale, z), ir.Imm32(1e-6f))),
-                                                        ir.FPMul(width, ir.Imm32(0.5f))),
-                                                 ir.Imm32(2.0f)),
-                                        ir.Imm32(96.0f));
-    // the pixel's own turn of the pattern (fixed per pixel, no flicker)
-    const IR::F32 turn = ir.FPFract(ir.FPMul(ir.Imm32(52.9829189f), ir.FPFract(ir.FPAdd(ir.FPMul(xf, ir.Imm32(0.06711056f)), ir.FPMul(yf, ir.Imm32(0.00583715f))))));
-    const IR::F32 far_x = ir.FPSub(width, ir.Imm32(1.0f)), far_y = ir.FPSub(height, ir.Imm32(1.0f));
-    const IR::F32 reach = ir.FPAdd(z, ir.Imm32(profile.leaf_ao_radius));
-    IR::F32 hits = ir.Imm32(0.0f);
-    for (u32 i = 0; i < 12; ++i) {
-        // two rings of six directions (half and full radius), the outer one turned by 30 degrees
-        const float a = 6.2831853f * static_cast<float>(i % 6) / 6.0f + (i < 6 ? 0.0f : 0.5235988f);
-        const float ring = i < 6 ? 0.5f : 1.0f;
-        const IR::F32 r = ir.FPMul(radius_px, ir.FPAdd(ir.Imm32(ring * 0.75f), ir.FPMul(turn, ir.Imm32(ring * 0.5f))));
-        const IR::F32 qx = ir.FPFloor(ir.FPMin(ir.FPMax(ir.FPAdd(xf, ir.FPMul(r, ir.Imm32(std::cos(a)))), ir.Imm32(0.0f)), far_x));
-        const IR::F32 qy = ir.FPFloor(ir.FPMin(ir.FPMax(ir.FPAdd(yf, ir.FPMul(r, ir.Imm32(std::sin(a)))), ir.Imm32(0.0f)), far_y));
-        const IR::Value at = ir.CompositeConstruct(ir.ConvertFToU(32, qx), ir.ConvertFToU(32, qy));
-        const IR::F32 dn = IR::F32{ir.CompositeExtract(read(depth_read, at), 0)};
-        const IR::F32 zn = view_depth(qx, qy, dn);
-        hits = ir.FPAdd(hits, IR::F32{ir.Select(ir.FPLessThan(zn, reach), ir.Imm32(1.0f), ir.Imm32(0.0f))});
-    }
-    const IR::F32 factor = ir.FPSub(ir.Imm32(1.0f), ir.FPMul(hits, ir.Imm32(profile.leaf_ao_strength / 12.0f)));
     // leaf pixels only: the material entry of the pixel is one of the switch's entries
     const IR::F32 entry_f = IR::F32{ir.CompositeExtract(read(material_read, coords), 3)};
     const IR::U32 entry = IR::U32{ir.ConvertFToU(32, ir.FPAdd(ir.FPMul(entry_f, ir.Imm32(255.0f)), ir.Imm32(0.5f)))};
@@ -296,6 +272,32 @@ void LeafAmbientOcclusionPass(IR::Program& program, const Profile& profile) {
             leaf = ir.LogicalOr(leaf, ir.IEqual(entry, ir.Imm32(k)));
         }
     }
+    // the radius in pixels: world units per screen half-width at depth z
+    const IR::F32 scale = ir.FPSqrt(ir.FPAdd(ir.FPAdd(ir.FPMul(sx, sx), ir.FPMul(sy, sy)), ir.FPMul(sz, sz)));
+    const IR::F32 radius_px = ir.FPMin(ir.FPMax(ir.FPMul(ir.FPDiv(ir.Imm32(profile.leaf_ao_radius), ir.FPMax(ir.FPMul(scale, z), ir.Imm32(1e-6f))),
+                                                        ir.FPMul(width, ir.Imm32(0.5f))),
+                                                 ir.Imm32(2.0f)),
+                                        ir.Imm32(96.0f));
+    // other pixels: radius 0, so their samples all read the pixel's own (cached) depth (second read: the reads cost little there)
+    const IR::F32 radius_used = IR::F32{ir.Select(leaf, radius_px, ir.Imm32(0.0f))};
+    // the pixel's own turn of the pattern (fixed per pixel, no flicker)
+    const IR::F32 turn = ir.FPFract(ir.FPMul(ir.Imm32(52.9829189f), ir.FPFract(ir.FPAdd(ir.FPMul(xf, ir.Imm32(0.06711056f)), ir.FPMul(yf, ir.Imm32(0.00583715f))))));
+    const IR::F32 far_x = ir.FPSub(width, ir.Imm32(1.0f)), far_y = ir.FPSub(height, ir.Imm32(1.0f));
+    const IR::F32 reach = ir.FPAdd(z, ir.Imm32(profile.leaf_ao_radius));
+    IR::F32 hits = ir.Imm32(0.0f);
+    for (u32 i = 0; i < 12; ++i) {
+        // two rings of six directions (half and full radius), the outer one turned by 30 degrees
+        const float a = 6.2831853f * static_cast<float>(i % 6) / 6.0f + (i < 6 ? 0.0f : 0.5235988f);
+        const float ring = i < 6 ? 0.5f : 1.0f;
+        const IR::F32 r = ir.FPMul(radius_used, ir.FPAdd(ir.Imm32(ring * 0.75f), ir.FPMul(turn, ir.Imm32(ring * 0.5f))));
+        const IR::F32 qx = ir.FPFloor(ir.FPMin(ir.FPMax(ir.FPAdd(xf, ir.FPMul(r, ir.Imm32(std::cos(a)))), ir.Imm32(0.0f)), far_x));
+        const IR::F32 qy = ir.FPFloor(ir.FPMin(ir.FPMax(ir.FPAdd(yf, ir.FPMul(r, ir.Imm32(std::sin(a)))), ir.Imm32(0.0f)), far_y));
+        const IR::Value at = ir.CompositeConstruct(ir.ConvertFToU(32, qx), ir.ConvertFToU(32, qy));
+        const IR::F32 dn = IR::F32{ir.CompositeExtract(read(depth_read, at), 0)};
+        const IR::F32 zn = view_depth(qx, qy, dn);
+        hits = ir.FPAdd(hits, IR::F32{ir.Select(ir.FPLessThan(zn, reach), ir.Imm32(1.0f), ir.Imm32(0.0f))});
+    }
+    const IR::F32 factor = ir.FPSub(ir.Imm32(1.0f), ir.FPMul(hits, ir.Imm32(profile.leaf_ao_strength / 12.0f)));
     const IR::F32 f = IR::F32{ir.Select(leaf, factor, ir.Imm32(1.0f))};
     for (u32 c = 0; c < 3; ++c) {
         IR::Inst* add = adds[c];
