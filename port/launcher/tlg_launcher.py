@@ -217,7 +217,8 @@ TEXT = {
     'deck_preset': 'Steam Deck (experimental)',
     'fps_60': '60 FPS',
     'fps_120': '120 FPS',
-    'fps_unlocked': 'Unlocked (experimental, no limit)',
+    'fps_unlocked': 'Unlocked (not for gameplay)',
+    'fps_unlocked_warning': 'Warning: Unlocked breaks certain scenes. Only for testing and benchmarking.',
     'fps_hint': ('60/unlocked patch eboot 1.03 in memory. Unlocked lowers the base frame rate by about '
                  '10 FPS against 60 at the same spot; pick 60 unless your PC runs well above 60'),
     'skip_logos': 'Skip the boot logos',
@@ -1262,6 +1263,13 @@ class Launcher:
         else:
             self.fg_note.grid_remove()
 
+    def update_fps_note(self):
+        """The red warning under Frame rate while Unlocked is picked."""
+        if self.settings.get('frame_rate') == 'unlocked':
+            self.fps_note.grid()
+        else:
+            self.fps_note.grid_remove()
+
     def update_aa_note(self, ini):
         # DLSS or FSR 4 stays the choice in tlg.ini; the game runs FSR 3.1 while the card lacks it.
         mode = self.video_state[1]
@@ -1582,8 +1590,12 @@ class Launcher:
         self.check(video, 2, 'show_fps')
         self.build_gpu_choice(video, 3)
         self.combo(video, 5, 'frame_rate', tlg_run.FRAME_RATES, lambda k: self.t(f'fps_{k}'),
-                   on_change=lambda: (self.update_fg(), self.refresh_status()))
+                   on_change=lambda: (self.update_fg(), self.update_fps_note(), self.refresh_status()))
         self.hint(video, 5, 2, 'fps_hint')
+        # Unlocked breaks some scenes (the boy misses Trico's tail in s06 at ~116 FPS, fine at 120; 11-23).
+        self.fps_note = ttk.Label(video, text=self.t('fps_unlocked_warning'), foreground='#e0605a', wraplength=320)
+        self.fps_note.grid(row=6, column=0, columnspan=3, sticky='w')
+        self.update_fps_note()
         self.combo(video, 7, 'resolution', tlg_run.RESOLUTIONS, tlg_run.resolution_label)
         self.hint(video, 7, 2, 'resolution_hint')
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
