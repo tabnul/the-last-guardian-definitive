@@ -4,6 +4,7 @@
 // without its two old-path switches, indexed_resources and constant_offsets, since the backend binds every resource in its own set).
 #pragma once
 
+#include <algorithm>
 #include <cstdlib>
 
 #include "native/shadps4/shader_recompiler/profile.h"
@@ -14,7 +15,7 @@ namespace VideoCore::Vkb {
 inline VkbShader::Profile ProfileFor(const VkbVulkan::Instance& instance) {
     const auto& vk12_props = instance.GetVk12Properties();
     const auto driver = instance.GetDriverID();
-    return VkbShader::Profile{
+    VkbShader::Profile profile{
         .max_viewport_width = instance.GetMaxViewportWidth(),
         .max_viewport_height = instance.GetMaxViewportHeight(),
         .max_shared_memory_size = instance.MaxComputeSharedMemorySize(),
@@ -61,6 +62,30 @@ inline VkbShader::Profile ProfileFor(const VkbVulkan::Instance& instance) {
         // feature. Read once at start; there is no translated-shader cache on disk, so nothing translated the other way is reused.
         .reads_out_of_branch = [] { const char* e = std::getenv("TLG_VKB_READS_OUT_OF_BRANCH"); return e == nullptr || e[0] != '0'; }(),
     };
+    // look option (TLG_VKB_LEAF_AO=<strength>[,<radius m>[,<material entry>...]], off by default): ambient light inside tree crowns, see
+    // leaf_ambient_occlusion_pass.cpp. Plain SPIR-V, no driver feature. Read once at start.
+    if (const char* e = std::getenv("TLG_VKB_LEAF_AO"); e != nullptr && *e != 0) {
+        float v[2]{0.0f, 2.0f};
+        u32 materials = 0;
+        const char* p = e;
+        for (u32 i = 0; *p != 0; ++i) {
+            char* end = nullptr;
+            const float x = std::strtof(p, &end);
+            if (end == p) {
+                break;
+            }
+            if (i < 2) {
+                v[i] = x;
+            } else if (x >= 0.0f && x < 32.0f) {
+                materials |= 1u << static_cast<u32>(x);
+            }
+            p = *end == ',' ? end + 1 : end;
+        }
+        profile.leaf_ao_strength = std::min(std::max(v[0], 0.0f), 1.0f);
+        profile.leaf_ao_radius = std::min(std::max(v[1], 0.1f), 10.0f);
+        profile.leaf_ao_materials = materials != 0 ? materials : 1u << 14;
+    }
+    return profile;
 }
 
 } // namespace VideoCore::Vkb

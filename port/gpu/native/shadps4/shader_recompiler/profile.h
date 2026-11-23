@@ -59,6 +59,10 @@ struct Profile {
     bool indexed_resources{};
     /// tlg issue 75 (TLG_VKB_READS_OUT_OF_BRANCH): pixel shaders read textures with automatic level choice before a per-pixel branch, not inside it
     bool reads_out_of_branch{};
+    /// tlg look option (TLG_VKB_LEAF_AO): ambient light inside tree crowns; strength 0 = off, radius in metres, bit k = material entry k
+    float leaf_ao_strength{};
+    float leaf_ao_radius{};
+    u32 leaf_ao_materials{};
 
     bool operator==(const Profile&) const = default;
 };

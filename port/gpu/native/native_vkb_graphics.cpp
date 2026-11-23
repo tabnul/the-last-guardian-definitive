@@ -4215,6 +4215,22 @@ nlohmann::json ReadsOutOfBranchReport() {
             {"kept_in_per_pixel_branch", kept},
             {"shaders", shaders}};
 }
+/// look option TLG_VKB_LEAF_AO (off by default): ambient light inside tree crowns; translations of the listed ambient shaders by result (a mismatch
+/// leaves the shader unchanged)
+nlohmann::json LeafAoReport() {
+    namespace O = VkbShader::Optimization;
+    const auto& c = O::LeafAoCounters();
+    nlohmann::json results = nlohmann::json::object();
+    for (u32 i = 0; i < O::LeafAoResultCount; ++i) {
+        results[O::LeafAoResultNames[i]] = c.results[i].load();
+    }
+    nlohmann::json shaders = nlohmann::json::array();
+    for (const auto& s : O::LeafAoShaders()) {
+        shaders.push_back({{"cs", fmt::format("{:016x}", s.hash)}, {"result", O::LeafAoResultNames[static_cast<u32>(s.result)]}});
+    }
+    return {{"on", profile.leaf_ao_strength > 0.0f}, {"strength", profile.leaf_ao_strength}, {"radius_m", profile.leaf_ao_radius},
+            {"materials_mask", profile.leaf_ao_materials}, {"translations", results}, {"shaders", shaders}};
+}
 
 nlohmann::json Report() {
     const u64 compiled = c_compiled.load(), draws = c_draws.load();
@@ -4301,6 +4317,7 @@ nlohmann::json Report() {
             {"lookups", Core::Vkb::LookupReport()},
             {"aa", Core::Vkb::Aa::Report()},
             {"reads_out_of_branch", ReadsOutOfBranchReport()},
+            {"leaf_ao", LeafAoReport()},
             {"recorder_job_us_mean", c_job_n.load() ? static_cast<double>(c_job_ns.load()) / 1e3 / static_cast<double>(c_job_n.load()) : 0.0},
             {"new_passes", c_new_passes.load()},
             {"indirect_recorded", c_indirect_recorded.load()},
