@@ -441,7 +441,9 @@
     "launcher.pack_zar_done": "{path} にパックしました。ゲームの設定は .zar を指すようになりました。",
     "launcher.pack_zar_failed": "パックに失敗しました: {error}",
     "launcher.horns_built": "角のモデルをこの PC で作成しました。",
+    "launcher.foxtail_built": "ねこじゃらしのモデルをこのPCで作りました。",
     "launcher.horns_failed": "角のモデルを作成できませんでした: {error}",
+    "launcher.foxtail_failed": "ねこじゃらしのモデルを作れませんでした：{error}",
     "pad.combos": "コンボ",
     "pad.combo_quit": "ゲームを終了（2秒長押し）",
     "pad.combo_menu": "ゲーム内メニュー",
@@ -817,6 +819,10 @@
       "name": "ICOの角",
       "what": "少年が角を身に着けます。ICOへのオマージュで、先端が黒い骨白色の角です。ゲーム本編のICOの衣装（宝物のひとつ）と組み合わせられます。"
     },
+    "menu:mod_foxtail": {
+      "name": "ねこじゃらし",
+      "what": "このポートだけの機能、私たちが再現：開発者がカットした少年のねこじゃらし（トリコが飛びかかる動きはゲームに残っています）。エノコログサは日本語で「猫じゃらし」とも呼ばれます。Trico Tricks の2つのボタンで使います：Foxtail（もう一度押すまで少年が持ち続けます）と Foxtail play（少年が振って手をたたき、トリコが飛びかかります）。エノコログサの穂を再現した独自のモデルです。まずランチャーで一度オンにしてください：ランチャーがお使いのPCでモデルを作ります。"
+    },
     "menu:mod_plays": {
       "name": "トリコが遊ぶ",
       "what": "開発者が作り、「一旦」封印したトリコの行動です。ときどき少年のにおいを嗅いで、前足で触れます。頬ずりができる場所、つまり少年が足場の縁から離れているときだけ起こります。"
@@ -836,6 +842,17 @@
     "menu:shadow_lite": {
       "name": "軽量シャドウ",
       "what": "ゲームの4つの影レイヤーのうち、カメラに最も近いものを省きます。ゲーム自体も一部のエリアでそうしています。古いCPUやSteam DeckでFPSが数%上がり、カメラ近くの影が少しやわらかくなります。オフは発売時のままです。"
+    },
+    "menu:leaf_ao": {
+      "name": "リアルな木の陰影",
+      "what": "木の葉の茂みが平たく明るすぎて見えます。内部の光に、葉の重なりによる影がありません。この設定は茂みの内部の光を暗くします。",
+      "choices": {
+        "0": "オフ",
+        "1": "低",
+        "2": "中",
+        "3": "高",
+        "4": "最大"
+      }
     }
   },
   "menu": {
@@ -1236,6 +1253,22 @@
     "Broken helmet": "壊れたかぶと",
     "The other Trico's mask": "もう一匹のトリコの仮面",
     "No helmet": "かぶとなし",
-    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "ゲーム全体を通して、トリコにかぶとをかぶせたり外したりします。どれもゲームに元々あるものです：鎧のトリコがかぶる鎧のかぶと、壊れたかぶと、もう一匹のトリコの仮面。ストーリーどおり（デフォルト）はゲームに任せます。ムービー、新しいステージ、セーブデータのロード後もそのままで、次回の起動時にも保持されます。"
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "ゲーム全体を通して、トリコにかぶとをかぶせたり外したりします。どれもゲームに元々あるものです：鎧のトリコがかぶる鎧のかぶと、壊れたかぶと、もう一匹のトリコの仮面。ストーリーどおり（デフォルト）はゲームに任せます。ムービー、新しいステージ、セーブデータのロード後もそのままで、次回の起動時にも保持されます。",
+    "Sealed move. The developers gave the boy a foxtail toy to wave at Trico, and Trico pounces and paws at it. The toy was cut before release; Trico's move stayed in the game files.": "封印された動き。開発者は少年にトリコの前で振る猫じゃらしを持たせ、トリコはそれに飛びついて前足でじゃれます。猫じゃらしは発売前に削除されましたが、トリコの動きはゲームのファイルに残りました。",
+    "Sealed move. Trico throws up: the developers made it, then cut it before release.": "封印された動き。トリコが吐きます。開発者が作り、発売前に削除しました。",
+    "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).": "封印された動き。トリコが少年と遊ぶ、削除された場面の一部です(エクストラタブの「トリコが遊ぶ」にもあります)。",
+    "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.": "封印された動き、宣伝用に作られたもの:ゲームのプレス画像やE3デモでのトリコのポーズ。通常のゲームでは見られません。",
+    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "封印された動き、宣伝用に作られたもの:ゲームのプレス画像やE3デモでの爪のポーズ。通常のゲームでは見られません。",
+    "Foxtail toy": "ねこじゃらし",
+    "Turn on Foxtail toy in the launcher (Extras page) once first.": "まずランチャー（エクストラのページ）でねこじゃらしを一度オンにしてください。",
+    "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "このポートだけ、私たちが再現：開発者がカットしたねこじゃらし遊び。少年がねこじゃらしをトリコに向けて振り、手をたたくと、トリコが猫のように飛びかかります（飛びかかる動きはゲーム本来のもので、ねこじゃらしがカットされた後も残っていました）。エクストラタブの Mods > ねこじゃらし が必要です。",
+    "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "このポートだけの機能、私たちが再現：開発者がカットした少年のねこじゃらし（トリコが飛びかかる動きはゲームに残っています）。エノコログサは日本語で「猫じゃらし」とも呼ばれます。Trico Tricks の2つのボタンで使います：Foxtail（もう一度押すまで少年が持ち続けます）と Foxtail play（少年が振って手をたたき、トリコが飛びかかります）。エノコログサの穂を再現した独自のモデルです。まずランチャーで一度オンにしてください：ランチャーがお使いのPCでモデルを作ります。",
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "このポートだけ、私たちが再現：開発者が発売前にカットした少年のねこじゃらし。エノコログサは日本語で「猫じゃらし」とも呼ばれます。独自のモデルです。もう一度ここを押すまで少年が持ち続けます。エクストラタブの Mods > ねこじゃらし が必要です。",
+    "Low": "低",
+    "Medium": "中",
+    "High": "高",
+    "Extreme": "最大",
+    "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "木の葉の茂みが平たく明るすぎて見えます。内部の光に、葉の重なりによる影がありません。この設定は茂みの内部の光を暗くします。",
+    "Realistic tree shade": "リアルな木の陰影"
   }
 }

@@ -150,7 +150,9 @@
     "launcher.fps_hint": "Патч 60/без обмеження для eboot 1.03 у пам'яті. Без обмеження знижує базову частоту кадрів приблизно на 10 FPS порівняно з 60 у тому самому місці; вибирайте 60, якщо ваш ПК не працює значно вище 60",
     "launcher.skip_logos": "Пропускати логотипи при запуску",
     "launcher.horns_built": "Моделі рогів створено на цьому ПК.",
+    "launcher.foxtail_built": "Модель мишію створено на цьому ПК.",
     "launcher.horns_failed": "Не вдалося створити моделі рогів: {error}",
+    "launcher.foxtail_failed": "Не вдалося створити модель мишію: {error}",
     "launcher.update_check": "Перевіряти нові випуски під час запуску",
     "launcher.update_available": "Вийшов новий випуск {tag}: натисніть, щоб відкрити сторінку завантаження",
     "launcher.old_version": "Версія гри {version}: встановіть оновлення 01.03 (порт створено для нього)",
@@ -681,6 +683,10 @@
       "name": "Роги ICO",
       "what": "Хлопчик носить роги — відсилання до Ico. Можна поєднати з власним вбранням Ico у грі (один зі скарбів). Спершу один раз увімкніть це в лаунчері: лаунчер створить моделі рогів на вашому ПК."
     },
+    "menu:mod_foxtail": {
+      "name": "Іграшка з мишію",
+      "what": "Унікально для цього порту, відтворено нами: іграшка з мишію хлопчика, вирізана розробниками (стрибок Трико до неї лишився в грі). Японською мишій називають nekojarashi (猫じゃらし): «дражнилка для котів». Її використовують дві кнопки Trico Tricks: Foxtail (хлопчик тримає її, доки ти не натиснеш ще раз) і Foxtail play (він махає нею й плескає, Трико стрибає). Наша власна модель стебла мишію. Спершу увімкни це один раз у лаунчері: лаунчер створить модель на твоєму ПК."
+    },
     "menu:frames_queued": {
       "name": "Кадрів у черзі",
       "what": "Більше кадрів у черзі: стабільніший FPS, повільніша реакція на введення.",
@@ -843,6 +849,17 @@
     "menu:shadow_lite": {
       "name": "Легкі тіні",
       "what": "Прибирає найближчий із чотирьох шарів тіней гри, як сама гра робить у деяких місцях. На кілька % більше FPS на старих процесорах і Steam Deck; тіні біля камери стають трохи м'якшими. Вимк. — як у релізі."
+    },
+    "menu:leaf_ao": {
+      "name": "Реалістична тінь дерев",
+      "what": "Крони дерев виглядають пласкими й надто світлими: світло всередині не має тіні між шарами листя. Це затемнює світло всередині крон.",
+      "choices": {
+        "0": "Вимк.",
+        "1": "Низьке",
+        "2": "Середнє",
+        "3": "Високе",
+        "4": "Екстремальне"
+      }
     }
   },
   "menu": {
@@ -1249,6 +1266,22 @@
     "Broken helmet": "Розбитий шолом",
     "The other Trico's mask": "Маска іншого Тріко",
     "No helmet": "Без шолома",
-    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Надягає на Тріко шолом або знімає його, на всю гру. Усі вони з самої гри: панцирний шолом бронованих Тріко, розбитий шолом або маска іншого Тріко. Як в історії (типово) лишає вибір грі. Зберігається під час катсцен, нових етапів і завантаження збереження, а також для наступного запуску."
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Надягає на Тріко шолом або знімає його, на всю гру. Усі вони з самої гри: панцирний шолом бронованих Тріко, розбитий шолом або маска іншого Тріко. Як в історії (типово) лишає вибір грі. Зберігається під час катсцен, нових етапів і завантаження збереження, а також для наступного запуску.",
+    "Sealed move. The developers gave the boy a foxtail toy to wave at Trico, and Trico pounces and paws at it. The toy was cut before release; Trico's move stayed in the game files.": "Запечатаний рух. Розробники дали хлопчикові іграшку з лисячого хвоста, щоб махати нею перед Тріко, а Тріко стрибає на неї й б'є лапою. Іграшку прибрали до релізу; рух Тріко залишився у файлах гри.",
+    "Sealed move. Trico throws up: the developers made it, then cut it before release.": "Запечатаний рух. Тріко блює: розробники це зробили, а потім прибрали до релізу.",
+    "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).": "Запечатаний рух. Частина вирізаної сцени, де Тріко грається з хлопчиком (також на вкладці «Додатки»: Тріко грається).",
+    "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.": "Запечатаний рух, створений для маркетингу: поза Тріко з пресзнімків і демо гри на E3. Звичайна гра її ніколи не показує.",
+    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "Запечатаний рух, створений для маркетингу: поза з кігтями з пресзнімків і демо гри на E3. Звичайна гра її ніколи не показує.",
+    "Foxtail toy": "Іграшка з мишію",
+    "Turn on Foxtail toy in the launcher (Extras page) once first.": "Спершу один раз увімкни Іграшка з мишію в лаунчері (сторінка Додатки).",
+    "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Лише в цьому порті, відтворено нами: вирізана розробниками гра з мишієм. Хлопчик махає іграшкою перед Трико й плескає, а Трико стрибає на неї, як кіт (цей стрибок — із самої гри, лишився, коли іграшку вирізали). Потрібно Mods > Іграшка з мишію на вкладці Додатки.",
+    "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Унікально для цього порту, відтворено нами: іграшка з мишію хлопчика, вирізана розробниками (стрибок Трико до неї лишився в грі). Японською мишій називають nekojarashi (猫じゃらし): «дражнилка для котів». Її використовують дві кнопки Trico Tricks: Foxtail (хлопчик тримає її, доки ти не натиснеш ще раз) і Foxtail play (він махає нею й плескає, Трико стрибає). Наша власна модель стебла мишію. Спершу увімкни це один раз у лаунчері: лаунчер створить модель на твоєму ПК.",
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Лише в цьому порті, відтворено нами: іграшка з мишію хлопчика, вирізана розробниками до релізу. Японською мишій називають nekojarashi (猫じゃらし): «дражнилка для котів». Наша власна модель; хлопчик тримає її, доки ти не натиснеш тут ще раз. Потрібно Mods > Іграшка з мишію на вкладці Додатки.",
+    "Low": "Низьке",
+    "Medium": "Середнє",
+    "High": "Високе",
+    "Extreme": "Екстремальне",
+    "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "Крони дерев виглядають пласкими й надто світлими: світло всередині не має тіні між шарами листя. Це затемнює світло всередині крон.",
+    "Realistic tree shade": "Реалістична тінь дерев"
   }
 }

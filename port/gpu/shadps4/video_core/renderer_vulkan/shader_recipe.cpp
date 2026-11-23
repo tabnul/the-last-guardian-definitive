@@ -418,13 +418,15 @@ bool ImportMissing(const std::filesystem::path& cache_dir) {
 }
 
 int ImportChild(const std::filesystem::path& cache_dir, const std::filesystem::path& recipe_dir) {
-    const auto profile_data = ReadFile(cache_dir / "profile.bin");
-    if (profile_data.size() != sizeof(Shader::Profile)) {
-        std::fprintf(stderr, "import-shaders: no profile.bin in %s\n", cache_dir.string().c_str());
+    // tlg: profile.bin starts with the cache's version header since v0.10.0; reading it as a bare
+    // profile made every import stop here (exit 2) without a word in the game's log.
+    const auto cached_profile = DecodeCacheHeader(ReadFile(cache_dir / "profile.bin"));
+    if (!cached_profile) {
+        std::fprintf(stderr, "import-shaders: no profile.bin of this build in %s\n",
+                     cache_dir.string().c_str());
         return 2;
     }
-    Shader::Profile profile{};
-    std::memcpy(&profile, profile_data.data(), sizeof(profile));
+    const Shader::Profile profile = *cached_profile;
 
     const auto started = std::chrono::steady_clock::now();
     Shader::Pools pools;

@@ -330,6 +330,41 @@ local function Horns(on)
   end
   _TLGHORN=H
 end
+-- Mods > Foxtail toy (tlg.ini mod_foxtail 1): the boy holds the cut foxtail toy in his right hand
+-- (own model, from the same archive as the horns). _TLGFOXWANT says who wants it: 'keep' (the
+-- Foxtail button) or 'play' (Play like a cat, for the move only). The game's Hide flag does not hide
+-- it once it hangs on the hand bone, so it is hidden by scale 0 (live 2026-11-23). Shown at 1.5x
+-- (the size picked live). A stage load removes it; the next run puts it back while it is wanted.
+local FOXTAIL='game/assets/props/level/foxtail_toy/foxtail_toy'
+function _TLGFox(show)
+  local n=_TLGFOXO
+  if n and not Has(n) then n=nil _TLGFOXO=nil _TLGFOXSHOWN=nil end
+  if not show then
+    if n and _TLGFOXSHOWN then pcall(function() FindObject(n).scale='0 0 0 1' end) end
+    _TLGFOXSHOWN=nil return true
+  end
+  if not n then
+    if _TLGFOXX or not Has('Player') then return false end
+    local ok,hand=pcall(GameCharacter.FindBone,'Player','jt_Item_inHand_Rt')
+    if not ok or not hand then return false end
+    local got,o=pcall(Load,FOXTAIL)
+    local c=got and o and (FindObject(o) or o)
+    if not c then _TLGFOXX=true L('fun foxtail: model missing (build it in the launcher)') return false end
+    Connect(hand,c) c.position='0 0 0 1' c.rotation='0 0 0'
+    n=c:GetName() _TLGFOXO=n
+  end
+  if not _TLGFOXSHOWN then
+    local ok=pcall(function() local c=FindObject(n) c.entityFlags='~Hide' c.scale='1.5 1.5 1.5 1' end)
+    _TLGFOXSHOWN=ok or nil
+  end
+  return true
+end
+local function Foxtail(on)
+  if not on then _TLGFOXWANT=nil end
+  if not Has('Player') then _TLGFOXX=nil end
+  _TLGFOXON=on
+  _TLGFox(on and _TLGFOXWANT~=nil)
+end
 -- Trico's helmet (tlg.ini trico_helmet): 0 = the story's own, 1 armour helmet, 2 broken helmet,
 -- 3 the other Trico's mask, 4 none. The game sets Trico's look ~30 times along the story
 -- (CharacterMngr.SetupTricoParts -> CondorCharacter.SetParts); our wrapper swaps the helmet part
@@ -815,7 +850,8 @@ std::string SetChunk() {
             (s.mod_hints.load() ? "true" : "false") + " _TLGHIDEHINTS=" +
             (s.hide_hints.load() ? "true" : "false") + "\n";
     code += std::string("Treasures(") + (s.mod_treasures.load() ? "true" : "false") + ") Horns(" +
-            (s.mod_horns.load() ? "true" : "false") + ") ButtonIcons(" +
+            (s.mod_horns.load() ? "true" : "false") + ") Foxtail(" +
+            (s.mod_foxtail.load() ? "true" : "false") + ") ButtonIcons(" +
             (s.XboxIcons() ? "true" : "false") + "," + std::to_string(WideFactor()) + ")\n";
     if (subtitle_shift) {
         // Re-applied every tick: SubtitleSystem:Initialize resets it to (0, -OFFSET_Y).
@@ -1409,8 +1445,11 @@ void RemoveTricos() {
 //  - Not started within 2.5 s: reset him and try once more (11 of the 60 needed that), never in a
 //    story event, a jump or a climb (control mode EVENT, JUMP, COLUMN).
 // Waits are in game seconds (currentInfo.dt; os.time does not move inside a tick).
-constexpr std::string_view ActLua =
+// ActHead: the helpers; then ActLua (every move) or CatLua (Foxtail play). A new pick also takes
+// away a foxtail toy that only came for Play like a cat.
+constexpr std::string_view ActHead =
     "if _TLG_ACT then pcall(UnRegisterTick,_TLG_ACT) _TLG_ACT=nil end\n"
+    "if _TLGFOXWANT=='play' then _TLGFOXWANT=nil pcall(_TLGFox,false) end\n"
     "local function ci() return Ai2.Utils.GetAIProps('Condor').currentInfo end\n"
     "local function dt() local ok,d=pcall(function() return ci().dt end) return (ok and type(d)=='number' and d>0 and d<1) and d or 1/60 end\n"
     "local function anim() local ok,a=pcall(function() return tostring(ci().mainPlayingAnim) end) return ok and a:lower() or '?' end\n"
@@ -1436,7 +1475,8 @@ constexpr std::string_view ActLua =
     "  if not getpose('stand') then return false end cmd('EX_photo') return upto(8,has('photo_loop'))\n"
     " elseif p=='sitplay' then if a=='ext_c_sit_plays_loop' then return true end\n"
     "  if not getpose('sit') then return false end cmd('sit_plays') return upto(6,is('ext_c_sit_plays_loop')) end\n"
-    " return true end\n"
+    " return true end\n";
+constexpr std::string_view ActLua =
     "local function try(wait) if pose~='' and not getpose(pose) then return false end\n"
     " cmd(act) local t,hit=0,false\n"
     " if hold>0 then while t<hold do if seen() then hit=true end cmd(act) t=t+dt() coroutine.yield() end return hit end\n"
@@ -1451,6 +1491,50 @@ constexpr std::string_view ActLua =
     "_TLG_ACT=function() local ok,e=coroutine.resume(co) if not ok then L('fun act error: '..tostring(e)) end\n"
     " if coroutine.status(co)=='dead' then UnRegisterTick(_TLG_ACT) _TLG_ACT=nil end end\n"
     "RegisterTick(_TLG_ACT)\n";
+
+// Foxtail play (tlg_foxtail_play): the developers' cut PlayToy act (intactcondor.lua PJT_CatToy), restored;
+// worked out live 2026-11-23 on the terrace (s04 _090_GardenTerrace_001, user: "super"). Trico's own move
+// is cat_toy (the plain Play like a cat button). With Mods > Foxtail toy on, the boy holds the
+// toy 1 s before the move (unless the Foxtail button already gave it to him) and it goes 3 s after.
+// Trico gets the command every frame until his cat_toy animation shows (1.5 s; else the reset and 3 s
+// more, never in a story event, a jump or a climb), then 3 s more: sent for less he cancels halfway
+// (cat_toy_cancel). 1 s into the move the boy claps his hands (his own B_gesture_instruct; set from
+// Lua, because in photo mode the pad does not reach him), only when he stands free (not on Trico,
+// not climbing, not in the air or in water).
+constexpr std::string_view CatLua =
+    "local boy\n"
+    "local function boyfree() local ok,v=pcall(function() local P=Ai2.PlayerUtils return not P.IsParentCondor()\n"
+    "  and not P.IsClimbObject() and not P.IsInTheAir() and not P.IsInWater() end) return ok and v end\n"
+    "local function wait(s) local t=0 while t<s do t=t+dt() coroutine.yield() end end\n"
+    "local function play(wait)\n"
+    " local t=0 while t<wait do cmd(act) if seen() then break end t=t+dt() coroutine.yield() end\n"
+    " if not seen() then return false end\n"
+    " local h,clap=0,false\n"
+    " while h<hold do cmd(act) h=h+dt()\n"
+    "  if boy and not clap and h>=1 then clap=true pcall(MS.CondorCmnSetAnimationState,'Player','B_gesture_instruct') end\n"
+    "  coroutine.yield() end\n"
+    " return true end\n"
+    "local function foxoff() if _TLGFOXWANT=='play' then _TLGFOXWANT=nil pcall(_TLGFox,false) end end\n"
+    "local co=coroutine.create(function()\n"
+    " boy=boyfree()\n"
+    " if boy then pcall(MS.CondorCmnSetAnimationState,'Player','B_P_stand') end\n"
+    " if _TLGFOXON and _TLGFOXWANT~='keep' then _TLGFOXWANT='play'\n"
+    "  local ok,shown=pcall(_TLGFox,true) if ok and shown then wait(1) end end\n"
+    " local ok,how=play(1.5),''\n"
+    " if not ok and canreset() then cmd('Restart') upto(1,is('c_stand')) ok,how=play(3),' after reset' end\n"
+    " if ok then local t=0 while t<4 and seen() do t=t+dt() coroutine.yield() end\n"
+    "  if _TLGFOXWANT=='play' then wait(3) end L('fun act tlg_foxtail_play ok'..how)\n"
+    " else L('fun act tlg_foxtail_play did not play (now '..anim()..', mode '..mode()..')') end\n"
+    " foxoff() end)\n"
+    "_TLG_ACT=function() local ok,e=coroutine.resume(co) if not ok then L('fun act error: '..tostring(e)) foxoff() end\n"
+    " if coroutine.status(co)=='dead' then UnRegisterTick(_TLG_ACT) _TLG_ACT=nil end end\n"
+    "RegisterTick(_TLG_ACT)\n";
+
+// The Foxtail button: the boy holds the foxtail toy until it is pressed again (tlg_lua.cpp _TLGFox).
+constexpr std::string_view FoxtailLua =
+    "if not _TLGFOXON then L('fun act tlg_foxtail: Mods > Foxtail toy is off') return end\n"
+    "if _TLGFOXWANT=='keep' then _TLGFOXWANT=nil _TLGFox(false) L('fun act tlg_foxtail off')\n"
+    "else _TLGFOXWANT='keep' L('fun act tlg_foxtail '..(_TLGFox(true) and 'on' or 'not shown')) end\n";
 
 // The tummy moves are no control commands: they run the game's own vomit code (ai2/condor/
 // condorcommonactioneatable.lua). Gag: AddVomitIntr, the retch Trico does after eating barrels; he
@@ -1482,13 +1566,17 @@ void Act(const char* command) {
     std::printf("Fun: Trico action %s\n", command);
     if (std::string_view(command) == "tlg_gag") return FunQueue(std::string(GagLua));
     if (std::string_view(command) == "tlg_throw_up") return FunQueue(std::string(ThrowUpLua));
+    if (std::string_view(command) == "tlg_foxtail") return FunQueue(std::string(FoxtailLua));
+    // Foxtail play sends Trico's own cat_toy move (CatLua); every other move sends its own command.
+    const bool foxtail_play = std::string_view(command) == "tlg_foxtail_play";
+    const std::string act = foxtail_play ? "cat_toy" : command;
     std::string key(action->key ? action->key : command);
     for (auto& c : key) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     char hold[32];
     std::snprintf(hold, sizeof(hold), "%.2f", action->hold);
-    FunQueue(std::string("local act,key,pose,hold='") + command + "','" + key + "'," +
+    FunQueue(std::string("local act,key,pose,hold='") + act + "','" + key + "'," +
              (action->pose ? std::string("'") + action->pose + "'" : std::string("nil")) + "," + hold + "\n" +
-             std::string(ActLua));
+             std::string(ActHead) + std::string(foxtail_play ? CatLua : ActLua));
 }
 
 void CountTricos() {

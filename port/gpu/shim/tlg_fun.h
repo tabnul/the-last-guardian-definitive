@@ -30,10 +30,40 @@ struct Action {
                                 // stand), "sitplay" (sitting and playing): that pose first
     const char* key = nullptr;  // part of his animation name that shows the move; nullptr: the command
     float hold = 0;             // seconds to send the command every frame (the game does so for some)
+    const char* help = nullptr; // extra line in the hover text (the sealed moves: where they come from)
 };
 // Group headings (the bar's group tabs, same order); the icon script and the bar key on these names.
 inline constexpr const char* MayNotWork = "May not work";
+inline constexpr const char* Sealed = "Sealed and unique features";
+// The sealed moves' hover text (TlgFun::Action help); the menu translates them (TR(TlgFun::SealedHelp[i])).
+inline constexpr const char* SealedHelp[] = {
+    "Sealed move. The developers gave the boy a foxtail toy to wave at Trico, and Trico pounces and paws at it. The toy was cut before release; Trico's move stayed in the game files.",
+    "Sealed move. Trico throws up: the developers made it, then cut it before release.",
+    "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).",
+    "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.",
+    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.",
+};
+// The hover text of our own moves (TlgFun::Action help); the menu translates them (TR(TlgFun::UniqueHelp[i])).
+inline constexpr const char* UniqueHelp[] = {
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.",
+    "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.",
+};
 inline constexpr Action Actions[] = {
+    // Moves the normal game never lets you see: their trigger was cut, or they were made for marketing.
+    // Checked against the game's own scripts 2026-11-23 (everything else in the bar is used in the story).
+    {nullptr, Sealed},
+    // The game's PlayToy act (intactcondor.lua PJT_CatToy): the boy's foxtail toy (condorPlayToy_01) is not
+    // on the disc. Sent once he cancels halfway (cat_toy_cancel); held 3 s he pounces (c_cat_toy_end, ~2.5 s).
+    {"cat_toy", "Play like a cat", "stand", "cat_toy", 3.0f, SealedHelp[0]},
+    {"tlg_throw_up", "Throw up", nullptr, nullptr, 0, SealedHelp[1]}, // our Lua (tlg_lua.cpp Act): the developers' cut throw-up
+    {"touch_left_side_soft", "Paw", "stand", "touch_left", 0, SealedHelp[2]}, // second half of the sealed Play act (Extras > Trico plays)
+    {"EX_photo", "Photo pose", "stand", "photo", 0, SealedHelp[3]},
+    {"EX_photo_claws", "Claws", "photo", "claws", 0, SealedHelp[4]},
+    // Only in this port, gold icons: the cut foxtail toy, recreated by us. The toy itself (tlg_lua.cpp
+    // FoxtailLua, on/off) and the whole act with it (tlg_foxtail_play = CatLua: the toy, Trico's cat_toy,
+    // the boy's clap).
+    {"tlg_foxtail", "Foxtail", nullptr, nullptr, 0, UniqueHelp[0]},
+    {"tlg_foxtail_play", "Foxtail play", "stand", "cat_toy", 3.0f, UniqueHelp[1]},
     {nullptr, "Sounds and moods"},
     {"A_sneeze", "Sneeze", "", "sneeze"},
     {"A_yawn", "Yawn", "", "yawn"},
@@ -41,6 +71,7 @@ inline constexpr Action Actions[] = {
     {"howling", "Howl", "stand"},
     {"howling_calm", "Howl softly", "stand", "howling"},
     {"A_groanA", "Groan", "", "groana"},
+    {"A_groanD", "Lion roar", "", "groand"},
     {"A_face_rejoice", "Happy face", "", "rejoice"},
     {"A_inclines_neck", "Tilt head", "", "inclines"},
     {"A_scolded", "Scolded", "", "scolded"},
@@ -70,25 +101,18 @@ inline constexpr Action Actions[] = {
     {"sit_plays_pecks_nose", "Sit and peck", "sitplay", "pecks_nose", 3.0f},
     {"joy_jump", "Happy jump (needs room)", "stand"},
     {"mud_playing", "Play in the mud", "stand"},
-    {"cat_toy", "Play like a cat", "stand", "cat_toy"},
     {"roll_in_nose", "Sniff and roll", "stand", "roll_in_nose"},
     {"smell", "Sniff", "stand", "smell"},
     {"touch_boy_right", "Touch the boy", "stand", "touch_right"},
-    {"touch_left_side_soft", "Paw", "stand", "touch_left"}, // second half of the sealed Play act (Mods > Trico plays)
     {"toilet", "Toilet", "stand"},
     {nullptr, "Tummy"},
     {"tlg_gag", "Gag"},              // our Lua, not a control command (tlg_lua.cpp Act)
-    {"tlg_throw_up", "Throw up"},    // the developers' cut throw-up, brought back
     {nullptr, "Rest"},
     {"sit", "Sit", "stand", "sit_"},
     {"sit_shake", "Sit and shake", "sit"},
     {"lie_down", "Lie down", "sit"},
     {"rise", "Get up", "stand"},
     {"stand", "Stand", ""},
-    {nullptr, "Marketing / E3 poses"}, // the poses of the game's press shots and E3 demos
-    {"EX_photo", "Photo pose", "stand", "photo"},
-    {"EX_photo_claws", "Claws", "photo", "claws"},
-    {"A_groanD", "Lion roar", "", "groand"},
     {nullptr, MayNotWork},
     {"A_excite", "Get excited", "stand", "excite"},
     {"A_hungry", "Hungry", "stand", "hungry"},

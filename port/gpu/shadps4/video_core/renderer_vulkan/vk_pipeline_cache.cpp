@@ -401,6 +401,9 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .needs_clip_distance_emulation = instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,
         .supports_shader_stencil_export = instance_.IsShaderStencilExportSupported(),
     };
+    // tlg: Extras > Realistic tree shade (leaf_ambient_occlusion_pass.cpp): leaf material entries; strength
+    // and radius are live push data (vk_rasterizer.cpp DispatchRecord).
+    profile.leaf_ao_materials = TlgSettings::LeafAoMaterials();
 
     auto [cache_result, cache] = instance.GetDevice().createPipelineCacheUnique({});
     ASSERT_MSG(cache_result == vk::Result::eSuccess, "Failed to create pipeline cache: {}",

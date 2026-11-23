@@ -945,14 +945,8 @@ bool PipelineCache::CheckCacheProfile() {
         OnColdCache();
         return ImportRecipes();
     }
-    bool compatible = profile_data.size() == CacheHeaderSize + sizeof(Shader::Profile) &&
-                      std::memcmp(profile_data.data(), CacheVersions.data(), CacheHeaderSize) == 0;
-    if (compatible) {
-        Shader::Profile cached_profile{};
-        std::memcpy(&cached_profile, profile_data.data() + CacheHeaderSize, sizeof(cached_profile));
-        compatible = cached_profile == profile;
-    }
-    if (!compatible) {
+    const auto cached_profile = DecodeCacheHeader(profile_data);
+    if (!cached_profile || !(*cached_profile == profile)) {
         // tlg: upstream closed the cache for the session here, so it was never rewritten
         // and every later session compiled every shader again (stutters on each new area).
         // Start a fresh cache for this build and GPU instead.
@@ -968,12 +962,26 @@ bool PipelineCache::CheckCacheProfile() {
     return true;
 }
 
-void PipelineCache::SaveCacheHeader() {
+std::vector<u8> EncodeCacheHeader(const Shader::Profile& profile) {
     std::vector<u8> data(CacheHeaderSize + sizeof(profile));
     std::memcpy(data.data(), CacheVersions.data(), CacheHeaderSize);
     std::memcpy(data.data() + CacheHeaderSize, &profile, sizeof(profile));
+    return data;
+}
+
+std::optional<Shader::Profile> DecodeCacheHeader(std::span<const u8> data) {
+    if (data.size() != CacheHeaderSize + sizeof(Shader::Profile) ||
+        std::memcmp(data.data(), CacheVersions.data(), CacheHeaderSize) != 0) {
+        return std::nullopt;
+    }
+    Shader::Profile profile{};
+    std::memcpy(&profile, data.data() + CacheHeaderSize, sizeof(profile));
+    return profile;
+}
+
+void PipelineCache::SaveCacheHeader() {
     Storage::DataBase::Instance().Save(Storage::BlobType::ShaderProfile, "profile",
-                                       std::move(data));
+                                       EncodeCacheHeader(profile));
 }
 
 // bbport: a damaged entry (cut short by a crash or a power loss, or rejected by the driver) used

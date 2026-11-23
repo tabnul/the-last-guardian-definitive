@@ -167,6 +167,12 @@ MENU = [
           'The boy wears horns, a nod to Ico. '
           'Can be combined with the game\'s own Ico outfit (one of the treasures). '
           'Turn it on in the launcher once first: the launcher builds the horn models on your PC.'),
+    _menu('Fun', 'mod_foxtail', 'bool', '0', 'Foxtail toy',
+          'Unique to this port, recreated by us: the boy\'s foxtail toy, cut by the developers before release '
+          '(Trico\'s pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: '
+          '"cat teaser". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) '
+          'and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. '
+          'Turn it on in the launcher once first: the launcher builds the model on your PC.'),
     _menu('Fun', 'trico_helmet', 'choice', '0', "Trico's helmet",
           "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour "
           "helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the "
@@ -185,6 +191,10 @@ MENU = [
     _menu('Fun', 'mod_hints', 'bool', '0', 'Cut narrator hints',
           'The 23 narrator hints the developers cut in September 2016. On: when you seem stuck, the narrator '
           'helps again, where they first placed his lines. They give puzzle solutions away.'),
+    _menu('Fun', 'leaf_ao', 'choice', '0', 'Realistic tree shade',
+          'Tree crowns look flat and too bright: the light inside them has no shadow between the layers of '
+          'leaves. This darkens the light inside the crowns.',
+          choices=(('0', 'Off'), ('1', 'Low'), ('2', 'Medium'), ('3', 'High'), ('4', 'Extreme'))),
     _menu('Performance', 'frames_queued', 'choice', '1', 'Frames queued',
           'More frames queued: steadier FPS, slower response to input.',
           choices=(('1', '1 (lowest latency)'), ('2', '2'),

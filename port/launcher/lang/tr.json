@@ -150,7 +150,9 @@
     "launcher.fps_hint": "60/sınırsız, eboot 1.03'ü bellekte yamalar. Sınırsız, aynı noktada 60'a göre temel kare hızını yaklaşık 10 FPS düşürür; bilgisayarınız 60'ın çok üstünde çalışmıyorsa 60'ı seçin",
     "launcher.skip_logos": "Açılış logolarını atla",
     "launcher.horns_built": "Boynuz modelleri bu bilgisayarda oluşturuldu.",
+    "launcher.foxtail_built": "Tilki kuyruğu modeli bu bilgisayarda oluşturuldu.",
     "launcher.horns_failed": "Boynuz modelleri oluşturulamadı: {error}",
+    "launcher.foxtail_failed": "Tilki kuyruğu modeli oluşturulamadı: {error}",
     "launcher.update_check": "Açılışta yeni sürümleri denetle",
     "launcher.update_available": "Yeni sürüm çıktı: {tag}. İndirme sayfasını açmak için tıklayın",
     "launcher.old_version": "Oyun sürümü: {version}. 01.03 güncellemesini kurun (port onun için yapıldı)",
@@ -681,6 +683,10 @@
       "name": "ICO boynuzları",
       "what": "Çocuk, Ico'ya bir selam olarak boynuz takar. Oyunun kendi Ico kıyafetiyle (hazinelerden biri) birleştirilebilir. Önce başlatıcıda bir kez açın: başlatıcı boynuz modellerini bilgisayarınızda oluşturur."
     },
+    "menu:mod_foxtail": {
+      "name": "Tilki kuyruğu oyuncağı",
+      "what": "Bu porta özel, bizim yeniden yaptığımız: çocuğun, geliştiricilerin çıkardığı tilki kuyruğu oyuncağı (Trico'nun ona atılma hareketi oyunda kaldı). Tilki kuyruğu otunun Japonca adı nekojarashi'dir (猫じゃらし): \"kedi oyalayıcı\". İki Trico Tricks düğmesi bunu kullanır: Foxtail (sen tekrar basana kadar çocuk onu tutar) ve Foxtail play (onu sallar ve el çırpar, Trico atılır). Bir tilki kuyruğu otu sapının kendi modelimiz. Önce launcher'da bir kez aç: launcher modeli bilgisayarında oluşturur."
+    },
     "menu:frames_queued": {
       "name": "Sıradaki kareler",
       "what": "Sırada daha fazla kare: daha kararlı FPS, girişe daha yavaş tepki.",
@@ -843,6 +849,17 @@
     "menu:shadow_lite": {
       "name": "Hafif gölgeler",
       "what": "Oyunun dört gölge katmanından kameraya en yakın olanı çıkarır; oyun bazı bölgelerde bunu zaten kendisi yapar. Eski CPU'larda ve Steam Deck'te birkaç % daha fazla FPS; kameraya yakın gölgeler biraz yumuşar. Kapalı, oyunun çıktığı hâlidir."
+    },
+    "menu:leaf_ao": {
+      "name": "Gerçekçi ağaç gölgesi",
+      "what": "Ağaç tepeleri düz ve fazla parlak görünür: içlerindeki ışıkta yaprak katmanları arasında gölge yoktur. Bu ayar tepelerin içindeki ışığı koyulaştırır.",
+      "choices": {
+        "0": "Kapalı",
+        "1": "Düşük",
+        "2": "Orta",
+        "3": "Yüksek",
+        "4": "Aşırı"
+      }
     }
   },
   "menu": {
@@ -1249,6 +1266,22 @@
     "Broken helmet": "Kırık miğfer",
     "The other Trico's mask": "Diğer Trico'nun maskesi",
     "No helmet": "Miğfer yok",
-    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Trico'ya tüm oyun boyunca bir miğfer takar ya da çıkarır. Hepsi oyunun kendisinden: zırhlı Trico'ların zırh miğferi, kırık bir miğfer ya da diğer Trico'nun maskesi. Hikâyedeki gibi (varsayılan) seçimi oyuna bırakır. Ara sahnelerde, yeni bölümlerde ve kayıt yüklerken kalır, bir sonraki açılış için saklanır."
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Trico'ya tüm oyun boyunca bir miğfer takar ya da çıkarır. Hepsi oyunun kendisinden: zırhlı Trico'ların zırh miğferi, kırık bir miğfer ya da diğer Trico'nun maskesi. Hikâyedeki gibi (varsayılan) seçimi oyuna bırakır. Ara sahnelerde, yeni bölümlerde ve kayıt yüklerken kalır, bir sonraki açılış için saklanır.",
+    "Sealed move. The developers gave the boy a foxtail toy to wave at Trico, and Trico pounces and paws at it. The toy was cut before release; Trico's move stayed in the game files.": "Mühürlü hareket. Geliştiriciler çocuğa Trico'nun önünde sallaması için tilki kuyruğundan bir kedi oyuncağı vermişti; Trico üstüne atlayıp pençesiyle oynuyor. Oyuncak çıkıştan önce kaldırıldı; Trico'nun hareketi oyun dosyalarında kaldı.",
+    "Sealed move. Trico throws up: the developers made it, then cut it before release.": "Mühürlü hareket. Trico kusuyor: geliştiriciler bunu yaptı, sonra çıkıştan önce kaldırdı.",
+    "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).": "Mühürlü hareket. Trico'nun çocukla oynadığı, kaldırılmış bir sahnenin parçası (Ekstralar sekmesinde de var: Trico oynuyor).",
+    "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.": "Mühürlü hareket, pazarlama için yapıldı: Trico'nun oyunun basın görsellerindeki ve E3 demolarındaki pozu. Normal oyun bunu hiç göstermez.",
+    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "Mühürlü hareket, pazarlama için yapıldı: oyunun basın görsellerindeki ve E3 demolarındaki pençe pozu. Normal oyun bunu hiç göstermez.",
+    "Foxtail toy": "Tilki kuyruğu oyuncağı",
+    "Turn on Foxtail toy in the launcher (Extras page) once first.": "Önce launcher'da (Ekstralar sayfası) Tilki kuyruğu oyuncağı'nı bir kez aç.",
+    "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Yalnızca bu portta, bizim yeniden yaptığımız: geliştiricilerin çıkardığı tilki kuyruğu oyunu. Çocuk oyuncağı Trico'ya sallar ve el çırpar, Trico da bir kedi gibi ona atılır (bu atılma oyunun kendisine ait, oyuncak çıkarıldığında oyunda kaldı). Ekstralar sekmesinde Mods > Tilki kuyruğu oyuncağı gerekir.",
+    "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Bu porta özel, bizim yeniden yaptığımız: çocuğun, geliştiricilerin çıkardığı tilki kuyruğu oyuncağı (Trico'nun ona atılma hareketi oyunda kaldı). Tilki kuyruğu otunun Japonca adı nekojarashi'dir (猫じゃらし): \"kedi oyalayıcı\". İki Trico Tricks düğmesi bunu kullanır: Foxtail (sen tekrar basana kadar çocuk onu tutar) ve Foxtail play (onu sallar ve el çırpar, Trico atılır). Bir tilki kuyruğu otu sapının kendi modelimiz. Önce launcher'da bir kez aç: launcher modeli bilgisayarında oluşturur.",
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Yalnızca bu portta, bizim yeniden yaptığımız: çocuğun, geliştiricilerin çıkıştan önce çıkardığı tilki kuyruğu oyuncağı. Tilki kuyruğu otunun Japonca adı nekojarashi'dir (猫じゃらし): \"kedi oyalayıcı\". Kendi modelimiz; buna tekrar basana kadar çocuk onu tutar. Ekstralar sekmesinde Mods > Tilki kuyruğu oyuncağı gerekir.",
+    "Low": "Düşük",
+    "Medium": "Orta",
+    "High": "Yüksek",
+    "Extreme": "Aşırı",
+    "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "Ağaç tepeleri düz ve fazla parlak görünür: içlerindeki ışıkta yaprak katmanları arasında gölge yoktur. Bu ayar tepelerin içindeki ışığı koyulaştırır.",
+    "Realistic tree shade": "Gerçekçi ağaç gölgesi"
   }
 }

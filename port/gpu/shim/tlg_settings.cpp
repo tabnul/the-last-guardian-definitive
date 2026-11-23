@@ -281,12 +281,16 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.mod_treasures = i != 0;
     } else if (key == "mod_horns") {
         v.mod_horns = i != 0;
+    } else if (key == "mod_foxtail") {
+        v.mod_foxtail = i != 0;
     } else if (key == "mod_plays") {
         v.mod_plays = i != 0;
     } else if (key == "mod_throw_up") {
         v.mod_throw_up = i == 1 ? 1 : 0;
     } else if (key == "mod_hints") {
         v.mod_hints = i != 0;
+    } else if (key == "leaf_ao") {
+        v.leaf_ao = i < 0 ? 0 : i > 4 ? 4 : i;
     } else if (key == "keep_gpu_textures") {
         v.keep_gpu_textures = value.empty() || i != 0;
     } else if (key == "arena_release") {
@@ -542,7 +546,7 @@ void Load() {
         {"TLG_HIDE_HINTS", "hide_hints"},
         {"TLG_MOD_TREASURES", "mod_treasures"},     {"TLG_MOD_HORNS", "mod_horns"},
         {"TLG_MOD_PLAYS", "mod_plays"},             {"TLG_MOD_THROW_UP", "mod_throw_up"},
-        {"TLG_MOD_HINTS", "mod_hints"},
+        {"TLG_MOD_HINTS", "mod_hints"},             {"TLG_MOD_FOXTAIL", "mod_foxtail"},
         {"TLG_CAS", "cas"},                          {"TLG_COLOR_ADJUST", "color_adjust"},
         {"TLG_HDR", "hdr"},                          {"TLG_FG", "frame_generation"},
         {"TLG_ARENA_RELEASE", "arena_release"},      {"TLG_GC_LIVE_BUDGET", "gc_live_budget"},
@@ -575,6 +579,76 @@ void Load() {
     v.startup_deferred_readback = v.deferred_readback;
     v.startup_stale_readback = v.stale_readback;
     v.startup_hdr = v.hdr;
+}
+
+namespace {
+// TLG_LEAF_AO=<strength 0..1>[,<radius m>[,<material entry>...]] or "off", parsed once.
+struct LeafAoEnv {
+    bool set = false, off = false;
+    float strength = 0.0f, radius = 2.0f;
+    unsigned materials = 1u << 14; // the game's leaf cards
+};
+const LeafAoEnv& LeafAoFromEnv() {
+    static const LeafAoEnv env = [] {
+        LeafAoEnv r;
+        const char* e = std::getenv("TLG_LEAF_AO");
+        if (e == nullptr || *e == 0) {
+            return r;
+        }
+        if (std::strcmp(e, "off") == 0) {
+            r.off = true;
+            return r;
+        }
+        r.set = true;
+        float v[2]{0.0f, 2.0f};
+        unsigned materials = 0;
+        const char* p = e;
+        for (unsigned i = 0; *p != 0; ++i) {
+            char* end = nullptr;
+            const float x = std::strtof(p, &end);
+            if (end == p) {
+                break;
+            }
+            if (i < 2) {
+                v[i] = x;
+            } else if (x >= 0.0f && x < 32.0f) {
+                materials |= 1u << static_cast<unsigned>(x);
+            }
+            p = *end == ',' ? end + 1 : end;
+        }
+        r.strength = std::clamp(v[0], 0.0f, 1.0f);
+        r.radius = std::clamp(v[1], 0.1f, 10.0f);
+        if (materials != 0) {
+            r.materials = materials;
+        }
+        return r;
+    }();
+    return env;
+}
+} // namespace
+
+unsigned LeafAoMaterials() {
+    const auto& env = LeafAoFromEnv();
+    return env.off ? 0u : env.materials;
+}
+
+void LeafAoLive(float& strength, float& radius) {
+    const auto& env = LeafAoFromEnv();
+    if (env.set) {
+        strength = env.strength;
+        radius = env.radius;
+        return;
+    }
+    // low, medium, high, extreme
+    static constexpr float kLevels[4][2] = {{0.3f, 1.5f}, {0.5f, 2.0f}, {0.75f, 2.5f}, {1.0f, 4.0f}};
+    const int level = Get().leaf_ao.load(std::memory_order_relaxed);
+    if (level < 1 || level > 4) {
+        strength = 0.0f;
+        radius = 2.0f;
+        return;
+    }
+    strength = kLevels[level - 1][0];
+    radius = kLevels[level - 1][1];
 }
 
 bool GraphicsNeedRestart() {
@@ -897,10 +971,11 @@ void Save() {
                  int(v.hide_hints.load()));
     std::fprintf(file, "trico_favourites=%s\ntrico_bar_group=%d\n", v.trico_favourites.c_str(),
                  v.trico_bar_group.load());
-    std::fprintf(file, "mod_treasures=%d\nmod_horns=%d\n", int(v.mod_treasures.load()),
-                 int(v.mod_horns.load()));
+    std::fprintf(file, "mod_treasures=%d\nmod_horns=%d\nmod_foxtail=%d\n", int(v.mod_treasures.load()),
+                 int(v.mod_horns.load()), int(v.mod_foxtail.load()));
     std::fprintf(file, "mod_plays=%d\nmod_throw_up=%d\nmod_hints=%d\n", int(v.mod_plays.load()),
                  v.mod_throw_up.load(), int(v.mod_hints.load()));
+    std::fprintf(file, "leaf_ao=%d\n", v.leaf_ao.load());
     for (const auto& [name, member] : EffectKeys)
         std::fprintf(file, "%s=%d\n", name, (v.*member).load());
     std::fprintf(file, "fov=%d\n", v.fov.load());

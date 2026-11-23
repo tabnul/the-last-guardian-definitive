@@ -17,7 +17,7 @@ DLSS and FSR, frame generation, ultrawide support, an optional texture pack, an 
 and a [photo mode](#photo-mode).
 It also brings back many
 things the developers cut or hid in the game's files, which you can't find in any other version:
-see [Cut and hidden content](#cut-and-hidden-content) and the [full guide](docs/fun.md).
+see [Cut and hidden content](#cut-and-hidden-content) and the [full guide](docs/extras.md).
 
 > **Work in progress:** we are bringing back much more that the developers cut, or that the game
 > keeps locked behind its trophies. New finds arrive with each release.
@@ -40,6 +40,9 @@ No game files are included. You need your own copy, dumped from your own PS4.
   stays where you put it.
 - **[ICO horns](#ico-horns-only-in-this-port):** the Horned Apparel outfit finally gives the boy
   Ico's horns. Optional, off by default.
+- **[Foxtail toy](#foxtail-toy-only-in-this-port):** the developers cut the boy's foxtail toy
+  (nekojarashi, "cat teaser") before release. We remade it: the boy waves it, claps, and Trico
+  pounces like a cat. Optional, off by default.
 - **[Quit directly](#controllers-and-languages):** quit the game from anywhere with a controller
   combo or the keyboard, no menus. The game's pause menu shows the buttons.
 - **[Hide button hints](#controllers-and-languages):** switch the game's button hint boxes off,
@@ -49,7 +52,7 @@ No game files are included. You need your own copy, dumped from your own PS4.
   game files. A pop-up with our own chime is optional (off by default). Trophy names need your
   PS4 trophy key (32 hex digits) in the launcher or the menu; the port does not include it, so
   without the key the trophies are numbered.
-- **[Trico Tricks](docs/fun.md#trico-tricks-make-trico-move):** 49 of Trico's own moves on a bar (**F12**) in coloured
+- **[Trico Tricks](docs/extras.md#trico-tricks-make-trico-move):** 49 of Trico's own moves on a bar (**F12**) in coloured
   groups, with your own favourites, the poses of the game's press shots and E3 demos, and the
   throw-up animation the developers sealed.
 - **[Soundtrack](#soundtrack):** a music player in the launcher with all 100 pieces of the game's
@@ -62,6 +65,10 @@ No game files are included. You need your own copy, dumped from your own PS4.
   [generator](https://github.com/tabnul/ps4-texturepack-generator) builds a 4x texture pack from
   your own copy, with more detail in stone, moss, wood and cloth. Optional, and you can switch
   it on and off while you play.
+- **[Realistic tree shade](#graphics):** the game lights its trees oddly. The inside of a
+  crown is as bright as the outside, so the trees look flat and over-exposed, with no shade
+  between the layers of leaves. This setting adds that shade, so the crowns get depth. Five
+  levels, changed while you play. Optional, off by default.
 - **Your own launcher background:** the launcher shows a picture from your game files. To use
   your own, open **Settings** and click **Background picture…** in the Launcher box, then pick a
   PNG or JPG. **Default picture** brings the game's picture back.
@@ -71,7 +78,7 @@ No game files are included. You need your own copy, dumped from your own PS4.
   a stick drift check and your own button combos.
 
 **Brought back from the game's files**, cut or hidden by the developers
-([full guide](docs/fun.md)):
+([full guide](docs/extras.md)):
 
 - **Trico's drool:** switched off just before release.
 - **Trico's play:** Trico sniffs and paws at the boy. A sealed feature that works as originally
@@ -179,6 +186,14 @@ Each setting shows what the game originally used and what we recommend.
 - **Wind and grass:** the stock wind looks like a storm on PC. You can set it separately for the
   boy, the trees and Trico; 50% is a breeze. Grass that the game moved only every 4th frame now
   moves every frame, which stops the flicker.
+- **Realistic tree shade (only in this port):** in the stock game the tree crowns look flat and
+  too bright. The light inside a crown is as strong as outside it, so there is no shadow between
+  the layers of leaves. This setting darkens the light inside the crowns, so they get depth. Five
+  levels, Off to Extreme, and it changes while you play (Extras page). Off by default. Off (left)
+  and Medium (right), full screenshots: [off](docs/screenshots/LEAF_OFF.png) ·
+  [medium](docs/screenshots/LEAF_MEDIUM.png)
+
+  <img src="docs/screenshots/crops/LEAF_TREE_PAIR.png" alt="tree crown, tree shade off on the left and medium on the right">
 - **Texture pack (optional):** [ps4-texturepack-generator](https://github.com/tabnul/ps4-texturepack-generator)
   makes a 4x texture pack from your own copy. It can be switched on and off while you play. See
   [docs/texture-pack.md](docs/texture-pack.md).
@@ -263,7 +278,7 @@ the picture.
   keeps the full brightness for HDR screens. Chrome and Edge show it in HDR. You can switch the
   HDR picture off in the in-game menu (Extras tab) or in the launcher.
 
-<p align="center"><a href="docs/fun.md#photo-mode"><img src="docs/screenshots/fun/photo-mode-bridge.jpg" alt="Photo mode: Trico reaches down to the boy on a broken bridge, with the button hints on screen"></a></p>
+<p align="center"><a href="docs/extras.md#photo-mode"><img src="docs/screenshots/extras/photo-mode-bridge.jpg" alt="Photo mode: Trico reaches down to the boy on a broken bridge, with the button hints on screen"></a></p>
 
 <p align="center"><sub><i>Trico saving the day in the famous collapsing bridge scene. Normally only shown in first person, now it can be seen from all angles.</i></sub></p>
 
@@ -273,7 +288,7 @@ The game's scripts still contain things the developers built and then switched o
 themselves. This port turns them back on. You won't find them in any other version of the game.
 They are in the in-game menu (**Insert**, the **Extras** and **Trico Tricks** tabs).
 
-> **[Read the full guide: everything we found and how to use it →](docs/fun.md)**
+> **[Read the full guide: everything we found and how to use it →](docs/extras.md)**
 
 **Trico's drool.** The developers made it: the drool thickens when Trico smells something he
 wants and thins out when he loses interest. Just before release it was switched off with one line
@@ -287,7 +302,7 @@ that is still in `condorcommonslaver.lua`:
 *"We've been asked to get rid of the drool for now, so I'm getting rid of it."* You can set it to
 **As the developers planned** or **Always**, in the launcher's Extras page or the Extras tab.
 
-<p align="center"><a href="docs/fun.md#tricos-drool"><img src="docs/screenshots/fun/drool.jpg" width="49%" alt="Trico drooling"></a> <a href="docs/fun.md#tricos-drool"><img src="docs/screenshots/fun/drool2.jpg" width="49%" alt="Trico drooling, close up"></a></p>
+<p align="center"><a href="docs/extras.md#tricos-drool"><img src="docs/screenshots/extras/drool.jpg" width="49%" alt="Trico drooling"></a> <a href="docs/extras.md#tricos-drool"><img src="docs/screenshots/extras/drool2.jpg" width="49%" alt="Trico drooling, close up"></a></p>
 
 ### ICO horns, only in this port
 
@@ -295,9 +310,25 @@ The Horned Apparel finally gets its horns. One of the boy's
 treasure outfits is the Ico one, and the game's own script calls it "the horned garment", but the
 boy never had any. Now he does, just like Ico. Tick **ICO horns** on
 the launcher's Extras page. They go with every outfit,
-[more in the full guide](docs/fun.md#made-for-ico-fans-ico-horns).
+[more in the full guide](docs/extras.md#made-for-ico-fans-ico-horns).
 
-<p align="center"><a href="docs/fun.md#made-for-ico-fans-ico-horns"><img src="docs/screenshots/fun/outfits.jpg" width="100%" alt="The boy in Enduring Attire, Homecoming, Warrior, Horned Apparel, and Horned Apparel with ICO horns, and from behind with the Featherpainter idol"></a></p>
+<p align="center"><a href="docs/extras.md#made-for-ico-fans-ico-horns"><img src="docs/screenshots/extras/outfits.jpg" width="100%" alt="The boy in Enduring Attire, Homecoming, Warrior, Horned Apparel, and Horned Apparel with ICO horns, and from behind with the Featherpainter idol"></a></p>
+
+### Foxtail toy, only in this port
+
+In Japan, foxtail grass is called nekojarashi (猫じゃらし), "cat teaser": you wave a stalk in
+front of a cat until it pounces. The developers planned that for the boy and Trico. Trico's script
+still has the whole act, but the toy's model was cut and is not on the disc, so Trico's pounce
+stayed in with the boy waving an empty hand. We made a new foxtail stalk, built on your PC by the
+launcher like the ICO horns. Tick **Foxtail toy** on the launcher's Extras page, then use the gold
+**Foxtail** and **Foxtail play** buttons in Trico Tricks,
+[more in the full guide](docs/extras.md#the-foxtail-toy).
+
+<p align="center"><a href="https://youtu.be/uQKJ5CMcbLg"><img src="docs/screenshots/extras/foxtail-video.jpg" width="100%" alt="Video: Trico pounces at the foxtail toy the boy holds out"></a></p>
+
+<p align="center">▶️ <a href="https://youtu.be/uQKJ5CMcbLg"><b>Watch the video:</b> the foxtail toy and Trico's pounce</a></p>
+
+More about the cut foxtail on the [Team ICO wiki](https://teamico.fandom.com/wiki/Unused_Content_%28The_Last_Guardian%29#Green_Foxtail_plant_%28nekojarashi%29).
 
 **Trico's toilet.** Trico does need to go, but the game's scripts make sure you almost never see
 it. He has to have eaten enough barrels, then 30 minutes of play must pass, then he waits until
@@ -306,7 +337,7 @@ seconds. Look at him and the wait starts over. Most players only ever find the g
 later, and the boy can pick them up and carry them. **Toilet** in the Trico Tricks tab skips all of
 that: he goes right away, in front of you.
 
-<p align="center"><a href="docs/fun.md#tricos-toilet"><img src="docs/screenshots/fun/toilet.jpg" width="49%" alt="Trico's droppings, green dung balls next to him"></a> <a href="docs/fun.md#tricos-toilet"><img src="docs/screenshots/fun/toilet2.jpg" width="49%" alt="The boy holding one of Trico's dung balls"></a></p>
+<p align="center"><a href="docs/extras.md#tricos-toilet"><img src="docs/screenshots/extras/toilet.jpg" width="49%" alt="Trico's droppings, green dung balls next to him"></a> <a href="docs/extras.md#tricos-toilet"><img src="docs/screenshots/extras/toilet2.jpg" width="49%" alt="The boy holding one of Trico's dung balls"></a></p>
 
 The rest:
 
@@ -324,23 +355,23 @@ The rest:
 
 <table>
   <tr>
-    <td><a href="docs/fun.md#extra-tricos"><img src="docs/screenshots/fun/free-camera.jpg" alt="A crowd of Tricos"></a></td>
-    <td><a href="docs/fun.md#trico-tricks-make-trico-move"><img src="docs/screenshots/fun/trico-tricks-bar.jpg" alt="Trico doing a happy jump next to the boy, with the Trico Tricks bar and its group buttons"></a></td>
-    <td><a href="docs/fun.md#tricos-size"><img src="docs/screenshots/fun/big.jpg" alt="A giant Trico"></a></td>
+    <td><a href="docs/extras.md#extra-tricos"><img src="docs/screenshots/extras/free-camera.jpg" alt="A crowd of Tricos"></a></td>
+    <td><a href="docs/extras.md#trico-tricks-make-trico-move"><img src="docs/screenshots/extras/trico-tricks-bar.jpg" alt="Trico doing a happy jump next to the boy, with the Trico Tricks bar and its group buttons"></a></td>
+    <td><a href="docs/extras.md#tricos-size"><img src="docs/screenshots/extras/big.jpg" alt="A giant Trico"></a></td>
   </tr>
   <tr>
-    <td><a href="docs/fun.md#extra-tricos"><img src="docs/screenshots/fun/armored-trico.jpg" alt="An armoured Trico"></a></td>
-    <td><a href="docs/fun.md#tricos-eyes"><img src="docs/screenshots/fun/eye-colour.jpg" alt="Coloured eyes"></a></td>
-    <td><a href="docs/fun.md#tricos-size"><img src="docs/screenshots/fun/small2.jpg" alt="Riding a small Trico"></a></td>
+    <td><a href="docs/extras.md#extra-tricos"><img src="docs/screenshots/extras/armored-trico.jpg" alt="An armoured Trico"></a></td>
+    <td><a href="docs/extras.md#tricos-eyes"><img src="docs/screenshots/extras/eye-colour.jpg" alt="Coloured eyes"></a></td>
+    <td><a href="docs/extras.md#tricos-size"><img src="docs/screenshots/extras/small2.jpg" alt="Riding a small Trico"></a></td>
   </tr>
 </table>
 
-<p align="center"><a href="docs/fun.md#tricos-coat"><img src="docs/screenshots/fun/fluffy.jpg" width="100%" alt="A very fluffy Trico on a cliff edge, with the subtitle: Oh. You can't fly? Are your wings broken?"></a><br><sub>No, he is just too feathered to fly.</sub></p>
+<p align="center"><a href="docs/extras.md#tricos-coat"><img src="docs/screenshots/extras/fluffy.jpg" width="60%" alt="A very fluffy Trico on a cliff edge, with the subtitle: Oh. You can't fly? Are your wings broken?"></a></p>
 
 **More is coming.** We are working on bringing back much more: content the developers cut, and
 extras the game keeps locked behind its trophies.
 
-<p align="center"><b><a href="docs/fun.md">More pictures, the full story behind each find, and how to use them: docs/fun.md</a></b></p>
+<p align="center"><b><a href="docs/extras.md">More pictures, the full story behind each find, and how to use them: docs/extras.md</a></b></p>
 
 ## Sound
 
@@ -385,9 +416,9 @@ trigger points, check for stick drift, and remap keyboard and mouse. See
   can each be set to other buttons, on the launcher's **Controller** page (Combos) or
   under Controls in the port's menu. The quit combo is always held for 2 seconds.
 
-<p align="center"><img src="docs/screenshots/fun/xbox-icons.jpg" width="100%" alt="The game's Controls screen and two button hints with an Xbox pad"></p>
+<p align="center"><img src="docs/screenshots/extras/xbox-icons.jpg" width="100%" alt="The game's Controls screen and two button hints with an Xbox pad"></p>
 
-<p align="center"><img src="docs/screenshots/fun/controller.png" width="49%" alt="The launcher's Controls page with a PlayStation controller"> <img src="docs/screenshots/fun/controller-xbox.png" width="49%" alt="The launcher's Controls page with an Xbox controller"></p>
+<p align="center"><img src="docs/screenshots/extras/controller.png" width="49%" alt="The launcher's Controls page with a PlayStation controller"> <img src="docs/screenshots/extras/controller-xbox.png" width="49%" alt="The launcher's Controls page with an Xbox controller"></p>
 
 The launcher and in-game menu are in English, with language packs for German, French, Spanish,
 Italian, Dutch, Polish, Turkish, Ukrainian, Portuguese (Brazil and Portugal), Japanese, Korean and
