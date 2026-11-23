@@ -31,7 +31,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mod_patches
 
-TITLE_IDS = {'CUSA03627', 'CUSA03745', 'CUSA04936', 'CUSA04943'}   # US, EU, KR, CN (tlg_run.py LANGUAGES_BY_TITLE)
+TITLE_IDS = {'CUSA03627', 'CUSA03745', 'CUSA04936', 'CUSA04937', 'CUSA04943'}   # US, EU, KR, Asia (untested), CN (tlg_run.py LANGUAGES_BY_TITLE)
 SELF_MAGIC = b'O\x15=\x1d'
 TEXT_FILE_OFFSET = 0x4000      # PT_LOAD 0 (R E): file offset of vaddr 0
 TEXT_SIZE = 0x16b2d5c
@@ -82,6 +82,20 @@ PATCHES = {
         (0x24f17f8, f32(0.035), f32(0.00875), 'dt snap upper bound 0.035 -> 0.00875'),
         (0x24f17fc, f32(1 / 30), f32(1 / 120), 'dt snap target 1/30 -> 1/120'),
         (0x24f1800, f32(0.0316666663), f32(0.00791666672), 'dt snap lower bound 0.031667 -> 0.0079167'),
+    ],
+    # Real frame time as the game's step (unlocked; idea and measurements by @thearturord, #97):
+    # SmoothDeltaTime first stores the unsmoothed step at clock+0x19c (real frame time, clamped,
+    # times the time scales, 0 when paused), then overrides it with the filtered step rounded
+    # to 1/360 s. Between 30/60/120 FPS the rounding moves the world by the wrong amount per
+    # frame (127 FPS: 43 % of frames > 20 % off, 17 % with this + the 1000 Hz tick). The rounding
+    # (vroundss + vmulss) becomes a load of the unsmoothed step, so the two stores after it (the
+    # filter's copy at +0x39c and the clock at +0x19c) write the real step and the catch-up term
+    # stays near zero. The no-filter and zero-step branches (jumps to 0x1d16678 / 0x1d16670) are
+    # untouched, so pause and slow motion behave as before.
+    'game_step_raw': [
+        (0x1d1665a, bytes.fromhex('c4e3790ac009' 'c5fa5905b0b17d00'),
+         bytes.fromhex('c5fa10879c010000' '660f1f440000'),
+         'SmoothDeltaTime: rounded 1/360 s step -> the unsmoothed step (clock+0x19c)'),
     ],
     # The Lua garbage collector's time budget per frame (read only by the per-frame collection step):
     # at 120 frames a quarter of the 30 FPS budget, so the collection costs per second what it does at 30.
@@ -151,7 +165,7 @@ MODES = {
     '60': ['flip_rate_60', 'dt_snap_60', 'cloth_null_guard'],
     # 120: a fixed 120 FPS (the present thread holds it at the engine rate), not the uncapped mode.
     '120': ['flip_rate_60', 'dt_snap_120', 'cloth_null_guard', 'gc_budget_120'],
-    'unlocked': ['flip_rate_60', 'cloth_null_guard'],
+    'unlocked': ['flip_rate_60', 'cloth_null_guard', 'game_step_raw'],
 }
 # The engine rate each mode presents at most (TLG_ENGINE_FPS: the overlay's frame limiter and
 # tlg_graphics.h PresentLimit). Unlocked has no ceiling (TLG_ENGINE_FPS=1000, TLG_VBLANK_HZ=1000).
