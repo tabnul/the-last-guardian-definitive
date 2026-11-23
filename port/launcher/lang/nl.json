@@ -12,7 +12,7 @@
     "launcher.home_advanced": "Geavanceerd",
     "launcher.home_controller": "Controller",
     "launcher.home_keys": "Toetsenbord & muis",
-    "launcher.home_mods": "Mods & cheats",
+    "launcher.home_mods": "Extra's",
     "launcher.home_video": "Video",
     "launcher.home_controls": "Besturing",
     "launcher.mouse_section": "Muis",
@@ -145,7 +145,8 @@
     "launcher.fps_30": "30 FPS (zoals op PS4)",
     "launcher.deck_preset": "Steam Deck (experimenteel)",
     "launcher.fps_60": "60 FPS",
-    "launcher.fps_unlocked": "Onbegrensd (experimenteel, geen limiet)",
+    "launcher.fps_unlocked": "Onbegrensd (niet om te spelen)",
+    "launcher.fps_unlocked_warning": "Waarschuwing: Onbegrensd breekt bepaalde scènes. Alleen voor testen en benchmarks.",
     "launcher.fps_hint": "60/onbegrensd-patch eboot 1.03 in het geheugen. Onbegrensd verlaagt de basisframerate met ongeveer 10 FPS ten opzichte van 60 op dezelfde plek; kies 60 tenzij je pc ruim boven de 60 draait",
     "launcher.skip_logos": "Opstartlogo's overslaan",
     "launcher.horns_built": "De hoornmodellen worden op deze pc gebouwd.",
@@ -297,7 +298,7 @@
     "launcher.clear_cache_empty": "De shadercache is al leeg.",
     "launcher.clear_cache_done": "Shadercache gewist: {size} vrijgemaakt.",
     "launcher.clear_cache_failed": "{size} vrijgemaakt, maar {count} bestand(en) konden niet worden verwijderd (in gebruik? Sluit de game en probeer het opnieuw).",
-    "launcher.mods": "Mods / Cheats…",
+    "launcher.mods": "Extra's…",
     "launcher.menu_note": "Twee menu's in de game. Insert: het grafische menu van de port (elke instelling werkt meteen). Ontwikkelmenu (het eigen QA-menu van de game): zet 'Levelselectie en QA-menu' aan onder Debug, houd dan in de game L1 ingedrukt en druk op L3 (toetsenbord: houd 1 ingedrukt, druk op Z).",
     "launcher.graphics": "Grafisch…",
     "launcher.graphics_title": "Grafisch",
@@ -358,7 +359,7 @@
     "launcher.effect_fov_hint": "Gezichtsveld van de camera. Standaard 70° is zoals uitgebracht; hoger laat meer rond de jongen zien.",
     "launcher.effect_trico_feathers": "Wind in Trico's veren",
     "launcher.effect_trico_feathers_hint": "Hoe sterk de wind de veren van Trico beweegt. Standaard 100% is zoals uitgebracht; 0% houdt ze stil.",
-    "launcher.mods_title": "Mods / Cheats",
+    "launcher.mods_title": "Extra's",
     "launcher.mods_hint": "Zet shadPS4/GoldHEN-cheat-XML-bestanden in de mods-map en zet ze hier aan. Niets hier verandert de game totdat je het inschakelt.",
     "launcher.mods_warning": "Een cheat kan de game laten crashen of raar laten doen; gebeurt dat, zet hem dan hier uit.",
     "launcher.mods_folder": "Mods-map openen",
@@ -658,6 +659,17 @@
         "0": "Uit (zoals uitgebracht)",
         "1": "Altijd",
         "2": "Zoals de ontwikkelaars het bedoelden"
+      }
+    },
+    "menu:trico_helmet": {
+      "name": "Trico's helm",
+      "what": "Zet Trico een helm op, of haalt hem af, voor het hele spel. Alle zijn van het spel zelf: de pantserhelm van de gepantserde Trico's, een kapotte, of het masker van de andere Trico. Zoals in het verhaal (standaard) laat het aan het spel over. Blijft staan tijdens tussenfilmpjes, nieuwe levels en het laden van een save, en wordt bewaard voor de volgende start.",
+      "choices": {
+        "0": "Zoals in het verhaal (standaard)",
+        "1": "Pantserhelm",
+        "2": "Kapotte helm",
+        "3": "Het masker van de andere Trico",
+        "4": "Geen helm"
       }
     },
     "menu:mod_treasures": {
@@ -1078,10 +1090,10 @@
     "Unlocks every treasure (outfits, Trico's feathers) and the Treasures entry in the options menu, with the developers' own unlock. Stored in your save: turning it off does not take them back. Your saves are backed up before the first unlock (the launcher's save manager can restore them). Select them in the game's pause menu, under Items.": "Ontgrendelt elke schat (outfits, Trico's veren) en het onderdeel Schatten in het optiemenu, met de eigen ontgrendeling van de ontwikkelaars. Opgeslagen in je save: uitzetten neemt ze niet terug. Je saves worden geback-upt vóór de eerste ontgrendeling (de savebeheerder van de launcher kan ze terugzetten). Kies ze in het pauzemenu van de game, onder Items.",
     "ICO horns": "ICO-hoorns",
     "The boy wears horns, a nod to Ico. Can be combined with the game's own Ico outfit (one of the treasures). Turn it on in the launcher once first: the launcher builds the horn models on your PC.": "De jongen draagt hoorns, een knipoog naar Ico. Te combineren met de eigen Ico-outfit van de game (een van de schatten). Zet het eerst één keer aan in de launcher: de launcher bouwt de hoornmodellen op je pc.",
-    "Turn on ICO horns in the launcher (Mods page) once first.": "Zet ICO-hoorns eerst één keer aan in de launcher (pagina Mods).",
+    "Turn on ICO horns in the launcher (Extras page) once first.": "Zet ICO-hoorns eerst één keer aan in de launcher (pagina Extra's).",
     "Image": "Beeld",
     "Controls": "Besturing",
-    "Fun": "Fun",
+    "Extras": "Extra's",
     "Apply and restart": "Toepassen en herstarten",
     "L1 / R1 or Q / E: switch tabs. Settings are saved in tlg.ini.": "L1 / R1 of Q / E: tabblad wisselen. Instellingen worden opgeslagen in tlg.ini.",
     "Close": "Sluiten",
@@ -1228,6 +1240,14 @@
     "Use key": "Sleutel gebruiken",
     "Pop-up and sound on unlock": "Melding en geluid bij behalen",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Uit: geen melding en geen geluid tijdens het spelen. Behaalde trofeeën worden wel opgeslagen en hier getoond.",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Voor trofeenamen is de trofeesleutel nodig. Zonder sleutel toont de melding alleen een nummer."
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Voor trofeenamen is de trofeesleutel nodig. Zonder sleutel toont de melding alleen een nummer.",
+    "Trico's helmet": "Trico's helm",
+    "Helmet": "Helm",
+    "As in the story (default)": "Zoals in het verhaal (standaard)",
+    "Armour helmet": "Pantserhelm",
+    "Broken helmet": "Kapotte helm",
+    "The other Trico's mask": "Het masker van de andere Trico",
+    "No helmet": "Geen helm",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Zet Trico een helm op, of haalt hem af, voor het hele spel. Alle zijn van het spel zelf: de pantserhelm van de gepantserde Trico's, een kapotte, of het masker van de andere Trico. Zoals in het verhaal (standaard) laat het aan het spel over. Blijft staan tijdens tussenfilmpjes, nieuwe levels en het laden van een save, en wordt bewaard voor de volgende start."
   }
 }

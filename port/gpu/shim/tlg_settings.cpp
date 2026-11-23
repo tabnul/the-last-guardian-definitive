@@ -265,6 +265,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.trico_fur = std::clamp(i, 0, 500);
     } else if (key == "trico_drool") {
         v.trico_drool = i == 1 || i == 2 ? i : 0;
+    } else if (key == "trico_helmet") {
+        v.trico_helmet = i >= 1 && i <= 4 ? i : 0;
     } else if (key == "button_icons") {
         v.button_icons = value == "playstation" ? 1 : value == "xbox" ? 2 : i == 1 || i == 2 ? i : 0;
     } else if (key == "hide_hints") {
@@ -535,6 +537,7 @@ void Load() {
         {"TLG_MOUSE_ACCEL", "mouse_accel"},          {"TLG_MOUSE_DEADZONE", "mouse_deadzone"},
         {"TLG_SMAA", "smaa"},                        {"TLG_DLAA", "dlaa"},
         {"TLG_LEVEL_SELECT", "level_select"},       {"TLG_TRICO_DROOL", "trico_drool"},
+        {"TLG_TRICO_HELMET", "trico_helmet"},
         {"TLG_BUTTON_ICONS", "button_icons"},
         {"TLG_HIDE_HINTS", "hide_hints"},
         {"TLG_MOD_TREASURES", "mod_treasures"},     {"TLG_MOD_HORNS", "mod_horns"},
@@ -888,6 +891,7 @@ void Save() {
                  ComboText(v.photo_world).c_str(), ComboText(v.photo_sticks).c_str(),
                  int(v.photo_invert_y.load()));
     std::fprintf(file, "trico_drool=%d\n", v.trico_drool.load());
+    std::fprintf(file, "trico_helmet=%d\n", v.trico_helmet.load());
     std::fprintf(file, "trico_fur=%d\n", v.trico_fur.load());
     std::fprintf(file, "button_icons=%d\nhide_hints=%d\n", v.button_icons.load(),
                  int(v.hide_hints.load()));

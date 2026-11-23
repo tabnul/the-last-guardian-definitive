@@ -12,7 +12,7 @@
     "launcher.home_advanced": "高级",
     "launcher.home_controller": "手柄",
     "launcher.home_keys": "键盘与鼠标",
-    "launcher.home_mods": "模组与作弊",
+    "launcher.home_mods": "额外内容",
     "launcher.home_video": "视频",
     "launcher.home_controls": "操作",
     "launcher.mouse_section": "鼠标",
@@ -137,7 +137,8 @@
     "launcher.fps_30": "30 FPS（同 PS4）",
     "launcher.deck_preset": "Steam Deck（实验性）",
     "launcher.fps_60": "60 FPS",
-    "launcher.fps_unlocked": "不锁帧（实验性，无上限）",
+    "launcher.fps_unlocked": "不锁帧（不适合游玩）",
+    "launcher.fps_unlocked_warning": "警告：不锁帧会导致某些场景出错。仅用于测试和基准测试。",
     "launcher.fps_hint": "60/不锁帧会在内存中修补 eboot 1.03。在同一位置，不锁帧的基础帧率比 60 低约 10 FPS；除非你的电脑能稳定远超 60，否则请选择 60",
     "launcher.skip_logos": "跳过开机标志",
     "launcher.debug": "调试（启动时）",
@@ -273,7 +274,7 @@
     "launcher.clear_cache_empty": "着色器缓存已经是空的。",
     "launcher.clear_cache_done": "着色器缓存已清除：释放了 {size}。",
     "launcher.clear_cache_failed": "已释放 {size}，但有 {count} 个文件无法删除（正在使用中？请关闭游戏后重试）。",
-    "launcher.mods": "模组 / 作弊…",
+    "launcher.mods": "额外内容…",
     "launcher.menu_note": "游戏中有两个菜单。Insert：移植版的画面菜单（所有设置实时生效）。开发菜单（游戏自带的 QA 菜单）：在“调试”中开启“关卡选择和 QA 菜单”，然后在游戏中按住 L1 并按 L3（键盘：按住 1，按 Z）。",
     "launcher.graphics": "画面…",
     "launcher.graphics_title": "画面",
@@ -334,7 +335,7 @@
     "launcher.effect_fov_hint": "镜头视野。默认 70° 即游戏原样；更高可看到少年周围更多的范围。",
     "launcher.effect_trico_feathers": "特里科羽毛风效",
     "launcher.effect_trico_feathers_hint": "风吹动特里科羽毛的强度。默认 100% 即游戏原样；0% 则静止不动。",
-    "launcher.mods_title": "模组 / 作弊",
+    "launcher.mods_title": "额外内容",
     "launcher.mods_hint": "将 shadPS4/GoldHEN 作弊 XML 文件放入 mods 文件夹，然后在这里启用。启用之前，这里的任何内容都不会改变游戏。",
     "launcher.mods_warning": "作弊可能导致游戏崩溃或行为异常；如果发生这种情况，请在这里关闭它。",
     "launcher.mods_folder": "打开 mods 文件夹",
@@ -651,6 +652,17 @@
         "0": "关闭（发售原样）",
         "1": "总是",
         "2": "按开发者原计划"
+      }
+    },
+    "menu:trico_helmet": {
+      "name": "特里科的头盔",
+      "what": "在整个游戏中给特里科戴上或摘下头盔。全部来自游戏本身：披甲特里科戴的铠甲头盔、破损的头盔，或另一只特里科的面具。按剧情（默认）交给游戏决定。在过场动画、新关卡和读取存档后都会保留，并在下次启动时沿用。",
+      "choices": {
+        "0": "按剧情（默认）",
+        "1": "铠甲头盔",
+        "2": "破损的头盔",
+        "3": "另一只特里科的面具",
+        "4": "无头盔"
       }
     },
     "menu:frames_queued": {
@@ -1058,7 +1070,7 @@
     "Trico's eyes keep changing to random colours: the game's own hidden effect, normally only seen in a few story moments. Turning it off brings the normal colours back. A jump turns it off.": "特里科的眼睛会不停变换成随机颜色：这是游戏自带的隐藏效果，通常只在少数剧情时刻出现。关闭后恢复正常颜色。跳转会将其关闭。",
     "Image": "画面",
     "Controls": "操作",
-    "Fun": "趣味",
+    "Extras": "额外内容",
     "Apply and restart": "应用并重启",
     "L1 / R1 or Q / E: switch tabs. Settings are saved in tlg.ini.": "L1 / R1 或 Q / E：切换页面。设置保存在 tlg.ini 中。",
     "Close": "关闭",
@@ -1119,7 +1131,7 @@
     "Unlocks every treasure (outfits, Trico's feathers) and the Treasures entry in the options menu, with the developers' own unlock. Stored in your save: turning it off does not take them back. Your saves are backed up before the first unlock (the launcher's save manager can restore them). Select them in the game's pause menu, under Items.": "使用开发者自己的解锁功能，解锁所有宝物（服装、Trico 的羽毛）以及选项菜单中的“宝物”项。保存在存档中：关闭后不会收回。首次解锁前会备份你的存档（启动器的存档管理可以恢复）。可在游戏暂停菜单的“物品”中选择。",
     "The boy wears horns, a nod to Ico. Can be combined with the game's own Ico outfit (one of the treasures). Turn it on in the launcher once first: the launcher builds the horn models on your PC.": "少年戴上角，向《ICO》致敬。可与游戏自带的 Ico 服装（宝物之一）搭配。请先在启动器中开启一次：启动器会在你的电脑上生成角的模型。",
     "ICO horns": "ICO 的角",
-    "Turn on ICO horns in the launcher (Mods page) once first.": "请先在启动器（Mods 页面）中开启一次 ICO 角。",
+    "Turn on ICO horns in the launcher (Extras page) once first.": "请先在启动器（额外内容 页面）中开启一次 ICO 角。",
     "Controller": "手柄",
     "Automatic": "自动",
     "Button icons": "按键图标",
@@ -1215,6 +1227,14 @@
     "Use key": "使用密钥",
     "Pop-up and sound on unlock": "解锁时弹窗和提示音",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "关闭：游戏时没有弹窗和提示音。解锁仍会保存并在此列出。",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "显示奖杯名称需要奖杯密钥。没有密钥时，弹窗只显示编号。"
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "显示奖杯名称需要奖杯密钥。没有密钥时，弹窗只显示编号。",
+    "Trico's helmet": "特里科的头盔",
+    "Helmet": "头盔",
+    "As in the story (default)": "按剧情（默认）",
+    "Armour helmet": "铠甲头盔",
+    "Broken helmet": "破损的头盔",
+    "The other Trico's mask": "另一只特里科的面具",
+    "No helmet": "无头盔",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "在整个游戏中给特里科戴上或摘下头盔。全部来自游戏本身：披甲特里科戴的铠甲头盔、破损的头盔，或另一只特里科的面具。按剧情（默认）交给游戏决定。在过场动画、新关卡和读取存档后都会保留，并在下次启动时沿用。"
   }
 }

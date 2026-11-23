@@ -149,7 +149,7 @@ MENU = [
            'only while the slow motion plays, then back. Or skip the slow motion. At 30 FPS nothing changes.'),
           choices=(('0', '30 FPS during slow motion (advised)'),
                    ('1', 'Skip the slow motion'))),
-    # Hack and fun (English only): the same text as the in-game Fun tab (tlg_fun.h DroolHelp).
+    # Hack and fun (English only): the same text as the in-game Extras tab (tlg_fun.h DroolHelp).
     _menu('Fun', 'trico_drool', 'choice', '0', "Trico's drool",
           "A feature the developers built and then switched off just before release: Trico drools. Always: a string of drool hangs from his beak the whole time. As the developers planned: it slowly grows while Trico smells something he wants, a smell-pot cart (s04_FirstAntenna and s10_Pit), and fades away when he loses interest (the boy's smell bottle was cut, so the carts are the only trigger). Stays on through jumps, new stages and extra Tricos, and is kept for the next start.",
           choices=(('0', 'Off (as released)'), ('1', 'Always'),
@@ -157,7 +157,7 @@ MENU = [
     _menu('Fun', 'trico_fur', 'int', '100', 'Trico fur and feather density',
           "How thick Trico's coat of fur and feathers is. Default 100% is as shipped (recommended); higher gives a fluffier Trico. Just for fun.",
           lo=0, hi=500, unit='%'),
-    # Mods (launcher Mods page, in-game Fun tab; tlg_lua.cpp Treasures / Horns). Same text as tlg_overlay.cpp.
+    # Mods (launcher Extras page, in-game Extras tab; tlg_lua.cpp Treasures / Horns). Same text as tlg_overlay.cpp.
     _menu('Fun', 'mod_treasures', 'bool', '0', 'All treasures',
           'Unlocks every treasure (outfits, Trico\'s feathers) and the Treasures entry in the options menu, '
           'with the developers\' own unlock. Stored in your save: turning it off does not take them back. '
@@ -167,6 +167,13 @@ MENU = [
           'The boy wears horns, a nod to Ico. '
           'Can be combined with the game\'s own Ico outfit (one of the treasures). '
           'Turn it on in the launcher once first: the launcher builds the horn models on your PC.'),
+    _menu('Fun', 'trico_helmet', 'choice', '0', "Trico's helmet",
+          "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour "
+          "helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the "
+          'story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a '
+          'save, and is kept for the next start.',
+          choices=(('0', 'As in the story (default)'), ('1', 'Armour helmet'), ('2', 'Broken helmet'),
+                   ('3', "The other Trico's mask"), ('4', 'No helmet'))),
     _menu('Fun', 'mod_plays', 'bool', '1', 'Trico plays',
           'A Trico behaviour the developers built and then sealed "for now": now and then he sniffs the boy '
           'and paws at him. It only happens where his cheek rubs can happen too, with the boy clear of ledges.'),

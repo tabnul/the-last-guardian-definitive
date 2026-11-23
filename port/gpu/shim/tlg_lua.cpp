@@ -9,7 +9,7 @@
 // install_lua_hook). utils.lua gets a tick that loads "--TLGSET" every 15 frames; that chunk
 // is replaced by code applying the Effects settings to the game's post-process objects, so
 // menu changes apply live, plus the Lab rows (tlg_lab.h). "--TLGLOG <text>" chunks print <text>
-// (data out of Lua; "fun tricos <n>" reports the Fun tab's Trico count); "--TLGVAL <row> <value>" chunks report a Lab row's game value;
+// (data out of Lua; "fun tricos <n>" reports the Extras tab's Trico count); "--TLGVAL <row> <value>" chunks report a Lab row's game value;
 // "--TLGLOADED" marks the end of a stage load.
 // The settings code compiles into a function the tick keeps and runs every time; it is sent
 // again only when its text changes, so a tick compiles nothing and creates few strings.
@@ -330,6 +330,51 @@ local function Horns(on)
   end
   _TLGHORN=H
 end
+-- Trico's helmet (tlg.ini trico_helmet): 0 = the story's own, 1 armour helmet, 2 broken helmet,
+-- 3 the other Trico's mask, 4 none. The game sets Trico's look ~30 times along the story
+-- (CharacterMngr.SetupTricoParts -> CondorCharacter.SetParts); our wrapper swaps the helmet part
+-- for our Trico only (other Tricos keep theirs) and remembers the story's choice for mode 0.
+-- Applied once on a change or a new Trico; a stage load that brings the game's SetParts back is
+-- wrapped again on the next run.
+local HELMETS={'TricoHelmet','TricoHelmetBroken','AricoHelmet','DisableHelmet'}
+local function Helmet(m)
+  local C,P=CondorCharacter,GCharacterParam
+  if not C or type(C.SetParts)~='function' or not P or not CharacterMngr then return end
+  local H=_TLGHELM or {} _TLGHELM=H
+  if m==0 and not H.f then return end
+  H.want=HELMETS[m] and P[HELMETS[m]] or nil
+  if C.SetParts~=H.f then
+    H.orig=C.SetParts
+    H.f=function(self,data)
+      local W=_TLGHELM
+      if type(data)=='table' then
+        local ok,t=pcall(CharacterMngr.GetTrico,CharacterMngr)
+        if ok and self==t then
+          if data.helmet then W.story=data.helmet end
+          if W.want then
+            local c={} for k,v in pairs(data) do c[k]=v end c.helmet=W.want data=c
+          end
+        end
+      end
+      return W.orig(self,data)
+    end
+    C.SetParts=H.f
+  end
+  local ok,t=pcall(CharacterMngr.GetTrico,CharacterMngr)
+  if not ok or not t then H.t=nil return end
+  if H.t==t and H.m==m then return end
+  -- SetPartsFunc.helmet hides the helmet named in PartsSettings.Current, so Current must follow
+  -- each swap (a copy with the new helmet), or the next swap leaves the old model on (11-23).
+  -- Not SetParts with only the helmet: that makes Current helmet-only and breaks later tail swaps.
+  local set=C.SetPartsFunc and C.SetPartsFunc.helmet
+  local ps=t.PartsSettings
+  if type(set)~='function' or type(ps)~='table' or type(ps.Current)~='table' then return end
+  local part=H.want or H.story or P.DisableHelmet
+  if part and pcall(set,t,part) then
+    local n={} for k,v in pairs(ps.Current) do n[k]=v end n.helmet=part ps.Current=n
+    H.t=t H.m=m
+  end
+end
 -- Field of view: every camera mode has its own GameCameraParam (Base_FovDeg 70 as shipped).
 local function Fov(deg)
   if deg==70 and not B.fovd then return end
@@ -425,7 +470,7 @@ std::string DevChunk() {
            text.str() + "\nend\n";
 }
 
-// Fun tab commands (tlg_fun.h): queued by the menu, run once by the next tick, at the top of the
+// Extras tab commands (tlg_fun.h): queued by the menu, run once by the next tick, at the top of the
 // settings chunk like DevChunk (the chunk differs, so it is sent and run; the next one is plain).
 std::mutex fun_mutex;
 std::string fun_queue;
@@ -443,7 +488,7 @@ std::atomic<uint32_t> photo_sticks{0x80808080u}; // the last raw sticks lx|ly<<8
 std::atomic<TlgFun::PhotoFreeze> photo_freeze{TlgFun::PhotoFreeze::Pause};
 std::atomic<bool> pilot{false}; // Tricopilot (TlgFun::Tricopilot)
 // Which camera watches him (TlgFun::PilotCam). Middle is what autoTrico() picks itself, so that
-// stays our default; the launcher and the Fun tab can pick another one, also while he drives.
+// stays our default; the launcher and the Extras tab can pick another one, also while he drives.
 std::atomic<TlgFun::PilotCam> pilot_cam{[] {
     const char* env = std::getenv("TLG_TRICOPILOT_CAM");
     if (env && *env) {
@@ -763,7 +808,8 @@ std::string SetChunk() {
                   std::clamp(s.trico_fur.load(), 0, 500), s.fov.load(),
                   s.grass_smooth.load() ? "true" : "false", s.boy_wind.load(), s.tree_wind.load());
     code += line;
-    code += "Drool(" + std::to_string(std::clamp(s.trico_drool.load(), 0, 2)) + ") Dome()\n";
+    code += "Drool(" + std::to_string(std::clamp(s.trico_drool.load(), 0, 2)) + ") Helmet(" +
+            std::to_string(std::clamp(s.trico_helmet.load(), 0, 4)) + ") Dome()\n";
     code += std::string("Plays(") + (s.mod_plays.load() ? "true" : "false") + ") ThrowUp(" +
             std::to_string(s.mod_throw_up.load() ? 1 : 0) + ") _TLGHINTS=" +
             (s.mod_hints.load() ? "true" : "false") + " _TLGHIDEHINTS=" +
@@ -936,7 +982,7 @@ bool GameEdits(std::string& patched, std::string_view name) {
             patched.insert(at + LoadEnd.size(), Loaded);
             changed = true;
         }
-        // A stage started from the QA menu or the Fun tab is loaded on top of the current one (StartStage
+        // A stage started from the QA menu or the Extras tab is loaded on top of the current one (StartStage
         // unloads nothing), so each switch held two stages and ran the GPU heap out of memory.
         // Do what the game's own restart does: disconnect the stage's regions, preload the new
         // ones, then unload what is still disconnected. The common regions stay.

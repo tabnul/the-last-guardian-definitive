@@ -12,7 +12,7 @@
     "launcher.home_advanced": "Erweitert",
     "launcher.home_controller": "Controller",
     "launcher.home_keys": "Tastatur & Maus",
-    "launcher.home_mods": "Mods & Cheats",
+    "launcher.home_mods": "Extras",
     "launcher.home_video": "Video",
     "launcher.home_controls": "Steuerung",
     "launcher.mouse_section": "Maus",
@@ -137,7 +137,8 @@
     "launcher.fps_30": "30 FPS (wie auf PS4)",
     "launcher.deck_preset": "Steam Deck (experimentell)",
     "launcher.fps_60": "60 FPS",
-    "launcher.fps_unlocked": "Unbegrenzt (experimentell, ohne Limit)",
+    "launcher.fps_unlocked": "Unbegrenzt (nicht zum Spielen)",
+    "launcher.fps_unlocked_warning": "Warnung: Unbegrenzt macht bestimmte Szenen kaputt. Nur für Tests und Benchmarks.",
     "launcher.fps_hint": "60/Unbegrenzt-Patch für eboot 1.03 im Speicher. Unbegrenzt senkt die Grund-Bildrate an derselben Stelle um etwa 10 FPS gegenüber 60; wähle 60, außer dein PC schafft deutlich mehr als 60",
     "launcher.skip_logos": "Boot-Logos überspringen",
     "launcher.debug": "Debug (beim Start)",
@@ -273,7 +274,7 @@
     "launcher.clear_cache_empty": "Der Shader-Cache ist bereits leer.",
     "launcher.clear_cache_done": "Shader-Cache geleert: {size} freigegeben.",
     "launcher.clear_cache_failed": "{size} freigegeben, aber {count} Datei(en) konnten nicht gelöscht werden (in Benutzung? Schließe das Spiel und versuche es erneut).",
-    "launcher.mods": "Mods / Cheats…",
+    "launcher.mods": "Extras…",
     "launcher.menu_note": "Zwei Menüs im Spiel. Insert: das Grafikmenü der Portierung (jede Einstellung wirkt live). Entwicklermenü (das eigene QA-Menü des Spiels): Schalte 'Levelauswahl und QA-Menü' unter Debug ein, dann im Spiel L1 halten und L3 drücken (Tastatur: 1 halten, Z drücken).",
     "launcher.graphics": "Grafik…",
     "launcher.graphics_title": "Grafik",
@@ -334,7 +335,7 @@
     "launcher.effect_fov_hint": "Sichtfeld der Kamera. Standard 70° ist wie ausgeliefert; höher zeigt mehr rund um den Jungen.",
     "launcher.effect_trico_feathers": "Wind in Tricos Federn",
     "launcher.effect_trico_feathers_hint": "Wie stark der Wind Tricos Federn bewegt. Standard 100% ist wie ausgeliefert; 0% hält sie still.",
-    "launcher.mods_title": "Mods / Cheats",
+    "launcher.mods_title": "Extras",
     "launcher.mods_hint": "Lege shadPS4/GoldHEN-Cheat-XML-Dateien in den Mods-Ordner und schalte sie dann hier ein. Nichts hier verändert das Spiel, bis du es aktivierst.",
     "launcher.mods_warning": "Ein Cheat kann das Spiel abstürzen lassen oder seltsam wirken; falls das passiert, schalte ihn hier aus.",
     "launcher.mods_folder": "Mods-Ordner öffnen",
@@ -651,6 +652,17 @@
         "0": "Aus (wie veröffentlicht)",
         "1": "Immer",
         "2": "Wie von den Entwicklern geplant"
+      }
+    },
+    "menu:trico_helmet": {
+      "name": "Tricos Helm",
+      "what": "Setzt Trico einen Helm auf oder nimmt ihn ab, für das ganze Spiel. Alle stammen aus dem Spiel selbst: der Rüstungshelm der gepanzerten Tricos, ein zerbrochener oder die Maske des anderen Trico. Wie in der Geschichte (Standard) überlässt es dem Spiel. Bleibt in Zwischensequenzen, neuen Abschnitten und beim Laden eines Spielstands erhalten und wird für den nächsten Start gespeichert.",
+      "choices": {
+        "0": "Wie in der Geschichte (Standard)",
+        "1": "Rüstungshelm",
+        "2": "Zerbrochener Helm",
+        "3": "Die Maske des anderen Trico",
+        "4": "Kein Helm"
       }
     },
     "menu:frames_queued": {
@@ -1058,7 +1070,7 @@
     "Trico's eyes keep changing to random colours: the game's own hidden effect, normally only seen in a few story moments. Turning it off brings the normal colours back. A jump turns it off.": "Tricos Augen wechseln ständig zu zufälligen Farben: der eigene versteckte Effekt des Spiels, normalerweise nur in wenigen Story-Momenten zu sehen. Ausschalten bringt die normalen Farben zurück. Ein Sprung schaltet es aus.",
     "Image": "Bild",
     "Controls": "Steuerung",
-    "Fun": "Spaß",
+    "Extras": "Extras",
     "Apply and restart": "Anwenden und neu starten",
     "L1 / R1 or Q / E: switch tabs. Settings are saved in tlg.ini.": "L1 / R1 oder Q / E: Reiter wechseln. Einstellungen werden in tlg.ini gespeichert.",
     "Close": "Schließen",
@@ -1119,7 +1131,7 @@
     "Unlocks every treasure (outfits, Trico's feathers) and the Treasures entry in the options menu, with the developers' own unlock. Stored in your save: turning it off does not take them back. Your saves are backed up before the first unlock (the launcher's save manager can restore them). Select them in the game's pause menu, under Items.": "Schaltet jeden Schatz (Kostüme, Tricos Federn) und den Eintrag Schätze im Optionsmenü frei, mit der eigenen Freischaltung der Entwickler. Im Spielstand gespeichert: Ausschalten nimmt sie nicht zurück. Deine Spielstände werden vor der ersten Freischaltung gesichert (die Spielstandverwaltung des Launchers kann sie wiederherstellen). Wähle sie im Pausenmenü des Spiels unter Gegenstände aus.",
     "The boy wears horns, a nod to Ico. Can be combined with the game's own Ico outfit (one of the treasures). Turn it on in the launcher once first: the launcher builds the horn models on your PC.": "Der Junge trägt Hörner, eine Anspielung auf Ico. Lässt sich mit dem Ico-Kostüm des Spiels kombinieren (einer der Schätze). Schalte sie zuerst einmal im Launcher ein: Der Launcher baut die Hörner-Modelle auf deinem PC.",
     "ICO horns": "ICO-Hörner",
-    "Turn on ICO horns in the launcher (Mods page) once first.": "Schalte ICO-Hörner zuerst einmal im Launcher ein (Seite Mods).",
+    "Turn on ICO horns in the launcher (Extras page) once first.": "Schalte ICO-Hörner zuerst einmal im Launcher ein (Seite Extras).",
     "Controller": "Controller",
     "Automatic": "Automatisch",
     "Button icons": "Tastensymbole",
@@ -1215,6 +1227,14 @@
     "Use key": "Schlüssel verwenden",
     "Pop-up and sound on unlock": "Pop-up und Ton beim Freischalten",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Aus: kein Pop-up und kein Ton beim Spielen. Freischaltungen werden trotzdem gespeichert und hier aufgelistet.",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Trophäennamen brauchen den Trophäenschlüssel. Ohne ihn zeigt das Pop-up nur eine Nummer."
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Trophäennamen brauchen den Trophäenschlüssel. Ohne ihn zeigt das Pop-up nur eine Nummer.",
+    "Trico's helmet": "Tricos Helm",
+    "Helmet": "Helm",
+    "As in the story (default)": "Wie in der Geschichte (Standard)",
+    "Armour helmet": "Rüstungshelm",
+    "Broken helmet": "Zerbrochener Helm",
+    "The other Trico's mask": "Die Maske des anderen Trico",
+    "No helmet": "Kein Helm",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Setzt Trico einen Helm auf oder nimmt ihn ab, für das ganze Spiel. Alle stammen aus dem Spiel selbst: der Rüstungshelm der gepanzerten Tricos, ein zerbrochener oder die Maske des anderen Trico. Wie in der Geschichte (Standard) überlässt es dem Spiel. Bleibt in Zwischensequenzen, neuen Abschnitten und beim Laden eines Spielstands erhalten und wird für den nächsten Start gespeichert."
   }
 }

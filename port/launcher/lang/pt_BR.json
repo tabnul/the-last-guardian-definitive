@@ -12,7 +12,7 @@
     "launcher.home_advanced": "Avançado",
     "launcher.home_controller": "Controle",
     "launcher.home_keys": "Teclas e mouse",
-    "launcher.home_mods": "Mods e cheats",
+    "launcher.home_mods": "Extras",
     "launcher.home_video": "Vídeo",
     "launcher.home_controls": "Controles",
     "launcher.mouse_section": "Mouse",
@@ -135,7 +135,8 @@
     "launcher.fps_30": "30 FPS (como no PS4)",
     "launcher.deck_preset": "Steam Deck (experimental)",
     "launcher.fps_60": "60 FPS",
-    "launcher.fps_unlocked": "Livre (experimental, sem limite)",
+    "launcher.fps_unlocked": "Livre (não para jogar)",
+    "launcher.fps_unlocked_warning": "Aviso: Livre quebra certas cenas. Apenas para testes e benchmarks.",
     "launcher.fps_hint": "60/livre alteram o eboot 1.03 na memória. Livre reduz a taxa base em cerca de 10 FPS em relação a 60 no mesmo lugar; escolha 60, a não ser que seu PC rode bem acima de 60",
     "launcher.skip_logos": "Pular os logotipos de abertura",
     "launcher.debug": "Depuração (ao iniciar)",
@@ -271,7 +272,7 @@
     "launcher.clear_cache_empty": "O cache de shaders já está vazio.",
     "launcher.clear_cache_done": "Cache de shaders limpo: {size} liberados.",
     "launcher.clear_cache_failed": "{size} liberados, mas {count} arquivo(s) não puderam ser apagados (em uso? Feche o jogo e tente de novo).",
-    "launcher.mods": "Mods / Cheats…",
+    "launcher.mods": "Extras…",
     "launcher.menu_note": "Dois menus no jogo. Insert: o menu de gráficos do port (tudo vale na hora). Menu de desenvolvimento (o menu de QA do próprio jogo): ligue \"Seleção de fases e menu de QA\" em Depuração, depois no jogo segure L1 e aperte L3 (teclado: segure 1, aperte Z).",
     "launcher.graphics": "Gráficos…",
     "launcher.graphics_title": "Gráficos",
@@ -332,7 +333,7 @@
     "launcher.effect_fov_hint": "Campo de visão da câmera. Padrão 70° é o original; mais alto mostra mais em volta do menino.",
     "launcher.effect_trico_feathers": "Vento nas penas do Trico",
     "launcher.effect_trico_feathers_hint": "Quanto o vento mexe as penas do Trico. Padrão 100% é o original; 0% as deixa paradas.",
-    "launcher.mods_title": "Mods / Cheats",
+    "launcher.mods_title": "Extras",
     "launcher.mods_hint": "Solte arquivos de cheat XML no formato shadPS4/GoldHEN na pasta de mods e ligue aqui. Nada muda no jogo até você ativar.",
     "launcher.mods_warning": "Um cheat pode travar o jogo ou se comportar de forma estranha; se isso acontecer, desligue aqui.",
     "launcher.mods_folder": "Abrir pasta de mods",
@@ -649,6 +650,17 @@
         "0": "Off (as released)",
         "1": "Always",
         "2": "As the developers planned"
+      }
+    },
+    "menu:trico_helmet": {
+      "name": "Capacete do Trico",
+      "what": "Coloca um capacete no Trico, ou o tira, durante o jogo todo. Todos são do próprio jogo: o capacete de armadura dos Tricos blindados, um quebrado ou a máscara do outro Trico. Como na história (padrão) deixa a cargo do jogo. Permanece nas cenas, nas novas áreas e ao carregar um save, e fica guardado para a próxima vez que você iniciar.",
+      "choices": {
+        "0": "Como na história (padrão)",
+        "1": "Capacete de armadura",
+        "2": "Capacete quebrado",
+        "3": "A máscara do outro Trico",
+        "4": "Sem capacete"
       }
     },
     "menu:frames_queued": {
@@ -1048,7 +1060,7 @@
     "Trico's eyes keep changing to random colours: the game's own hidden effect, normally only seen in a few story moments. Turning it off brings the normal colours back. A jump turns it off.": "Os olhos do Trico mudam sem parar para cores aleatórias: o efeito escondido do próprio jogo, normalmente visto só em alguns momentos da história. Desligar traz as cores normais de volta. Um salto desliga.",
     "Image": "Imagem",
     "Controls": "Controles",
-    "Fun": "Diversão",
+    "Extras": "Extras",
     "Apply and restart": "Aplicar e reiniciar",
     "L1 / R1 or Q / E: switch tabs. Settings are saved in tlg.ini.": "L1 / R1 ou Q / E: trocar de aba. As configurações ficam salvas em tlg.ini.",
     "Close": "Fechar",
@@ -1113,7 +1125,7 @@
     "Unlocks every treasure (outfits, Trico's feathers) and the Treasures entry in the options menu, with the developers' own unlock. Stored in your save: turning it off does not take them back. Your saves are backed up before the first unlock (the launcher's save manager can restore them). Select them in the game's pause menu, under Items.": "Desbloqueia todos os tesouros (roupas, penas do Trico) e a entrada Tesouros no menu de opções, com o desbloqueio dos próprios desenvolvedores. Fica salvo no seu save: desligar não os remove. Seus saves são copiados antes do primeiro desbloqueio (o gerenciador de saves do launcher pode restaurá-los). Escolha-os no menu de pausa do jogo, em Itens.",
     "The boy wears horns, a nod to Ico. Can be combined with the game's own Ico outfit (one of the treasures). Turn it on in the launcher once first: the launcher builds the horn models on your PC.": "O menino usa chifres, uma homenagem a Ico. Podem ser combinados com a roupa do Ico do próprio jogo (um dos tesouros). Ative primeiro uma vez no launcher: o launcher cria os modelos dos chifres no seu PC.",
     "ICO horns": "Chifres do ICO",
-    "Turn on ICO horns in the launcher (Mods page) once first.": "Ative primeiro uma vez os chifres de ICO no launcher (página Mods).",
+    "Turn on ICO horns in the launcher (Extras page) once first.": "Ative primeiro uma vez os chifres de ICO no launcher (página Extras).",
     "Controller": "Controle",
     "Automatic": "Automático",
     "Button icons": "Ícones de botões",
@@ -1209,6 +1221,14 @@
     "Use key": "Usar chave",
     "Pop-up and sound on unlock": "Aviso e som ao desbloquear",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Desligado: sem aviso nem som enquanto você joga. Os desbloqueios continuam sendo salvos e listados aqui.",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Os nomes dos troféus precisam da chave de troféus. Sem ela, o aviso mostra só um número."
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Os nomes dos troféus precisam da chave de troféus. Sem ela, o aviso mostra só um número.",
+    "Trico's helmet": "Capacete do Trico",
+    "Helmet": "Capacete",
+    "As in the story (default)": "Como na história (padrão)",
+    "Armour helmet": "Capacete de armadura",
+    "Broken helmet": "Capacete quebrado",
+    "The other Trico's mask": "A máscara do outro Trico",
+    "No helmet": "Sem capacete",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Coloca um capacete no Trico, ou o tira, durante o jogo todo. Todos são do próprio jogo: o capacete de armadura dos Tricos blindados, um quebrado ou a máscara do outro Trico. Como na história (padrão) deixa a cargo do jogo. Permanece nas cenas, nas novas áreas e ao carregar um save, e fica guardado para a próxima vez que você iniciar."
   }
 }

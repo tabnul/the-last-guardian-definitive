@@ -12,7 +12,7 @@
     "launcher.home_advanced": "Zaawansowane",
     "launcher.home_controller": "Controller",
     "launcher.home_keys": "Klawiatura i mysz",
-    "launcher.home_mods": "Mody i kody",
+    "launcher.home_mods": "Dodatki",
     "launcher.home_video": "Video",
     "launcher.home_controls": "Sterowanie",
     "launcher.mouse_section": "Mysz",
@@ -145,7 +145,8 @@
     "launcher.fps_30": "30 FPS (jak na PS4)",
     "launcher.deck_preset": "Steam Deck (eksperymentalne)",
     "launcher.fps_60": "60 FPS",
-    "launcher.fps_unlocked": "Odblokowane (eksperymentalne, bez limitu)",
+    "launcher.fps_unlocked": "Odblokowane (nie do grania)",
+    "launcher.fps_unlocked_warning": "Uwaga: Odblokowane psuje niektóre sceny. Tylko do testów i benchmarków.",
     "launcher.fps_hint": "Łatka 60/odblokowane dla eboot 1.03 w pamięci. Odblokowane obniża bazową liczbę klatek o około 10 FPS względem 60 w tym samym miejscu; wybierz 60, chyba że twój PC działa wyraźnie powyżej 60",
     "launcher.skip_logos": "Pomiń logo startowe",
     "launcher.horns_built": "Modele rogów zostały zbudowane na tym PC.",
@@ -297,7 +298,7 @@
     "launcher.clear_cache_empty": "Pamięć shaderów jest już pusta.",
     "launcher.clear_cache_done": "Wyczyszczono pamięć shaderów: zwolniono {size}.",
     "launcher.clear_cache_failed": "Zwolniono {size}, ale nie udało się usunąć plików: {count} (w użyciu? Zamknij grę i spróbuj ponownie).",
-    "launcher.mods": "Mods / Cheats…",
+    "launcher.mods": "Dodatki…",
     "launcher.menu_note": "Dwa menu w grze. Insert: menu grafiki portu (każde ustawienie działa na żywo). Menu deweloperskie (własne menu QA gry): włącz „Wybór poziomu i menu QA” w Debug, potem w grze przytrzymaj L1 i naciśnij L3 (klawiatura: przytrzymaj 1, naciśnij Z).",
     "launcher.graphics": "Grafika…",
     "launcher.graphics_title": "Grafika",
@@ -358,7 +359,7 @@
     "launcher.effect_fov_hint": "Pole widzenia kamery. Domyślne 70° = jak wydano; więcej pokazuje więcej wokół chłopca.",
     "launcher.effect_trico_feathers": "Wiatr piór Trico",
     "launcher.effect_trico_feathers_hint": "Jak mocno wiatr porusza piórami Trico. Domyślne 100% = jak wydano; 0% je unieruchamia.",
-    "launcher.mods_title": "Mods / Cheats",
+    "launcher.mods_title": "Dodatki",
     "launcher.mods_hint": "Wrzuć pliki XML kodów shadPS4/GoldHEN do folderu modów, a potem włącz je tutaj. Nic tutaj nie zmienia gry, dopóki tego nie włączysz.",
     "launcher.mods_warning": "Kod może spowodować awarię gry lub dziwne zachowanie; jeśli tak się stanie, wyłącz go tutaj.",
     "launcher.mods_folder": "Otwórz folder modów",
@@ -658,6 +659,17 @@
         "0": "Wył. (jak wydano)",
         "1": "Zawsze",
         "2": "Jak planowali twórcy"
+      }
+    },
+    "menu:trico_helmet": {
+      "name": "Hełm Trico",
+      "what": "Zakłada Trico hełm albo go zdejmuje, na całą grę. Wszystkie pochodzą z samej gry: hełm pancerny opancerzonych Trico, pęknięty hełm albo maska drugiego Trico. Jak w fabule (domyślnie) zostawia wybór grze. Zostaje w przerywnikach, nowych etapach i po wczytaniu zapisu, i jest zapamiętywany na następne uruchomienie.",
+      "choices": {
+        "0": "Jak w fabule (domyślnie)",
+        "1": "Hełm pancerny",
+        "2": "Pęknięty hełm",
+        "3": "Maska drugiego Trico",
+        "4": "Bez hełmu"
       }
     },
     "menu:mod_treasures": {
@@ -1078,10 +1090,10 @@
     "Unlocks every treasure (outfits, Trico's feathers) and the Treasures entry in the options menu, with the developers' own unlock. Stored in your save: turning it off does not take them back. Your saves are backed up before the first unlock (the launcher's save manager can restore them). Select them in the game's pause menu, under Items.": "Odblokowuje wszystkie skarby (stroje, pióra Trico) i pozycję Skarby w menu opcji, za pomocą odblokowania samych twórców. Zapisywane w twoim zapisie: wyłączenie ich nie odbiera. Twoje zapisy są kopiowane przed pierwszym odblokowaniem (menedżer zapisów launchera może je przywrócić). Wybierz je w menu pauzy gry, w Przedmiotach.",
     "ICO horns": "Rogi ICO",
     "The boy wears horns, a nod to Ico. Can be combined with the game's own Ico outfit (one of the treasures). Turn it on in the launcher once first: the launcher builds the horn models on your PC.": "Chłopiec nosi rogi, ukłon w stronę Ico. Można łączyć z własnym strojem Ico z gry (jednym ze skarbów). Najpierw raz włącz to w launcherze: launcher zbuduje modele rogów na twoim PC.",
-    "Turn on ICO horns in the launcher (Mods page) once first.": "Najpierw raz włącz rogi ICO w launcherze (strona Mody).",
+    "Turn on ICO horns in the launcher (Extras page) once first.": "Najpierw raz włącz rogi ICO w launcherze (strona Dodatki).",
     "Image": "Obraz",
     "Controls": "Sterowanie",
-    "Fun": "Zabawa",
+    "Extras": "Dodatki",
     "Apply and restart": "Zastosuj i uruchom ponownie",
     "L1 / R1 or Q / E: switch tabs. Settings are saved in tlg.ini.": "L1 / R1 lub Q / E: zmiana karty. Ustawienia są zapisywane w tlg.ini.",
     "Close": "Zamknij",
@@ -1228,6 +1240,14 @@
     "Use key": "Użyj klucza",
     "Pop-up and sound on unlock": "Powiadomienie i dźwięk po zdobyciu",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Wyłączone: bez powiadomienia i dźwięku podczas gry. Zdobyte trofea są nadal zapisywane i widoczne tutaj.",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Nazwy trofeów wymagają klucza trofeów. Bez niego powiadomienie pokazuje tylko numer."
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Nazwy trofeów wymagają klucza trofeów. Bez niego powiadomienie pokazuje tylko numer.",
+    "Trico's helmet": "Hełm Trico",
+    "Helmet": "Hełm",
+    "As in the story (default)": "Jak w fabule (domyślnie)",
+    "Armour helmet": "Hełm pancerny",
+    "Broken helmet": "Pęknięty hełm",
+    "The other Trico's mask": "Maska drugiego Trico",
+    "No helmet": "Bez hełmu",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Zakłada Trico hełm albo go zdejmuje, na całą grę. Wszystkie pochodzą z samej gry: hełm pancerny opancerzonych Trico, pęknięty hełm albo maska drugiego Trico. Jak w fabule (domyślnie) zostawia wybór grze. Zostaje w przerywnikach, nowych etapach i po wczytaniu zapisu, i jest zapamiętywany na następne uruchomienie."
   }
 }

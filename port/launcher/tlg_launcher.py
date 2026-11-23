@@ -55,7 +55,7 @@ TEXT = {
     'home_advanced': 'Advanced',
     'home_controller': 'Controller',
     'home_keys': 'Keys & mouse',
-    'home_mods': 'Mods & cheats',
+    'home_mods': 'Extras',
     'home_video': 'Video',
     'home_controls': 'Controls',
     'mouse_section': 'Mouse',
@@ -217,7 +217,8 @@ TEXT = {
     'deck_preset': 'Steam Deck (experimental)',
     'fps_60': '60 FPS',
     'fps_120': '120 FPS',
-    'fps_unlocked': 'Unlocked (experimental, no limit)',
+    'fps_unlocked': 'Unlocked (not for gameplay)',
+    'fps_unlocked_warning': 'Warning: Unlocked breaks certain scenes. Only for testing and benchmarking.',
     'fps_hint': ('60/unlocked patch eboot 1.03 in memory. Unlocked lowers the base frame rate by about '
                  '10 FPS against 60 at the same spot; pick 60 unless your PC runs well above 60'),
     'skip_logos': 'Skip the boot logos',
@@ -408,7 +409,7 @@ TEXT = {
     'clear_cache_done': 'Shader cache cleared: {size} freed.',
     'clear_cache_failed': ('{size} freed, but {count} file(s) could not be deleted (in use? Close the game '
                            'and try again).'),
-    'mods': 'Mods / Cheats…',
+    'mods': 'Extras…',
     'menu_note': ("Two menus in game. Insert: the port's graphics menu (every setting applies live). "
                   "Development menu (the game's own QA menu): turn on 'Level select and QA menu' under Debug, "
                   'then in game hold L1 and press L3 (keyboard: hold 1, press Z).'),
@@ -502,7 +503,7 @@ TEXT = {
     'effect_fov_hint': 'Camera field of view. Default 70° is as shipped; higher shows more around the boy.',
     'effect_trico_feathers': 'Trico feather wind',
     'effect_trico_feathers_hint': "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.",
-    'mods_title': 'Mods / Cheats',
+    'mods_title': 'Extras',
     'mods_hint': ('Drop shadPS4/GoldHEN cheat XML files in the mods folder, then turn them on here. '
                   'Nothing here changes the game until you enable it.'),
     'mods_warning': 'A cheat can crash the game or behave oddly; if that happens, turn it off here.',
@@ -1262,6 +1263,13 @@ class Launcher:
         else:
             self.fg_note.grid_remove()
 
+    def update_fps_note(self):
+        """The red warning under Frame rate while Unlocked is picked."""
+        if self.settings.get('frame_rate') == 'unlocked':
+            self.fps_note.grid()
+        else:
+            self.fps_note.grid_remove()
+
     def update_aa_note(self, ini):
         # DLSS or FSR 4 stays the choice in tlg.ini; the game runs FSR 3.1 while the card lacks it.
         mode = self.video_state[1]
@@ -1477,9 +1485,9 @@ class Launcher:
             row=4, column=0, sticky='w')
 
     def build_drool(self, parent):
-        """Built-in mods on the Mods page: Trico's drool, with its story in plain sight: the developers built it
+        """Built-in mods on the Extras page: Trico's drool, with its story in plain sight: the developers built it
         and switched it off just before release (tlg.ini trico_drool; the game reads it live, also from
-        the in-game Fun tab)."""
+        the in-game Extras tab)."""
         drool = next(item for item in backports_table.MENU if item.key == 'trico_drool')
         box = section(parent, drool.name)
         box.pack(fill='x', anchor='w', pady=(0, 8))
@@ -1498,7 +1506,7 @@ class Launcher:
         ttk.Label(box, text=drool.what, foreground=DIM, wraplength=420, justify='left').grid(
             row=1, column=0, sticky='w', pady=(6, 0))
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
-        for key in ('trico_fur', 'mod_treasures', 'mod_horns', 'mod_plays', 'mod_throw_up', 'mod_hints'):
+        for key in ('trico_fur', 'trico_helmet', 'mod_treasures', 'mod_horns', 'mod_plays', 'mod_throw_up', 'mod_hints'):
             item = next(i for i in backports_table.MENU if i.key == key)
             mod = section(parent, item.name)
             mod.pack(fill='x', anchor='w', pady=(0, 8))
@@ -1582,8 +1590,12 @@ class Launcher:
         self.check(video, 2, 'show_fps')
         self.build_gpu_choice(video, 3)
         self.combo(video, 5, 'frame_rate', tlg_run.FRAME_RATES, lambda k: self.t(f'fps_{k}'),
-                   on_change=lambda: (self.update_fg(), self.refresh_status()))
+                   on_change=lambda: (self.update_fg(), self.update_fps_note(), self.refresh_status()))
         self.hint(video, 5, 2, 'fps_hint')
+        # Unlocked breaks some scenes (the boy misses Trico's tail in s06 at ~116 FPS, fine at 120; 11-23).
+        self.fps_note = ttk.Label(video, text=self.t('fps_unlocked_warning'), foreground='#e0605a', wraplength=320)
+        self.fps_note.grid(row=6, column=0, columnspan=3, sticky='w')
+        self.update_fps_note()
         self.combo(video, 7, 'resolution', tlg_run.RESOLUTIONS, tlg_run.resolution_label)
         self.hint(video, 7, 2, 'resolution_hint')
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')

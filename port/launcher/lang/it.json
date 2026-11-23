@@ -12,7 +12,7 @@
     "launcher.home_advanced": "Avanzate",
     "launcher.home_controller": "Controller",
     "launcher.home_keys": "Tastiera e mouse",
-    "launcher.home_mods": "Mod e trucchi",
+    "launcher.home_mods": "Extra",
     "launcher.home_video": "Video",
     "launcher.home_controls": "Comandi",
     "launcher.mouse_section": "Mouse",
@@ -145,7 +145,8 @@
     "launcher.fps_30": "30 FPS (come su PS4)",
     "launcher.deck_preset": "Steam Deck (sperimentale)",
     "launcher.fps_60": "60 FPS",
-    "launcher.fps_unlocked": "Sbloccato (sperimentale, nessun limite)",
+    "launcher.fps_unlocked": "Sbloccato (non per giocare)",
+    "launcher.fps_unlocked_warning": "Attenzione: Sbloccato rompe alcune scene. Solo per test e benchmark.",
     "launcher.fps_hint": "60/sbloccato modificano in memoria l'eboot 1.03. Sbloccato abbassa il frame rate di base di circa 10 FPS rispetto a 60 nello stesso punto; scegli 60 a meno che il tuo PC non vada ben oltre i 60",
     "launcher.skip_logos": "Salta i loghi iniziali",
     "launcher.horns_built": "I modelli delle corna sono stati creati su questo PC.",
@@ -297,7 +298,7 @@
     "launcher.clear_cache_empty": "La cache shader è già vuota.",
     "launcher.clear_cache_done": "Cache shader svuotata: {size} liberati.",
     "launcher.clear_cache_failed": "{size} liberati, ma {count} file non sono stati cancellati (in uso? Chiudi il gioco e riprova).",
-    "launcher.mods": "Mod / Trucchi…",
+    "launcher.mods": "Extra…",
     "launcher.menu_note": "Due menu in gioco. Insert: il menu grafico del port (ogni impostazione si applica dal vivo). Menu sviluppo (il menu QA del gioco stesso): attiva 'Selezione livello e menu QA' sotto Debug, poi in gioco tieni premuto L1 e premi L3 (tastiera: tieni premuto 1, premi Z).",
     "launcher.graphics": "Grafica…",
     "launcher.graphics_title": "Grafica",
@@ -358,7 +359,7 @@
     "launcher.effect_fov_hint": "Campo visivo della telecamera. Il predefinito 70° è come uscito; più alto mostra di più intorno al ragazzo.",
     "launcher.effect_trico_feathers": "Vento sulle piume di Trico",
     "launcher.effect_trico_feathers_hint": "Quanto forte il vento muove le piume di Trico. Il predefinito 100% è come uscito; 0% le tiene ferme.",
-    "launcher.mods_title": "Mod / Trucchi",
+    "launcher.mods_title": "Extra",
     "launcher.mods_hint": "Metti i file XML dei trucchi shadPS4/GoldHEN nella cartella mod, poi attivali qui. Niente qui cambia il gioco finché non lo attivi.",
     "launcher.mods_warning": "Un trucco può far crashare il gioco o farlo comportare in modo strano; se succede, disattivalo qui.",
     "launcher.mods_folder": "Apri cartella mod",
@@ -658,6 +659,17 @@
         "0": "No (come uscito)",
         "1": "Sempre",
         "2": "Come previsto dagli sviluppatori"
+      }
+    },
+    "menu:trico_helmet": {
+      "name": "Elmo di Trico",
+      "what": "Mette un elmo a Trico, o glielo toglie, per tutto il gioco. Sono tutti del gioco stesso: l'elmo d'armatura dei Trico corazzati, uno rotto o la maschera dell'altro Trico. Come nella storia (predefinito) lascia decidere al gioco. Resta durante i filmati, le nuove aree e il caricamento di un salvataggio, e viene mantenuto per il prossimo avvio.",
+      "choices": {
+        "0": "Come nella storia (predefinito)",
+        "1": "Elmo d'armatura",
+        "2": "Elmo rotto",
+        "3": "La maschera dell'altro Trico",
+        "4": "Nessun elmo"
       }
     },
     "menu:mod_treasures": {
@@ -1078,10 +1090,10 @@
     "Unlocks every treasure (outfits, Trico's feathers) and the Treasures entry in the options menu, with the developers' own unlock. Stored in your save: turning it off does not take them back. Your saves are backed up before the first unlock (the launcher's save manager can restore them). Select them in the game's pause menu, under Items.": "Sblocca ogni tesoro (costumi, piume di Trico) e la voce Tesori nel menu opzioni, con lo sblocco degli sviluppatori stessi. Salvato nel tuo salvataggio: disattivarlo non li toglie. I tuoi salvataggi vengono copiati prima del primo sblocco (il gestore salvataggi del launcher può ripristinarli). Selezionali nel menu di pausa del gioco, sotto Oggetti.",
     "ICO horns": "Corna di ICO",
     "The boy wears horns, a nod to Ico. Can be combined with the game's own Ico outfit (one of the treasures). Turn it on in the launcher once first: the launcher builds the horn models on your PC.": "Il ragazzo porta le corna, un omaggio a Ico. Si può combinare con il costume di Ico del gioco stesso (uno dei tesori). Attivalo prima una volta nel launcher: il launcher crea i modelli delle corna sul tuo PC.",
-    "Turn on ICO horns in the launcher (Mods page) once first.": "Attiva prima una volta Corna di ICO nel launcher (pagina Mod).",
+    "Turn on ICO horns in the launcher (Extras page) once first.": "Attiva prima una volta Corna di ICO nel launcher (pagina Extra).",
     "Image": "Immagine",
     "Controls": "Comandi",
-    "Fun": "Divertimento",
+    "Extras": "Extra",
     "Apply and restart": "Applica e riavvia",
     "L1 / R1 or Q / E: switch tabs. Settings are saved in tlg.ini.": "L1 / R1 o Q / E: cambia scheda. Le impostazioni sono salvate in tlg.ini.",
     "Close": "Chiudi",
@@ -1228,6 +1240,14 @@
     "Use key": "Usa chiave",
     "Pop-up and sound on unlock": "Avviso e suono allo sblocco",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Disattivato: nessun avviso né suono mentre giochi. Gli sblocchi vengono comunque salvati ed elencati qui.",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "I nomi dei trofei richiedono la chiave dei trofei. Senza, l’avviso mostra solo un numero."
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "I nomi dei trofei richiedono la chiave dei trofei. Senza, l’avviso mostra solo un numero.",
+    "Trico's helmet": "Elmo di Trico",
+    "Helmet": "Elmo",
+    "As in the story (default)": "Come nella storia (predefinito)",
+    "Armour helmet": "Elmo d'armatura",
+    "Broken helmet": "Elmo rotto",
+    "The other Trico's mask": "La maschera dell'altro Trico",
+    "No helmet": "Nessun elmo",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Mette un elmo a Trico, o glielo toglie, per tutto il gioco. Sono tutti del gioco stesso: l'elmo d'armatura dei Trico corazzati, uno rotto o la maschera dell'altro Trico. Come nella storia (predefinito) lascia decidere al gioco. Resta durante i filmati, le nuove aree e il caricamento di un salvataggio, e viene mantenuto per il prossimo avvio."
   }
 }

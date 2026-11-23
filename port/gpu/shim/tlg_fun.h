@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// tlg: the in-game menu's Fun tab (tlg_overlay.cpp): jump to a start point and extra Tricos.
+// tlg: the in-game menu's Extras tab (tlg_overlay.cpp): jump to a start point and extra Tricos.
 // The commands are Lua, run once by the settings tick (tlg_lua.cpp, within 15 frames).
 #pragma once
 #include <cstdint>
@@ -104,13 +104,19 @@ inline constexpr Action Actions[] = {
 void Act(const char* command);
 
 // Trico's drool (setting trico_drool, tlg_lua.cpp Drool): the developers built it, then switched it off
-// before release. The Fun tab and both launchers show this text.
+// before release. The Extras tab and both launchers show this text.
 inline constexpr const char* DroolHelp =
     "A feature the developers built and then switched off just before release: Trico drools. "
     "Always: a string of drool hangs from his beak the whole time. As the developers planned: it slowly "
     "grows while Trico smells something he wants, a smell-pot cart (s04_FirstAntenna and s10_Pit), and "
     "fades away when he loses interest (the boy's smell bottle was cut, so the carts are the only trigger). "
     "Stays on through jumps, new stages and extra Tricos, and is kept for the next start.";
+// Trico's helmet (setting trico_helmet, tlg_lua.cpp Helmet). The Extras tab and the launcher show this text.
+inline constexpr const char* HelmetHelp =
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour "
+    "helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the "
+    "story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a "
+    "save, and is kept for the next start.";
 void CountTricos();
 int Tricos(); // the extra Tricos the game reported last; -1 before the first report
 // Trico's disco eyes: the game's own random eye colours (EyeColorRandom, normally only in a few
@@ -182,7 +188,7 @@ inline constexpr const char* TricopilotCamHelp =
     "place the camera can end up inside the rock. Far looks down on the whole area, which is lovely "
     "in a valley and useless indoors, because Trico becomes a dot. Game camera leaves your normal "
     "camera alone: it keeps following the boy while Trico wanders off on his own.";
-// The Fun tab, both launchers and the docs show this text.
+// The Extras tab, both launchers and the docs show this text.
 inline constexpr const char* TricopilotHelp =
     "Trico drives himself: he wanders the scene, looks for edges to climb or jump, and the camera "
     "follows him. It is the developers' own debug tool, still in the game. They used it to leave the "

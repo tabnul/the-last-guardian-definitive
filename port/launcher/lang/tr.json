@@ -12,7 +12,7 @@
     "launcher.home_advanced": "Gelişmiş",
     "launcher.home_controller": "Kumanda",
     "launcher.home_keys": "Klavye ve fare",
-    "launcher.home_mods": "Modlar ve hileler",
+    "launcher.home_mods": "Ekstralar",
     "launcher.home_video": "Görüntü",
     "launcher.home_controls": "Kontroller",
     "launcher.mouse_section": "Fare",
@@ -145,7 +145,8 @@
     "launcher.fps_30": "30 FPS (PS4'teki gibi)",
     "launcher.deck_preset": "Steam Deck (deneysel)",
     "launcher.fps_60": "60 FPS",
-    "launcher.fps_unlocked": "Sınırsız (deneysel, limit yok)",
+    "launcher.fps_unlocked": "Sınırsız (oynamak için değil)",
+    "launcher.fps_unlocked_warning": "Uyarı: Sınırsız bazı sahneleri bozar. Yalnızca test ve benchmark için.",
     "launcher.fps_hint": "60/sınırsız, eboot 1.03'ü bellekte yamalar. Sınırsız, aynı noktada 60'a göre temel kare hızını yaklaşık 10 FPS düşürür; bilgisayarınız 60'ın çok üstünde çalışmıyorsa 60'ı seçin",
     "launcher.skip_logos": "Açılış logolarını atla",
     "launcher.horns_built": "Boynuz modelleri bu bilgisayarda oluşturuldu.",
@@ -297,7 +298,7 @@
     "launcher.clear_cache_empty": "Gölgelendirici önbelleği zaten boş.",
     "launcher.clear_cache_done": "Gölgelendirici önbelleği temizlendi, boşalan: {size}.",
     "launcher.clear_cache_failed": "Boşalan: {size}, ancak silinemeyen dosya sayısı: {count} (kullanımda mı? Oyunu kapatıp yeniden deneyin).",
-    "launcher.mods": "Modlar / Hileler…",
+    "launcher.mods": "Ekstralar…",
     "launcher.menu_note": "Oyunda iki menü var. Insert: portun grafik menüsü (her ayar canlı uygulanır). Geliştirme menüsü (oyunun kendi QA menüsü): Hata ayıklama altında 'Bölüm seçimi ve QA menüsü'nü açın, sonra oyunda L1'i basılı tutup L3'e basın (klavye: 1'i basılı tutun, Z'ye basın).",
     "launcher.graphics": "Grafik…",
     "launcher.graphics_title": "Grafik",
@@ -358,7 +359,7 @@
     "launcher.effect_fov_hint": "Kamera görüş alanı. Varsayılan 70° çıktığı hâlidir; daha yüksek değer çocuğun çevresini daha fazla gösterir.",
     "launcher.effect_trico_feathers": "Trico tüylerinde rüzgâr",
     "launcher.effect_trico_feathers_hint": "Rüzgârın Trico'nun tüylerini ne kadar güçlü hareket ettirdiği. Varsayılan %100 çıktığı hâlidir; %0 onları sabit tutar.",
-    "launcher.mods_title": "Modlar / Hileler",
+    "launcher.mods_title": "Ekstralar",
     "launcher.mods_hint": "shadPS4/GoldHEN hile XML dosyalarını mods klasörüne bırakın, sonra burada açın. Siz etkinleştirene kadar buradaki hiçbir şey oyunu değiştirmez.",
     "launcher.mods_warning": "Bir hile oyunu çökertebilir veya garip davranmasına yol açabilir; böyle olursa burada kapatın.",
     "launcher.mods_folder": "Mods klasörünü aç",
@@ -658,6 +659,17 @@
         "0": "Kapalı (çıktığı gibi)",
         "1": "Her zaman",
         "2": "Geliştiricilerin planladığı gibi"
+      }
+    },
+    "menu:trico_helmet": {
+      "name": "Trico'nun miğferi",
+      "what": "Trico'ya tüm oyun boyunca bir miğfer takar ya da çıkarır. Hepsi oyunun kendisinden: zırhlı Trico'ların zırh miğferi, kırık bir miğfer ya da diğer Trico'nun maskesi. Hikâyedeki gibi (varsayılan) seçimi oyuna bırakır. Ara sahnelerde, yeni bölümlerde ve kayıt yüklerken kalır, bir sonraki açılış için saklanır.",
+      "choices": {
+        "0": "Hikâyedeki gibi (varsayılan)",
+        "1": "Zırh miğferi",
+        "2": "Kırık miğfer",
+        "3": "Diğer Trico'nun maskesi",
+        "4": "Miğfer yok"
       }
     },
     "menu:mod_treasures": {
@@ -1078,10 +1090,10 @@
     "Unlocks every treasure (outfits, Trico's feathers) and the Treasures entry in the options menu, with the developers' own unlock. Stored in your save: turning it off does not take them back. Your saves are backed up before the first unlock (the launcher's save manager can restore them). Select them in the game's pause menu, under Items.": "Geliştiricilerin kendi kilit açma yöntemiyle her hazinenin (kıyafetler, Trico'nun tüyleri) ve seçenekler menüsündeki Hazineler girdisinin kilidini açar. Kaydınızda saklanır: kapatmak onları geri almaz. Kayıtlarınız ilk kilit açmadan önce yedeklenir (başlatıcının kayıt yöneticisi onları geri yükleyebilir). Onları oyunun duraklatma menüsünde, Eşyalar altında seçin.",
     "ICO horns": "ICO boynuzları",
     "The boy wears horns, a nod to Ico. Can be combined with the game's own Ico outfit (one of the treasures). Turn it on in the launcher once first: the launcher builds the horn models on your PC.": "Çocuk, Ico'ya bir selam olarak boynuz takar. Oyunun kendi Ico kıyafetiyle (hazinelerden biri) birleştirilebilir. Önce başlatıcıda bir kez açın: başlatıcı boynuz modellerini bilgisayarınızda oluşturur.",
-    "Turn on ICO horns in the launcher (Mods page) once first.": "Önce başlatıcıda (Modlar sayfası) ICO boynuzlarını bir kez açın.",
+    "Turn on ICO horns in the launcher (Extras page) once first.": "Önce başlatıcıda (Ekstralar sayfası) ICO boynuzlarını bir kez açın.",
     "Image": "Görüntü",
     "Controls": "Kontroller",
-    "Fun": "Eğlence",
+    "Extras": "Ekstralar",
     "Apply and restart": "Uygula ve yeniden başlat",
     "L1 / R1 or Q / E: switch tabs. Settings are saved in tlg.ini.": "L1 / R1 veya Q / E: sekme değiştir. Ayarlar tlg.ini dosyasına kaydedilir.",
     "Close": "Kapat",
@@ -1228,6 +1240,14 @@
     "Use key": "Anahtarı kullan",
     "Pop-up and sound on unlock": "Açılınca bildirim ve ses",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Kapalı: oynarken bildirim ve ses yok. Açılan kupalar yine kaydedilir ve burada listelenir.",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Kupa adları için kupa anahtarı gerekir. Anahtar yoksa bildirimde yalnızca bir numara görünür."
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Kupa adları için kupa anahtarı gerekir. Anahtar yoksa bildirimde yalnızca bir numara görünür.",
+    "Trico's helmet": "Trico'nun miğferi",
+    "Helmet": "Miğfer",
+    "As in the story (default)": "Hikâyedeki gibi (varsayılan)",
+    "Armour helmet": "Zırh miğferi",
+    "Broken helmet": "Kırık miğfer",
+    "The other Trico's mask": "Diğer Trico'nun maskesi",
+    "No helmet": "Miğfer yok",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Trico'ya tüm oyun boyunca bir miğfer takar ya da çıkarır. Hepsi oyunun kendisinden: zırhlı Trico'ların zırh miğferi, kırık bir miğfer ya da diğer Trico'nun maskesi. Hikâyedeki gibi (varsayılan) seçimi oyuna bırakır. Ara sahnelerde, yeni bölümlerde ve kayıt yüklerken kalır, bir sonraki açılış için saklanır."
   }
 }
