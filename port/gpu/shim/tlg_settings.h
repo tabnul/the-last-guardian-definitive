@@ -14,7 +14,8 @@
 namespace TlgSettings {
 
 enum Upscaler : int { UpscalerOff = 0, UpscalerFsr3 = 1, UpscalerFsr4 = 2, UpscalerFsr411 = 3,
-                      UpscalerTaa = 4, UpscalerDlss = 5, UpscalerCount };
+                      UpscalerTaa = 4, UpscalerDlss = 5, UpscalerXess = 6,
+                      UpscalerCount };
 /// FSR 4 v07 or FSR 4.1.1: the same inputs, settings and placement in the frame.
 inline bool IsFsr4(int upscaler) {
     return upscaler == UpscalerFsr4 || upscaler == UpscalerFsr411;
@@ -74,6 +75,9 @@ struct Values {
     /// DLAA (NVIDIA DLSS at native size on the game's motion vectors, vk_temporal_upscaler);
     /// off: the game's own SMAA only. F8 switches it (a label shows which one for a moment).
     std::atomic<bool> dlaa{true};
+    /// With dlaa off at native size: the game's own SMAA (true, "Game's own") or no anti-aliasing
+    /// at all (false, "Off"; its weight pass is cleared). Choosing any upscaler sets it back.
+    std::atomic<bool> game_smaa{true};
     /// Debug (launcher, at start; tlg_lua.cpp): the game's level select and QA menu.
     std::atomic<bool> level_select{false};
     /// Enhancements (menu, live): shadow map resolution as a multiple of the game's 2048
@@ -156,7 +160,11 @@ struct Values {
     /// tlg.ini trico_drool, env TLG_TRICO_DROOL wins): 0 = off as shipped, 1 = always,
     /// 2 = as the developers planned (only while he wants a smell pot or the boy's smell bottle).
     std::atomic<int> trico_drool{0};
-    /// Trico's coat (Fun tab, live; tlg.ini trico_fur): percent of the game's own fur and feather
+    /// Trico's helmet (tlg.ini trico_helmet, env TLG_TRICO_HELMET wins; tlg_lua.cpp Helmet):
+    /// 0 = as the story has it, 1 = armour helmet, 2 = broken helmet, 3 = the other Trico's mask,
+    /// 4 = none. Kept through story look changes and stage loads.
+    std::atomic<int> trico_helmet{0};
+    /// Trico's coat (Extras tab, live; tlg.ini trico_fur): percent of the game's own fur and feather
     /// length, 0..500, written into his FurTypes through Lua (tlg_lua.cpp Fur). 100 = as shipped.
     std::atomic<int> trico_fur{100};
     /// Button icons in the game's hints (issue #61; tlg.ini button_icons, env TLG_BUTTON_ICONS wins):
@@ -166,6 +174,9 @@ struct Values {
     /// Hide the game's button hints (issue #84; tlg.ini hide_hints, env TLG_HIDE_HINTS wins): the
     /// hint boxes are never shown, the game's tutorial logic runs on (tlg_lua.cpp HideHints). Live.
     std::atomic<bool> hide_hints{false};
+    /// The trophy pop-up and chime on an unlock (issue #60; tlg.ini trophy_popup). Off: unlocks are
+    /// still saved and listed in the Trophies tab, only the pop-up and sound are left out. Live.
+    std::atomic<bool> trophy_popup{false};
     /// Not a setting: the controller used last is an Xbox-style one (runtime_pad.c, tlggpu_pad_kind).
     std::atomic<bool> pad_is_xbox{false};
     /// The hints show an Xbox pad: picture swapped in vk_texture_pack.cpp, glow moved in tlg_lua.cpp.
@@ -228,6 +239,9 @@ struct Values {
     /// DLSS (tlg_dlss.dll, NVIDIA RTX) is ready, or why not (null before the device exists).
     std::atomic<bool> dlss_supported{false};
     std::atomic<const char*> dlss_problem{nullptr};
+    /// XeSS (Intel's libxess.dll, Windows) is ready, or why not (null before the device exists).
+    std::atomic<bool> xess_supported{false};
+    std::atomic<const char*> xess_problem{nullptr};
     /// DLSS frame generation (NVIDIA RTX 40 or newer) can run: -1 not checked yet, 0 no, 1 yes.
     /// Set by the presenter on its first frame.
     std::atomic<int> dlss_fg_supported{-1};
@@ -241,6 +255,7 @@ struct Values {
     /// Sound output (src/runtime_audio.c through tlggpu_audio_settings), applied at the next start:
     /// the playback device's name (empty = system default) and "always send 7.1".
     std::string audio_device;
+    std::string trophy_key; // tlg: PS4 trophy key, 32 hex digits (issue #60); empty = numbered trophies
     std::atomic<bool> audio_surround{false};
     /// Controller button combos (Controls tab + launcher Controller page, tlg.ini pad_combo_*):
     /// PadCombo bits. Quit game (held 2 s, tlg_overlay.cpp), our menu (tlg_overlay.cpp) and the
@@ -309,6 +324,8 @@ void Load();
 void ConfigureUpscalerSupport(bool fsr4, bool fsr411);
 /// After device creation: DLSS availability; a DLSS setting falls back to FSR 3.1 without it.
 void ConfigureDlssSupport(bool available, const char* problem);
+/// The renderer's XeSS check; kept in tlg.ini (xess_supported) for the launcher.
+void ConfigureXessSupport(bool available, const char* problem);
 /// The presenter's DLSS frame generation check; kept in tlg.ini (dlss_fg_supported) for the launcher.
 void ConfigureDlssFgSupport(bool available);
 /// The frame rate settings rule frame generation out: the game runs at 30 FPS (launch mode or
@@ -367,7 +384,7 @@ void SetUpscaler(int upscaler);
 int DefaultAaUpscaler();
 
 /// tlg: the anti-aliasing row (menu, launcher): one choice over dlaa + upscaler (native size).
-enum AaMode : int { AaOff = 0, AaDlaa, AaFsr3Native, AaFsr4Native, AaModeCount };
+enum AaMode : int { AaOff = 0, AaDlaa, AaFsr3Native, AaFsr4Native, AaXessNative, AaModeCount };
 int AaModeOf();
 /// Sets dlaa and the upscaler for a mode.
 void SetAaMode(int mode);

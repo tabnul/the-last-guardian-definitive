@@ -30,6 +30,7 @@ import logtail  # noqa: E402
 import pad_page  # noqa: E402
 import preset_share  # noqa: E402
 import tlg_run  # noqa: E402
+import trophy_key  # noqa: E402
 import update_check  # noqa: E402
 import savemanager  # noqa: E402,F401  (puts scripts/ on sys.path)
 import soundtrack  # noqa: E402
@@ -54,7 +55,7 @@ TEXT = {
     'home_advanced': 'Advanced',
     'home_controller': 'Controller',
     'home_keys': 'Keys & mouse',
-    'home_mods': 'Mods & cheats',
+    'home_mods': 'Extras',
     'home_video': 'Video',
     'home_controls': 'Controls',
     'mouse_section': 'Mouse',
@@ -100,6 +101,19 @@ TEXT = {
     'flag_granule': 'Group buffer memory',
     'flag_granule_hint': "Fix for issue #79: takes buffer memory from the graphics driver in larger pieces instead of many small ones. Older AMD cards on Windows can crash with \"out of memory\" without it. On by default.",
     'flags_game': 'Experimental game fixes',
+    'game_trophy_test': 'Trophy test',
+    'game_trophy_test_hint': 'Test only: 20 seconds after the start the next trophy unlocks, so you can see the pop-up and the Trophies tab in the menu. Test unlocks go to trophies_test.txt, not into your real trophy list. Off by default.',
+    'trophies_section': 'Trophies',
+    'trophy_key': 'PS4 trophy key',
+    'trophy_key_save': 'Use key',
+    'trophy_popup': 'Pop-up and sound on unlock',
+    'trophy_popup_note': 'Trophy names need the trophy key. Without it the pop-up only shows a number.',
+    'trophy_key_ok': 'Key works: {names} trophy names found. Saved.',
+    'trophy_key_wrong': 'This key does not open the trophy file. Not saved.',
+    'trophy_key_format': 'A key is 32 hex digits (0-9, A-F). Not saved.',
+    'trophy_key_nofile': 'Saved, but not checked: no trophy file in the game folder.',
+    'trophy_key_cleared': 'Key removed: the trophies are numbered.',
+    'trophy_key_hint': 'Optional: the PS4 trophy key (32 hex digits) shows the trophy names. The port does not include it. Also in the in-game menu (Trophies tab).',
     'game_tail_climb': "Trico's tail climbing fix",
     'game_tail_climb_hint': "Experimental: the boy should no longer climb in place on Trico's moving tail. Changes the game's climbing code, so it works on every graphics card. Not fully tested: letting go, shake-offs, ropes and chains may behave differently. By @YsraEstudos. On by default.",
     'flags_rdna': 'RDNA2: possible improvements',
@@ -202,7 +216,9 @@ TEXT = {
     'fps_30': '30 FPS (as on PS4)',
     'deck_preset': 'Steam Deck (experimental)',
     'fps_60': '60 FPS',
-    'fps_unlocked': 'Unlocked (up to the display)',
+    'fps_120': '120 FPS',
+    'fps_unlocked': 'Unlocked (not for gameplay)',
+    'fps_unlocked_warning': 'Warning: Unlocked breaks certain scenes. Only for testing and benchmarking.',
     'fps_hint': ('60/unlocked patch eboot 1.03 in memory. Unlocked lowers the base frame rate by about '
                  '10 FPS against 60 at the same spot; pick 60 unless your PC runs well above 60'),
     'skip_logos': 'Skip the boot logos',
@@ -212,6 +228,7 @@ TEXT = {
     'update_available': 'New release {tag} is out: click to open the download page',
     'old_version': 'Game version {version}: install update 01.03 (the port is made for it)',
     'fps_unsupported': 'eboot.bin is not the 1.03 game code: 60 FPS and Unlocked do not work, the game runs at 30 FPS (see the README)',
+    'untested_disc': 'Untested game version ({serial}): it may not work fully. Please share your log if something goes wrong',
     'debug': 'Debug (at start)',
     'bench_title': 'Benchmark',
     'bench_text': ('Measures how fast the game runs on this PC, scene by scene, all by itself: each scene is '
@@ -283,11 +300,13 @@ TEXT = {
     'up_fsr3': 'FSR 3.1 (any card)',
     'up_fsr4': 'FSR 4 (any recent card)',
     'up_taa': 'TAA (any card)',
+    'up_xess': 'XeSS (Intel, Windows)',
     'aa': 'Anti-aliasing',
-    'aa_game': "Off (game's own)",
+    'aa_game': "Game's own (SMAA)",
     'aa_dlaa': 'DLAA (NVIDIA RTX)',
-    'aa_hint': "Smooths jagged edges. Yours to choose with Upscale method Off; an upscaler does its own. DLAA (NVIDIA RTX cards) and FSR 4 (any recent card) are the sharpest, FSR 3.1 runs on any card, TAA is lighter and softer. Off keeps only the game's own.",
-    'upscaler_hint': "How the image gets its size. Off: drawn at the screen's size. Built-in, DLSS, FSR 3.1 and FSR 4: drawn smaller and enlarged, for more speed; DLSS needs an NVIDIA RTX card, FSR 4 any recent card (not only AMD; sharper and steadier than FSR 3.1), FSR 3.1 runs on any card, Built-in is the game's own upscale pass. An upscaler also smooths the edges itself. F8 switches between Built-in and your choice in game.",
+    'aa_xess': 'XeSS Native AA (Windows)',
+    'aa_hint': "Smooths jagged edges. Yours to choose with Upscale method Off; an upscaler does its own. DLAA (NVIDIA RTX cards) and FSR 4 (any recent card) are the sharpest, XeSS Native AA (any recent card, Windows only) is close, FSR 3.1 runs on any card, TAA is lighter and softer. Game's own keeps only the game's SMAA, Off smooths nothing.",
+    'upscaler_hint': "How the image gets its size. Off: drawn at the screen's size. Built-in, DLSS, FSR 3.1, FSR 4 and XeSS: drawn smaller and enlarged, for more speed; DLSS needs an NVIDIA RTX card, FSR 4 any recent card (not only AMD; sharper and steadier than FSR 3.1), XeSS any recent card on Windows (best on Intel Arc), FSR 3.1 runs on any card, Built-in is the game's own upscale pass. An upscaler also smooths the edges itself. F8 switches between Built-in and your choice in game.",
     'quality': 'Upscale quality',
     'preset_native': 'Off',
     'preset_quality': 'Quality',
@@ -304,6 +323,7 @@ TEXT = {
     'fg_blocked': 'Off: the game runs at 30 FPS (frame rate or frame rate limit), too low for frame generation. Your choice comes back at a higher frame rate.',
     'aa_no_dlss': 'No DLSS on this GPU: it runs as FSR 3.1',
     'aa_no_fsr4': 'This GPU cannot run FSR 4: it runs as FSR 3.1',
+    'aa_no_xess': 'XeSS is not available here (Windows only, needs libxess.dll): it runs as FSR 3.1',
     'sharpening': 'Sharpening',
     'sharpening_hint': ('Sharpens the image. With DLSS, FSR or TAA it is their own sharpening (scene only); with '
                         "Built-in it is AMD CAS on the final picture. Up to 100% the upscaler's own sharpening; "
@@ -390,7 +410,7 @@ TEXT = {
     'clear_cache_done': 'Shader cache cleared: {size} freed.',
     'clear_cache_failed': ('{size} freed, but {count} file(s) could not be deleted (in use? Close the game '
                            'and try again).'),
-    'mods': 'Mods / Cheats…',
+    'mods': 'Extras…',
     'menu_note': ("Two menus in game. Insert: the port's graphics menu (every setting applies live). "
                   "Development menu (the game's own QA menu): turn on 'Level select and QA menu' under Debug, "
                   'then in game hold L1 and press L3 (keyboard: hold 1, press Z).'),
@@ -484,7 +504,7 @@ TEXT = {
     'effect_fov_hint': 'Camera field of view. Default 70° is as shipped; higher shows more around the boy.',
     'effect_trico_feathers': 'Trico feather wind',
     'effect_trico_feathers_hint': "How strongly the wind moves Trico's feathers. Default 100% is as shipped; 0% keeps them still.",
-    'mods_title': 'Mods / Cheats',
+    'mods_title': 'Extras',
     'mods_hint': ('Drop shadPS4/GoldHEN cheat XML files in the mods folder, then turn them on here. '
                   'Nothing here changes the game until you enable it.'),
     'mods_warning': 'A cheat can crash the game or behave oddly; if that happens, turn it off here.',
@@ -561,14 +581,20 @@ INI_DEFAULTS = {'smaa': '0', 'sharpen': '1', 'sharpness': '1.75', 'color_adjust'
 # on any card; off is the game's own upscale pass. At Native AA quality the upscaler is the
 # anti-aliasing, below it the upscaler is too (no separate AA checkbox; dlaa = not Built-in).
 # TAA (2026-11-07): our own light temporal AA at native size, between SMAA and DLAA in cost.
-UPSCALERS = [('up_off', 'off'), ('up_dlss', 'dlss'), ('up_fsr3', 'fsr3'), ('up_fsr4', 'fsr4'), ('up_taa', 'taa')]
+# XeSS (issue #62): Intel's libxess.dll, Windows only; the game checks it as DLSS and FSR 4.
+UPSCALERS = [('up_off', 'off'), ('up_dlss', 'dlss'), ('up_fsr3', 'fsr3'), ('up_fsr4', 'fsr4'), ('up_taa', 'taa'),
+             ('up_xess', 'xess')]
 # The Video page's three rows (as the in-game menu). Upscale method: Off or an upscaler
 # (supersampling removed, user 2026-11-10); Upscale quality: the render size; Anti-aliasing: free
 # to choose only with method Off (an upscaler is its own). Stored as before: tlg.ini preset (0 off,
 # 1-4 upscaling) and upscaler (the upscaler, or the anti-aliasing).
-METHODS = [('preset_native', None), ('up_off', 'off'), ('up_dlss', 'dlss'), ('up_fsr3', 'fsr3'), ('up_fsr4', 'fsr4')]
+METHODS = [('preset_native', None), ('up_off', 'off'), ('up_dlss', 'dlss'), ('up_fsr3', 'fsr3'), ('up_fsr4', 'fsr4'),
+           ('up_xess', 'xess')]
 METHOD_OFF = 0
-AA_CHOICES = [('aa_game', 'off'), ('aa_dlaa', 'dlss'), ('up_fsr3', 'fsr3'), ('up_fsr4', 'fsr4'), ('up_taa', 'taa')]
+# Off: no anti-aliasing at all ('none': tlg.ini upscaler off + game_smaa=0, the game's SMAA cleared
+# too, user 2026-11-22); Game's own: upscaler off, the game's SMAA only.
+AA_CHOICES = [('aa_off', 'none'), ('aa_game', 'off'), ('aa_dlaa', 'dlss'), ('up_fsr3', 'fsr3'), ('up_fsr4', 'fsr4'), ('up_taa', 'taa'),
+              ('aa_xess', 'xess')]
 
 
 def fg_mode_of(ini):
@@ -607,6 +633,11 @@ def fsr4_unsupported(ini):
     return ini.get('fsr4_supported') == '0'
 
 
+def xess_unsupported(ini):
+    # The game writes its XeSS check (xess_supported); XeSS is Windows only (libxess.dll).
+    return sys.platform != 'win32' or ini.get('xess_supported') == '0'
+
+
 def upscaler_of(ini):
     # The UPSCALERS index tlg.ini picks (TlgSettings::Load: a file from before the row, and every
     # other upscaler, loads as DLSS; anti-aliasing off loads as Built-in).
@@ -614,12 +645,21 @@ def upscaler_of(ini):
         return 1
     if ini.get('dlaa', '1') in ('0', ''):
         return 0
-    return {'off': 0, 'fsr3': 2, 'fsr4': 3, 'taa': 4}.get(ini.get('upscaler'), 1)
+    return {'off': 0, 'fsr3': 2, 'fsr4': 3, 'taa': 4, 'xess': 5}.get(ini.get('upscaler'), 1)
+
+
+def aa_value_of(ini):
+    """The upscaler value the video rows show: UPSCALERS' value, or 'none' for the AA row's Off
+    (upscaler off at native size with game_smaa=0)."""
+    upscaler = UPSCALERS[upscaler_of(ini)][1]
+    if upscaler == 'off' and ini.get('game_smaa') == '0' and tlg_run.quality_preset(ini) <= 0:
+        return 'none'
+    return upscaler
 
 
 def method_of(preset, upscaler):
     """The METHODS index of a tlg.ini preset and upscaler (TAA runs at native size only)."""
-    if preset <= 0 or upscaler == 'taa':
+    if preset <= 0 or upscaler in ('taa', 'none'):
         return METHOD_OFF
     return [value for _, value in METHODS].index(upscaler)
 
@@ -1224,11 +1264,20 @@ class Launcher:
         else:
             self.fg_note.grid_remove()
 
+    def update_fps_note(self):
+        """The red warning under Frame rate while Unlocked is picked."""
+        if self.settings.get('frame_rate') == 'unlocked':
+            self.fps_note.grid()
+        else:
+            self.fps_note.grid_remove()
+
     def update_aa_note(self, ini):
         # DLSS or FSR 4 stays the choice in tlg.ini; the game runs FSR 3.1 while the card lacks it.
         mode = self.video_state[1]
-        if (mode == 'dlss' and dlss_unsupported(ini)) or (mode == 'fsr4' and fsr4_unsupported(ini)):
-            self.aa_note.configure(text=self.t('aa_no_dlss' if mode == 'dlss' else 'aa_no_fsr4'))
+        notes = {'dlss': (dlss_unsupported, 'aa_no_dlss'), 'fsr4': (fsr4_unsupported, 'aa_no_fsr4'),
+                 'xess': (xess_unsupported, 'aa_no_xess')}
+        if mode in notes and notes[mode][0](ini):
+            self.aa_note.configure(text=self.t(notes[mode][1]))
             self.aa_note.grid()
         else:
             self.aa_note.grid_remove()
@@ -1368,12 +1417,46 @@ class Launcher:
         self.vars['update_check'] = update_var
         ttk.Checkbutton(launcher, text=self.t('update_check'), variable=update_var,
                         command=self.changed).pack(side='left', padx=(12, 0))
+        self.build_trophy_key(right)
         debug = section(right, self.t('debug'))
         debug.grid(sticky='ew')
         self.check(debug, 0, 'level_select')
         self.hint(debug, 0, 3, 'debug_hint')
         self.check(debug, 2, 'debug_logging')
         self.hint(debug, 2, 3, 'debug_logging_hint')
+
+    def build_trophy_key(self, parent):
+        """The PS4 trophy key (tlg.ini trophy_key, issue #60; also in the in-game menu's Trophies tab).
+        Kept in tlg.ini only, like the sound device, so a key entered in the game stays."""
+        ini_path = tlg_run.USER_DIR / 'tlg.ini'
+        box = section(parent, self.t('trophies_section'))
+        box.grid(sticky='ew', pady=(0, 8))
+        ttk.Label(box, text=self.t('trophy_key')).grid(row=0, column=0, sticky='w')
+        key = tk.StringVar(value=tlg_run.read_ini(ini_path).get('trophy_key', ''))
+        ttk.Entry(box, textvariable=key, show='*', width=36).grid(row=1, column=0, sticky='w', pady=2)
+
+        status = tk.StringVar()
+
+        def save():
+            # Checked against the game's own trophy file first; a key that does not open it is not kept.
+            npbind = art_path(self.settings, 'npbind.dat')
+            result, names = trophy_key.check(npbind.parent if npbind else '', key.get())
+            status.set(self.t('trophy_key_' + result, names=names))
+            if result in ('format', 'wrong'):
+                return
+            tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
+            tlg_run.update_ini(ini_path, {'trophy_key': ''.join(key.get().split())})
+
+        ttk.Button(box, text=self.t('trophy_key_save'), command=save).grid(row=1, column=1, sticky='w', padx=(6, 0))
+        self.hint(box, 1, 2, 'trophy_key_hint')
+        ttk.Label(box, textvariable=status, wraplength=420).grid(row=2, column=0, columnspan=3, sticky='w')
+        # Pop-up and chime on an unlock (tlg.ini trophy_popup; live, also in the Trophies tab).
+        popup = tk.BooleanVar(value=tlg_run.read_ini(ini_path).get('trophy_popup', '0') != '0')
+        ttk.Checkbutton(box, text=self.t('trophy_popup'), variable=popup,
+                        command=lambda: tlg_run.update_ini(ini_path, {'trophy_popup': int(popup.get())})
+                        ).grid(row=3, column=0, columnspan=3, sticky='w', pady=(4, 0))
+        ttk.Label(box, text=self.t('trophy_popup_note'), foreground='#e0605a', wraplength=420
+                  ).grid(row=4, column=0, columnspan=3, sticky='w')
 
     def build_sound_output(self, parent):
         """Output device and 'Always send 7.1' (tlg.ini audio_device / audio_surround, also in the
@@ -1403,9 +1486,9 @@ class Launcher:
             row=4, column=0, sticky='w')
 
     def build_drool(self, parent):
-        """Built-in mods on the Mods page: Trico's drool, with its story in plain sight: the developers built it
+        """Built-in mods on the Extras page: Trico's drool, with its story in plain sight: the developers built it
         and switched it off just before release (tlg.ini trico_drool; the game reads it live, also from
-        the in-game Fun tab)."""
+        the in-game Extras tab)."""
         drool = next(item for item in backports_table.MENU if item.key == 'trico_drool')
         box = section(parent, drool.name)
         box.pack(fill='x', anchor='w', pady=(0, 8))
@@ -1424,7 +1507,7 @@ class Launcher:
         ttk.Label(box, text=drool.what, foreground=DIM, wraplength=420, justify='left').grid(
             row=1, column=0, sticky='w', pady=(6, 0))
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
-        for key in ('trico_fur', 'mod_treasures', 'mod_horns', 'mod_plays', 'mod_throw_up', 'mod_hints'):
+        for key in ('trico_fur', 'trico_helmet', 'mod_treasures', 'mod_horns', 'mod_plays', 'mod_throw_up', 'mod_hints'):
             item = next(i for i in backports_table.MENU if i.key == key)
             mod = section(parent, item.name)
             mod.pack(fill='x', anchor='w', pady=(0, 8))
@@ -1508,8 +1591,12 @@ class Launcher:
         self.check(video, 2, 'show_fps')
         self.build_gpu_choice(video, 3)
         self.combo(video, 5, 'frame_rate', tlg_run.FRAME_RATES, lambda k: self.t(f'fps_{k}'),
-                   on_change=lambda: (self.update_fg(), self.refresh_status()))
+                   on_change=lambda: (self.update_fg(), self.update_fps_note(), self.refresh_status()))
         self.hint(video, 5, 2, 'fps_hint')
+        # Unlocked breaks some scenes (the boy misses Trico's tail in s06 at ~116 FPS, fine at 120; 11-23).
+        self.fps_note = ttk.Label(video, text=self.t('fps_unlocked_warning'), foreground='#e0605a', wraplength=320)
+        self.fps_note.grid(row=6, column=0, columnspan=3, sticky='w')
+        self.update_fps_note()
         self.combo(video, 7, 'resolution', tlg_run.RESOLUTIONS, tlg_run.resolution_label)
         self.hint(video, 7, 2, 'resolution_hint')
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
@@ -1533,7 +1620,7 @@ class Launcher:
         self.hint(video, 11, 2, 'aa_hint')
         self.aa_note = ttk.Label(video, text=self.t('aa_no_dlss'), foreground=MUTED, wraplength=320)
         self.aa_note.grid(row=12, column=0, columnspan=2, sticky='w')
-        self.show_video_rows(tlg_run.quality_preset(ini), UPSCALERS[upscaler_of(ini)][1])
+        self.show_video_rows(tlg_run.quality_preset(ini), aa_value_of(ini))
         self.update_aa_note(ini)
         ttk.Label(video, text=self.t('fg_mode')).grid(row=14, column=0, sticky='w', pady=(6, 0))
         self.fg_box = ttk.Combobox(video, state='readonly', width=20)
@@ -2292,7 +2379,7 @@ class Launcher:
     def reload_ini(self):
         """The rows that show tlg.ini values read it again."""
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
-        self.show_video_rows(tlg_run.quality_preset(ini), UPSCALERS[upscaler_of(ini)][1])
+        self.show_video_rows(tlg_run.quality_preset(ini), aa_value_of(ini))
         self.update_fg(ini)
         self.update_aa_note(ini)
         self.hdr_var.set(ini.get('hdr', '1') != '0')
@@ -2349,7 +2436,7 @@ class Launcher:
         if index < 0:
             return
         tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
-        tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', self.presets[index][1])
+        tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {**self.presets[index][1], 'game_smaa': 1})  # as the in-game menu (SetUpscaler)
         self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
         if index == preset_share.DECK_INDEX:  # the Steam Deck entry: its resolution and frame rate too
             self.settings.update(preset_share.DECK_SETTINGS)
@@ -2373,11 +2460,20 @@ class Launcher:
             values['frame_generation'] = picked
         preset, upscaler = video_choice(self.video_state, self.method_box.current(), self.quality_box.current(),
                                         self.aa_box.current())
+        # XeSS is Windows only: off Windows the pick is refused (the in-game menu greys it out;
+        # a Tk list cannot grey one entry), the rows go back and the note says why.
+        refused = upscaler == 'xess' and sys.platform != 'win32'
+        if refused:
+            preset, upscaler = self.video_state
         self.show_video_rows(preset, upscaler)
         self.update_aa_note(current_ini)
+        if refused:
+            self.aa_note.configure(text=self.t('aa_no_xess'))
+            self.aa_note.grid()
         self.update_strength(current_ini)
         # tlg.ini dlaa: anti-aliasing or upscaling by something else than the game's own.
-        values.update(upscaler=upscaler, aa_row=1, preset=preset, dlaa=int(upscaler != 'off'))
+        values.update(upscaler='off' if upscaler == 'none' else upscaler, aa_row=1, preset=preset,
+                      dlaa=int(upscaler not in ('off', 'none')), game_smaa=int(upscaler != 'none'))
         for key, (low, high) in COLOR_RANGES.items():
             try:
                 value = min(max(float(self.ini_vars[key].get().replace(',', '.')), low), high)
@@ -2869,6 +2965,7 @@ class Launcher:
             text = '; '.join(self.t('not_built') if k == 'not_built'
                              else self.t('old_version', version=d) if k == 'old_version'
                              else self.t('fps_unsupported') if k == 'fps_unsupported'
+                             else self.t('untested_disc', serial=d) if k == 'untested_disc'
                              else f"{self.t('missing')}: {d}" for k, d in problems)
         else:
             text = self.t('ready')

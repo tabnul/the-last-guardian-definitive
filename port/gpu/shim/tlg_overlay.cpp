@@ -26,6 +26,7 @@
 #include "tlg_fun_points.h"
 #include "tlg_graphics.h"
 #include "tlg_perf_stats.h"
+#include "tlg_trophy.h"
 extern "C" void runtime_restart(void); // src/probe.c: starts the launch again, ends this process
 #include "common/elf_info.h"
 #include "imgui.h"
@@ -426,6 +427,7 @@ const char* UpscalerLabel(int upscaler) {
     case TlgSettings::UpscalerFsr411: return "FSR 4.1.1";
     case TlgSettings::UpscalerTaa: return "TAA";
     case TlgSettings::UpscalerDlss: return "DLSS";
+    case TlgSettings::UpscalerXess: return "XeSS";
     default: return "";
     }
 }
@@ -594,25 +596,27 @@ void ImageTab() {
         // method Off). DLSS needs tlg_dlss.dll and an NVIDIA RTX card, FSR 4 a
         // card with its shader features; both grey out when the card lacks them.
         // TAA (test 2026-11-07): our own light temporal AA, native size only.
-        enum Method { MethodOff, MethodBuiltIn, MethodDlss, MethodFsr3, MethodFsr4, MethodCount };
+        // XeSS (issue #62): Intel's libxess.dll, any card with its shader features; Windows only.
+        enum Method { MethodOff, MethodBuiltIn, MethodDlss, MethodFsr3, MethodFsr4, MethodXess, MethodCount };
         static const char* const method_labels[MethodCount] = {TR("Off"), TR("Built-in (game)"), "DLSS (NVIDIA)",
-                                                               "FSR 3.1", "FSR 4"};
+                                                               "FSR 3.1", "FSR 4", "XeSS (Intel)"};
         static const int method_upscalers[MethodCount] = {-1, S::UpscalerOff, S::UpscalerDlss, S::UpscalerFsr3,
-                                                          S::UpscalerFsr4};
+                                                          S::UpscalerFsr4, S::UpscalerXess};
         const int upscaler = S::SelectedUpscaler() == S::UpscalerFsr411 ? int(S::UpscalerFsr4) : S::SelectedUpscaler();
         const int preset = std::clamp(s.preset.load(), 0, int(S::UltraPerformance));
         int method = MethodOff;
         if (preset == S::NativeAA || upscaler == S::UpscalerTaa) {
             method = MethodOff;  // TAA always runs at native size (RenderPreset)
         } else {
-            for (int i = MethodBuiltIn; i <= MethodFsr4; ++i) {
+            for (int i = MethodBuiltIn; i < MethodCount; ++i) {
                 if (method_upscalers[i] == upscaler) method = i;
             }
         }
         Row(TR("Upscale method"));
         if (ImGui::BeginCombo("##value", method_labels[method])) {
             for (int i = 0; i < MethodCount; ++i) {
-                const bool supported = (i != MethodDlss || s.dlss_supported) && (i != MethodFsr4 || s.fsr4_supported);
+                const bool supported = (i != MethodDlss || s.dlss_supported) && (i != MethodFsr4 || s.fsr4_supported) &&
+                                       (i != MethodXess || s.xess_supported);
                 ImGui::BeginDisabled(!supported);
                 if (ImGui::Selectable(method_labels[i], i == method) && i != method) {
                     if (i == MethodOff) {
@@ -629,7 +633,7 @@ void ImageTab() {
         }
         Help(!s.dlss_supported && s.dlss_problem.load()
                  ? s.dlss_problem.load()
-                 : TR("How the image gets its size. Off: drawn at the screen's size. Built-in, DLSS, FSR 3.1 and FSR 4: drawn smaller and enlarged, for more speed; DLSS needs an NVIDIA RTX card, FSR 4 any recent card (not only AMD; sharper and steadier than FSR 3.1), FSR 3.1 runs on any card, Built-in is the game's own upscale pass. An upscaler also smooths the edges itself. F8 switches between Built-in and your choice in game."),
+                 : TR("How the image gets its size. Off: drawn at the screen's size. Built-in, DLSS, FSR 3.1, FSR 4 and XeSS: drawn smaller and enlarged, for more speed; DLSS needs an NVIDIA RTX card, FSR 4 any recent card (not only AMD; sharper and steadier than FSR 3.1), XeSS any recent card on Windows (best on Intel Arc), FSR 3.1 runs on any card, Built-in is the game's own upscale pass. An upscaler also smooths the edges itself. F8 switches between Built-in and your choice in game."),
              {method_labels[MethodOff], ""});
         ImGui::PopID();
         static const char* const quality_labels[S::UltraPerformance + 1] = {
@@ -670,25 +674,32 @@ void ImageTab() {
         ImGui::EndDisabled();
         Help(quality_help.c_str());
         ImGui::PopID();
-        static const char* const aa_labels[] = {TR("Off (game's own)"), "DLAA (NVIDIA)", "FSR 3.1", "FSR 4", "TAA"};
-        static const int aa_values[] = {S::UpscalerOff, S::UpscalerDlss, S::UpscalerFsr3, S::UpscalerFsr4,
-                                        S::UpscalerTaa};
+        // Off: no anti-aliasing at all (the game's SMAA cleared too, user 2026-11-22); Game's own:
+        // the game's SMAA only. Both are upscaler Off, told apart by game_smaa.
+        static const char* const aa_labels[] = {TR("Off"), TR("Game's own (SMAA)"), "DLAA (NVIDIA)", "FSR 3.1",
+                                                "FSR 4", "TAA", "XeSS Native AA"};
+        static const int aa_values[] = {S::UpscalerOff, S::UpscalerOff, S::UpscalerDlss, S::UpscalerFsr3,
+                                        S::UpscalerFsr4, S::UpscalerTaa, S::UpscalerXess};
         constexpr int aa_count = int(std::size(aa_values));
+        constexpr int aa_game = 1;
         // An upscaler as the method: the row shows Off, greyed out (user, 2026-11-10).
         const bool aa_free = method == MethodOff;
         int aa_index = 0;
-        for (int i = 0; i < aa_count && aa_free; ++i) {
+        for (int i = aa_game + 1; i < aa_count && aa_free; ++i) {
             if (aa_values[i] == upscaler) aa_index = i;
         }
+        if (aa_free && upscaler == S::UpscalerOff && s.game_smaa) aa_index = aa_game;
         Row(TR("Anti-aliasing"));
         ImGui::BeginDisabled(method != MethodOff);
         if (ImGui::BeginCombo("##value", aa_labels[aa_index])) {
             for (int i = 0; i < aa_count; ++i) {
                 const bool supported = (aa_values[i] != S::UpscalerDlss || s.dlss_supported) &&
-                                       (aa_values[i] != S::UpscalerFsr4 || s.fsr4_supported);
+                                       (aa_values[i] != S::UpscalerFsr4 || s.fsr4_supported) &&
+                                       (aa_values[i] != S::UpscalerXess || s.xess_supported);
                 ImGui::BeginDisabled(!supported);
                 if (ImGui::Selectable(aa_labels[i], i == aa_index) && i != aa_index) {
                     S::SetUpscaler(aa_values[i]);
+                    if (i == 0) s.game_smaa = false;
                     dirty = true;
                 }
                 ImGui::EndDisabled();
@@ -696,8 +707,8 @@ void ImageTab() {
             ImGui::EndCombo();
         }
         ImGui::EndDisabled();
-        Help(TR("Smooths jagged edges. Yours to choose with Upscale method Off; an upscaler does its own. DLAA (NVIDIA RTX cards) and FSR 4 (any recent card) are the sharpest, FSR 3.1 runs on any card, TAA is lighter and softer. Off keeps only the game's own."),
-             {s.dlss_supported ? "DLAA (NVIDIA)" : aa_labels[s.fsr4_supported ? 3 : 2], ""});
+        Help(TR("Smooths jagged edges. Yours to choose with Upscale method Off; an upscaler does its own. DLAA (NVIDIA RTX cards) and FSR 4 (any recent card) are the sharpest, XeSS Native AA (any recent card, Windows only) is close, FSR 3.1 runs on any card, TAA is lighter and softer. Game's own keeps only the game's SMAA, Off smooths nothing."),
+             {s.dlss_supported ? "DLAA (NVIDIA)" : aa_labels[s.fsr4_supported ? 4 : 3], ""});
         ImGui::PopID();
         CheckRow("SMAA 1x", s.smaa,
                  TR("Smooths jagged edges (feathers, grass, railings) on the final image. The game draws its HUD and subtitles into the same image, so text edges are smoothed too. About 0.2 to 0.4 ms per frame at 1080p (RTX 2060)."), d.smaa, false);
@@ -1207,12 +1218,12 @@ void ControlsTab() {
     SoundRows();
 }
 
-// tlg: Fun tab: jump to any start point of the story (as the game's QA menu does, without
+// tlg: Extras tab: jump to any start point of the story (as the game's QA menu does, without
 // turning it on) and extra Tricos. Commands run at the game's next settings tick.
 // The move bar: all moves of TlgFun::Actions as icons (TlgFunIcons, same order) with the name under
 // each and as a tooltip, one group at a time behind coloured group buttons (user 2026-11-15).
 // Favourites come first: right-click a move to star it (at most 16, tlg.ini trico_favourites).
-// Fun tab and F12.
+// Extras tab and F12.
 void MakeMoveIcons() {
     static bool tried = false;
     if (tried) {
@@ -1440,7 +1451,7 @@ void MoveBarWindow() {
     ImGui::End();
 }
 
-// tlg: Trico Tricks, Trico's moves on their own tab (user 2026-11-05: moves out of the Fun tab).
+// tlg: Trico Tricks, Trico's moves on their own tab (user 2026-11-05: moves out of the Extras tab).
 void TricksTab() {
     ImGui::TextDisabled("%s", TR("Click a move (also as a bar in the game: F12). Right-click a move to add it to your favourites."));
     MoveBar(44.0f * base_scale, 12);
@@ -1642,7 +1653,19 @@ void FunTab() {
         ImGui::EndTable();
     }
 
-    // Mods (also on the launcher's Mods page; tlg_lua.cpp Treasures / Horns).
+    // Trico's helmet (tlg_lua.cpp Helmet; also on the launcher's Extras page).
+    ImGui::SeparatorText(TR("Trico's helmet"));
+    if (BeginRows("##helmet")) {
+        static const char* const helmet_labels[] = {TR("As in the story (default)"), TR("Armour helmet"),
+                                                    TR("Broken helmet"), TR("The other Trico's mask"),
+                                                    TR("No helmet")};
+        static const int helmet_values[] = {0, 1, 2, 3, 4};
+        ChoiceRow(TR("Helmet"), TlgSettings::Get().trico_helmet, helmet_labels, helmet_values, 5,
+                  TR(TlgFun::HelmetHelp), 0);
+        ImGui::EndTable();
+    }
+
+    // Mods (also on the launcher's Extras page; tlg_lua.cpp Treasures / Horns).
     ImGui::SeparatorText(TR("Mods"));
     if (BeginRows("##mods")) {
         CheckRow(TR("All treasures"), TlgSettings::Get().mod_treasures,
@@ -1651,7 +1674,7 @@ void FunTab() {
                     "Your saves are backed up before the first unlock (the launcher's save manager can restore them). "
                     "Select them in the game's pause menu, under Items."),
                  false);
-        // The horn models only exist after the launcher built them (Mods page); the game mounts
+        // The horn models only exist after the launcher built them (Extras page); the game mounts
         // them at start (runtime_file.c), so check once: without them the checkmark does nothing.
         static const bool horns_built = [] {
             const char* ini = std::getenv("TLG_CONFIG");
@@ -1671,7 +1694,7 @@ void FunTab() {
         ImGui::EndDisabled();
         if (!horns_built) {
             Row("");
-            ImGui::TextDisabled("%s", TR("Turn on ICO horns in the launcher (Mods page) once first."));
+            ImGui::TextDisabled("%s", TR("Turn on ICO horns in the launcher (Extras page) once first."));
             ImGui::PopID();
         }
         CheckRow(TR("Trico plays"), TlgSettings::Get().mod_plays,
@@ -1691,6 +1714,208 @@ int RestartChanges() {
     return (s.render_resolution != s.startup_render_resolution) + (s.engine_fps != s.startup_engine_fps) +
            (s.deferred_readback != s.startup_deferred_readback) + (s.stale_readback != s.startup_stale_readback) +
            (s.hdr != s.startup_hdr) + (s.preset != s.startup_preset);
+}
+
+// tlg: Trophies tab and unlock pop-up (issue #60). Icons from the player's trophy file, made into
+// textures on first use (present thread, imgui_mutex held). Names need the PS4 trophy key.
+std::vector<std::pair<int, ImTextureData*>> trophy_icons;
+TlgTrophy::Entry trophy_toast;
+std::chrono::steady_clock::time_point trophy_toast_since{}, trophy_toast_until{};
+
+ImTextureData* TrophyIcon(int id) {
+    for (const auto& [icon_id, tex] : trophy_icons) {
+        if (icon_id == id) {
+            return tex;
+        }
+    }
+    ImTextureData* tex = nullptr;
+    const auto png = TlgTrophy::IconPng(id);
+    TlgPng::Image image;
+    if (!png.empty() && TlgPng::DecodeRgba(png.data(), png.size(), image) && !image.rgba.empty()) {
+        tex = IM_NEW(ImTextureData)();
+        tex->Create(ImTextureFormat_RGBA32, image.width, image.height);
+        std::memcpy(tex->GetPixels(), image.rgba.data(), image.rgba.size());
+        ImGui::RegisterUserTexture(tex);
+    }
+    trophy_icons.emplace_back(id, tex);
+    return tex;
+}
+
+std::string TrophyName(const TlgTrophy::Entry& e) {
+    if (!e.name.empty()) {
+        return e.name;
+    }
+    char text[64];
+    std::snprintf(text, sizeof(text), TR("Trophy %d"), e.id + 1);
+    return text;
+}
+
+// The grade as a colour (no words, so nothing to translate): platinum, gold, silver, bronze.
+ImVec4 TrophyGradeColor(char grade) {
+    switch (grade) {
+    case 'P': return ImVec4(0.78f, 0.84f, 0.95f, 1.0f);
+    case 'G': return ImVec4(0.95f, 0.78f, 0.32f, 1.0f);
+    case 'S': return ImVec4(0.80f, 0.80f, 0.82f, 1.0f);
+    case 'B': return ImVec4(0.80f, 0.55f, 0.35f, 1.0f);
+    default: return ImVec4(0.85f, 0.72f, 0.45f, 1.0f);
+    }
+}
+
+bool TrophyToastOn() {
+    if (!TlgSettings::Get().trophy_popup) {
+        // Switched off: no pop-up or chime; drop the waiting ones so they don't all show when it
+        // is switched on again. The unlocks themselves are already saved.
+        TlgTrophy::Entry skipped;
+        while (TlgTrophy::TakeUnlockToast(skipped)) {
+        }
+        trophy_toast_until = {};
+        return false;
+    }
+    return std::chrono::steady_clock::now() < trophy_toast_until || TlgTrophy::HasToast();
+}
+
+// Top left, like the console's: icon, "Trophy unlocked", the name, and the chime. 5 s each, one
+// after another.
+void TrophyToastBox() {
+    const auto now = std::chrono::steady_clock::now();
+    if (now >= trophy_toast_until) {
+        if (!TlgTrophy::TakeUnlockToast(trophy_toast)) {
+            return;
+        }
+        trophy_toast_since = now;
+        trophy_toast_until = now + std::chrono::seconds(5);
+        TlgTrophy::PlayChime();
+    }
+    const float in = std::chrono::duration<float>(now - trophy_toast_since).count();
+    const float out = std::chrono::duration<float>(trophy_toast_until - now).count();
+    const float alpha = std::clamp(std::min(in / 0.25f, out / 0.5f), 0.0f, 1.0f);
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float k = viewport->WorkSize.y / 720.0f;
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    ImFont* font = ImGui::GetFont();
+    const std::string name = TrophyName(trophy_toast);
+    const char* title = TR("Trophy unlocked");
+    const float icon = 44 * k, pad = 10 * k, big = 15 * k, small = 13 * k;
+    const float text_w = std::max(font->CalcTextSizeA(big, FLT_MAX, 0, name.c_str()).x,
+                                  font->CalcTextSizeA(small, FLT_MAX, 0, title).x);
+    // Top right, like the PS4; below the FPS counter / AA label when they sit in that corner.
+    const float box_w = pad * 3 + icon + text_w;
+    const float left = viewport->WorkPos.x + viewport->WorkSize.x - 28 * k - box_w;
+    float top = viewport->WorkPos.y + 24 * k;
+    for (const char* other : {"##fps", "##aa_label"}) {
+        const ImGuiWindow* w = ImGui::FindWindowByName(other);
+        if (w && (w->Active || w->WasActive) && w->Pos.y < viewport->WorkPos.y + viewport->WorkSize.y * 0.5f &&
+            w->Pos.x + w->Size.x > left) {
+            top = std::max(top, w->Pos.y + w->Size.y + 8 * k);
+        }
+    }
+    const ImVec2 a(left, top);
+    const ImVec2 b(a.x + box_w, a.y + pad * 2 + icon);
+    auto col = [&](ImVec4 c, float x) { c.w *= alpha * x; return ImGui::GetColorU32(c); };
+    draw->AddRectFilled(a, b, col(ImVec4(0.07f, 0.07f, 0.08f, 1), 0.92f), 12 * k);
+    draw->AddRect(a, b, col(TrophyGradeColor(trophy_toast.grade), 0.9f), 12 * k, 0, 1.5f * k);
+    const ImVec2 ia(a.x + pad, a.y + pad);
+    if (ImTextureData* tex = TrophyIcon(trophy_toast.id)) {
+        draw->AddImageRounded(tex->GetTexRef(), ia, ImVec2(ia.x + icon, ia.y + icon), ImVec2(0, 0), ImVec2(1, 1),
+                              col(ImVec4(1, 1, 1, 1), 1.0f), 6 * k);
+    }
+    const float tx = ia.x + icon + pad;
+    draw->AddText(font, small, ImVec2(tx, ia.y + 3 * k), col(TrophyGradeColor(trophy_toast.grade), 1.0f), title);
+    draw->AddText(font, big, ImVec2(tx, ia.y + icon - big - 4 * k), col(ImVec4(0.94f, 0.92f, 0.87f, 1), 1.0f),
+                  name.c_str());
+}
+
+// The key field (tlg.ini trophy_key). An empty field + "Use key" removes the key.
+void TrophyKeyRows(int key_state) {
+    auto& s = TlgSettings::Get();
+    static char key_text[80] = {};
+    static bool loaded = false;
+    if (!loaded) {
+        std::snprintf(key_text, sizeof(key_text), "%s", s.trophy_key.c_str());
+        loaded = true;
+    }
+    ImGui::SeparatorText(TR("Trophy key"));
+    if (key_state == -1) {
+        ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.4f, 1), "%s", TR("This trophy key does not open the trophy file."));
+    }
+    ImGui::SetNextItemWidth(std::min(ImGui::GetContentRegionAvail().x * 0.5f, 360.0f * base_scale));
+    ImGui::InputText("##trophy_key", key_text, sizeof(key_text), ImGuiInputTextFlags_Password);
+    Help(TR("Optional: the PS4 trophy key (32 hex digits) shows the trophy names. The port does not include it."));
+    ImGui::SameLine();
+    if (ImGui::Button(TR("Use key"))) {
+        std::string text;
+        for (const char* c = key_text; *c; ++c) {
+            if (!std::isspace((unsigned char)*c)) text += *c;
+        }
+        s.trophy_key = text;
+        TlgSettings::Save();
+        TlgTrophy::Reload();
+    }
+}
+
+void TrophiesTab() {
+    int key_state = 0;
+    std::string title;
+    const auto list = TlgTrophy::List(&key_state, &title);
+    if (!list.empty()) {
+        int done = 0;
+        for (const auto& e : list) done += e.unlocked_at != 0;
+        ImGui::Text(TR("%d of %d trophies unlocked"), done, int(list.size()));
+        ImGui::ProgressBar(float(done) / float(list.size()), ImVec2(-1, 0), "");
+    }
+    const float icon = 48.0f * base_scale;
+    if (!list.empty() && ImGui::BeginTable("##trophies", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
+        ImGui::TableSetupColumn("##icon", ImGuiTableColumnFlags_WidthFixed, icon);
+        ImGui::TableSetupColumn("##text", ImGuiTableColumnFlags_WidthStretch);
+        for (const auto& e : list) {
+            const bool locked = e.unlocked_at == 0;
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            if (ImTextureData* tex = TrophyIcon(e.id)) {
+                ImGui::ImageWithBg(tex->GetTexRef(), ImVec2(icon, icon), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0),
+                                   locked ? ImVec4(0.35f, 0.35f, 0.35f, 0.8f) : ImVec4(1, 1, 1, 1));
+            } else {
+                ImGui::Dummy(ImVec2(icon, icon));
+            }
+            ImGui::TableNextColumn();
+            if (e.grade) {
+                // A dot in the grade colour.
+                const float size = ImGui::GetTextLineHeight();
+                const ImVec2 at = ImGui::GetCursorScreenPos();
+                ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(at.x + size * 0.5f, at.y + size * 0.5f), size * 0.3f,
+                                                            ImGui::GetColorU32(TrophyGradeColor(e.grade)));
+                ImGui::Dummy(ImVec2(size, size));
+                ImGui::SameLine();
+            }
+            const bool secret = locked && e.hidden;
+            const std::string name = secret ? std::string(TR("Hidden trophy")) : TrophyName(e);
+            if (locked) {
+                ImGui::TextDisabled("%s", name.c_str());
+            } else {
+                ImGui::TextUnformatted(name.c_str());
+            }
+            if (!e.detail.empty() && !secret) {
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextDisabled("%s", e.detail.c_str());
+                ImGui::PopTextWrapPos();
+            }
+            if (!locked) {
+                char when[64] = "";
+                const std::time_t t = std::time_t(e.unlocked_at);
+                if (const std::tm* tm = std::localtime(&t)) std::strftime(when, sizeof(when), "%Y-%m-%d %H:%M", tm);
+                ImGui::TextColored(ImVec4(0.55f, 0.8f, 0.5f, 1), "%s", when);
+            }
+        }
+        ImGui::EndTable();
+    }
+    if (BeginRows("##trophy_rows")) {
+        CheckRow(TR("Pop-up and sound on unlock"), TlgSettings::Get().trophy_popup,
+                 TR("Off: no pop-up or sound while you play. Unlocks are still saved and listed here."), true);
+        ImGui::EndTable();
+    }
+    ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.4f, 1), "%s",
+                       TR("Trophy names need the trophy key. Without it the pop-up only shows a number."));
+    TrophyKeyRows(key_state);
 }
 
 void Menu() {
@@ -1716,7 +1941,7 @@ void Menu() {
         return;
     }
     footer_help = nullptr;
-    constexpr int TabCount = 6; // tlg: Lab tab out of the menu (user 2026-11-05)
+    constexpr int TabCount = 7; // tlg: Lab tab out of the menu (user 2026-11-05); Trophies (issue #60)
     const ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput) {
         const int step = ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false) || ImGui::IsKeyPressed(ImGuiKey_E, false) ? 1
@@ -1733,8 +1958,8 @@ void Menu() {
     const float footer = ImGui::GetFrameHeightWithSpacing() * 2.0f + help_height + ImGui::GetStyle().ItemSpacing.y * 3.0f;
     if (ImGui::BeginTabBar("##tabs")) {
         static const char* const tabs[TabCount] = {"Overlay", TR("Image"), TR("Performance"),
-                                                   TR("Controls"), TR("Fun"),
-                                                   "Trico Tricks"};
+                                                   TR("Controls"), TR("Extras"),
+                                                   "Trico Tricks", TR("Trophies")};
         for (int tab = 0; tab < TabCount; ++tab) {
             const ImGuiTabItemFlags flags = requested_tab == tab ? ImGuiTabItemFlags_SetSelected : 0;
             if (!ImGui::BeginTabItem(tabs[tab], nullptr, flags)) {
@@ -1751,6 +1976,7 @@ void Menu() {
                 case 3: ControlsTab(); break;
                 case 4: FunTab(); break;
                 case 5: TricksTab(); break;
+                case 6: TrophiesTab(); break;
                 default: OverlayTab(); break;
                 }
             }
@@ -3175,7 +3401,7 @@ bool Visible() {
                            message_active || progress_on || now < progress_until || now < toast_until || AaLabelOn() ||
                            NoticeActive() || quit_hold_start != 0 || pause_menu_open ||
                            choice_retiring || s.show_fps || move_bar_open ||
-                           TlgFun::PhotoModeOn());
+                           TlgFun::PhotoModeOn() || TrophyToastOn());
 }
 
 void SetGameButtons(u32 buttons) {
@@ -3339,6 +3565,9 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     }
     if (NoticeActive() && !menu_open) {
         NoticeBox();
+    }
+    if (TrophyToastOn() && !loading && !TlgFun::PhotoModeOn()) {
+        TrophyToastBox();
     }
     PhotoPadSync();
     if (TlgFun::PhotoModeOn() && !menu_open && !loading && !photo_help_hidden) {

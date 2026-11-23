@@ -4,14 +4,17 @@
 
 <p align="center">
   <a href="https://github.com/tabnul/the-last-guardian-definitive/releases/latest"><img src="https://img.shields.io/github/v/release/tabnul/the-last-guardian-definitive?label=download&style=for-the-badge&color=d9a441" alt="Latest release"></a>
-  <img src="https://img.shields.io/badge/Windows%20%7C%20Linux-native-2f6f4f?style=for-the-badge" alt="Windows and Linux">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-2f6f4f?style=for-the-badge" alt="Windows and Linux">
   <a href="port/LICENSE"><img src="https://img.shields.io/badge/license-GPL--2.0-555?style=for-the-badge" alt="GPL-2.0"></a>
+  <a href="https://playported.com/ports/1466-the-last-guardian/"><img src="https://playported.com/badge.svg" alt="Listed on PlayPorted"></a>
 </p>
 
 <p align="center"><i>A fan project, by fans, for fans.</i></p>
 
-A native Windows and Linux port of The Last Guardian (PS4). It adds DLSS and FSR, frame generation,
-ultrawide support, an optional texture pack, an in-game graphics menu and a [photo mode](#photo-mode).
+An unofficial Windows and Linux PC port of The Last Guardian (PS4). The game code runs natively on
+your CPU. The graphics still go through a translation layer based on the shadPS4 emulator. It adds
+DLSS and FSR, frame generation, ultrawide support, an optional texture pack, an in-game graphics menu
+and a [photo mode](#photo-mode).
 It also brings back many
 things the developers cut or hid in the game's files, which you can't find in any other version:
 see [Cut and hidden content](#cut-and-hidden-content) and the [full guide](docs/fun.md).
@@ -41,13 +44,18 @@ No game files are included. You need your own copy, dumped from your own PS4.
   combo or the keyboard, no menus. The game's pause menu shows the buttons.
 - **[Hide button hints](#controllers-and-languages):** switch the game's button hint boxes off,
   for a clean screen. The tutorial still runs in the background, so nothing is skipped.
+- **Trophies:** the game's trophies are unlocked as you play and saved next to your saves. The
+  in-game menu's **Trophies** tab lists them, with your unlock dates and the icons from your own
+  game files. A pop-up with our own chime is optional (off by default). Trophy names need your
+  PS4 trophy key (32 hex digits) in the launcher or the menu; the port does not include it, so
+  without the key the trophies are numbered.
 - **[Trico Tricks](docs/fun.md#trico-tricks-make-trico-move):** 49 of Trico's own moves on a bar (**F12**) in coloured
   groups, with your own favourites, the poses of the game's press shots and E3 demos, and the
   throw-up animation the developers sealed.
 - **[Soundtrack](#soundtrack):** a music player in the launcher with all 100 pieces of the game's
   music, from your own game files.
 - **[Start at any point](#for-testers):** over 200 start points, from the first cave to the
-  credits. Pick one on the launcher's **Start at…** page, or in game under Fun >
+  credits. Pick one on the launcher's **Start at…** page, or in game under Extras >
   *Jump to a place*. Your saves are copied first and put back afterwards.
 - **[Texture pack generator](docs/texture-pack.md):** the game started out on PS3, and many of its
   textures look rough up close on a modern screen. Our
@@ -71,6 +79,8 @@ No game files are included. You need your own copy, dumped from your own PS4.
 - **Extra Tricos:** up to 8 more next to the boy, the armoured one too.
 - **Trico's size:** from half to twice his size.
 - **Trico's coat:** thicker fur and feathers, up to 250%, for a fluffy Trico. Just for fun.
+- **Trico's helmet:** the armour helmet, a broken one or the other Trico's mask, kept on for the
+  whole story. Or no helmet at all.
 - **Trico's eyes:** the hidden disco-eye effect, or any colour.
 - **Trico's toilet:** he goes right away, in front of you.
 - **All treasures:** unlocks every treasure (the boy's outfits, Trico's feathers) and the
@@ -84,8 +94,8 @@ No game files are included. You need your own copy, dumped from your own PS4.
 
 **Added by the port:**
 
-- Native Windows and Linux builds
-- DLSS, FSR 4 and FSR 3.1 anti-aliasing and upscaling, and DLSS or FSR frame generation
+- Windows and Linux builds
+- DLSS, FSR 4, FSR 3.1 and XeSS anti-aliasing and upscaling, and DLSS or FSR frame generation
 - Any resolution including 21:9 ultrawide (32:9 experimental), and 30, 60 or unlocked FPS
 - An in-game settings menu (**Insert**) with presets, shadows, field of view, effects, colour and HDR10
 - Shader recipes against stutter and calmer wind
@@ -120,7 +130,8 @@ longer and slower CPUs may see short hitches when the game streams new areas. If
 space, a plain folder is still the fastest choice.
 
 You need a Vulkan 1.3 graphics card with at least 8 GB of video memory. DLSS needs an NVIDIA RTX
-card and FSR 4 a recent card; FSR 3.1 runs on any card.
+card, FSR 4 a recent card and XeSS a recent card on Windows (best on Intel Arc); FSR 3.1 runs on
+any card.
 
 **Error 4551 on Windows 11:** Smart App Control blocks programs without a digital signature, and
 this port is not signed. Turn it off under Windows Security > App & browser control > Smart App
@@ -148,7 +159,9 @@ Each setting shows what the game originally used and what we recommend.
 - **Resolution:** the game renders at your window size, 21:9 and 32:9 included. At 21:9 the menus
   and subtitles are laid out for the wider screen. 32:9 is experimental: some overlays and menus
   are still off.
-- **Anti-aliasing and upscaling:** DLSS, FSR 4 or FSR 3.1, using the game's own motion vectors.
+- **Anti-aliasing and upscaling:** DLSS, FSR 4, FSR 3.1 or Intel XeSS, using the game's own
+  motion vectors. XeSS (XeSS Native AA, or Quality to Performance) is Windows only: Intel ships it
+  as a Windows library, so on Linux the choice is greyed out.
   The default renders at full size and replaces the game's SMAA, which removes most of the
   shimmer on feathers, grass and fences. Quality to Ultra Performance render lower for more FPS,
   while menus and subtitles stay sharp. **F8** switches back to the game's own AA to compare.
@@ -234,7 +247,7 @@ anywhere you like: around Trico, high above the gorge, right up to the boy's fac
 the picture.
 
 - **Start and stop:** with the photo mode buttons (see the table under [Get started](#get-started)),
-  or **Photo mode** in the in-game menu (Fun tab).
+  or **Photo mode** in the in-game menu (Extras tab).
 - **The buttons are on screen:** a help panel lists every photo mode button as you have it set.
   All of them can be changed under Controls in the port's menu or in the launcher.
 - **Fly:** move, look around, go up and down, faster or slower.
@@ -248,7 +261,7 @@ the picture.
 - **HDR and normal, both:** with HDR on, every photo is saved twice. A normal picture that looks
   right on any screen and is easy to share, and an HDR picture (name ending in `-hdr.png`) that
   keeps the full brightness for HDR screens. Chrome and Edge show it in HDR. You can switch the
-  HDR picture off in the in-game menu (Fun tab) or in the launcher.
+  HDR picture off in the in-game menu (Extras tab) or in the launcher.
 
 <p align="center"><a href="docs/fun.md#photo-mode"><img src="docs/screenshots/fun/photo-mode-bridge.jpg" alt="Photo mode: Trico reaches down to the boy on a broken bridge, with the button hints on screen"></a></p>
 
@@ -258,7 +271,7 @@ the picture.
 
 The game's scripts still contain things the developers built and then switched off or kept for
 themselves. This port turns them back on. You won't find them in any other version of the game.
-They are in the in-game menu (**Insert**, the **Fun** and **Trico Tricks** tabs).
+They are in the in-game menu (**Insert**, the **Extras** and **Trico Tricks** tabs).
 
 > **[Read the full guide: everything we found and how to use it →](docs/fun.md)**
 
@@ -272,7 +285,7 @@ that is still in `condorcommonslaver.lua`:
 ```
 
 *"We've been asked to get rid of the drool for now, so I'm getting rid of it."* You can set it to
-**As the developers planned** or **Always**, in the launcher's Settings page or the Fun tab.
+**As the developers planned** or **Always**, in the launcher's Extras page or the Extras tab.
 
 <p align="center"><a href="docs/fun.md#tricos-drool"><img src="docs/screenshots/fun/drool.jpg" width="49%" alt="Trico drooling"></a> <a href="docs/fun.md#tricos-drool"><img src="docs/screenshots/fun/drool2.jpg" width="49%" alt="Trico drooling, close up"></a></p>
 
@@ -281,8 +294,8 @@ that is still in `condorcommonslaver.lua`:
 The Horned Apparel finally gets its horns. One of the boy's
 treasure outfits is the Ico one, and the game's own script calls it "the horned garment", but the
 boy never had any. Now he does, just like Ico. Tick **ICO horns** on
-the launcher's Mods page. They go with every outfit,
-[more on the fun page](docs/fun.md#made-for-ico-fans-ico-horns).
+the launcher's Extras page. They go with every outfit,
+[more in the full guide](docs/fun.md#made-for-ico-fans-ico-horns).
 
 <p align="center"><a href="docs/fun.md#made-for-ico-fans-ico-horns"><img src="docs/screenshots/fun/outfits.jpg" width="100%" alt="The boy in Enduring Attire, Homecoming, Warrior, Horned Apparel, and Horned Apparel with ICO horns, and from behind with the Featherpainter idol"></a></p>
 
@@ -387,7 +400,7 @@ own text and voices are a separate setting.
 
 - **Jump to any scene:** over 200 start points, from the first cave to the credits. Pick one on
   the launcher's **Start at…** page (your saves are copied first and put back afterwards), or in
-  game under Fun > *Jump to a place*.
+  game under Extras > *Jump to a place*.
 - **Level select and QA menu:** tick *Level select and QA menu* under Debug in the launcher. For
   level select, hold L1 while the title menu closes. For the QA menu, hold L1 and press L3 in game
   (keyboard: hold 1, press Z). Based on the GoldHEN patch by @illusionyy and @DanielSvoboda; this
@@ -430,6 +443,8 @@ Thanks to everyone whose work this builds on.
 - [4x-UltraSharp](https://huggingface.co/Kim2091/UltraSharp) by Kim2091 (CC BY-NC-SA 4.0), the
   default texture upscale model, and Microsoft's [DirectXTex](https://github.com/microsoft/DirectXTex).
 - NVIDIA DLSS, under the NVIDIA DLSS license.
+- Intel XeSS (`libxess.dll`, XeSS SDK 3.0), shipped unmodified under the Intel Simplified Software
+  License (`XESS-LICENSE.txt`).
 - Packed games (.zar): [ZArchive](https://github.com/Exzap/ZArchive) by Exzap (MIT-0), and the
   idea and design from [@R-V-L](https://github.com/R-V-L)'s ZArchive build of
   [gow3_pc](https://github.com/R-V-L/gow3_pc). Thanks to @dwaynevn-git for asking for it (#72).
@@ -438,6 +453,8 @@ Thanks to everyone whose work this builds on.
 - Xbox button icons: the method (swap the game's pad pictures, move the glow) comes from
   [@SulphurS16](https://github.com/SulphurS16)'s [TLG-Port](https://github.com/SulphurS16/TLG-Port).
   Thank you! The Xbox pad drawing and the code are our own.
+- Trophies: the idea, and checking the trophy key right away, also come from
+  [@SulphurS16](https://github.com/SulphurS16)'s TLG-Port (#60). Our own code and chime.
 
 ## License
 
