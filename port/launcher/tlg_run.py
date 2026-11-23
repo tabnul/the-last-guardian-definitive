@@ -64,9 +64,13 @@ LANGUAGES_EU = {'en': 1, 'fr': 2, 'es_ES': 3, 'de': 4, 'it': 5, 'nl': 6, 'pt_PT'
 # engine ids follow (ko 9, zh_TW 10, zh_CN 11); one the disc lacks falls back to English.
 LANGUAGES_ASIA = {'en': 1, 'ko': 9, 'zh_TW': 10, 'zh_CN': 11}
 LANGUAGES_BY_TITLE = {'CUSA03627': LANGUAGES_US, 'CUSA03745': LANGUAGES_EU,
-                      'CUSA04936': LANGUAGES_ASIA, 'CUSA04943': LANGUAGES_ASIA}
+                      'CUSA04936': LANGUAGES_ASIA, 'CUSA04937': LANGUAGES_ASIA,
+                      'CUSA04943': LANGUAGES_ASIA}
 DEFAULT_LANGUAGE_BY_TITLE = {'CUSA03627': 'es_LA', 'CUSA03745': 'es_ES',
-                             'CUSA04936': 'ko', 'CUSA04943': 'zh_CN'}
+                             'CUSA04936': 'ko', 'CUSA04937': 'zh_TW', 'CUSA04943': 'zh_CN'}
+# Discs added on a player's request but never run here: the language table and default are a
+# guess (Asia disc, Traditional Chinese assumed). check_game shows a warning until a log confirms.
+UNTESTED_TITLES = {'CUSA04937'}
 
 
 def game_languages(game_dir=''):
@@ -416,7 +420,7 @@ def save_settings(settings):
 # Messages about the player's game folder the Qt launcher can show; none blocks only as a
 # warning in this port (check_game reports missing files and the unbuilt probe).
 TEXT = {}
-WARNINGS = {'old_version', 'fps_unsupported'}   # check_game: shown, but Play stays enabled
+WARNINGS = {'old_version', 'fps_unsupported', 'untested_disc'}   # check_game: shown, but Play stays enabled
 
 
 def message(key, **fmt):
@@ -463,6 +467,9 @@ def check_game(game_dir):
     version = game_version(Path(game_image.safe_files_dir(game_dir)))
     if version is not None:
         problems.append(version)
+    title = shader_cache.title_id(game_image.safe_files_dir(game_dir)) if game_dir else None
+    if title in UNTESTED_TITLES:
+        problems.append(('untested_disc', title))
     if not PROBE.is_file():
         problems.append(('not_built', str(PROBE)))
     return problems

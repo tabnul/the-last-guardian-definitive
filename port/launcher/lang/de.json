@@ -344,6 +344,7 @@
     "launcher.quit": "Beenden",
     "launcher.ready": "Bereit zum Spielen.",
     "launcher.fps_unsupported": "eboot.bin ist nicht der 1.03-Spielcode: 60 FPS und Unbegrenzt funktionieren nicht, das Spiel läuft mit 30 FPS (siehe README)",
+    "launcher.untested_disc": "Ungetestete Spielversion ({serial}): Sie funktioniert eventuell nicht vollständig. Bitte teile dein Log, wenn etwas schiefgeht",
     "launcher.audio_native": "Audio: nativ (Konsolenmodul gefunden).",
     "launcher.audio_builtin": "Audio: eingebauter Mixer. Tonprobleme möglich (Hall, fehlende Geräusche). Abhilfe: libSceNgs2.sprx in den Ordner der Konsolen-Systemmodule legen (Einstellungen).",
     "launcher.missing": "Fehlt",
