@@ -653,6 +653,17 @@
         "2": "開発者の構想どおり"
       }
     },
+    "menu:trico_helmet": {
+      "name": "トリコのかぶと",
+      "what": "ゲーム全体を通して、トリコにかぶとをかぶせたり外したりします。どれもゲームに元々あるものです：鎧のトリコがかぶる鎧のかぶと、壊れたかぶと、もう一匹のトリコの仮面。ストーリーどおり（デフォルト）はゲームに任せます。ムービー、新しいステージ、セーブデータのロード後もそのままで、次回の起動時にも保持されます。",
+      "choices": {
+        "0": "ストーリーどおり（デフォルト）",
+        "1": "鎧のかぶと",
+        "2": "壊れたかぶと",
+        "3": "もう一匹のトリコの仮面",
+        "4": "かぶとなし"
+      }
+    },
     "menu:frames_queued": {
       "name": "フレームキュー",
       "what": "キューのフレームが多いほどFPSは安定しますが、入力への反応が遅くなります。",
@@ -1215,6 +1226,14 @@
     "Use key": "キーを使う",
     "Pop-up and sound on unlock": "獲得時のポップアップとサウンド",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "オフ：プレイ中にポップアップもサウンドも出ません。獲得は保存され、ここに表示されます。",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "トロフィー名の表示にはトロフィーキーが必要です。キーがないとポップアップには番号だけが表示されます。"
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "トロフィー名の表示にはトロフィーキーが必要です。キーがないとポップアップには番号だけが表示されます。",
+    "Trico's helmet": "トリコのかぶと",
+    "Helmet": "かぶと",
+    "As in the story (default)": "ストーリーどおり（デフォルト）",
+    "Armour helmet": "鎧のかぶと",
+    "Broken helmet": "壊れたかぶと",
+    "The other Trico's mask": "もう一匹のトリコの仮面",
+    "No helmet": "かぶとなし",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "ゲーム全体を通して、トリコにかぶとをかぶせたり外したりします。どれもゲームに元々あるものです：鎧のトリコがかぶる鎧のかぶと、壊れたかぶと、もう一匹のトリコの仮面。ストーリーどおり（デフォルト）はゲームに任せます。ムービー、新しいステージ、セーブデータのロード後もそのままで、次回の起動時にも保持されます。"
   }
 }

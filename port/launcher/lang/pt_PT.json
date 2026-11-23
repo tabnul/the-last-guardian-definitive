@@ -660,6 +660,17 @@
         "2": "Como os desenvolvedores planearam"
       }
     },
+    "menu:trico_helmet": {
+      "name": "Capacete do Trico",
+      "what": "Coloca um capacete no Trico, ou retira-o, durante todo o jogo. Todos são do próprio jogo: o capacete de armadura dos Tricos blindados, um partido ou a máscara do outro Trico. Como na história (predefinição) deixa a escolha ao jogo. Mantém-se nas cenas, nas novas zonas e ao carregar um jogo guardado, e fica guardado para o próximo arranque.",
+      "choices": {
+        "0": "Como na história (predefinição)",
+        "1": "Capacete de armadura",
+        "2": "Capacete partido",
+        "3": "A máscara do outro Trico",
+        "4": "Sem capacete"
+      }
+    },
     "menu:mod_treasures": {
       "name": "Todos os tesouros",
       "what": "Desbloqueia todos os tesouros (roupas, penas do Trico) e a entrada Tesouros no menu de opções, com o desbloqueio dos próprios desenvolvedores. Fica guardado no seu save: desligar não os remove. Os seus saves são copiados antes do primeiro desbloqueio (o gestor de saves do launcher pode restaurá-los). Escolha-os no menu de pausa do jogo, em Itens."
@@ -1228,6 +1239,14 @@
     "Use key": "Usar chave",
     "Pop-up and sound on unlock": "Aviso e som ao desbloquear",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Desligado: sem aviso nem som enquanto jogas. Os desbloqueios continuam a ser guardados e listados aqui.",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Os nomes dos troféus precisam da chave de troféus. Sem ela, o aviso mostra apenas um número."
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Os nomes dos troféus precisam da chave de troféus. Sem ela, o aviso mostra apenas um número.",
+    "Trico's helmet": "Capacete do Trico",
+    "Helmet": "Capacete",
+    "As in the story (default)": "Como na história (predefinição)",
+    "Armour helmet": "Capacete de armadura",
+    "Broken helmet": "Capacete partido",
+    "The other Trico's mask": "A máscara do outro Trico",
+    "No helmet": "Sem capacete",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Coloca um capacete no Trico, ou retira-o, durante todo o jogo. Todos são do próprio jogo: o capacete de armadura dos Tricos blindados, um partido ou a máscara do outro Trico. Como na história (predefinição) deixa a escolha ao jogo. Mantém-se nas cenas, nas novas zonas e ao carregar um jogo guardado, e fica guardado para o próximo arranque."
   }
 }

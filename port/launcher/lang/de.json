@@ -653,6 +653,17 @@
         "2": "Wie von den Entwicklern geplant"
       }
     },
+    "menu:trico_helmet": {
+      "name": "Tricos Helm",
+      "what": "Setzt Trico einen Helm auf oder nimmt ihn ab, für das ganze Spiel. Alle stammen aus dem Spiel selbst: der Rüstungshelm der gepanzerten Tricos, ein zerbrochener oder die Maske des anderen Trico. Wie in der Geschichte (Standard) überlässt es dem Spiel. Bleibt in Zwischensequenzen, neuen Abschnitten und beim Laden eines Spielstands erhalten und wird für den nächsten Start gespeichert.",
+      "choices": {
+        "0": "Wie in der Geschichte (Standard)",
+        "1": "Rüstungshelm",
+        "2": "Zerbrochener Helm",
+        "3": "Die Maske des anderen Trico",
+        "4": "Kein Helm"
+      }
+    },
     "menu:frames_queued": {
       "name": "Gepufferte Bilder",
       "what": "Mehr gepufferte Bilder: stabilere FPS, langsamere Reaktion auf Eingaben.",
@@ -1215,6 +1226,14 @@
     "Use key": "Schlüssel verwenden",
     "Pop-up and sound on unlock": "Pop-up und Ton beim Freischalten",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Aus: kein Pop-up und kein Ton beim Spielen. Freischaltungen werden trotzdem gespeichert und hier aufgelistet.",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Trophäennamen brauchen den Trophäenschlüssel. Ohne ihn zeigt das Pop-up nur eine Nummer."
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Trophäennamen brauchen den Trophäenschlüssel. Ohne ihn zeigt das Pop-up nur eine Nummer.",
+    "Trico's helmet": "Tricos Helm",
+    "Helmet": "Helm",
+    "As in the story (default)": "Wie in der Geschichte (Standard)",
+    "Armour helmet": "Rüstungshelm",
+    "Broken helmet": "Zerbrochener Helm",
+    "The other Trico's mask": "Die Maske des anderen Trico",
+    "No helmet": "Kein Helm",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Setzt Trico einen Helm auf oder nimmt ihn ab, für das ganze Spiel. Alle stammen aus dem Spiel selbst: der Rüstungshelm der gepanzerten Tricos, ein zerbrochener oder die Maske des anderen Trico. Wie in der Geschichte (Standard) überlässt es dem Spiel. Bleibt in Zwischensequenzen, neuen Abschnitten und beim Laden eines Spielstands erhalten und wird für den nächsten Start gespeichert."
   }
 }

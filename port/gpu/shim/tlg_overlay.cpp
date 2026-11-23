@@ -1653,6 +1653,18 @@ void FunTab() {
         ImGui::EndTable();
     }
 
+    // Trico's helmet (tlg_lua.cpp Helmet; also on the launcher's Extras page).
+    ImGui::SeparatorText(TR("Trico's helmet"));
+    if (BeginRows("##helmet")) {
+        static const char* const helmet_labels[] = {TR("As in the story (default)"), TR("Armour helmet"),
+                                                    TR("Broken helmet"), TR("The other Trico's mask"),
+                                                    TR("No helmet")};
+        static const int helmet_values[] = {0, 1, 2, 3, 4};
+        ChoiceRow(TR("Helmet"), TlgSettings::Get().trico_helmet, helmet_labels, helmet_values, 5,
+                  TR(TlgFun::HelmetHelp), 0);
+        ImGui::EndTable();
+    }
+
     // Mods (also on the launcher's Extras page; tlg_lua.cpp Treasures / Horns).
     ImGui::SeparatorText(TR("Mods"));
     if (BeginRows("##mods")) {

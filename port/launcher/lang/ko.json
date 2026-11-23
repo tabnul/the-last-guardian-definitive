@@ -660,6 +660,17 @@
         "2": "개발자 의도대로"
       }
     },
+    "menu:trico_helmet": {
+      "name": "트리코의 투구",
+      "what": "게임 전체에서 트리코에게 투구를 씌우거나 벗깁니다. 모두 게임에 원래 있는 것입니다: 갑옷 트리코들이 쓰는 갑옷 투구, 부서진 투구, 또는 다른 트리코의 가면. 스토리대로 (기본값)는 게임에 맡깁니다. 컷신, 새 스테이지, 세이브 불러오기 후에도 유지되며 다음 실행 때도 그대로입니다.",
+      "choices": {
+        "0": "스토리대로 (기본값)",
+        "1": "갑옷 투구",
+        "2": "부서진 투구",
+        "3": "다른 트리코의 가면",
+        "4": "투구 없음"
+      }
+    },
     "menu:mod_treasures": {
       "name": "모든 보물",
       "what": "개발자 자체 잠금 해제 기능으로 모든 보물(의상, 트리코의 깃털)과 옵션 메뉴의 보물 항목을 해제합니다. 세이브에 저장되므로 꺼도 되돌아가지 않습니다. 첫 해제 전에 세이브를 백업합니다(런처의 세이브 관리자로 복원 가능). 게임의 일시 정지 메뉴에서 아이템 아래에서 선택하세요."
@@ -1228,6 +1239,14 @@
     "Use key": "키 사용",
     "Pop-up and sound on unlock": "획득 시 팝업과 소리",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "끄기: 플레이 중 팝업과 소리가 없습니다. 획득 기록은 그대로 저장되고 여기에 표시됩니다.",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "트로피 이름을 보려면 트로피 키가 필요합니다. 키가 없으면 팝업에 번호만 표시됩니다."
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "트로피 이름을 보려면 트로피 키가 필요합니다. 키가 없으면 팝업에 번호만 표시됩니다.",
+    "Trico's helmet": "트리코의 투구",
+    "Helmet": "투구",
+    "As in the story (default)": "스토리대로 (기본값)",
+    "Armour helmet": "갑옷 투구",
+    "Broken helmet": "부서진 투구",
+    "The other Trico's mask": "다른 트리코의 가면",
+    "No helmet": "투구 없음",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "게임 전체에서 트리코에게 투구를 씌우거나 벗깁니다. 모두 게임에 원래 있는 것입니다: 갑옷 트리코들이 쓰는 갑옷 투구, 부서진 투구, 또는 다른 트리코의 가면. 스토리대로 (기본값)는 게임에 맡깁니다. 컷신, 새 스테이지, 세이브 불러오기 후에도 유지되며 다음 실행 때도 그대로입니다."
   }
 }

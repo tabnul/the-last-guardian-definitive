@@ -660,6 +660,17 @@
         "2": "Come previsto dagli sviluppatori"
       }
     },
+    "menu:trico_helmet": {
+      "name": "Elmo di Trico",
+      "what": "Mette un elmo a Trico, o glielo toglie, per tutto il gioco. Sono tutti del gioco stesso: l'elmo d'armatura dei Trico corazzati, uno rotto o la maschera dell'altro Trico. Come nella storia (predefinito) lascia decidere al gioco. Resta durante i filmati, le nuove aree e il caricamento di un salvataggio, e viene mantenuto per il prossimo avvio.",
+      "choices": {
+        "0": "Come nella storia (predefinito)",
+        "1": "Elmo d'armatura",
+        "2": "Elmo rotto",
+        "3": "La maschera dell'altro Trico",
+        "4": "Nessun elmo"
+      }
+    },
     "menu:mod_treasures": {
       "name": "Tutti i tesori",
       "what": "Sblocca ogni tesoro (costumi, piume di Trico) e la voce Tesori nel menu opzioni, con lo sblocco degli sviluppatori stessi. Salvato nel tuo salvataggio: disattivarlo non li toglie. I tuoi salvataggi vengono copiati prima del primo sblocco (il gestore salvataggi del launcher può ripristinarli). Selezionali nel menu di pausa del gioco, sotto Oggetti."
@@ -1228,6 +1239,14 @@
     "Use key": "Usa chiave",
     "Pop-up and sound on unlock": "Avviso e suono allo sblocco",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Disattivato: nessun avviso né suono mentre giochi. Gli sblocchi vengono comunque salvati ed elencati qui.",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "I nomi dei trofei richiedono la chiave dei trofei. Senza, l’avviso mostra solo un numero."
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "I nomi dei trofei richiedono la chiave dei trofei. Senza, l’avviso mostra solo un numero.",
+    "Trico's helmet": "Elmo di Trico",
+    "Helmet": "Elmo",
+    "As in the story (default)": "Come nella storia (predefinito)",
+    "Armour helmet": "Elmo d'armatura",
+    "Broken helmet": "Elmo rotto",
+    "The other Trico's mask": "La maschera dell'altro Trico",
+    "No helmet": "Nessun elmo",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Mette un elmo a Trico, o glielo toglie, per tutto il gioco. Sono tutti del gioco stesso: l'elmo d'armatura dei Trico corazzati, uno rotto o la maschera dell'altro Trico. Come nella storia (predefinito) lascia decidere al gioco. Resta durante i filmati, le nuove aree e il caricamento di un salvataggio, e viene mantenuto per il prossimo avvio."
   }
 }

@@ -18,6 +18,7 @@ Open the in-game menu with **Insert** (or **R3 + L2** on a controller) and go to
 - [Outfits](#outfits)
 - [Trico's size](#tricos-size)
 - [Trico's coat](#tricos-coat), only in this port
+- [Trico's helmet](#tricos-helmet)
 - [Extra Tricos](#extra-tricos)
 - [Trico's eyes](#tricos-eyes)
 - [Photo mode](#photo-mode), only in this port
@@ -109,6 +110,19 @@ changes while you play and is kept for the next start. Just for fun.
 ![A very fluffy Trico on a cliff edge, with the subtitle: Oh. You can't fly? Are your wings broken?](screenshots/fun/fluffy.jpg)
 
 <sub>No, he is just too feathered to fly.</sub>
+
+## Trico's helmet
+
+The game has three helmets for Trico: the armour helmet of the armoured Tricos, a broken one, and
+the mask of the other Trico. In the story he only wears one in a few cutscenes. Pick one under
+**Trico's helmet** (launcher Extras page, or the Extras tab in game) and he keeps it on for the whole
+game. **No helmet** takes it off for good, cutscenes included. The default, **As in the story**,
+changes nothing.
+
+The story sets Trico's look about 30 times: horns, tail, wings, dirt and helmet. We only swap the
+helmet, so the rest still follows the story. Extra Tricos keep their own helmet.
+
+![Trico in the armour helmet on a wooden platform high up in the tower](screenshots/fun/trico-helmet.jpg)
 
 ## Extra Tricos
 

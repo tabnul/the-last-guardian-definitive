@@ -660,6 +660,17 @@
         "2": "按開發者原計劃"
       }
     },
+    "menu:trico_helmet": {
+      "name": "特里科的頭盔",
+      "what": "在整個遊戲中為特里科戴上或摘下頭盔。全部來自遊戲本身：披甲特里科戴的鎧甲頭盔、破損的頭盔，或另一隻特里科的面具。依劇情（預設）交給遊戲決定。在過場動畫、新關卡和讀取存檔後都會保留，並在下次啟動時沿用。",
+      "choices": {
+        "0": "依劇情（預設）",
+        "1": "鎧甲頭盔",
+        "2": "破損的頭盔",
+        "3": "另一隻特里科的面具",
+        "4": "無頭盔"
+      }
+    },
     "menu:mod_treasures": {
       "name": "全部寶物",
       "what": "使用開發者自己的解鎖功能，解鎖所有寶物（服裝、Trico 的羽毛）以及選項選單中的“寶物”項。儲存在存檔中：關閉後不會收回。首次解鎖前會備份你的存檔（啟動器的存檔管理可以恢復）。可在遊戲暫停選單的“物品”中選擇。"
@@ -1228,6 +1239,14 @@
     "Use key": "使用金鑰",
     "Pop-up and sound on unlock": "解鎖時彈出通知和音效",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "關閉：遊戲時沒有彈出通知和音效。解鎖仍會儲存並在此列出。",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "顯示獎盃名稱需要獎盃金鑰。沒有金鑰時，彈出通知只顯示編號。"
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "顯示獎盃名稱需要獎盃金鑰。沒有金鑰時，彈出通知只顯示編號。",
+    "Trico's helmet": "特里科的頭盔",
+    "Helmet": "頭盔",
+    "As in the story (default)": "依劇情（預設）",
+    "Armour helmet": "鎧甲頭盔",
+    "Broken helmet": "破損的頭盔",
+    "The other Trico's mask": "另一隻特里科的面具",
+    "No helmet": "無頭盔",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "在整個遊戲中為特里科戴上或摘下頭盔。全部來自遊戲本身：披甲特里科戴的鎧甲頭盔、破損的頭盔，或另一隻特里科的面具。依劇情（預設）交給遊戲決定。在過場動畫、新關卡和讀取存檔後都會保留，並在下次啟動時沿用。"
   }
 }

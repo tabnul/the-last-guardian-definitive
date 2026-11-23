@@ -660,6 +660,17 @@
         "2": "Zoals de ontwikkelaars het bedoelden"
       }
     },
+    "menu:trico_helmet": {
+      "name": "Trico's helm",
+      "what": "Zet Trico een helm op, of haalt hem af, voor het hele spel. Alle zijn van het spel zelf: de pantserhelm van de gepantserde Trico's, een kapotte, of het masker van de andere Trico. Zoals in het verhaal (standaard) laat het aan het spel over. Blijft staan tijdens tussenfilmpjes, nieuwe levels en het laden van een save, en wordt bewaard voor de volgende start.",
+      "choices": {
+        "0": "Zoals in het verhaal (standaard)",
+        "1": "Pantserhelm",
+        "2": "Kapotte helm",
+        "3": "Het masker van de andere Trico",
+        "4": "Geen helm"
+      }
+    },
     "menu:mod_treasures": {
       "name": "Alle schatten",
       "what": "Ontgrendelt elke schat (outfits, Trico's veren) en het onderdeel Schatten in het optiemenu, met de eigen ontgrendeling van de ontwikkelaars. Opgeslagen in je save: uitzetten neemt ze niet terug. Je saves worden geback-upt vóór de eerste ontgrendeling (de savebeheerder van de launcher kan ze terugzetten). Kies ze in het pauzemenu van de game, onder Items."
@@ -1228,6 +1239,14 @@
     "Use key": "Sleutel gebruiken",
     "Pop-up and sound on unlock": "Melding en geluid bij behalen",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Uit: geen melding en geen geluid tijdens het spelen. Behaalde trofeeën worden wel opgeslagen en hier getoond.",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Voor trofeenamen is de trofeesleutel nodig. Zonder sleutel toont de melding alleen een nummer."
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Voor trofeenamen is de trofeesleutel nodig. Zonder sleutel toont de melding alleen een nummer.",
+    "Trico's helmet": "Trico's helm",
+    "Helmet": "Helm",
+    "As in the story (default)": "Zoals in het verhaal (standaard)",
+    "Armour helmet": "Pantserhelm",
+    "Broken helmet": "Kapotte helm",
+    "The other Trico's mask": "Het masker van de andere Trico",
+    "No helmet": "Geen helm",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Zet Trico een helm op, of haalt hem af, voor het hele spel. Alle zijn van het spel zelf: de pantserhelm van de gepantserde Trico's, een kapotte, of het masker van de andere Trico. Zoals in het verhaal (standaard) laat het aan het spel over. Blijft staan tijdens tussenfilmpjes, nieuwe levels en het laden van een save, en wordt bewaard voor de volgende start."
   }
 }

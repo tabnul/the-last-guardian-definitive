@@ -111,6 +111,12 @@ inline constexpr const char* DroolHelp =
     "grows while Trico smells something he wants, a smell-pot cart (s04_FirstAntenna and s10_Pit), and "
     "fades away when he loses interest (the boy's smell bottle was cut, so the carts are the only trigger). "
     "Stays on through jumps, new stages and extra Tricos, and is kept for the next start.";
+// Trico's helmet (setting trico_helmet, tlg_lua.cpp Helmet). The Extras tab and the launcher show this text.
+inline constexpr const char* HelmetHelp =
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour "
+    "helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the "
+    "story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a "
+    "save, and is kept for the next start.";
 void CountTricos();
 int Tricos(); // the extra Tricos the game reported last; -1 before the first report
 // Trico's disco eyes: the game's own random eye colours (EyeColorRandom, normally only in a few

@@ -167,6 +167,13 @@ MENU = [
           'The boy wears horns, a nod to Ico. '
           'Can be combined with the game\'s own Ico outfit (one of the treasures). '
           'Turn it on in the launcher once first: the launcher builds the horn models on your PC.'),
+    _menu('Fun', 'trico_helmet', 'choice', '0', "Trico's helmet",
+          "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour "
+          "helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the "
+          'story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a '
+          'save, and is kept for the next start.',
+          choices=(('0', 'As in the story (default)'), ('1', 'Armour helmet'), ('2', 'Broken helmet'),
+                   ('3', "The other Trico's mask"), ('4', 'No helmet'))),
     _menu('Fun', 'mod_plays', 'bool', '1', 'Trico plays',
           'A Trico behaviour the developers built and then sealed "for now": now and then he sniffs the boy '
           'and paws at him. It only happens where his cheek rubs can happen too, with the boy clear of ledges.'),

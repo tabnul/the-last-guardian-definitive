@@ -330,6 +330,51 @@ local function Horns(on)
   end
   _TLGHORN=H
 end
+-- Trico's helmet (tlg.ini trico_helmet): 0 = the story's own, 1 armour helmet, 2 broken helmet,
+-- 3 the other Trico's mask, 4 none. The game sets Trico's look ~30 times along the story
+-- (CharacterMngr.SetupTricoParts -> CondorCharacter.SetParts); our wrapper swaps the helmet part
+-- for our Trico only (other Tricos keep theirs) and remembers the story's choice for mode 0.
+-- Applied once on a change or a new Trico; a stage load that brings the game's SetParts back is
+-- wrapped again on the next run.
+local HELMETS={'TricoHelmet','TricoHelmetBroken','AricoHelmet','DisableHelmet'}
+local function Helmet(m)
+  local C,P=CondorCharacter,GCharacterParam
+  if not C or type(C.SetParts)~='function' or not P or not CharacterMngr then return end
+  local H=_TLGHELM or {} _TLGHELM=H
+  if m==0 and not H.f then return end
+  H.want=HELMETS[m] and P[HELMETS[m]] or nil
+  if C.SetParts~=H.f then
+    H.orig=C.SetParts
+    H.f=function(self,data)
+      local W=_TLGHELM
+      if type(data)=='table' then
+        local ok,t=pcall(CharacterMngr.GetTrico,CharacterMngr)
+        if ok and self==t then
+          if data.helmet then W.story=data.helmet end
+          if W.want then
+            local c={} for k,v in pairs(data) do c[k]=v end c.helmet=W.want data=c
+          end
+        end
+      end
+      return W.orig(self,data)
+    end
+    C.SetParts=H.f
+  end
+  local ok,t=pcall(CharacterMngr.GetTrico,CharacterMngr)
+  if not ok or not t then H.t=nil return end
+  if H.t==t and H.m==m then return end
+  -- SetPartsFunc.helmet hides the helmet named in PartsSettings.Current, so Current must follow
+  -- each swap (a copy with the new helmet), or the next swap leaves the old model on (11-23).
+  -- Not SetParts with only the helmet: that makes Current helmet-only and breaks later tail swaps.
+  local set=C.SetPartsFunc and C.SetPartsFunc.helmet
+  local ps=t.PartsSettings
+  if type(set)~='function' or type(ps)~='table' or type(ps.Current)~='table' then return end
+  local part=H.want or H.story or P.DisableHelmet
+  if part and pcall(set,t,part) then
+    local n={} for k,v in pairs(ps.Current) do n[k]=v end n.helmet=part ps.Current=n
+    H.t=t H.m=m
+  end
+end
 -- Field of view: every camera mode has its own GameCameraParam (Base_FovDeg 70 as shipped).
 local function Fov(deg)
   if deg==70 and not B.fovd then return end
@@ -763,7 +808,8 @@ std::string SetChunk() {
                   std::clamp(s.trico_fur.load(), 0, 500), s.fov.load(),
                   s.grass_smooth.load() ? "true" : "false", s.boy_wind.load(), s.tree_wind.load());
     code += line;
-    code += "Drool(" + std::to_string(std::clamp(s.trico_drool.load(), 0, 2)) + ") Dome()\n";
+    code += "Drool(" + std::to_string(std::clamp(s.trico_drool.load(), 0, 2)) + ") Helmet(" +
+            std::to_string(std::clamp(s.trico_helmet.load(), 0, 4)) + ") Dome()\n";
     code += std::string("Plays(") + (s.mod_plays.load() ? "true" : "false") + ") ThrowUp(" +
             std::to_string(s.mod_throw_up.load() ? 1 : 0) + ") _TLGHINTS=" +
             (s.mod_hints.load() ? "true" : "false") + " _TLGHIDEHINTS=" +

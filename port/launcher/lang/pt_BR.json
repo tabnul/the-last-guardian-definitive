@@ -651,6 +651,17 @@
         "2": "As the developers planned"
       }
     },
+    "menu:trico_helmet": {
+      "name": "Capacete do Trico",
+      "what": "Coloca um capacete no Trico, ou o tira, durante o jogo todo. Todos são do próprio jogo: o capacete de armadura dos Tricos blindados, um quebrado ou a máscara do outro Trico. Como na história (padrão) deixa a cargo do jogo. Permanece nas cenas, nas novas áreas e ao carregar um save, e fica guardado para a próxima vez que você iniciar.",
+      "choices": {
+        "0": "Como na história (padrão)",
+        "1": "Capacete de armadura",
+        "2": "Capacete quebrado",
+        "3": "A máscara do outro Trico",
+        "4": "Sem capacete"
+      }
+    },
     "menu:frames_queued": {
       "name": "Quadros na fila",
       "what": "Mais quadros na fila: FPS mais estável, resposta mais lenta.",
@@ -1209,6 +1220,14 @@
     "Use key": "Usar chave",
     "Pop-up and sound on unlock": "Aviso e som ao desbloquear",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Desligado: sem aviso nem som enquanto você joga. Os desbloqueios continuam sendo salvos e listados aqui.",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Os nomes dos troféus precisam da chave de troféus. Sem ela, o aviso mostra só um número."
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Os nomes dos troféus precisam da chave de troféus. Sem ela, o aviso mostra só um número.",
+    "Trico's helmet": "Capacete do Trico",
+    "Helmet": "Capacete",
+    "As in the story (default)": "Como na história (padrão)",
+    "Armour helmet": "Capacete de armadura",
+    "Broken helmet": "Capacete quebrado",
+    "The other Trico's mask": "A máscara do outro Trico",
+    "No helmet": "Sem capacete",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Coloca um capacete no Trico, ou o tira, durante o jogo todo. Todos são do próprio jogo: o capacete de armadura dos Tricos blindados, um quebrado ou a máscara do outro Trico. Como na história (padrão) deixa a cargo do jogo. Permanece nas cenas, nas novas áreas e ao carregar um save, e fica guardado para a próxima vez que você iniciar."
   }
 }

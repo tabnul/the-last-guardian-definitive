@@ -653,6 +653,17 @@
         "2": "Comme prévu par les développeurs"
       }
     },
+    "menu:trico_helmet": {
+      "name": "Casque de Trico",
+      "what": "Met un casque à Trico, ou le lui retire, pour tout le jeu. Tous viennent du jeu : le casque d'armure des Trico en armure, un casque brisé, ou le masque de l'autre Trico. Comme dans l'histoire (par défaut) laisse faire le jeu. Reste en place pendant les cinématiques, les nouvelles zones et le chargement d'une sauvegarde, et est conservé pour le prochain lancement.",
+      "choices": {
+        "0": "Comme dans l'histoire (par défaut)",
+        "1": "Casque d'armure",
+        "2": "Casque brisé",
+        "3": "Le masque de l'autre Trico",
+        "4": "Pas de casque"
+      }
+    },
     "menu:frames_queued": {
       "name": "Images en file d'attente",
       "what": "Plus d'images en file : FPS plus stables, réponse plus lente aux commandes.",
@@ -1215,6 +1226,14 @@
     "Use key": "Utiliser la clé",
     "Pop-up and sound on unlock": "Notification et son au déblocage",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Désactivé : ni notification ni son pendant le jeu. Les déblocages sont quand même enregistrés et listés ici.",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Les noms des trophées nécessitent la clé des trophées. Sans elle, la notification n’affiche qu’un numéro."
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Les noms des trophées nécessitent la clé des trophées. Sans elle, la notification n’affiche qu’un numéro.",
+    "Trico's helmet": "Casque de Trico",
+    "Helmet": "Casque",
+    "As in the story (default)": "Comme dans l'histoire (par défaut)",
+    "Armour helmet": "Casque d'armure",
+    "Broken helmet": "Casque brisé",
+    "The other Trico's mask": "Le masque de l'autre Trico",
+    "No helmet": "Pas de casque",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Met un casque à Trico, ou le lui retire, pour tout le jeu. Tous viennent du jeu : le casque d'armure des Trico en armure, un casque brisé, ou le masque de l'autre Trico. Comme dans l'histoire (par défaut) laisse faire le jeu. Reste en place pendant les cinématiques, les nouvelles zones et le chargement d'une sauvegarde, et est conservé pour le prochain lancement."
   }
 }

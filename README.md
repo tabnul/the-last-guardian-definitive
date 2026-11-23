@@ -79,6 +79,8 @@ No game files are included. You need your own copy, dumped from your own PS4.
 - **Extra Tricos:** up to 8 more next to the boy, the armoured one too.
 - **Trico's size:** from half to twice his size.
 - **Trico's coat:** thicker fur and feathers, up to 250%, for a fluffy Trico. Just for fun.
+- **Trico's helmet:** the armour helmet, a broken one or the other Trico's mask, kept on for the
+  whole story. Or no helmet at all.
 - **Trico's eyes:** the hidden disco-eye effect, or any colour.
 - **Trico's toilet:** he goes right away, in front of you.
 - **All treasures:** unlocks every treasure (the boy's outfits, Trico's feathers) and the

@@ -160,6 +160,10 @@ struct Values {
     /// tlg.ini trico_drool, env TLG_TRICO_DROOL wins): 0 = off as shipped, 1 = always,
     /// 2 = as the developers planned (only while he wants a smell pot or the boy's smell bottle).
     std::atomic<int> trico_drool{0};
+    /// Trico's helmet (tlg.ini trico_helmet, env TLG_TRICO_HELMET wins; tlg_lua.cpp Helmet):
+    /// 0 = as the story has it, 1 = armour helmet, 2 = broken helmet, 3 = the other Trico's mask,
+    /// 4 = none. Kept through story look changes and stage loads.
+    std::atomic<int> trico_helmet{0};
     /// Trico's coat (Extras tab, live; tlg.ini trico_fur): percent of the game's own fur and feather
     /// length, 0..500, written into his FurTypes through Lua (tlg_lua.cpp Fur). 100 = as shipped.
     std::atomic<int> trico_fur{100};

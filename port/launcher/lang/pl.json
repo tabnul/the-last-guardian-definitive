@@ -660,6 +660,17 @@
         "2": "Jak planowali twórcy"
       }
     },
+    "menu:trico_helmet": {
+      "name": "Hełm Trico",
+      "what": "Zakłada Trico hełm albo go zdejmuje, na całą grę. Wszystkie pochodzą z samej gry: hełm pancerny opancerzonych Trico, pęknięty hełm albo maska drugiego Trico. Jak w fabule (domyślnie) zostawia wybór grze. Zostaje w przerywnikach, nowych etapach i po wczytaniu zapisu, i jest zapamiętywany na następne uruchomienie.",
+      "choices": {
+        "0": "Jak w fabule (domyślnie)",
+        "1": "Hełm pancerny",
+        "2": "Pęknięty hełm",
+        "3": "Maska drugiego Trico",
+        "4": "Bez hełmu"
+      }
+    },
     "menu:mod_treasures": {
       "name": "Wszystkie skarby",
       "what": "Odblokowuje wszystkie skarby (stroje, pióra Trico) i pozycję Skarby w menu opcji, za pomocą odblokowania samych twórców. Zapisywane w twoim zapisie: wyłączenie ich nie odbiera. Twoje zapisy są kopiowane przed pierwszym odblokowaniem (menedżer zapisów launchera może je przywrócić). Wybierz je w menu pauzy gry, w Przedmiotach."
@@ -1228,6 +1239,14 @@
     "Use key": "Użyj klucza",
     "Pop-up and sound on unlock": "Powiadomienie i dźwięk po zdobyciu",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "Wyłączone: bez powiadomienia i dźwięku podczas gry. Zdobyte trofea są nadal zapisywane i widoczne tutaj.",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Nazwy trofeów wymagają klucza trofeów. Bez niego powiadomienie pokazuje tylko numer."
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "Nazwy trofeów wymagają klucza trofeów. Bez niego powiadomienie pokazuje tylko numer.",
+    "Trico's helmet": "Hełm Trico",
+    "Helmet": "Hełm",
+    "As in the story (default)": "Jak w fabule (domyślnie)",
+    "Armour helmet": "Hełm pancerny",
+    "Broken helmet": "Pęknięty hełm",
+    "The other Trico's mask": "Maska drugiego Trico",
+    "No helmet": "Bez hełmu",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "Zakłada Trico hełm albo go zdejmuje, na całą grę. Wszystkie pochodzą z samej gry: hełm pancerny opancerzonych Trico, pęknięty hełm albo maska drugiego Trico. Jak w fabule (domyślnie) zostawia wybór grze. Zostaje w przerywnikach, nowych etapach i po wczytaniu zapisu, i jest zapamiętywany na następne uruchomienie."
   }
 }

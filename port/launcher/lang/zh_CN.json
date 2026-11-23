@@ -653,6 +653,17 @@
         "2": "按开发者原计划"
       }
     },
+    "menu:trico_helmet": {
+      "name": "特里科的头盔",
+      "what": "在整个游戏中给特里科戴上或摘下头盔。全部来自游戏本身：披甲特里科戴的铠甲头盔、破损的头盔，或另一只特里科的面具。按剧情（默认）交给游戏决定。在过场动画、新关卡和读取存档后都会保留，并在下次启动时沿用。",
+      "choices": {
+        "0": "按剧情（默认）",
+        "1": "铠甲头盔",
+        "2": "破损的头盔",
+        "3": "另一只特里科的面具",
+        "4": "无头盔"
+      }
+    },
     "menu:frames_queued": {
       "name": "排队帧数",
       "what": "排队帧数越多：FPS 越稳定，输入响应越慢。",
@@ -1215,6 +1226,14 @@
     "Use key": "使用密钥",
     "Pop-up and sound on unlock": "解锁时弹窗和提示音",
     "Off: no pop-up or sound while you play. Unlocks are still saved and listed here.": "关闭：游戏时没有弹窗和提示音。解锁仍会保存并在此列出。",
-    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "显示奖杯名称需要奖杯密钥。没有密钥时，弹窗只显示编号。"
+    "Trophy names need the trophy key. Without it the pop-up only shows a number.": "显示奖杯名称需要奖杯密钥。没有密钥时，弹窗只显示编号。",
+    "Trico's helmet": "特里科的头盔",
+    "Helmet": "头盔",
+    "As in the story (default)": "按剧情（默认）",
+    "Armour helmet": "铠甲头盔",
+    "Broken helmet": "破损的头盔",
+    "The other Trico's mask": "另一只特里科的面具",
+    "No helmet": "无头盔",
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "在整个游戏中给特里科戴上或摘下头盔。全部来自游戏本身：披甲特里科戴的铠甲头盔、破损的头盔，或另一只特里科的面具。按剧情（默认）交给游戏决定。在过场动画、新关卡和读取存档后都会保留，并在下次启动时沿用。"
   }
 }
