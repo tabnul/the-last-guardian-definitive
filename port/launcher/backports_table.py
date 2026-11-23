@@ -191,6 +191,10 @@ MENU = [
     _menu('Fun', 'mod_hints', 'bool', '0', 'Cut narrator hints',
           'The 23 narrator hints the developers cut in September 2016. On: when you seem stuck, the narrator '
           'helps again, where they first placed his lines. They give puzzle solutions away.'),
+    _menu('Fun', 'leaf_ao', 'choice', '0', 'Realistic tree shade',
+          'Tree crowns look flat and too bright: the light inside them has no shadow between the layers of '
+          'leaves. This darkens the light inside the crowns.',
+          choices=(('0', 'Off'), ('1', 'Low'), ('2', 'Medium'), ('3', 'High'), ('4', 'Extreme'))),
     _menu('Performance', 'frames_queued', 'choice', '1', 'Frames queued',
           'More frames queued: steadier FPS, slower response to input.',
           choices=(('1', '1 (lowest latency)'), ('2', '2'),

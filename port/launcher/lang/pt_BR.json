@@ -840,6 +840,17 @@
     "menu:shadow_lite": {
       "name": "Sombras leves",
       "what": "Deixa de fora a mais próxima das quatro camadas de sombra do jogo, como o próprio jogo faz em algumas áreas. Alguns % a mais de FPS em CPUs antigas e no Steam Deck; as sombras perto da câmera ficam um pouco mais suaves. Desligado é como foi lançado."
+    },
+    "menu:leaf_ao": {
+      "name": "Sombra realista das árvores",
+      "what": "As copas das árvores parecem planas e claras demais: a luz dentro delas não tem sombra entre as camadas de folhas. Isto escurece a luz dentro das copas.",
+      "choices": {
+        "0": "Desligado",
+        "1": "Baixo",
+        "2": "Médio",
+        "3": "Alto",
+        "4": "Extremo"
+      }
     }
   },
   "menu": {
@@ -1246,6 +1257,12 @@
     "Turn on Foxtail toy in the launcher (Extras page) once first.": "Ative primeiro uma vez Brinquedo de rabo-de-raposa no launcher (página Extras).",
     "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Só neste port, recriado por nós: a brincadeira de rabo-de-raposa que os desenvolvedores cortaram. O garoto balança o brinquedo para Trico e bate palmas, e Trico pula nele como um gato (o pulo é do próprio jogo, ficou quando o brinquedo foi cortado). Precisa de Mods > Brinquedo de rabo-de-raposa na aba Extras.",
     "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Exclusivo deste port, recriado por nós: o brinquedo de rabo-de-raposa do garoto, cortado pelos desenvolvedores (o pulo de Trico atrás dele ficou no jogo). Em japonês, o capim rabo-de-raposa se chama nekojarashi (猫じゃらし): \"provoca-gato\". Dois botões do Trico Tricks usam ele: Foxtail (o garoto segura até você apertar de novo) e Foxtail play (ele balança e bate palmas, Trico pula). Nosso próprio modelo de um ramo de capim rabo-de-raposa. Ative primeiro uma vez no launcher: o launcher cria o modelo no seu PC.",
-    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Só neste port, recriado por nós: o brinquedo de rabo-de-raposa do garoto, cortado pelos desenvolvedores antes do lançamento. Em japonês, o capim rabo-de-raposa se chama nekojarashi (猫じゃらし): \"provoca-gato\". Nosso próprio modelo; o garoto segura até você apertar aqui de novo. Precisa de Mods > Brinquedo de rabo-de-raposa na aba Extras."
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Só neste port, recriado por nós: o brinquedo de rabo-de-raposa do garoto, cortado pelos desenvolvedores antes do lançamento. Em japonês, o capim rabo-de-raposa se chama nekojarashi (猫じゃらし): \"provoca-gato\". Nosso próprio modelo; o garoto segura até você apertar aqui de novo. Precisa de Mods > Brinquedo de rabo-de-raposa na aba Extras.",
+    "Low": "Baixo",
+    "Medium": "Médio",
+    "High": "Alto",
+    "Extreme": "Extremo",
+    "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "As copas das árvores parecem planas e claras demais: a luz dentro delas não tem sombra entre as camadas de folhas. Isto escurece a luz dentro das copas.",
+    "Realistic tree shade": "Sombra realista das árvores"
   }
 }

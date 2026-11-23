@@ -65,6 +65,10 @@ No game files are included. You need your own copy, dumped from your own PS4.
   [generator](https://github.com/tabnul/ps4-texturepack-generator) builds a 4x texture pack from
   your own copy, with more detail in stone, moss, wood and cloth. Optional, and you can switch
   it on and off while you play.
+- **[Realistic tree shade](#graphics):** the game lights its trees oddly. The inside of a
+  crown is as bright as the outside, so the trees look flat and over-exposed, with no shade
+  between the layers of leaves. This setting adds that shade, so the crowns get depth. Five
+  levels, changed while you play. Optional, off by default.
 - **Your own launcher background:** the launcher shows a picture from your game files. To use
   your own, open **Settings** and click **Background picture…** in the Launcher box, then pick a
   PNG or JPG. **Default picture** brings the game's picture back.
@@ -182,6 +186,14 @@ Each setting shows what the game originally used and what we recommend.
 - **Wind and grass:** the stock wind looks like a storm on PC. You can set it separately for the
   boy, the trees and Trico; 50% is a breeze. Grass that the game moved only every 4th frame now
   moves every frame, which stops the flicker.
+- **Realistic tree shade (only in this port):** in the stock game the tree crowns look flat and
+  too bright. The light inside a crown is as strong as outside it, so there is no shadow between
+  the layers of leaves. This setting darkens the light inside the crowns, so they get depth. Five
+  levels, Off to Extreme, and it changes while you play (Extras page). Off by default. Off, then
+  Medium:
+
+  [<img src="docs/screenshots/crops/LEAF_TREE_OFF.jpg" width="49%" alt="tree crown, leaf shading off">](docs/screenshots/LEAF_OFF.png)
+  [<img src="docs/screenshots/crops/LEAF_TREE_MEDIUM.jpg" width="49%" alt="tree crown, leaf shading medium">](docs/screenshots/LEAF_MEDIUM.png)
 - **Texture pack (optional):** [ps4-texturepack-generator](https://github.com/tabnul/ps4-texturepack-generator)
   makes a 4x texture pack from your own copy. It can be switched on and off while you play. See
   [docs/texture-pack.md](docs/texture-pack.md).

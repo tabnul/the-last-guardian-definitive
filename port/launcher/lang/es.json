@@ -842,6 +842,17 @@
     "menu:shadow_lite": {
       "name": "Sombras ligeras",
       "what": "Omite la más cercana de las cuatro capas de sombra del juego, como hace el propio juego en algunas zonas. Unos pocos % más de FPS en CPU antiguas y en Steam Deck; las sombras cerca de la cámara quedan algo más suaves. Desactivado es como se lanzó."
+    },
+    "menu:leaf_ao": {
+      "name": "Sombra realista de árboles",
+      "what": "Las copas de los árboles se ven planas y demasiado claras: la luz en su interior no tiene sombra entre las capas de hojas. Esto oscurece la luz dentro de las copas.",
+      "choices": {
+        "0": "Desactivado",
+        "1": "Bajo",
+        "2": "Medio",
+        "3": "Alto",
+        "4": "Extremo"
+      }
     }
   },
   "menu": {
@@ -1252,6 +1263,12 @@
     "Turn on Foxtail toy in the launcher (Extras page) once first.": "Activa primero una vez Juguete de cola de zorra en el launcher (página Extras).",
     "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Solo en este port, recreado por nosotros: el juego de cola de zorra que eliminaron los desarrolladores. El niño agita el juguete ante Trico y aplaude, y Trico salta sobre él como un gato (su salto es del propio juego, se quedó cuando se eliminó el juguete). Requiere Mods > Juguete de cola de zorra en la pestaña Extras.",
     "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Exclusivo de este port, recreado por nosotros: el juguete de cola de zorra del niño, eliminado por los desarrolladores (el salto de Trico hacia él quedó en el juego). En japonés, la cola de zorra se llama nekojarashi (猫じゃらし): «juguete para gatos». Dos botones de Trico Tricks lo usan: Foxtail (el niño lo sostiene hasta que vuelvas a pulsar) y Foxtail play (lo agita y aplaude, Trico salta). Nuestro propio modelo de una espiga de hierba cola de zorra. Actívalo primero una vez en el launcher: el launcher crea el modelo en tu PC.",
-    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Solo en este port, recreado por nosotros: el juguete de cola de zorra del niño, eliminado por los desarrolladores antes del lanzamiento. En japonés, la cola de zorra se llama nekojarashi (猫じゃらし): «juguete para gatos». Nuestro propio modelo; el niño lo sostiene hasta que vuelvas a pulsar aquí. Requiere Mods > Juguete de cola de zorra en la pestaña Extras."
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Solo en este port, recreado por nosotros: el juguete de cola de zorra del niño, eliminado por los desarrolladores antes del lanzamiento. En japonés, la cola de zorra se llama nekojarashi (猫じゃらし): «juguete para gatos». Nuestro propio modelo; el niño lo sostiene hasta que vuelvas a pulsar aquí. Requiere Mods > Juguete de cola de zorra en la pestaña Extras.",
+    "Low": "Bajo",
+    "Medium": "Medio",
+    "High": "Alto",
+    "Extreme": "Extremo",
+    "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "Las copas de los árboles se ven planas y demasiado claras: la luz en su interior no tiene sombra entre las capas de hojas. Esto oscurece la luz dentro de las copas.",
+    "Realistic tree shade": "Sombra realista de árboles"
   }
 }

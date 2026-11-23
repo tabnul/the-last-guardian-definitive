@@ -842,6 +842,17 @@
     "menu:shadow_lite": {
       "name": "軽量シャドウ",
       "what": "ゲームの4つの影レイヤーのうち、カメラに最も近いものを省きます。ゲーム自体も一部のエリアでそうしています。古いCPUやSteam DeckでFPSが数%上がり、カメラ近くの影が少しやわらかくなります。オフは発売時のままです。"
+    },
+    "menu:leaf_ao": {
+      "name": "リアルな木の陰影",
+      "what": "木の葉の茂みが平たく明るすぎて見えます。内部の光に、葉の重なりによる影がありません。この設定は茂みの内部の光を暗くします。",
+      "choices": {
+        "0": "オフ",
+        "1": "低",
+        "2": "中",
+        "3": "高",
+        "4": "最大"
+      }
     }
   },
   "menu": {
@@ -1252,6 +1263,12 @@
     "Turn on Foxtail toy in the launcher (Extras page) once first.": "まずランチャー（エクストラのページ）でねこじゃらしを一度オンにしてください。",
     "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "このポートだけ、私たちが再現：開発者がカットしたねこじゃらし遊び。少年がねこじゃらしをトリコに向けて振り、手をたたくと、トリコが猫のように飛びかかります（飛びかかる動きはゲーム本来のもので、ねこじゃらしがカットされた後も残っていました）。エクストラタブの Mods > ねこじゃらし が必要です。",
     "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "このポートだけの機能、私たちが再現：開発者がカットした少年のねこじゃらし（トリコが飛びかかる動きはゲームに残っています）。エノコログサは日本語で「猫じゃらし」とも呼ばれます。Trico Tricks の2つのボタンで使います：Foxtail（もう一度押すまで少年が持ち続けます）と Foxtail play（少年が振って手をたたき、トリコが飛びかかります）。エノコログサの穂を再現した独自のモデルです。まずランチャーで一度オンにしてください：ランチャーがお使いのPCでモデルを作ります。",
-    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "このポートだけ、私たちが再現：開発者が発売前にカットした少年のねこじゃらし。エノコログサは日本語で「猫じゃらし」とも呼ばれます。独自のモデルです。もう一度ここを押すまで少年が持ち続けます。エクストラタブの Mods > ねこじゃらし が必要です。"
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "このポートだけ、私たちが再現：開発者が発売前にカットした少年のねこじゃらし。エノコログサは日本語で「猫じゃらし」とも呼ばれます。独自のモデルです。もう一度ここを押すまで少年が持ち続けます。エクストラタブの Mods > ねこじゃらし が必要です。",
+    "Low": "低",
+    "Medium": "中",
+    "High": "高",
+    "Extreme": "最大",
+    "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "木の葉の茂みが平たく明るすぎて見えます。内部の光に、葉の重なりによる影がありません。この設定は茂みの内部の光を暗くします。",
+    "Realistic tree shade": "リアルな木の陰影"
   }
 }

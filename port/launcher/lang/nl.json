@@ -849,6 +849,17 @@
     "menu:shadow_lite": {
       "name": "Lichte schaduwen",
       "what": "Laat de dichtstbijzijnde van de vier schaduwlagen van de game weg, zoals de game zelf in sommige gebieden doet. Een paar % meer FPS op oudere cpu's en de Steam Deck; schaduwen dicht bij de camera worden iets zachter. Uit is zoals uitgebracht."
+    },
+    "menu:leaf_ao": {
+      "name": "Realistische boomschaduw",
+      "what": "Boomkruinen zien er plat en te licht uit: het licht erin heeft geen schaduw tussen de lagen bladeren. Dit maakt het licht in de kruinen donkerder.",
+      "choices": {
+        "0": "Uit",
+        "1": "Laag",
+        "2": "Middel",
+        "3": "Hoog",
+        "4": "Extreem"
+      }
     }
   },
   "menu": {
@@ -1265,6 +1276,12 @@
     "Turn on Foxtail toy in the launcher (Extras page) once first.": "Zet Vossenstaart-speeltje eerst één keer aan in de launcher (pagina Extra's).",
     "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Alleen in deze port, door ons nagemaakt: het geschrapte vossenstaart-spel van de makers. De jongen zwaait het vossenstaart-speeltje naar Trico en klapt, en Trico springt erop als een kat (die sprong is van het spel zelf, blijven staan toen het speeltje werd geschrapt). Nodig: Mods > Vossenstaart-speeltje op het tabblad Extra's.",
     "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Uniek voor deze port, door ons nagemaakt: het vossenstaart-speeltje van de jongen, door de makers geschrapt (Trico's sprong ernaar zit nog in het spel). Vossenstaartgras heet in het Japans nekojarashi (猫じゃらし): \"kattenplager\". Twee Trico Tricks-knoppen gebruiken het: Foxtail (de jongen houdt het vast tot je nog eens drukt) en Foxtail play (hij zwaait ermee en klapt, Trico springt). Ons eigen model van een vossenstaartgras-stengel. Zet het eerst één keer aan in de launcher: de launcher bouwt het model op je pc.",
-    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Alleen in deze port, door ons nagemaakt: het vossenstaart-speeltje van de jongen, door de makers geschrapt voor de release. Vossenstaartgras heet in het Japans nekojarashi (猫じゃらし): \"kattenplager\". Ons eigen model; de jongen houdt het vast tot je hier nog eens op drukt. Nodig: Mods > Vossenstaart-speeltje op het tabblad Extra's."
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Alleen in deze port, door ons nagemaakt: het vossenstaart-speeltje van de jongen, door de makers geschrapt voor de release. Vossenstaartgras heet in het Japans nekojarashi (猫じゃらし): \"kattenplager\". Ons eigen model; de jongen houdt het vast tot je hier nog eens op drukt. Nodig: Mods > Vossenstaart-speeltje op het tabblad Extra's.",
+    "Low": "Laag",
+    "Medium": "Middel",
+    "High": "Hoog",
+    "Extreme": "Extreem",
+    "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "Boomkruinen zien er plat en te licht uit: het licht erin heeft geen schaduw tussen de lagen bladeren. Dit maakt het licht in de kruinen donkerder.",
+    "Realistic tree shade": "Realistische boomschaduw"
   }
 }

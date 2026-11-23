@@ -1743,6 +1743,10 @@ void FunTab() {
                   TR("The developers sealed Trico throwing up \"by order\" in 2016. As the developers designed: when his stomach is full of barrels, he throws up the way they planned. The Throw up button in Trico Tricks works either way."), 0);
         CheckRow(TR("Cut narrator hints"), TlgSettings::Get().mod_hints,
                  TR("The 23 narrator hints the developers cut in September 2016. On: when you seem stuck, the narrator helps again, where they first placed his lines. They give puzzle solutions away."), true);
+        static const char* const leaf_labels[] = {TR("Off"), TR("Low"), TR("Medium"), TR("High"), TR("Extreme")};
+        static const int leaf_values[] = {0, 1, 2, 3, 4};
+        ChoiceRow(TR("Realistic tree shade"), TlgSettings::Get().leaf_ao, leaf_labels, leaf_values, 5,
+                  TR("Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns."), 0, 0);
         ImGui::EndTable();
     }
 }

@@ -842,6 +842,17 @@
     "menu:shadow_lite": {
       "name": "Leichte Schatten",
       "what": "Lässt die nächste der vier Schattenebenen des Spiels weg, wie es das Spiel in manchen Gebieten selbst tut. Ein paar % mehr FPS auf älteren CPUs und dem Steam Deck; Schatten nah an der Kamera werden etwas weicher. Aus ist wie ausgeliefert."
+    },
+    "menu:leaf_ao": {
+      "name": "Realistischer Baumschatten",
+      "what": "Baumkronen wirken flach und zu hell: Das Licht in ihnen hat keinen Schatten zwischen den Blattschichten. Dies dunkelt das Licht in den Kronen ab.",
+      "choices": {
+        "0": "Aus",
+        "1": "Niedrig",
+        "2": "Mittel",
+        "3": "Hoch",
+        "4": "Extrem"
+      }
     }
   },
   "menu": {
@@ -1252,6 +1263,12 @@
     "Turn on Foxtail toy in the launcher (Extras page) once first.": "Schalte Fuchsschwanz-Spielzeug zuerst einmal im Launcher ein (Seite Extras).",
     "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Nur in diesem Port, von uns nachgebaut: das gestrichene Fuchsschwanz-Spiel der Entwickler. Der Junge wedelt Trico mit dem Fuchsschwanz-Spielzeug zu und klatscht, und Trico springt wie eine Katze darauf (der Sprung stammt aus dem Spiel selbst und blieb drin, als das Spielzeug gestrichen wurde). Braucht Mods > Fuchsschwanz-Spielzeug auf dem Tab Extras.",
     "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Einzigartig in diesem Port, von uns nachgebaut: das Fuchsschwanz-Spielzeug des Jungen, von den Entwicklern gestrichen (Tricos Sprung danach blieb im Spiel). Fuchsschwanzgras heißt auf Japanisch nekojarashi (猫じゃらし): „Katzenkitzler“. Zwei Trico-Tricks-Knöpfe nutzen es: Foxtail (der Junge hält es, bis du noch einmal drückst) und Foxtail play (er wedelt damit und klatscht, Trico springt). Unser eigenes Modell eines Fuchsschwanzgras-Halms. Schalte es zuerst einmal im Launcher ein: Der Launcher baut das Modell auf deinem PC.",
-    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Nur in diesem Port, von uns nachgebaut: das Fuchsschwanz-Spielzeug des Jungen, von den Entwicklern vor dem Release gestrichen. Fuchsschwanzgras heißt auf Japanisch nekojarashi (猫じゃらし): „Katzenkitzler“. Unser eigenes Modell; der Junge hält es, bis du hier noch einmal drückst. Braucht Mods > Fuchsschwanz-Spielzeug auf dem Tab Extras."
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Nur in diesem Port, von uns nachgebaut: das Fuchsschwanz-Spielzeug des Jungen, von den Entwicklern vor dem Release gestrichen. Fuchsschwanzgras heißt auf Japanisch nekojarashi (猫じゃらし): „Katzenkitzler“. Unser eigenes Modell; der Junge hält es, bis du hier noch einmal drückst. Braucht Mods > Fuchsschwanz-Spielzeug auf dem Tab Extras.",
+    "Low": "Niedrig",
+    "Medium": "Mittel",
+    "High": "Hoch",
+    "Extreme": "Extrem",
+    "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "Baumkronen wirken flach und zu hell: Das Licht in ihnen hat keinen Schatten zwischen den Blattschichten. Dies dunkelt das Licht in den Kronen ab.",
+    "Realistic tree shade": "Realistischer Baumschatten"
   }
 }

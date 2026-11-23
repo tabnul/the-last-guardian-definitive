@@ -849,6 +849,17 @@
     "menu:shadow_lite": {
       "name": "Lekkie cienie",
       "what": "Pomija najbliższą z czterech warstw cieni gry, tak jak gra sama robi w niektórych miejscach. Kilka % więcej FPS na starszych procesorach i Steam Decku; cienie blisko kamery są trochę bardziej miękkie. Wył. to gra jak w dniu premiery."
+    },
+    "menu:leaf_ao": {
+      "name": "Realistyczny cień drzew",
+      "what": "Korony drzew wyglądają płasko i są zbyt jasne: światło w ich wnętrzu nie ma cienia między warstwami liści. To ustawienie przyciemnia światło wewnątrz koron.",
+      "choices": {
+        "0": "Wył.",
+        "1": "Niskie",
+        "2": "Średnie",
+        "3": "Wysokie",
+        "4": "Ekstremalne"
+      }
     }
   },
   "menu": {
@@ -1265,6 +1276,12 @@
     "Turn on Foxtail toy in the launcher (Extras page) once first.": "Najpierw włącz raz Zabawka z włośnicy w launcherze (strona Dodatki).",
     "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Tylko w tym porcie, odtworzone przez nas: wycięta przez twórców zabawa z włośnicą. Chłopiec macha zabawką przed Trico i klaszcze, a Trico skacze na nią jak kot (ten skok pochodzi z samej gry, został, gdy zabawkę wycięto). Wymaga Mods > Zabawka z włośnicy na karcie Dodatki.",
     "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Unikalne dla tego portu, odtworzone przez nas: zabawka z włośnicy chłopca, wycięta przez twórców (skok Trico do niej został w grze). Po japońsku włośnica to nekojarashi (猫じゃらし): „drażnik dla kota”. Używają jej dwa przyciski Trico Tricks: Foxtail (chłopiec trzyma ją, aż naciśniesz ponownie) i Foxtail play (macha nią i klaszcze, Trico skacze). Nasz własny model źdźbła włośnicy. Najpierw włącz to raz w launcherze: launcher zbuduje model na twoim PC.",
-    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Tylko w tym porcie, odtworzone przez nas: zabawka z włośnicy chłopca, wycięta przez twórców przed premierą. Po japońsku włośnica to nekojarashi (猫じゃらし): „drażnik dla kota”. Nasz własny model; chłopiec trzyma ją, aż naciśniesz tu ponownie. Wymaga Mods > Zabawka z włośnicy na karcie Dodatki."
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Tylko w tym porcie, odtworzone przez nas: zabawka z włośnicy chłopca, wycięta przez twórców przed premierą. Po japońsku włośnica to nekojarashi (猫じゃらし): „drażnik dla kota”. Nasz własny model; chłopiec trzyma ją, aż naciśniesz tu ponownie. Wymaga Mods > Zabawka z włośnicy na karcie Dodatki.",
+    "Low": "Niskie",
+    "Medium": "Średnie",
+    "High": "Wysokie",
+    "Extreme": "Ekstremalne",
+    "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "Korony drzew wyglądają płasko i są zbyt jasne: światło w ich wnętrzu nie ma cienia między warstwami liści. To ustawienie przyciemnia światło wewnątrz koron.",
+    "Realistic tree shade": "Realistyczny cień drzew"
   }
 }

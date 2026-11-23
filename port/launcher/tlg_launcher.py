@@ -1510,7 +1510,7 @@ class Launcher:
             row=1, column=0, sticky='w', pady=(6, 0))
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
         for key in ('trico_fur', 'trico_helmet', 'mod_treasures', 'mod_horns', 'mod_foxtail', 'mod_plays',
-                    'mod_throw_up', 'mod_hints'):
+                    'mod_throw_up', 'mod_hints', 'leaf_ao'):
             item = next(i for i in backports_table.MENU if i.key == key)
             mod = section(parent, item.name)
             mod.pack(fill='x', anchor='w', pady=(0, 8))

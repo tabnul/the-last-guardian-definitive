@@ -208,6 +208,9 @@ struct Values {
     /// hints cut on 2016-09-20 play again where their triggers are (tlg_lua.cpp CutHints). Off by
     /// default: they give puzzle solutions away.
     std::atomic<bool> mod_hints{false};
+    /// Extras > Realistic tree shade (tlg.ini leaf_ao): darker ambient light inside tree crowns, 0 = off
+    /// (default), 1..4 = low, medium, high, extreme. Live (LeafAoLive); TLG_LEAF_AO wins.
+    std::atomic<int> leaf_ao{0};
     /// Set by tlg_lua.cpp when the game ends a stage load; the texture cache takes it.
     std::atomic<bool> stage_loaded{false};
     // Startup: tlg_run.py turns them into patches and environment variables; "Apply and restart".
@@ -345,6 +348,12 @@ int RenderPreset();
 bool ResolutionNeedsRestart();
 /// A startup graphics option differs from the one this launch started with.
 bool GraphicsNeedRestart();
+/// Realistic tree shade (leaf_ambient_occlusion_pass.cpp): the material entries the shader pass treats
+/// as leaves (0: TLG_LEAF_AO=off, the pass is left out), read once at start.
+unsigned LeafAoMaterials();
+/// The live strength (0..1, 0 = off) and radius in metres, from TLG_LEAF_AO=<s>[,<r>] or else
+/// the menu level. Called per compute dispatch.
+void LeafAoLive(float& strength, float& radius);
 /// TLG_SETTINGS_RELOAD=<file> (tests): when the file appears it is removed and tlg.ini is read
 /// again, so a script can switch live options without the menu. Called once per frame.
 void ReloadIfRequested();

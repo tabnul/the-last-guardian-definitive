@@ -842,6 +842,17 @@
     "menu:shadow_lite": {
       "name": "轻量阴影",
       "what": "去掉游戏四层阴影中离镜头最近的一层,游戏自己在某些区域也这样做。在较旧的 CPU 和 Steam Deck 上 FPS 高几个百分点;镜头附近的阴影会稍微柔和一些。关闭为发售时的原样。"
+    },
+    "menu:leaf_ao": {
+      "name": "真实树荫",
+      "what": "树冠看起来扁平且过亮：内部的光线在层层树叶之间没有阴影。此选项会让树冠内部的光线变暗。",
+      "choices": {
+        "0": "关闭",
+        "1": "低",
+        "2": "中",
+        "3": "高",
+        "4": "极高"
+      }
     }
   },
   "menu": {
@@ -1252,6 +1263,12 @@
     "Turn on Foxtail toy in the launcher (Extras page) once first.": "请先在启动器（附加内容页面）里开启一次狗尾草玩具。",
     "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "本移植版独有，由我们重制：开发者删掉的狗尾草游戏。男孩向 Trico 挥动狗尾草并拍手，Trico 像猫一样扑过来（扑的动作是游戏自带的，删掉玩具时留了下来）。需要附加内容标签页里的 Mods > 狗尾草玩具。",
     "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "本移植版独有，由我们重制：男孩的狗尾草玩具，被开发者删掉了（Trico 扑向它的动作留在了游戏里）。狗尾草在日语里叫 nekojarashi（猫じゃらし），意思是“逗猫草”。两个 Trico Tricks 按钮会用到它：Foxtail（男孩一直拿着，直到你再按一次）和 Foxtail play（他挥动它并拍手，Trico 扑过来）。这是我们自己做的狗尾草穗模型。请先在启动器里开启一次：启动器会在你的电脑上生成模型。",
-    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "本移植版独有，由我们重制：男孩的狗尾草玩具，开发者在发售前删掉了它。狗尾草在日语里叫 nekojarashi（猫じゃらし），意思是“逗猫草”。我们自己的模型；男孩一直拿着，直到你再按一次这里。需要附加内容标签页里的 Mods > 狗尾草玩具。"
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "本移植版独有，由我们重制：男孩的狗尾草玩具，开发者在发售前删掉了它。狗尾草在日语里叫 nekojarashi（猫じゃらし），意思是“逗猫草”。我们自己的模型；男孩一直拿着，直到你再按一次这里。需要附加内容标签页里的 Mods > 狗尾草玩具。",
+    "Low": "低",
+    "Medium": "中",
+    "High": "高",
+    "Extreme": "极高",
+    "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "树冠看起来扁平且过亮：内部的光线在层层树叶之间没有阴影。此选项会让树冠内部的光线变暗。",
+    "Realistic tree shade": "真实树荫"
   }
 }

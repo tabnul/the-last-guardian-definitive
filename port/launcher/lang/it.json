@@ -849,6 +849,17 @@
     "menu:shadow_lite": {
       "name": "Ombre leggere",
       "what": "Toglie il più vicino dei quattro livelli d'ombra del gioco, come fa il gioco stesso in alcune zone. Qualche % di FPS in più su CPU vecchie e su Steam Deck; le ombre vicine alla telecamera diventano un po' più morbide. No è come all'uscita."
+    },
+    "menu:leaf_ao": {
+      "name": "Ombra realistica degli alberi",
+      "what": "Le chiome degli alberi sembrano piatte e troppo chiare: la luce al loro interno non ha ombra tra gli strati di foglie. Questo scurisce la luce dentro le chiome.",
+      "choices": {
+        "0": "No",
+        "1": "Basso",
+        "2": "Medio",
+        "3": "Alto",
+        "4": "Estremo"
+      }
     }
   },
   "menu": {
@@ -1265,6 +1276,12 @@
     "Turn on Foxtail toy in the launcher (Extras page) once first.": "Attiva prima una volta Giocattolo di coda di volpe nel launcher (pagina Extra).",
     "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Solo in questo port, ricreato da noi: il gioco con la coda di volpe tagliato dagli sviluppatori. Il ragazzo agita il giocattolo davanti a Trico e batte le mani, e Trico ci balza sopra come un gatto (il balzo è del gioco stesso, rimasto quando il giocattolo fu tagliato). Richiede Mods > Giocattolo di coda di volpe nella scheda Extra.",
     "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Esclusivo di questo port, ricreato da noi: il giocattolo di coda di volpe del ragazzo, tagliato dagli sviluppatori (il balzo di Trico verso di esso è rimasto nel gioco). In giapponese l'erba coda di volpe si chiama nekojarashi (猫じゃらし): \"stuzzica-gatti\". Due pulsanti di Trico Tricks lo usano: Foxtail (il ragazzo lo tiene finché non premi di nuovo) e Foxtail play (lo agita e batte le mani, Trico balza). Il nostro modello di uno stelo di erba coda di volpe. Attivalo prima una volta nel launcher: il launcher crea il modello sul tuo PC.",
-    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Solo in questo port, ricreato da noi: il giocattolo di coda di volpe del ragazzo, tagliato dagli sviluppatori prima dell'uscita. In giapponese l'erba coda di volpe si chiama nekojarashi (猫じゃらし): \"stuzzica-gatti\". Il nostro modello; il ragazzo lo tiene finché non premi di nuovo qui. Richiede Mods > Giocattolo di coda di volpe nella scheda Extra."
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Solo in questo port, ricreato da noi: il giocattolo di coda di volpe del ragazzo, tagliato dagli sviluppatori prima dell'uscita. In giapponese l'erba coda di volpe si chiama nekojarashi (猫じゃらし): \"stuzzica-gatti\". Il nostro modello; il ragazzo lo tiene finché non premi di nuovo qui. Richiede Mods > Giocattolo di coda di volpe nella scheda Extra.",
+    "Low": "Basso",
+    "Medium": "Medio",
+    "High": "Alto",
+    "Extreme": "Estremo",
+    "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "Le chiome degli alberi sembrano piatte e troppo chiare: la luce al loro interno non ha ombra tra gli strati di foglie. Questo scurisce la luce dentro le chiome.",
+    "Realistic tree shade": "Ombra realistica degli alberi"
   }
 }

@@ -849,6 +849,17 @@
     "menu:shadow_lite": {
       "name": "Легкі тіні",
       "what": "Прибирає найближчий із чотирьох шарів тіней гри, як сама гра робить у деяких місцях. На кілька % більше FPS на старих процесорах і Steam Deck; тіні біля камери стають трохи м'якшими. Вимк. — як у релізі."
+    },
+    "menu:leaf_ao": {
+      "name": "Реалістична тінь дерев",
+      "what": "Крони дерев виглядають пласкими й надто світлими: світло всередині не має тіні між шарами листя. Це затемнює світло всередині крон.",
+      "choices": {
+        "0": "Вимк.",
+        "1": "Низьке",
+        "2": "Середнє",
+        "3": "Високе",
+        "4": "Екстремальне"
+      }
     }
   },
   "menu": {
@@ -1265,6 +1276,12 @@
     "Turn on Foxtail toy in the launcher (Extras page) once first.": "Спершу один раз увімкни Іграшка з мишію в лаунчері (сторінка Додатки).",
     "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Лише в цьому порті, відтворено нами: вирізана розробниками гра з мишієм. Хлопчик махає іграшкою перед Трико й плескає, а Трико стрибає на неї, як кіт (цей стрибок — із самої гри, лишився, коли іграшку вирізали). Потрібно Mods > Іграшка з мишію на вкладці Додатки.",
     "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Унікально для цього порту, відтворено нами: іграшка з мишію хлопчика, вирізана розробниками (стрибок Трико до неї лишився в грі). Японською мишій називають nekojarashi (猫じゃらし): «дражнилка для котів». Її використовують дві кнопки Trico Tricks: Foxtail (хлопчик тримає її, доки ти не натиснеш ще раз) і Foxtail play (він махає нею й плескає, Трико стрибає). Наша власна модель стебла мишію. Спершу увімкни це один раз у лаунчері: лаунчер створить модель на твоєму ПК.",
-    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Лише в цьому порті, відтворено нами: іграшка з мишію хлопчика, вирізана розробниками до релізу. Японською мишій називають nekojarashi (猫じゃらし): «дражнилка для котів». Наша власна модель; хлопчик тримає її, доки ти не натиснеш тут ще раз. Потрібно Mods > Іграшка з мишію на вкладці Додатки."
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Лише в цьому порті, відтворено нами: іграшка з мишію хлопчика, вирізана розробниками до релізу. Японською мишій називають nekojarashi (猫じゃらし): «дражнилка для котів». Наша власна модель; хлопчик тримає її, доки ти не натиснеш тут ще раз. Потрібно Mods > Іграшка з мишію на вкладці Додатки.",
+    "Low": "Низьке",
+    "Medium": "Середнє",
+    "High": "Високе",
+    "Extreme": "Екстремальне",
+    "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "Крони дерев виглядають пласкими й надто світлими: світло всередині не має тіні між шарами листя. Це затемнює світло всередині крон.",
+    "Realistic tree shade": "Реалістична тінь дерев"
   }
 }
