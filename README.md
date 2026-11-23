@@ -312,7 +312,7 @@ launcher like the ICO horns. Tick **Foxtail toy** on the launcher's Extras page,
 **Foxtail** and **Foxtail play** buttons in Trico Tricks,
 [more in the full guide](docs/fun.md#the-foxtail-toy).
 
-<p align="center"><a href="https://youtu.be/uQKJ5CMcbLg"><img src="docs/screenshots/fun/foxtail-video.jpg" width="100%" alt="Video: the boy holds up the foxtail toy and Trico crouches to pounce"></a></p>
+<p align="center"><a href="https://youtu.be/uQKJ5CMcbLg"><img src="docs/screenshots/fun/foxtail-video.jpg" width="100%" alt="Video: Trico pounces at the foxtail toy the boy holds out"></a></p>
 
 <p align="center">▶️ <a href="https://youtu.be/uQKJ5CMcbLg"><b>Watch the video:</b> the foxtail toy and Trico's pounce</a></p>
 
