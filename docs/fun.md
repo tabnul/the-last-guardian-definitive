@@ -14,6 +14,7 @@ Open the in-game menu with **Insert** (or **R3 + L2** on a controller) and go to
 ## Contents
 
 - [Made for ICO fans: ICO horns](#made-for-ico-fans-ico-horns), only in this port
+- [The foxtail toy](#the-foxtail-toy), cut by the developers, remade for this port
 - [Trico's drool](#tricos-drool), a feature cut just before release
 - [Outfits](#outfits)
 - [Trico's size](#tricos-size)
@@ -44,6 +45,29 @@ We don't ship the horns as a file. When you tick the box, the launcher builds th
 small script draws the shape, the colour and the hair tuft from scratch. Not a single byte comes
 from the game disc, and there's no model file to pass around. If you never tick it, nothing is
 built.
+
+## The foxtail toy
+
+Only in this port. In Japan, foxtail grass is called nekojarashi (猫じゃらし), "cat teaser": kids
+pick a stalk and wave it in front of a cat until it pounces. The developers planned exactly that
+for the boy and Trico. Trico's script still has the act for it (PlayToy, `PJT_CatToy` in
+`intactcondor.lua`): the boy holds up a toy, waves it, claps, and Trico crouches and pounces.
+The toy itself was cut before release. The script still asks for its model, `condorPlayToy_01`,
+but that file is not on the disc. Trico's pounce stayed in, so the move ran with the boy's hand
+empty.
+
+We made a new toy: a stalk of foxtail grass with a soft, nodding head. Like the ICO horns, the
+launcher builds it on your PC from scratch, so nothing comes from the disc and there's no model
+file to pass around. Tick **Foxtail toy** on the launcher's Extras page, once. Then two buttons
+in the Trico Tricks bar, gold and at the end of the **Sealed and unique features** group, use it:
+
+- **Foxtail:** the boy holds the toy until you press it again.
+- **Foxtail play:** the full act. The boy picks up the toy, waves it at Trico and claps, and
+  Trico pounces on it. Afterwards the toy goes away again.
+
+**Play like a cat**, in the same group, is Trico's pounce on its own, the way the game left it.
+
+<p align="center"><a href="https://youtu.be/uQKJ5CMcbLg"><img src="https://img.youtube.com/vi/uQKJ5CMcbLg/hqdefault.jpg" width="60%" alt="Video: the boy waves the foxtail toy and Trico pounces"></a><br><sub>Watch it on YouTube</sub></p>
 
 ## Trico's drool
 
@@ -250,6 +274,9 @@ a roll can push the boy off a ledge.
   others). They have their own group; try them.
 - **Gag** and **Throw up:** the throw-up is a cut animation, sealed by the developers in July 2016.
   This brings it back.
+- **Sealed and unique features:** moves the developers sealed, such as **Play like a cat**, and
+  at the end, in gold, **Foxtail** and **Foxtail play**, which only this port has. See
+  [The foxtail toy](#the-foxtail-toy).
 
 ![Trico doing a happy jump next to the boy, with the Trico Tricks bar (F12) and its group buttons](screenshots/fun/trico-tricks-bar.jpg)
 

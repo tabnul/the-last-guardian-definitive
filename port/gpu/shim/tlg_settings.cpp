@@ -281,6 +281,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.mod_treasures = i != 0;
     } else if (key == "mod_horns") {
         v.mod_horns = i != 0;
+    } else if (key == "mod_foxtail") {
+        v.mod_foxtail = i != 0;
     } else if (key == "mod_plays") {
         v.mod_plays = i != 0;
     } else if (key == "mod_throw_up") {
@@ -542,7 +544,7 @@ void Load() {
         {"TLG_HIDE_HINTS", "hide_hints"},
         {"TLG_MOD_TREASURES", "mod_treasures"},     {"TLG_MOD_HORNS", "mod_horns"},
         {"TLG_MOD_PLAYS", "mod_plays"},             {"TLG_MOD_THROW_UP", "mod_throw_up"},
-        {"TLG_MOD_HINTS", "mod_hints"},
+        {"TLG_MOD_HINTS", "mod_hints"},             {"TLG_MOD_FOXTAIL", "mod_foxtail"},
         {"TLG_CAS", "cas"},                          {"TLG_COLOR_ADJUST", "color_adjust"},
         {"TLG_HDR", "hdr"},                          {"TLG_FG", "frame_generation"},
         {"TLG_ARENA_RELEASE", "arena_release"},      {"TLG_GC_LIVE_BUDGET", "gc_live_budget"},
@@ -897,8 +899,8 @@ void Save() {
                  int(v.hide_hints.load()));
     std::fprintf(file, "trico_favourites=%s\ntrico_bar_group=%d\n", v.trico_favourites.c_str(),
                  v.trico_bar_group.load());
-    std::fprintf(file, "mod_treasures=%d\nmod_horns=%d\n", int(v.mod_treasures.load()),
-                 int(v.mod_horns.load()));
+    std::fprintf(file, "mod_treasures=%d\nmod_horns=%d\nmod_foxtail=%d\n", int(v.mod_treasures.load()),
+                 int(v.mod_horns.load()), int(v.mod_foxtail.load()));
     std::fprintf(file, "mod_plays=%d\nmod_throw_up=%d\nmod_hints=%d\n", int(v.mod_plays.load()),
                  v.mod_throw_up.load(), int(v.mod_hints.load()));
     for (const auto& [name, member] : EffectKeys)

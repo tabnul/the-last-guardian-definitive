@@ -195,6 +195,9 @@ struct Values {
     /// Mods > ICO horns (tlg.ini mod_horns, env TLG_MOD_HORNS wins): the boy wears ICO-style horns
     /// (own models, tlg_lua.cpp Horns).
     std::atomic<bool> mod_horns{false};
+    /// Mods > Foxtail toy (tlg.ini mod_foxtail, env TLG_MOD_FOXTAIL wins): the Trico Tricks buttons
+    /// Foxtail and Foxtail play give the boy the cut foxtail toy (own model, tlg_lua.cpp FoxtailLua).
+    std::atomic<bool> mod_foxtail{false};
     /// Mods > Trico plays (tlg.ini mod_plays, env TLG_MOD_PLAYS wins): the developers' sealed act
     /// where he sniffs the boy and paws at him (tlg_lua.cpp Plays). On by default (user 2026-11-14).
     std::atomic<bool> mod_plays{true};

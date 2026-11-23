@@ -1032,19 +1032,33 @@ def build_env(settings, extra=None):
     return env
 
 
-def build_ico_horns(data, force=False):
-    """Mods > ICO horns: builds the horn models (ico_horns.py) into <user>/mods-builtin, where the game
-    mounts them. Only called when the player turns the horns on. Returns None or the error text."""
-    horns = Path(data) / 'mods-builtin' / 'trico_other.psarc'
-    if horns.is_file() and not force:
+# What the models archive holds; written next to it (trico_other.txt), so an older archive is built
+# again. 1 = ICO horns only (no stamp file), 2 = horns and the foxtail toy. The in-game menu reads it
+# too (tlg_overlay.cpp models_version).
+MODELS_VERSION = 2
+MOD_MODEL_KEYS = ('mod_horns', 'mod_foxtail')   # the mods that need the models
+
+
+def build_mod_models(data, force=False):
+    """Mods > ICO horns and Foxtail toy: builds our own models (foxtail.py, horns included) into
+    <user>/mods-builtin, where the game mounts them. Only called when the player turns one of them on.
+    Returns None or the error text."""
+    models = Path(data) / 'mods-builtin' / 'trico_other.psarc'
+    stamp = models.with_suffix('.txt')
+    try:
+        current = int(stamp.read_text().strip()) if stamp.is_file() else (1 if models.is_file() else 0)
+    except ValueError:
+        current = 0
+    if current >= MODELS_VERSION and models.is_file() and not force:
         return None
     try:
-        import ico_horns
-        horns.parent.mkdir(parents=True, exist_ok=True)
-        ico_horns.write(str(horns))
+        import foxtail
+        models.parent.mkdir(parents=True, exist_ok=True)
+        foxtail.write(str(models))
+        stamp.write_text(f'{MODELS_VERSION}\n')
         return None
-    except Exception as error:  # never blocks the game: only the ICO horns stay away
-        print(f'ICO horns: could not build the models: {error}')
+    except Exception as error:  # never blocks the game: only the ICO horns and the foxtail stay away
+        print(f'Mods: could not build the models: {error}')
         return str(error)
 
 
@@ -1178,8 +1192,9 @@ def launch(settings, seconds=0, extra_env=None, detached=False, header=()):
         'menu_confirm': settings.get('menu_confirm', 'cross'),
         'key_map': key_map_spec(key_map) if isinstance(key_map, dict) else str(key_map),
     })
-    if read_ini(data / 'tlg.ini').get('mod_horns', '0') not in ('0', ''):
-        build_ico_horns(data)   # only for players who turned the horns on; built once
+    ini = read_ini(data / 'tlg.ini')
+    if any(ini.get(key, '0') not in ('0', '') for key in MOD_MODEL_KEYS):
+        build_mod_models(data)   # only for players who turned the horns or the foxtail on; built once
     log = new_log()
     try:   # saves copied aside before every start; never blocks the game
         import savemanager

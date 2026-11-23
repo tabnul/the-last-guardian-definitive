@@ -441,7 +441,9 @@
     "launcher.pack_zar_done": "Empaquetado en {path}. El ajuste del juego ahora apunta al .zar.",
     "launcher.pack_zar_failed": "Error al empaquetar: {error}",
     "launcher.horns_built": "Los modelos de los cuernos se han creado en este PC.",
+    "launcher.foxtail_built": "El modelo de cola de zorra está creado en este PC.",
     "launcher.horns_failed": "No se pudieron crear los modelos de los cuernos: {error}",
+    "launcher.foxtail_failed": "No se pudo crear el modelo de cola de zorra: {error}",
     "pad.combos": "Combinaciones",
     "pad.combo_quit": "Salir del juego (mantener 2 segundos)",
     "pad.combo_menu": "Menú del juego",
@@ -816,6 +818,10 @@
     "menu:mod_horns": {
       "name": "Cuernos de ICO",
       "what": "El niño lleva cuernos, un guiño a Ico: blanco hueso con la punta negra. Se pueden combinar con el atuendo de Ico del propio juego (uno de los tesoros)."
+    },
+    "menu:mod_foxtail": {
+      "name": "Juguete de cola de zorra",
+      "what": "Exclusivo de este port, recreado por nosotros: el juguete de cola de zorra del niño, eliminado por los desarrolladores (el salto de Trico hacia él quedó en el juego). En japonés, la cola de zorra se llama nekojarashi (猫じゃらし): «juguete para gatos». Dos botones de Trico Tricks lo usan: Foxtail (el niño lo sostiene hasta que vuelvas a pulsar) y Foxtail play (lo agita y aplaude, Trico salta). Nuestro propio modelo de una espiga de hierba cola de zorra. Actívalo primero una vez en el launcher: el launcher crea el modelo en tu PC."
     },
     "menu:mod_plays": {
       "name": "Trico juega",
@@ -1241,6 +1247,11 @@
     "Sealed move. Trico throws up: the developers made it, then cut it before release.": "Movimiento sellado. Trico vomita: los desarrolladores lo crearon y lo eliminaron antes del lanzamiento.",
     "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).": "Movimiento sellado. Parte de una escena eliminada en la que Trico juega con el chico (también en la pestaña Extras: Trico juega).",
     "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.": "Movimiento sellado, hecho para marketing: la pose de Trico de las imágenes de prensa y las demos del E3. El juego normal nunca la muestra.",
-    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "Movimiento sellado, hecho para marketing: la pose de las garras de las imágenes de prensa y las demos del E3. El juego normal nunca la muestra."
+    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "Movimiento sellado, hecho para marketing: la pose de las garras de las imágenes de prensa y las demos del E3. El juego normal nunca la muestra.",
+    "Foxtail toy": "Juguete de cola de zorra",
+    "Turn on Foxtail toy in the launcher (Extras page) once first.": "Activa primero una vez Juguete de cola de zorra en el launcher (página Extras).",
+    "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Solo en este port, recreado por nosotros: el juego de cola de zorra que eliminaron los desarrolladores. El niño agita el juguete ante Trico y aplaude, y Trico salta sobre él como un gato (su salto es del propio juego, se quedó cuando se eliminó el juguete). Requiere Mods > Juguete de cola de zorra en la pestaña Extras.",
+    "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Exclusivo de este port, recreado por nosotros: el juguete de cola de zorra del niño, eliminado por los desarrolladores (el salto de Trico hacia él quedó en el juego). En japonés, la cola de zorra se llama nekojarashi (猫じゃらし): «juguete para gatos». Dos botones de Trico Tricks lo usan: Foxtail (el niño lo sostiene hasta que vuelvas a pulsar) y Foxtail play (lo agita y aplaude, Trico salta). Nuestro propio modelo de una espiga de hierba cola de zorra. Actívalo primero una vez en el launcher: el launcher crea el modelo en tu PC.",
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Solo en este port, recreado por nosotros: el juguete de cola de zorra del niño, eliminado por los desarrolladores antes del lanzamiento. En japonés, la cola de zorra se llama nekojarashi (猫じゃらし): «juguete para gatos». Nuestro propio modelo; el niño lo sostiene hasta que vuelvas a pulsar aquí. Requiere Mods > Juguete de cola de zorra en la pestaña Extras."
   }
 }

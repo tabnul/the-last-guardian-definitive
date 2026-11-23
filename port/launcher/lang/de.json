@@ -441,7 +441,9 @@
     "launcher.pack_zar_done": "Gepackt nach {path}. Die Spieleinstellung zeigt jetzt auf die .zar.",
     "launcher.pack_zar_failed": "Packen fehlgeschlagen: {error}",
     "launcher.horns_built": "Die Hörner-Modelle sind auf diesem PC gebaut.",
+    "launcher.foxtail_built": "Das Fuchsschwanz-Modell ist auf diesem PC gebaut.",
     "launcher.horns_failed": "Die Hörner-Modelle konnten nicht gebaut werden: {error}",
+    "launcher.foxtail_failed": "Das Fuchsschwanz-Modell konnte nicht gebaut werden: {error}",
     "pad.combos": "Kombinationen",
     "pad.combo_quit": "Spiel beenden (2 Sekunden halten)",
     "pad.combo_menu": "Spielmenü",
@@ -816,6 +818,10 @@
     "menu:mod_horns": {
       "name": "ICO-Hörner",
       "what": "Der Junge trägt Hörner, eine Anspielung auf Ico: knochenweiß mit schwarzer Spitze. Lässt sich mit dem Ico-Kostüm des Spiels kombinieren (einer der Schätze)."
+    },
+    "menu:mod_foxtail": {
+      "name": "Fuchsschwanz-Spielzeug",
+      "what": "Einzigartig in diesem Port, von uns nachgebaut: das Fuchsschwanz-Spielzeug des Jungen, von den Entwicklern gestrichen (Tricos Sprung danach blieb im Spiel). Fuchsschwanzgras heißt auf Japanisch nekojarashi (猫じゃらし): „Katzenkitzler“. Zwei Trico-Tricks-Knöpfe nutzen es: Foxtail (der Junge hält es, bis du noch einmal drückst) und Foxtail play (er wedelt damit und klatscht, Trico springt). Unser eigenes Modell eines Fuchsschwanzgras-Halms. Schalte es zuerst einmal im Launcher ein: Der Launcher baut das Modell auf deinem PC."
     },
     "menu:mod_plays": {
       "name": "Trico spielt",
@@ -1241,6 +1247,11 @@
     "Sealed move. Trico throws up: the developers made it, then cut it before release.": "Versiegelte Bewegung. Trico übergibt sich: Die Entwickler haben es gebaut und vor der Veröffentlichung gestrichen.",
     "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).": "Versiegelte Bewegung. Teil einer gestrichenen Szene, in der Trico mit dem Jungen spielt (auch im Extras-Tab: Trico spielt).",
     "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.": "Versiegelte Bewegung, fürs Marketing gemacht: Tricos Pose aus den Pressebildern und E3-Demos des Spiels. Das normale Spiel zeigt sie nie.",
-    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "Versiegelte Bewegung, fürs Marketing gemacht: die Krallen-Pose aus den Pressebildern und E3-Demos des Spiels. Das normale Spiel zeigt sie nie."
+    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "Versiegelte Bewegung, fürs Marketing gemacht: die Krallen-Pose aus den Pressebildern und E3-Demos des Spiels. Das normale Spiel zeigt sie nie.",
+    "Foxtail toy": "Fuchsschwanz-Spielzeug",
+    "Turn on Foxtail toy in the launcher (Extras page) once first.": "Schalte Fuchsschwanz-Spielzeug zuerst einmal im Launcher ein (Seite Extras).",
+    "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Nur in diesem Port, von uns nachgebaut: das gestrichene Fuchsschwanz-Spiel der Entwickler. Der Junge wedelt Trico mit dem Fuchsschwanz-Spielzeug zu und klatscht, und Trico springt wie eine Katze darauf (der Sprung stammt aus dem Spiel selbst und blieb drin, als das Spielzeug gestrichen wurde). Braucht Mods > Fuchsschwanz-Spielzeug auf dem Tab Extras.",
+    "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Einzigartig in diesem Port, von uns nachgebaut: das Fuchsschwanz-Spielzeug des Jungen, von den Entwicklern gestrichen (Tricos Sprung danach blieb im Spiel). Fuchsschwanzgras heißt auf Japanisch nekojarashi (猫じゃらし): „Katzenkitzler“. Zwei Trico-Tricks-Knöpfe nutzen es: Foxtail (der Junge hält es, bis du noch einmal drückst) und Foxtail play (er wedelt damit und klatscht, Trico springt). Unser eigenes Modell eines Fuchsschwanzgras-Halms. Schalte es zuerst einmal im Launcher ein: Der Launcher baut das Modell auf deinem PC.",
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Nur in diesem Port, von uns nachgebaut: das Fuchsschwanz-Spielzeug des Jungen, von den Entwicklern vor dem Release gestrichen. Fuchsschwanzgras heißt auf Japanisch nekojarashi (猫じゃらし): „Katzenkitzler“. Unser eigenes Modell; der Junge hält es, bis du hier noch einmal drückst. Braucht Mods > Fuchsschwanz-Spielzeug auf dem Tab Extras."
   }
 }

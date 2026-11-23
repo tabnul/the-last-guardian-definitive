@@ -150,7 +150,9 @@
     "launcher.fps_hint": "60/sbloccato modificano in memoria l'eboot 1.03. Sbloccato abbassa il frame rate di base di circa 10 FPS rispetto a 60 nello stesso punto; scegli 60 a meno che il tuo PC non vada ben oltre i 60",
     "launcher.skip_logos": "Salta i loghi iniziali",
     "launcher.horns_built": "I modelli delle corna sono stati creati su questo PC.",
+    "launcher.foxtail_built": "Il modello di coda di volpe è stato creato su questo PC.",
     "launcher.horns_failed": "Impossibile creare i modelli delle corna: {error}",
+    "launcher.foxtail_failed": "Impossibile creare il modello di coda di volpe: {error}",
     "launcher.update_check": "Controlla nuove versioni all'avvio",
     "launcher.update_available": "È uscita la nuova versione {tag}: clicca per aprire la pagina di download",
     "launcher.old_version": "Versione del gioco {version}: installa l'aggiornamento 01.03 (il port è fatto per quello)",
@@ -680,6 +682,10 @@
     "menu:mod_horns": {
       "name": "Corna di ICO",
       "what": "Il ragazzo porta le corna, un omaggio a Ico. Si può combinare con il costume di Ico del gioco stesso (uno dei tesori). Attivalo prima una volta nel launcher: il launcher crea i modelli delle corna sul tuo PC."
+    },
+    "menu:mod_foxtail": {
+      "name": "Giocattolo di coda di volpe",
+      "what": "Esclusivo di questo port, ricreato da noi: il giocattolo di coda di volpe del ragazzo, tagliato dagli sviluppatori (il balzo di Trico verso di esso è rimasto nel gioco). In giapponese l'erba coda di volpe si chiama nekojarashi (猫じゃらし): \"stuzzica-gatti\". Due pulsanti di Trico Tricks lo usano: Foxtail (il ragazzo lo tiene finché non premi di nuovo) e Foxtail play (lo agita e batte le mani, Trico balza). Il nostro modello di uno stelo di erba coda di volpe. Attivalo prima una volta nel launcher: il launcher crea il modello sul tuo PC."
     },
     "menu:frames_queued": {
       "name": "Frame in coda",
@@ -1254,6 +1260,11 @@
     "Sealed move. Trico throws up: the developers made it, then cut it before release.": "Mossa sigillata. Trico vomita: gli sviluppatori l'avevano creata e poi tolta prima dell'uscita.",
     "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).": "Mossa sigillata. Parte di una scena tagliata in cui Trico gioca con il ragazzo (anche nella scheda Extra: Trico gioca).",
     "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.": "Mossa sigillata, fatta per il marketing: la posa di Trico delle immagini stampa e delle demo E3 del gioco. Il gioco normale non la mostra mai.",
-    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "Mossa sigillata, fatta per il marketing: la posa degli artigli delle immagini stampa e delle demo E3 del gioco. Il gioco normale non la mostra mai."
+    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "Mossa sigillata, fatta per il marketing: la posa degli artigli delle immagini stampa e delle demo E3 del gioco. Il gioco normale non la mostra mai.",
+    "Foxtail toy": "Giocattolo di coda di volpe",
+    "Turn on Foxtail toy in the launcher (Extras page) once first.": "Attiva prima una volta Giocattolo di coda di volpe nel launcher (pagina Extra).",
+    "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Solo in questo port, ricreato da noi: il gioco con la coda di volpe tagliato dagli sviluppatori. Il ragazzo agita il giocattolo davanti a Trico e batte le mani, e Trico ci balza sopra come un gatto (il balzo è del gioco stesso, rimasto quando il giocattolo fu tagliato). Richiede Mods > Giocattolo di coda di volpe nella scheda Extra.",
+    "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Esclusivo di questo port, ricreato da noi: il giocattolo di coda di volpe del ragazzo, tagliato dagli sviluppatori (il balzo di Trico verso di esso è rimasto nel gioco). In giapponese l'erba coda di volpe si chiama nekojarashi (猫じゃらし): \"stuzzica-gatti\". Due pulsanti di Trico Tricks lo usano: Foxtail (il ragazzo lo tiene finché non premi di nuovo) e Foxtail play (lo agita e batte le mani, Trico balza). Il nostro modello di uno stelo di erba coda di volpe. Attivalo prima una volta nel launcher: il launcher crea il modello sul tuo PC.",
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Solo in questo port, ricreato da noi: il giocattolo di coda di volpe del ragazzo, tagliato dagli sviluppatori prima dell'uscita. In giapponese l'erba coda di volpe si chiama nekojarashi (猫じゃらし): \"stuzzica-gatti\". Il nostro modello; il ragazzo lo tiene finché non premi di nuovo qui. Richiede Mods > Giocattolo di coda di volpe nella scheda Extra."
   }
 }

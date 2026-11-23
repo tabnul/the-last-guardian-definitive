@@ -441,7 +441,9 @@
     "launcher.pack_zar_done": "Compressé dans {path}. Le réglage du jeu pointe maintenant vers le .zar.",
     "launcher.pack_zar_failed": "Échec de la compression : {error}",
     "launcher.horns_built": "Les modèles des cornes sont créés sur ce PC.",
+    "launcher.foxtail_built": "Le modèle de sétaire est créé sur ce PC.",
     "launcher.horns_failed": "Impossible de créer les modèles des cornes : {error}",
+    "launcher.foxtail_failed": "Impossible de créer le modèle de sétaire : {error}",
     "pad.combos": "Combinaisons",
     "pad.combo_quit": "Quitter le jeu (maintenir 2 secondes)",
     "pad.combo_menu": "Menu en jeu",
@@ -816,6 +818,10 @@
     "menu:mod_horns": {
       "name": "Cornes d'ICO",
       "what": "Le garçon porte des cornes, un clin d'œil à Ico : blanc os avec la pointe noire. Elles peuvent se combiner avec la tenue d'Ico du jeu (l'un des trésors)."
+    },
+    "menu:mod_foxtail": {
+      "name": "Jouet en sétaire",
+      "what": "Exclusif à ce portage, recréé par nous : le jouet en sétaire du garçon, supprimé par les développeurs (le bond de Trico vers lui est resté dans le jeu). En japonais, la sétaire se dit nekojarashi (猫じゃらし) : « taquine-chat ». Deux boutons de Trico Tricks l'utilisent : Foxtail (le garçon le tient jusqu'à ce que vous appuyiez à nouveau) et Foxtail play (il l'agite et tape des mains, Trico bondit). Notre propre modèle d'une tige de sétaire. Activez-le d'abord une fois dans le launcher : le launcher crée le modèle sur votre PC."
     },
     "menu:mod_plays": {
       "name": "Trico joue",
@@ -1241,6 +1247,11 @@
     "Sealed move. Trico throws up: the developers made it, then cut it before release.": "Mouvement scellé. Trico vomit : les développeurs l'avaient créé, puis retiré avant la sortie.",
     "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).": "Mouvement scellé. Partie d'une scène retirée où Trico joue avec le garçon (aussi dans l'onglet Extras : Trico joue).",
     "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.": "Mouvement scellé, fait pour le marketing : la pose de Trico des images de presse et des démos E3 du jeu. Le jeu normal ne la montre jamais.",
-    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "Mouvement scellé, fait pour le marketing : la pose des griffes des images de presse et des démos E3 du jeu. Le jeu normal ne la montre jamais."
+    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "Mouvement scellé, fait pour le marketing : la pose des griffes des images de presse et des démos E3 du jeu. Le jeu normal ne la montre jamais.",
+    "Foxtail toy": "Jouet en sétaire",
+    "Turn on Foxtail toy in the launcher (Extras page) once first.": "Activez d'abord une fois Jouet en sétaire dans le launcher (page Extras).",
+    "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Uniquement dans ce portage, recréé par nous : le jeu en sétaire supprimé par les développeurs. Le garçon agite le jouet devant Trico et tape des mains, et Trico bondit dessus comme un chat (ce bond vient du jeu lui-même, resté quand le jouet a été supprimé). Nécessite Mods > Jouet en sétaire dans l'onglet Extras.",
+    "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Exclusif à ce portage, recréé par nous : le jouet en sétaire du garçon, supprimé par les développeurs (le bond de Trico vers lui est resté dans le jeu). En japonais, la sétaire se dit nekojarashi (猫じゃらし) : « taquine-chat ». Deux boutons de Trico Tricks l'utilisent : Foxtail (le garçon le tient jusqu'à ce que vous appuyiez à nouveau) et Foxtail play (il l'agite et tape des mains, Trico bondit). Notre propre modèle d'une tige de sétaire. Activez-le d'abord une fois dans le launcher : le launcher crée le modèle sur votre PC.",
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Uniquement dans ce portage, recréé par nous : le jouet en sétaire du garçon, supprimé par les développeurs avant la sortie. En japonais, la sétaire se dit nekojarashi (猫じゃらし) : « taquine-chat ». Notre propre modèle ; le garçon le tient jusqu'à ce que vous appuyiez à nouveau ici. Nécessite Mods > Jouet en sétaire dans l'onglet Extras."
   }
 }

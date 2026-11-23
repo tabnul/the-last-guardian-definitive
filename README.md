@@ -40,6 +40,9 @@ No game files are included. You need your own copy, dumped from your own PS4.
   stays where you put it.
 - **[ICO horns](#ico-horns-only-in-this-port):** the Horned Apparel outfit finally gives the boy
   Ico's horns. Optional, off by default.
+- **[Foxtail toy](#foxtail-toy-only-in-this-port):** the developers cut the boy's foxtail toy
+  (nekojarashi, "cat teaser") before release. We remade it: the boy waves it, claps, and Trico
+  pounces like a cat. Optional, off by default.
 - **[Quit directly](#controllers-and-languages):** quit the game from anywhere with a controller
   combo or the keyboard, no menus. The game's pause menu shows the buttons.
 - **[Hide button hints](#controllers-and-languages):** switch the game's button hint boxes off,
@@ -298,6 +301,18 @@ the launcher's Extras page. They go with every outfit,
 [more in the full guide](docs/fun.md#made-for-ico-fans-ico-horns).
 
 <p align="center"><a href="docs/fun.md#made-for-ico-fans-ico-horns"><img src="docs/screenshots/fun/outfits.jpg" width="100%" alt="The boy in Enduring Attire, Homecoming, Warrior, Horned Apparel, and Horned Apparel with ICO horns, and from behind with the Featherpainter idol"></a></p>
+
+### Foxtail toy, only in this port
+
+In Japan, foxtail grass is called nekojarashi (猫じゃらし), "cat teaser": you wave a stalk in
+front of a cat until it pounces. The developers planned that for the boy and Trico. Trico's script
+still has the whole act, but the toy's model was cut and is not on the disc, so Trico's pounce
+stayed in with the boy waving an empty hand. We made a new foxtail stalk, built on your PC by the
+launcher like the ICO horns. Tick **Foxtail toy** on the launcher's Extras page, then use the gold
+**Foxtail** and **Foxtail play** buttons in Trico Tricks,
+[more in the full guide](docs/fun.md#the-foxtail-toy).
+
+<p align="center"><a href="https://youtu.be/uQKJ5CMcbLg"><img src="https://img.youtube.com/vi/uQKJ5CMcbLg/hqdefault.jpg" width="60%" alt="Video: the boy waves the foxtail toy and Trico pounces"></a><br><sub>Watch it on YouTube</sub></p>
 
 **Trico's toilet.** Trico does need to go, but the game's scripts make sure you almost never see
 it. He has to have eaten enough barrels, then 30 minutes of play must pass, then he waits until

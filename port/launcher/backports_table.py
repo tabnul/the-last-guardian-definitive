@@ -167,6 +167,12 @@ MENU = [
           'The boy wears horns, a nod to Ico. '
           'Can be combined with the game\'s own Ico outfit (one of the treasures). '
           'Turn it on in the launcher once first: the launcher builds the horn models on your PC.'),
+    _menu('Fun', 'mod_foxtail', 'bool', '0', 'Foxtail toy',
+          'Unique to this port, recreated by us: the boy\'s foxtail toy, cut by the developers before release '
+          '(Trico\'s pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: '
+          '"cat teaser". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) '
+          'and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. '
+          'Turn it on in the launcher once first: the launcher builds the model on your PC.'),
     _menu('Fun', 'trico_helmet', 'choice', '0', "Trico's helmet",
           "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour "
           "helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the "

@@ -439,7 +439,9 @@
     "launcher.pack_zar_done": "Compactado em {path}. A configuração do jogo agora aponta para o .zar.",
     "launcher.pack_zar_failed": "Falha ao compactar: {error}",
     "launcher.horns_built": "Os modelos dos chifres foram criados neste PC.",
+    "launcher.foxtail_built": "O modelo de rabo-de-raposa foi criado neste PC.",
     "launcher.horns_failed": "Não foi possível criar os modelos dos chifres: {error}",
+    "launcher.foxtail_failed": "Não foi possível criar o modelo de rabo-de-raposa: {error}",
     "pad.combos": "Combinações",
     "pad.combo_quit": "Sair do jogo (segurar 2 segundos)",
     "pad.combo_menu": "Menu do jogo",
@@ -814,6 +816,10 @@
     "menu:mod_horns": {
       "name": "Chifres do ICO",
       "what": "O menino usa chifres, uma homenagem a Ico: branco-osso com a ponta preta. Podem ser combinados com a roupa do Ico do próprio jogo (um dos tesouros)."
+    },
+    "menu:mod_foxtail": {
+      "name": "Brinquedo de rabo-de-raposa",
+      "what": "Exclusivo deste port, recriado por nós: o brinquedo de rabo-de-raposa do garoto, cortado pelos desenvolvedores (o pulo de Trico atrás dele ficou no jogo). Em japonês, o capim rabo-de-raposa se chama nekojarashi (猫じゃらし): \"provoca-gato\". Dois botões do Trico Tricks usam ele: Foxtail (o garoto segura até você apertar de novo) e Foxtail play (ele balança e bate palmas, Trico pula). Nosso próprio modelo de um ramo de capim rabo-de-raposa. Ative primeiro uma vez no launcher: o launcher cria o modelo no seu PC."
     },
     "menu:mod_plays": {
       "name": "Trico brinca",
@@ -1235,6 +1241,11 @@
     "Sealed move. Trico throws up: the developers made it, then cut it before release.": "Movimento selado. Trico vomita: os desenvolvedores criaram isso e cortaram antes do lançamento.",
     "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).": "Movimento selado. Parte de uma cena cortada em que Trico brinca com o garoto (também na aba Extras: Trico brinca).",
     "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.": "Movimento selado, feito para o marketing: a pose de Trico das imagens de imprensa e das demos da E3. O jogo normal nunca a mostra.",
-    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "Movimento selado, feito para o marketing: a pose das garras das imagens de imprensa e das demos da E3. O jogo normal nunca a mostra."
+    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "Movimento selado, feito para o marketing: a pose das garras das imagens de imprensa e das demos da E3. O jogo normal nunca a mostra.",
+    "Foxtail toy": "Brinquedo de rabo-de-raposa",
+    "Turn on Foxtail toy in the launcher (Extras page) once first.": "Ative primeiro uma vez Brinquedo de rabo-de-raposa no launcher (página Extras).",
+    "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Só neste port, recriado por nós: a brincadeira de rabo-de-raposa que os desenvolvedores cortaram. O garoto balança o brinquedo para Trico e bate palmas, e Trico pula nele como um gato (o pulo é do próprio jogo, ficou quando o brinquedo foi cortado). Precisa de Mods > Brinquedo de rabo-de-raposa na aba Extras.",
+    "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Exclusivo deste port, recriado por nós: o brinquedo de rabo-de-raposa do garoto, cortado pelos desenvolvedores (o pulo de Trico atrás dele ficou no jogo). Em japonês, o capim rabo-de-raposa se chama nekojarashi (猫じゃらし): \"provoca-gato\". Dois botões do Trico Tricks usam ele: Foxtail (o garoto segura até você apertar de novo) e Foxtail play (ele balança e bate palmas, Trico pula). Nosso próprio modelo de um ramo de capim rabo-de-raposa. Ative primeiro uma vez no launcher: o launcher cria o modelo no seu PC.",
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Só neste port, recriado por nós: o brinquedo de rabo-de-raposa do garoto, cortado pelos desenvolvedores antes do lançamento. Em japonês, o capim rabo-de-raposa se chama nekojarashi (猫じゃらし): \"provoca-gato\". Nosso próprio modelo; o garoto segura até você apertar aqui de novo. Precisa de Mods > Brinquedo de rabo-de-raposa na aba Extras."
   }
 }

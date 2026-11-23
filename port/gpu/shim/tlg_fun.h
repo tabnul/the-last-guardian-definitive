@@ -34,7 +34,7 @@ struct Action {
 };
 // Group headings (the bar's group tabs, same order); the icon script and the bar key on these names.
 inline constexpr const char* MayNotWork = "May not work";
-inline constexpr const char* Sealed = "Sealed moves";
+inline constexpr const char* Sealed = "Sealed and unique features";
 // The sealed moves' hover text (TlgFun::Action help); the menu translates them (TR(TlgFun::SealedHelp[i])).
 inline constexpr const char* SealedHelp[] = {
     "Sealed move. The developers gave the boy a foxtail toy to wave at Trico, and Trico pounces and paws at it. The toy was cut before release; Trico's move stayed in the game files.",
@@ -42,6 +42,11 @@ inline constexpr const char* SealedHelp[] = {
     "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).",
     "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.",
     "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.",
+};
+// The hover text of our own moves (TlgFun::Action help); the menu translates them (TR(TlgFun::UniqueHelp[i])).
+inline constexpr const char* UniqueHelp[] = {
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.",
+    "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.",
 };
 inline constexpr Action Actions[] = {
     // Moves the normal game never lets you see: their trigger was cut, or they were made for marketing.
@@ -54,6 +59,11 @@ inline constexpr Action Actions[] = {
     {"touch_left_side_soft", "Paw", "stand", "touch_left", 0, SealedHelp[2]}, // second half of the sealed Play act (Extras > Trico plays)
     {"EX_photo", "Photo pose", "stand", "photo", 0, SealedHelp[3]},
     {"EX_photo_claws", "Claws", "photo", "claws", 0, SealedHelp[4]},
+    // Only in this port, gold icons: the cut foxtail toy, recreated by us. The toy itself (tlg_lua.cpp
+    // FoxtailLua, on/off) and the whole act with it (tlg_foxtail_play = CatLua: the toy, Trico's cat_toy,
+    // the boy's clap).
+    {"tlg_foxtail", "Foxtail", nullptr, nullptr, 0, UniqueHelp[0]},
+    {"tlg_foxtail_play", "Foxtail play", "stand", "cat_toy", 3.0f, UniqueHelp[1]},
     {nullptr, "Sounds and moods"},
     {"A_sneeze", "Sneeze", "", "sneeze"},
     {"A_yawn", "Yawn", "", "yawn"},

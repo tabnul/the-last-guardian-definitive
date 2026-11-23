@@ -224,6 +224,8 @@ TEXT = {
     'skip_logos': 'Skip the boot logos',
     'horns_built': 'The horn models are built on this PC.',
     'horns_failed': 'Could not build the horn models: {error}',
+    'foxtail_built': 'The foxtail model is built on this PC.',
+    'foxtail_failed': 'Could not build the foxtail model: {error}',
     'update_check': 'Check for new releases at start',
     'update_available': 'New release {tag} is out: click to open the download page',
     'old_version': 'Game version {version}: install update 01.03 (the port is made for it)',
@@ -1507,7 +1509,8 @@ class Launcher:
         ttk.Label(box, text=drool.what, foreground=DIM, wraplength=420, justify='left').grid(
             row=1, column=0, sticky='w', pady=(6, 0))
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
-        for key in ('trico_fur', 'trico_helmet', 'mod_treasures', 'mod_horns', 'mod_plays', 'mod_throw_up', 'mod_hints'):
+        for key in ('trico_fur', 'trico_helmet', 'mod_treasures', 'mod_horns', 'mod_foxtail', 'mod_plays',
+                    'mod_throw_up', 'mod_hints'):
             item = next(i for i in backports_table.MENU if i.key == key)
             mod = section(parent, item.name)
             mod.pack(fill='x', anchor='w', pady=(0, 8))
@@ -1546,9 +1549,10 @@ class Launcher:
 
                 def ticked(v=var, w=write, k=key, n=note):
                     w('1' if v.get() else '0')
-                    if k == 'mod_horns' and v.get():   # built only for players who want them (user 2026-11-11)
-                        error = tlg_run.build_ico_horns(tlg_run.USER_DIR)
-                        n.configure(text=self.t('horns_failed', error=error) if error else self.t('horns_built'))
+                    if k in tlg_run.MOD_MODEL_KEYS and v.get():   # built only for players who want them (user 2026-11-11)
+                        error = tlg_run.build_mod_models(tlg_run.USER_DIR)
+                        what = 'horns' if k == 'mod_horns' else 'foxtail'
+                        n.configure(text=self.t(f'{what}_failed', error=error) if error else self.t(f'{what}_built'))
                         n.grid(row=2, column=0, sticky='w', pady=(4, 0))
 
                 ttk.Checkbutton(mod, text=item.name, variable=var, command=ticked).grid(row=0, column=0, sticky='w')

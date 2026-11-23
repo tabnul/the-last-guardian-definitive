@@ -1265,7 +1265,7 @@ const std::vector<MoveGroup>& MoveGroups() {
         return groups;
     }
     const ImVec4 colors[] = {
-        ImVec4(214 / 255.f, 120 / 255.f, 230 / 255.f, 1), // Sealed moves
+        ImVec4(214 / 255.f, 120 / 255.f, 230 / 255.f, 1), // Sealed and unique features
         ImVec4(222 / 255.f, 168 / 255.f, 72 / 255.f, 1), // Sounds and moods
         ImVec4(70 / 255.f, 190 / 255.f, 180 / 255.f, 1), // Body
         ImVec4(235 / 255.f, 120 / 255.f, 110 / 255.f, 1), // Play
@@ -1382,6 +1382,11 @@ void MoveButton(int action, float slot) {
         for (int i = 0; a.help && i < int(std::size(TlgFun::SealedHelp)); ++i) {
             if (a.help == TlgFun::SealedHelp[i]) {
                 ImGui::TextUnformatted(TR(TlgFun::SealedHelp[i]));
+            }
+        }
+        for (int i = 0; a.help && i < int(std::size(TlgFun::UniqueHelp)); ++i) {
+            if (a.help == TlgFun::UniqueHelp[i]) {
+                ImGui::TextUnformatted(TR(TlgFun::UniqueHelp[i]));
             }
         }
         ImGui::TextUnformatted(favourite ? TR("Right-click: remove from favourites")
@@ -1685,15 +1690,25 @@ void FunTab() {
                  false);
         // The horn models only exist after the launcher built them (Extras page); the game mounts
         // them at start (runtime_file.c), so check once: without them the checkmark does nothing.
-        static const bool horns_built = [] {
+        // models_version: the launcher's stamp next to the archive (tlg_run.py MODELS_VERSION):
+        // 0 = nothing built, 1 = an old archive with the horns only, 2 = horns + foxtail toy.
+        static const int models_version = [] {
             const char* ini = std::getenv("TLG_CONFIG");
             std::string dir = ini && ini[0] ? ini : "tlg.ini";
             const size_t slash = dir.find_last_of("/\\");
             dir = slash == std::string::npos ? std::string(".") : dir.substr(0, slash);
             FILE* file = std::fopen((dir + "/mods-builtin/trico_other.psarc").c_str(), "rb");
-            if (file) std::fclose(file);
-            return file != nullptr;
+            if (!file) return 0;
+            std::fclose(file);
+            int version = 1;
+            if (FILE* stamp = std::fopen((dir + "/mods-builtin/trico_other.txt").c_str(), "rb")) {
+                if (std::fscanf(stamp, "%d", &version) != 1) version = 1;
+                std::fclose(stamp);
+            }
+            return version;
         }();
+        const bool horns_built = models_version >= 1;
+        const bool foxtail_built = models_version >= 2;
         ImGui::BeginDisabled(!horns_built);
         CheckRow(TR("ICO horns"), TlgSettings::Get().mod_horns,
                  TR("The boy wears horns, a nod to Ico. "
@@ -1704,6 +1719,20 @@ void FunTab() {
         if (!horns_built) {
             Row("");
             ImGui::TextDisabled("%s", TR("Turn on ICO horns in the launcher (Extras page) once first."));
+            ImGui::PopID();
+        }
+        ImGui::BeginDisabled(!foxtail_built);
+        CheckRow(TR("Foxtail toy"), TlgSettings::Get().mod_foxtail,
+                 TR("Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release "
+                    "(Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: "
+                    "\"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and "
+                    "Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. "
+                    "Turn it on in the launcher once first: the launcher builds the model on your PC."),
+                 false);
+        ImGui::EndDisabled();
+        if (!foxtail_built) {
+            Row("");
+            ImGui::TextDisabled("%s", TR("Turn on Foxtail toy in the launcher (Extras page) once first."));
             ImGui::PopID();
         }
         CheckRow(TR("Trico plays"), TlgSettings::Get().mod_plays,

@@ -441,7 +441,9 @@
     "launcher.pack_zar_done": "已打包到 {path}。游戏设置现在指向该 .zar。",
     "launcher.pack_zar_failed": "打包失败：{error}",
     "launcher.horns_built": "角的模型已在这台电脑上生成。",
+    "launcher.foxtail_built": "狗尾草模型已在这台电脑上生成。",
     "launcher.horns_failed": "无法生成角的模型：{error}",
+    "launcher.foxtail_failed": "无法生成狗尾草模型：{error}",
     "pad.combos": "组合键",
     "pad.combo_quit": "退出游戏（按住 2 秒）",
     "pad.combo_menu": "游戏内菜单",
@@ -816,6 +818,10 @@
     "menu:mod_horns": {
       "name": "ICO 的角",
       "what": "少年戴上角，向《ICO》致敬：骨白色、尖端为黑色。可与游戏自带的 Ico 服装（宝物之一）搭配。"
+    },
+    "menu:mod_foxtail": {
+      "name": "狗尾草玩具",
+      "what": "本移植版独有，由我们重制：男孩的狗尾草玩具，被开发者删掉了（Trico 扑向它的动作留在了游戏里）。狗尾草在日语里叫 nekojarashi（猫じゃらし），意思是“逗猫草”。两个 Trico Tricks 按钮会用到它：Foxtail（男孩一直拿着，直到你再按一次）和 Foxtail play（他挥动它并拍手，Trico 扑过来）。这是我们自己做的狗尾草穗模型。请先在启动器里开启一次：启动器会在你的电脑上生成模型。"
     },
     "menu:mod_plays": {
       "name": "Trico 玩耍",
@@ -1241,6 +1247,11 @@
     "Sealed move. Trico throws up: the developers made it, then cut it before release.": "封印动作。Trico 呕吐:开发者制作了它,又在发售前删除了。",
     "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).": "封印动作。一段被删除的 Trico 与男孩玩耍场景的一部分(也在额外选项卡:Trico 玩耍)。",
     "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.": "封印动作,为宣传而制作:Trico 在游戏宣传图和 E3 演示中的姿势。正常游戏中从不出现。",
-    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "封印动作,为宣传而制作:游戏宣传图和 E3 演示中的爪子姿势。正常游戏中从不出现。"
+    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "封印动作,为宣传而制作:游戏宣传图和 E3 演示中的爪子姿势。正常游戏中从不出现。",
+    "Foxtail toy": "狗尾草玩具",
+    "Turn on Foxtail toy in the launcher (Extras page) once first.": "请先在启动器（附加内容页面）里开启一次狗尾草玩具。",
+    "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "本移植版独有，由我们重制：开发者删掉的狗尾草游戏。男孩向 Trico 挥动狗尾草并拍手，Trico 像猫一样扑过来（扑的动作是游戏自带的，删掉玩具时留了下来）。需要附加内容标签页里的 Mods > 狗尾草玩具。",
+    "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "本移植版独有，由我们重制：男孩的狗尾草玩具，被开发者删掉了（Trico 扑向它的动作留在了游戏里）。狗尾草在日语里叫 nekojarashi（猫じゃらし），意思是“逗猫草”。两个 Trico Tricks 按钮会用到它：Foxtail（男孩一直拿着，直到你再按一次）和 Foxtail play（他挥动它并拍手，Trico 扑过来）。这是我们自己做的狗尾草穗模型。请先在启动器里开启一次：启动器会在你的电脑上生成模型。",
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "本移植版独有，由我们重制：男孩的狗尾草玩具，开发者在发售前删掉了它。狗尾草在日语里叫 nekojarashi（猫じゃらし），意思是“逗猫草”。我们自己的模型；男孩一直拿着，直到你再按一次这里。需要附加内容标签页里的 Mods > 狗尾草玩具。"
   }
 }

@@ -150,7 +150,9 @@
     "launcher.fps_hint": "60/livre alteram o eboot 1.03 na memória. Livre reduz a taxa base em cerca de 10 FPS em relação a 60 no mesmo lugar; escolha 60, a não ser que o seu PC corra bem acima de 60",
     "launcher.skip_logos": "Saltar os logotipos de abertura",
     "launcher.horns_built": "Os modelos dos chifres foram criados neste PC.",
+    "launcher.foxtail_built": "O modelo de rabo-de-raposa foi criado neste PC.",
     "launcher.horns_failed": "Não foi possível criar os modelos dos chifres: {error}",
+    "launcher.foxtail_failed": "Não foi possível criar o modelo de rabo-de-raposa: {error}",
     "launcher.update_check": "Procurar novas versões ao iniciar",
     "launcher.update_available": "Saiu a nova versão {tag}: clique para abrir a página de transferência",
     "launcher.old_version": "Versão do jogo {version}: instale a atualização 01.03 (o port foi feito para ela)",
@@ -680,6 +682,10 @@
     "menu:mod_horns": {
       "name": "Chifres do ICO",
       "what": "O rapaz usa chifres, uma homenagem a Ico: branco-osso com a ponta preta. Podem ser combinados com a roupa do Ico do próprio jogo (um dos tesouros)."
+    },
+    "menu:mod_foxtail": {
+      "name": "Brinquedo de rabo-de-raposa",
+      "what": "Exclusivo deste port, recriado por nós: o brinquedo de rabo-de-raposa do rapaz, cortado pelos criadores (o salto do Trico atrás dele ficou no jogo). Em japonês, a erva rabo-de-raposa chama-se nekojarashi (猫じゃらし): \"provoca-gatos\". Dois botões do Trico Tricks usam-no: Foxtail (o rapaz segura-o até voltares a carregar) e Foxtail play (ele abana-o e bate palmas, o Trico salta). O nosso próprio modelo de um ramo de erva rabo-de-raposa. Ativa-o primeiro uma vez no launcher: o launcher cria o modelo no teu PC."
     },
     "menu:frames_queued": {
       "name": "Fotogramas na fila",
@@ -1254,6 +1260,11 @@
     "Sealed move. Trico throws up: the developers made it, then cut it before release.": "Movimento selado. O Trico vomita: os criadores fizeram-no e cortaram-no antes do lançamento.",
     "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).": "Movimento selado. Parte de uma cena cortada em que o Trico brinca com o rapaz (também no separador Extras: Trico brinca).",
     "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.": "Movimento selado, feito para o marketing: a pose do Trico das imagens de imprensa e das demos da E3. O jogo normal nunca a mostra.",
-    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "Movimento selado, feito para o marketing: a pose das garras das imagens de imprensa e das demos da E3. O jogo normal nunca a mostra."
+    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "Movimento selado, feito para o marketing: a pose das garras das imagens de imprensa e das demos da E3. O jogo normal nunca a mostra.",
+    "Foxtail toy": "Brinquedo de rabo-de-raposa",
+    "Turn on Foxtail toy in the launcher (Extras page) once first.": "Ativa primeiro uma vez Brinquedo de rabo-de-raposa no launcher (página Extras).",
+    "Only in this port, recreated by us: the developers' cut foxtail play. The boy waves the foxtail toy at Trico and claps, and Trico pounces like a cat (his pounce is the game's own, left in when the toy was cut). Needs Mods > Foxtail toy on the Extras tab.": "Só neste port, recriado por nós: a brincadeira de rabo-de-raposa que os criadores cortaram. O rapaz abana o brinquedo para o Trico e bate palmas, e o Trico salta para ele como um gato (o salto é do próprio jogo, ficou quando o brinquedo foi cortado). Requer Mods > Brinquedo de rabo-de-raposa no separador Extras.",
+    "Unique to this port, recreated by us: the boy's foxtail toy, cut by the developers before release (Trico's pounce for it stayed in the game). Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Two Trico Tricks buttons use it: Foxtail (the boy holds it until you press it again) and Foxtail play (he waves it and claps, Trico pounces). Our own model of a foxtail grass stalk. Turn it on in the launcher once first: the launcher builds the model on your PC.": "Exclusivo deste port, recriado por nós: o brinquedo de rabo-de-raposa do rapaz, cortado pelos criadores (o salto do Trico atrás dele ficou no jogo). Em japonês, a erva rabo-de-raposa chama-se nekojarashi (猫じゃらし): \"provoca-gatos\". Dois botões do Trico Tricks usam-no: Foxtail (o rapaz segura-o até voltares a carregar) e Foxtail play (ele abana-o e bate palmas, o Trico salta). O nosso próprio modelo de um ramo de erva rabo-de-raposa. Ativa-o primeiro uma vez no launcher: o launcher cria o modelo no teu PC.",
+    "Only in this port, recreated by us: the boy's foxtail toy, cut by the developers before release. Foxtail grass is nekojarashi (猫じゃらし) in Japanese: \"cat teaser\". Our own model; the boy holds it until you press this again. Needs Mods > Foxtail toy on the Extras tab.": "Só neste port, recriado por nós: o brinquedo de rabo-de-raposa do rapaz, cortado pelos criadores antes do lançamento. Em japonês, a erva rabo-de-raposa chama-se nekojarashi (猫じゃらし): \"provoca-gatos\". O nosso próprio modelo; o rapaz segura-o até voltares a carregar aqui. Requer Mods > Brinquedo de rabo-de-raposa no separador Extras."
   }
 }
