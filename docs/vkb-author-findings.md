@@ -94,3 +94,16 @@ Correction by the box: the reader said the new hook entries have no duplicate ad
 | W7 GDS init, K4 camera-cut reset | 7 | Default behaviour, no switch (K4 has a counter, W7 none). K4 logs one warning per camera cut. |
 | hard-coded game addresses in handlers (about 8) | 9 | Caller checks fit this one game build only. |
 | always-on checks on the draw path (R3d size, pending-map check) | 13 | Cost not measured. |
+
+## Found by the dark-scenes halving (issue 137), 2026-11-23
+
+Source: issue 137 (dark scenes, part 3): halving of the author's commits between 8dc4dcd and c9b65dc on this box (AMD
+Linux), one photo per commit of SD_a01_Open_Door_01, SD_a01_B1F_01 and ST_000_Start, scored as the share of pixels off
+by more than 16 against the normal renderer (one photo each, AMD Linux only). Same faults as issue 130 (handed to the author). The author's newest
+commit 5c21c57 turns off by default the two switches named below and a third one (`TLG_VKB_QUERY_CARRY`, not part of these faults); with it the three scenes are right again (one take each: 0.6, 0.1 and 5.2 percent; ST_000_Start was 5.7 at the last good commit 8dc4dcd).
+The other eight dark scenes are right with 5c21c57 too (one take each, 0.5 to 7.5 percent, all within or near the normal renderer's own take-to-take spread). All numbers and pictures: issue 137, box comment "dark scenes part 3" of 2026-11-23. What stays open is the cause behind each switch, for when they are turned on again.
+
+| Commit / area | Principle | What |
+|---|---|---|
+| a1d8cca, G-buffer passes on the workers (`TLG_VKB_PAR_GBUFFER`, default on from a1d8cca to 5c21c57) | 11, 4 | With it on, the still world (walls, floors) is missing in SD_a01_Open_Door_01 (96.9 percent off, 17.4 with it off) and ST_000_Start (93.1, 6.6 with it off). The draws are made (34472 worker draws in one photo, no decline, no log error), so the data the worker reads at its draws is not what the game's own pass would have read. The author's lead (5c21c57): material constant data copied at the worker's draw while the engine rewrites it after the hand-over. |
+| e13c3cd, batched draws on by default (`TLG_VKB_RECORD`, `TLG_VKB_RECORD_ALL`, `TLG_VKB_FAST_ROW`; which one carries the fault is not pinned) | 11, 5 | With it on, SD_a01_B1F_01 loses its still world (99.6 percent off; 0.3 at the commit before) and SD_a01_Open_Door_01 loses part of it (17.4; 0.6 before). Earlier switch test on c9b65dc: `TLG_VKB_RECORD=0` makes these scenes right; `record.row_failures` 3745 only with it on. Which of the commit's three switches (`TLG_VKB_RECORD`, `TLG_VKB_RECORD_ALL`, `TLG_VKB_FAST_ROW`) carries it was not split by takes here; with 5c21c57, which turns `TLG_VKB_RECORD_ALL` off (and two other switches, see its message), they are right. |
