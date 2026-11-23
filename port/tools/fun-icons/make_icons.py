@@ -21,7 +21,7 @@ GROUPS = {  # background: inner, outer colour
     'play': ((235, 120, 110), (70, 20, 30)),
     'rest': ((120, 130, 235), (20, 22, 70)),
     'tummy': ((150, 200, 80), (25, 50, 10)),
-    'e3': ((214, 120, 230), (45, 15, 70)),     # Marketing / E3 poses
+    'sealed': ((214, 120, 230), (45, 15, 70)), # Sealed moves (cut or marketing only)
     'maybe': ((150, 150, 160), (30, 30, 38)),  # May not work: plain stone grey
 }
 INK = (255, 248, 230, 255)
@@ -445,11 +445,11 @@ def works(header):
     """Every move (command, group) from tlg_fun.h, in menu order (all groups, May not work too)."""
     out, group = [], None
     names = {'Sounds and moods': 'sound', 'Body': 'body', 'Play': 'play', 'Tummy': 'tummy', 'Rest': 'rest',
-             'Marketing / E3 poses': 'e3', 'MayNotWork': 'maybe'}
+             'Sealed': 'sealed', 'MayNotWork': 'maybe'}
     text = open(header, encoding='utf-8').read()
     text = text[text.index('Actions[] = {'):]
     text = text[:text.index('};')]
-    for m in re.finditer(r'\{(nullptr|"[^"]*"), ("[^"]*"|MayNotWork)', text):
+    for m in re.finditer(r'\{(nullptr|"[^"]*"), ("[^"]*"|MayNotWork|Sealed)', text):
         cmd, name = m.group(1), m.group(2).strip('"')
         if cmd == 'nullptr':
             if name not in names:

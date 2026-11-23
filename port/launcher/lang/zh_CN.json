@@ -1236,6 +1236,11 @@
     "Broken helmet": "破损的头盔",
     "The other Trico's mask": "另一只特里科的面具",
     "No helmet": "无头盔",
-    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "在整个游戏中给特里科戴上或摘下头盔。全部来自游戏本身：披甲特里科戴的铠甲头盔、破损的头盔，或另一只特里科的面具。按剧情（默认）交给游戏决定。在过场动画、新关卡和读取存档后都会保留，并在下次启动时沿用。"
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "在整个游戏中给特里科戴上或摘下头盔。全部来自游戏本身：披甲特里科戴的铠甲头盔、破损的头盔，或另一只特里科的面具。按剧情（默认）交给游戏决定。在过场动画、新关卡和读取存档后都会保留，并在下次启动时沿用。",
+    "Sealed move. The developers gave the boy a foxtail toy to wave at Trico, and Trico pounces and paws at it. The toy was cut before release; Trico's move stayed in the game files.": "封印动作。开发者曾给男孩一根逗猫棒(狐尾草),让他在 Trico 面前挥动,Trico 会扑上去用爪子拍打。逗猫棒在发售前被删除,但 Trico 的动作留在了游戏文件里。",
+    "Sealed move. Trico throws up: the developers made it, then cut it before release.": "封印动作。Trico 呕吐:开发者制作了它,又在发售前删除了。",
+    "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).": "封印动作。一段被删除的 Trico 与男孩玩耍场景的一部分(也在额外选项卡:Trico 玩耍)。",
+    "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.": "封印动作,为宣传而制作:Trico 在游戏宣传图和 E3 演示中的姿势。正常游戏中从不出现。",
+    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "封印动作,为宣传而制作:游戏宣传图和 E3 演示中的爪子姿势。正常游戏中从不出现。"
   }
 }

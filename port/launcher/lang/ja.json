@@ -1236,6 +1236,11 @@
     "Broken helmet": "壊れたかぶと",
     "The other Trico's mask": "もう一匹のトリコの仮面",
     "No helmet": "かぶとなし",
-    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "ゲーム全体を通して、トリコにかぶとをかぶせたり外したりします。どれもゲームに元々あるものです：鎧のトリコがかぶる鎧のかぶと、壊れたかぶと、もう一匹のトリコの仮面。ストーリーどおり（デフォルト）はゲームに任せます。ムービー、新しいステージ、セーブデータのロード後もそのままで、次回の起動時にも保持されます。"
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "ゲーム全体を通して、トリコにかぶとをかぶせたり外したりします。どれもゲームに元々あるものです：鎧のトリコがかぶる鎧のかぶと、壊れたかぶと、もう一匹のトリコの仮面。ストーリーどおり（デフォルト）はゲームに任せます。ムービー、新しいステージ、セーブデータのロード後もそのままで、次回の起動時にも保持されます。",
+    "Sealed move. The developers gave the boy a foxtail toy to wave at Trico, and Trico pounces and paws at it. The toy was cut before release; Trico's move stayed in the game files.": "封印された動き。開発者は少年にトリコの前で振る猫じゃらしを持たせ、トリコはそれに飛びついて前足でじゃれます。猫じゃらしは発売前に削除されましたが、トリコの動きはゲームのファイルに残りました。",
+    "Sealed move. Trico throws up: the developers made it, then cut it before release.": "封印された動き。トリコが吐きます。開発者が作り、発売前に削除しました。",
+    "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).": "封印された動き。トリコが少年と遊ぶ、削除された場面の一部です(エクストラタブの「トリコが遊ぶ」にもあります)。",
+    "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.": "封印された動き、宣伝用に作られたもの:ゲームのプレス画像やE3デモでのトリコのポーズ。通常のゲームでは見られません。",
+    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "封印された動き、宣伝用に作られたもの:ゲームのプレス画像やE3デモでの爪のポーズ。通常のゲームでは見られません。"
   }
 }

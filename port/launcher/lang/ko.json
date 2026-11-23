@@ -1249,6 +1249,11 @@
     "Broken helmet": "부서진 투구",
     "The other Trico's mask": "다른 트리코의 가면",
     "No helmet": "투구 없음",
-    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "게임 전체에서 트리코에게 투구를 씌우거나 벗깁니다. 모두 게임에 원래 있는 것입니다: 갑옷 트리코들이 쓰는 갑옷 투구, 부서진 투구, 또는 다른 트리코의 가면. 스토리대로 (기본값)는 게임에 맡깁니다. 컷신, 새 스테이지, 세이브 불러오기 후에도 유지되며 다음 실행 때도 그대로입니다."
+    "Puts a helmet on Trico, or takes it off, for the whole game. All are the game's own: the armour helmet the armoured Tricos wear, a broken one, or the other Trico's mask. As in the story (default) leaves it to the game. Stays on through cutscenes, new stages and loading a save, and is kept for the next start.": "게임 전체에서 트리코에게 투구를 씌우거나 벗깁니다. 모두 게임에 원래 있는 것입니다: 갑옷 트리코들이 쓰는 갑옷 투구, 부서진 투구, 또는 다른 트리코의 가면. 스토리대로 (기본값)는 게임에 맡깁니다. 컷신, 새 스테이지, 세이브 불러오기 후에도 유지되며 다음 실행 때도 그대로입니다.",
+    "Sealed move. The developers gave the boy a foxtail toy to wave at Trico, and Trico pounces and paws at it. The toy was cut before release; Trico's move stayed in the game files.": "봉인된 동작. 개발자들은 소년에게 트리코 앞에서 흔들 강아지풀 장난감을 주었고, 트리코는 그것에 달려들어 앞발로 장난칩니다. 장난감은 출시 전에 삭제되었지만 트리코의 동작은 게임 파일에 남았습니다.",
+    "Sealed move. Trico throws up: the developers made it, then cut it before release.": "봉인된 동작. 트리코가 토합니다. 개발자들이 만들었다가 출시 전에 삭제했습니다.",
+    "Sealed move. Part of a cut act where Trico plays with the boy (also on the Extras tab: Trico plays).": "봉인된 동작. 트리코가 소년과 노는, 삭제된 장면의 일부입니다(엑스트라 탭의 '트리코가 논다'에도 있습니다).",
+    "Sealed move, made for marketing: Trico's pose from the game's press shots and E3 demos. The normal game never shows it.": "봉인된 동작, 마케팅용으로 제작: 게임 보도 이미지와 E3 데모 속 트리코의 포즈. 일반 게임에서는 절대 나오지 않습니다.",
+    "Sealed move, made for marketing: the claws pose from the game's press shots and E3 demos. The normal game never shows it.": "봉인된 동작, 마케팅용으로 제작: 게임 보도 이미지와 E3 데모 속 발톱 포즈. 일반 게임에서는 절대 나오지 않습니다."
   }
 }

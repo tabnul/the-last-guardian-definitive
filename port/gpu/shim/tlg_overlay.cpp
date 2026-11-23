@@ -1265,12 +1265,12 @@ const std::vector<MoveGroup>& MoveGroups() {
         return groups;
     }
     const ImVec4 colors[] = {
+        ImVec4(214 / 255.f, 120 / 255.f, 230 / 255.f, 1), // Sealed moves
         ImVec4(222 / 255.f, 168 / 255.f, 72 / 255.f, 1), // Sounds and moods
         ImVec4(70 / 255.f, 190 / 255.f, 180 / 255.f, 1), // Body
         ImVec4(235 / 255.f, 120 / 255.f, 110 / 255.f, 1), // Play
         ImVec4(150 / 255.f, 200 / 255.f, 80 / 255.f, 1), // Tummy
         ImVec4(120 / 255.f, 130 / 255.f, 235 / 255.f, 1), // Rest
-        ImVec4(214 / 255.f, 120 / 255.f, 230 / 255.f, 1), // Marketing / E3 poses
         ImVec4(150 / 255.f, 150 / 255.f, 160 / 255.f, 1), // May not work
     };
     for (int i = 0; i < int(std::size(TlgFun::Actions)); ++i) {
@@ -1376,10 +1376,19 @@ void MoveButton(int action, float slot) {
         DrawFavouriteStar();
     }
     if (hovered) {
-        ImGui::SetTooltip("%s\n%s", a.name,
-                          favourite ? TR("Right-click: remove from favourites")
-                          : int(favourites.size()) < MaxFavourites ? TR("Right-click: add to favourites")
-                                                                   : TR("Favourites are full (16)"));
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 26.0f); // the sealed moves' story line wraps
+        ImGui::TextUnformatted(a.name);
+        for (int i = 0; a.help && i < int(std::size(TlgFun::SealedHelp)); ++i) {
+            if (a.help == TlgFun::SealedHelp[i]) {
+                ImGui::TextUnformatted(TR(TlgFun::SealedHelp[i]));
+            }
+        }
+        ImGui::TextUnformatted(favourite ? TR("Right-click: remove from favourites")
+                               : int(favourites.size()) < MaxFavourites ? TR("Right-click: add to favourites")
+                                                                        : TR("Favourites are full (16)"));
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
     }
     if (pressed) {
         TlgFun::Act(a.command);
