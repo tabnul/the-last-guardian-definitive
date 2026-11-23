@@ -155,6 +155,7 @@
     "launcher.update_available": "È uscita la nuova versione {tag}: clicca per aprire la pagina di download",
     "launcher.old_version": "Versione del gioco {version}: installa l'aggiornamento 01.03 (il port è fatto per quello)",
     "launcher.fps_unsupported": "eboot.bin non è il codice di gioco 1.03: 60 FPS e Illimitato non funzionano, il gioco gira a 30 FPS (vedi il README)",
+    "launcher.untested_disc": "Versione del gioco non testata ({serial}): potrebbe non funzionare del tutto. Condividi il tuo log se qualcosa va storto",
     "launcher.debug": "Debug (all'avvio)",
     "launcher.bench_title": "Benchmark",
     "launcher.bench_text": "Misura da solo quanto va veloce il gioco su questo PC, scena per scena: ogni scena viene caricata da un salvataggio pulito, la telecamera sta ferma e viene registrato il frame rate di ogni secondo. I tuoi salvataggi vengono messi da parte prima e rimessi a posto dopo.\n\nNon toccare nulla mentre gira: il gioco si apre a schermo intero per ogni scena, circa un minuto ciascuna. Il risultato è un unico file .zip di rapporto — allegalo a una issue su GitHub così gli sviluppatori vedono esattamente come gira ogni scena sul tuo PC.",

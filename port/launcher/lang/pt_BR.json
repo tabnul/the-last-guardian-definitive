@@ -342,6 +342,7 @@
     "launcher.quit": "Sair",
     "launcher.ready": "Pronto para jogar.",
     "launcher.fps_unsupported": "eboot.bin não é o código do jogo 1.03: 60 FPS e Sem limite não funcionam, o jogo roda a 30 FPS (veja o README)",
+    "launcher.untested_disc": "Versão do jogo não testada ({serial}): pode não funcionar totalmente. Compartilhe seu log se algo der errado",
     "launcher.audio_native": "Áudio: nativo (módulo do console encontrado).",
     "launcher.audio_builtin": "Áudio: mixer próprio. Podem ocorrer problemas de som (eco, sons ausentes). Solução: coloque o libSceNgs2.sprx na pasta de módulos do sistema do console (Configurações).",
     "launcher.missing": "Faltando",

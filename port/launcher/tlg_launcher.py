@@ -228,6 +228,7 @@ TEXT = {
     'update_available': 'New release {tag} is out: click to open the download page',
     'old_version': 'Game version {version}: install update 01.03 (the port is made for it)',
     'fps_unsupported': 'eboot.bin is not the 1.03 game code: 60 FPS and Unlocked do not work, the game runs at 30 FPS (see the README)',
+    'untested_disc': 'Untested game version ({serial}): it may not work fully. Please share your log if something goes wrong',
     'debug': 'Debug (at start)',
     'bench_title': 'Benchmark',
     'bench_text': ('Measures how fast the game runs on this PC, scene by scene, all by itself: each scene is '
@@ -2964,6 +2965,7 @@ class Launcher:
             text = '; '.join(self.t('not_built') if k == 'not_built'
                              else self.t('old_version', version=d) if k == 'old_version'
                              else self.t('fps_unsupported') if k == 'fps_unsupported'
+                             else self.t('untested_disc', serial=d) if k == 'untested_disc'
                              else f"{self.t('missing')}: {d}" for k, d in problems)
         else:
             text = self.t('ready')
