@@ -189,11 +189,11 @@ Each setting shows what the game originally used and what we recommend.
 - **Realistic tree shade (only in this port):** in the stock game the tree crowns look flat and
   too bright. The light inside a crown is as strong as outside it, so there is no shadow between
   the layers of leaves. This setting darkens the light inside the crowns, so they get depth. Five
-  levels, Off to Extreme, and it changes while you play (Extras page). Off by default. Off, then
-  Medium:
+  levels, Off to Extreme, and it changes while you play (Extras page). Off by default. Off (left)
+  and Medium (right), full screenshots: [off](docs/screenshots/LEAF_OFF.png) ·
+  [medium](docs/screenshots/LEAF_MEDIUM.png)
 
-  [<img src="docs/screenshots/crops/LEAF_TREE_OFF.jpg" width="49%" alt="tree crown, leaf shading off">](docs/screenshots/LEAF_OFF.png)
-  [<img src="docs/screenshots/crops/LEAF_TREE_MEDIUM.jpg" width="49%" alt="tree crown, leaf shading medium">](docs/screenshots/LEAF_MEDIUM.png)
+  <img src="docs/screenshots/crops/LEAF_TREE_PAIR.png" alt="tree crown, tree shade off on the left and medium on the right">
 - **Texture pack (optional):** [ps4-texturepack-generator](https://github.com/tabnul/ps4-texturepack-generator)
   makes a 4x texture pack from your own copy. It can be switched on and off while you play. See
   [docs/texture-pack.md](docs/texture-pack.md).
