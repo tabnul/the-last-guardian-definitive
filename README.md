@@ -312,7 +312,9 @@ launcher like the ICO horns. Tick **Foxtail toy** on the launcher's Extras page,
 **Foxtail** and **Foxtail play** buttons in Trico Tricks,
 [more in the full guide](docs/fun.md#the-foxtail-toy).
 
-<p align="center"><a href="https://youtu.be/uQKJ5CMcbLg"><img src="https://img.youtube.com/vi/uQKJ5CMcbLg/hqdefault.jpg" width="60%" alt="Video: the boy waves the foxtail toy and Trico pounces"></a><br><sub>Watch it on YouTube</sub></p>
+<p align="center"><a href="https://youtu.be/uQKJ5CMcbLg"><img src="docs/screenshots/fun/foxtail-video.jpg" width="100%" alt="Video: the boy holds up the foxtail toy and Trico crouches to pounce"></a></p>
+
+<p align="center">▶️ <a href="https://youtu.be/uQKJ5CMcbLg"><b>Watch the video:</b> the foxtail toy and Trico's pounce</a></p>
 
 **Trico's toilet.** Trico does need to go, but the game's scripts make sure you almost never see
 it. He has to have eaten enough barrels, then 30 minutes of play must pass, then he waits until

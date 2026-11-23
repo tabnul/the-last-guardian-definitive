@@ -67,7 +67,9 @@ in the Trico Tricks bar, gold and at the end of the **Sealed and unique features
 
 **Play like a cat**, in the same group, is Trico's pounce on its own, the way the game left it.
 
-<p align="center"><a href="https://youtu.be/uQKJ5CMcbLg"><img src="https://img.youtube.com/vi/uQKJ5CMcbLg/hqdefault.jpg" width="60%" alt="Video: the boy waves the foxtail toy and Trico pounces"></a><br><sub>Watch it on YouTube</sub></p>
+<p align="center"><a href="https://youtu.be/uQKJ5CMcbLg"><img src="screenshots/fun/foxtail-video.jpg" width="100%" alt="Video: the boy holds up the foxtail toy and Trico crouches to pounce"></a></p>
+
+<p align="center">▶️ <a href="https://youtu.be/uQKJ5CMcbLg"><b>Watch the video:</b> the foxtail toy and Trico's pounce</a></p>
 
 ## Trico's drool
 
