@@ -49,7 +49,10 @@ private:
 /// store's own rule, Find), maps the recorded memory at its guest addresses, translates with the recorded inputs and the replayed
 /// flattened user data and keeps the stage through the store's own Keep (its encoder and file names). A recipe it cannot read, map or
 /// translate is counted and named. No graphics device is used. 0 when the folder was opened (skipped recipes are reported, not
-/// failures), 2 when it was refused.
+/// failures), 2 when the store folder was refused, 3 when the recipe folder cannot be read.
+/// Only the translator's four known guest reads are recorded (Info::ReadUdReg through a pointer, the fetch shader, the tessellation
+/// constants, the program); a read by another way would see zeros on a mapped page (or stop the process on an unmapped one). Check mode
+/// (TLG_VKB_SHADER_PREBUILD=check) compares every stage the game uses with a fresh translation: the proof for a built store.
 int BuildStore(const std::filesystem::path& store_folder, const std::filesystem::path& recipe_dir);
 
 /// recipes kept, recordings dropped (the translation failed or the store did not keep the stage), the folder

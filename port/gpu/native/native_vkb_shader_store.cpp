@@ -395,7 +395,12 @@ struct State {
     // the writer: files are written on a thread of their own, as "<name>.tmp" first and then renamed, so a reader never sees half a file
     std::mutex write_mutex;
     std::condition_variable write_cv;
-    std::deque<std::pair<std::filesystem::path, std::vector<u8>>> write_queue; ///< full paths (store entries, and the recipes' files)
+    struct WriteItem {
+        std::filesystem::path path; ///< full path
+        std::vector<u8> bytes;
+        bool recipe = false; ///< a shader recipe's file (QueueWrite): counted apart from the store's own
+    };
+    std::deque<WriteItem> write_queue;
     u64 writes_pending = 0;                                                     ///< queued or being written (Flush)
     std::condition_variable flushed_cv;
 };
@@ -405,7 +410,7 @@ State& S() {
 }
 std::atomic<bool> ready{false};
 std::atomic<u64> c_lookups{0}, c_hits{0}, c_disk_hits{0}, c_kept{0}, c_saved_ns{0}, c_check_same{0}, c_check_different{0}, c_spv_words{0}, c_files_indexed{0},
-    c_files_read{0}, c_files_bad{0}, c_written{0}, c_write_failed{0}, c_not_kept_geometry{0}, c_open_ms{0}, c_bypassed{0}, c_kind_misses{0};
+    c_files_read{0}, c_files_bad{0}, c_written{0}, c_write_failed{0}, c_not_kept_geometry{0}, c_open_ms{0}, c_bypassed{0}, c_kind_misses{0}, c_recipe_written{0}, c_recipe_write_failed{0};
 
 std::string FileName(u64 pgm_hash, const VkbShader::RuntimeInfo& runtime, const std::vector<u8>& bytes) {
     return fmt::format("{:016x}_{}_{}_{:016x}.vst", pgm_hash, static_cast<u32>(runtime.hw_stage), static_cast<u32>(runtime.sw_stage), XXH3_64bits(bytes.data(), bytes.size()));
@@ -414,20 +419,20 @@ std::string FileName(u64 pgm_hash, const VkbShader::RuntimeInfo& runtime, const 
 void WriterLoop() {
     State& st = S();
     for (;;) {
-        std::pair<std::filesystem::path, std::vector<u8>> item;
+        State::WriteItem item;
         {
             std::unique_lock lock{st.write_mutex};
             st.write_cv.wait(lock, [&] { return !st.write_queue.empty(); });
             item = std::move(st.write_queue.front());
             st.write_queue.pop_front();
         }
-        const auto& path = item.first;
+        const auto& path = item.path;
         auto tmp = path;
         tmp += ".tmp";
         std::error_code ec;
         bool ok = false;
         if (std::ofstream f{tmp, std::ios::binary | std::ios::trunc}) {
-            f.write(reinterpret_cast<const char*>(item.second.data()), static_cast<std::streamsize>(item.second.size()));
+            f.write(reinterpret_cast<const char*>(item.bytes.data()), static_cast<std::streamsize>(item.bytes.size()));
             ok = static_cast<bool>(f);
         }
         if (ok) {
@@ -436,12 +441,17 @@ void WriterLoop() {
         }
         if (!ok) {
             std::filesystem::remove(tmp, ec);
-            if (c_write_failed.fetch_add(1) == 0) {
+            if (item.recipe) {
+                if (c_recipe_write_failed.fetch_add(1) == 0) {
+                    LOG_ERROR(Render_Vulkan, "vkb shader recipes: could not write {} (the recipe is lost; the stage itself is in the store; failed recipe writes are counted)",
+                              path.string());
+                }
+            } else if (c_write_failed.fetch_add(1) == 0) {
                 LOG_ERROR(Render_Vulkan, "vkb shader store: could not write {} (the stage stays translated in memory for this session; failed writes are counted)",
                           path.string());
             }
         } else {
-            c_written.fetch_add(1, std::memory_order_relaxed);
+            (item.recipe ? c_recipe_written : c_written).fetch_add(1, std::memory_order_relaxed);
         }
         {
             std::scoped_lock lock{st.write_mutex};
@@ -451,11 +461,11 @@ void WriterLoop() {
     }
 }
 
-void QueueWriteFile(std::filesystem::path path, std::vector<u8> bytes) {
+void QueueWriteFile(std::filesystem::path path, std::vector<u8> bytes, bool recipe = false) {
     State& st = S();
     {
         std::scoped_lock lock{st.write_mutex};
-        st.write_queue.emplace_back(std::move(path), std::move(bytes));
+        st.write_queue.push_back({std::move(path), std::move(bytes), recipe});
         ++st.writes_pending;
     }
     st.write_cv.notify_one();
@@ -871,12 +881,8 @@ bool Same(const Inputs& in, const Translation& stored, const VkbShader::Info& in
     return same;
 }
 
-void QueueWrite(std::filesystem::path path, std::vector<u8> bytes) {
-    static std::once_flag once;
-    if (GetMode() == Mode::Off) {
-        std::call_once(once, [] { std::thread{WriterLoop}.detach(); }); // Open starts the writer only with the store on
-    }
-    QueueWriteFile(std::move(path), std::move(bytes));
+void QueueWrite(std::filesystem::path path, std::vector<u8> bytes) { // recipes are recorded only with the store on: Open started the writer
+    QueueWriteFile(std::move(path), std::move(bytes), true);
 }
 
 void Flush() {
@@ -1007,6 +1013,8 @@ nlohmann::json Report() {
             {"files_damaged_removed", c_files_bad.load()},
             {"files_written", c_written.load()},
             {"files_write_failed", c_write_failed.load()},
+            {"recipe_files_written", c_recipe_written.load()},
+            {"recipe_files_write_failed", c_recipe_write_failed.load()},
             {"files_waiting", waiting},
             {"not_kept_geometry", c_not_kept_geometry.load()},
             {"misses_other_resource_kinds", c_kind_misses.load()},

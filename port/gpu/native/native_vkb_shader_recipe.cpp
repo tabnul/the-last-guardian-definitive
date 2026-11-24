@@ -45,14 +45,24 @@ constexpr u32 Version = 1;
 
 /// Guest memory the translator read on this thread since the recording started, by address (the bytes as it read them)
 thread_local std::map<u64, std::vector<u8>> regions;
+/// a read at an address already kept with other bytes, or no memory for the copy: this recording gives no recipe (counted)
+thread_local const char* recording_broken = nullptr;
 
-void Record(const void* address, const void* bytes, size_t size) {
+void Record(const void* address, const void* bytes, size_t size) noexcept { // called from the translator's noexcept reads
     if (address == nullptr || size == 0) {
         return;
     }
-    auto& kept = regions[reinterpret_cast<u64>(address)];
-    if (kept.size() < size) {
-        kept.assign(static_cast<const u8*>(bytes), static_cast<const u8*>(bytes) + size);
+    try {
+        auto& kept = regions[reinterpret_cast<u64>(address)];
+        const size_t common = std::min(kept.size(), size);
+        if (std::memcmp(kept.data(), bytes, common) != 0) { // the game changed it between two reads of one translation
+            recording_broken = "the translation read one address twice with different bytes";
+        }
+        if (kept.size() < size) {
+            kept.assign(static_cast<const u8*>(bytes), static_cast<const u8*>(bytes) + size);
+        }
+    } catch (...) {
+        recording_broken = "no memory for the recording";
     }
 }
 
@@ -121,7 +131,7 @@ std::filesystem::path RecipeFolder() {
     return dir;
 }
 
-std::atomic<u64> c_recorded{0}, c_not_kept{0};
+std::atomic<u64> c_recorded{0}, c_not_kept{0}, c_no_folder{0}, c_broken{0};
 
 // ---- the build process ----
 
@@ -178,9 +188,16 @@ std::optional<Recipe> Parse(const std::vector<u8>& bytes, const char*& why) {
     rc.salt = r.Pod<u64>();
     rc.local_x = r.Pod<u32>();
     const u64 count = r.Pod<u64>();
+    bool addresses_ok = true;
     for (u64 i = 0; r.ok && i < count; ++i) {
         const u64 address = r.Pod<u64>();
         rc.regions.emplace_back(address, r.Bytes());
+        // a guest address: above the first 64 KB and below the 40-bit range the PS4's graphics chip addresses (no wrap-around)
+        addresses_ok &= address >= 0x10000 && address < (u64{1} << 40) && rc.regions.back().second.size() <= (u64{1} << 40) - address;
+    }
+    if (r.ok && !addresses_ok) {
+        why = "names memory outside the game's address range";
+        return std::nullopt;
     }
     if (!r.ok || r.left != 0 || rc.kind > 1 || flat.size() % sizeof(u32) != 0) {
         why = "is damaged";
@@ -301,6 +318,7 @@ bool On() {
 Recording::Recording(bool active) : active_{active} {
     if (active_) {
         regions.clear();
+        recording_broken = nullptr;
         VkbShader::guest_read_hook = &Record;
     }
 }
@@ -321,8 +339,15 @@ void Recording::Take(const ShaderStore::Inputs& in, const VkbShader::Info& info,
     VkbShader::guest_read_hook = nullptr;
     auto read = std::move(regions);
     regions.clear();
+    if (recording_broken != nullptr) {
+        if (c_broken.fetch_add(1) < 3) { // all are counted (report: dropped_recording_broken)
+            LOG_WARNING(Render_Vulkan, "vkb shader recipes: no recipe for program {:#x}: {}", in.params.hash, recording_broken);
+        }
+        return;
+    }
     const auto folder = RecipeFolder();
-    if (folder.empty()) {
+    if (folder.empty()) { // said once when the folder could not be made; every recipe lost so is counted (report: dropped_no_folder)
+        c_no_folder.fetch_add(1, std::memory_order_relaxed);
         return;
     }
     // the program itself, at its guest address (the translation reads it there: its base, inline constants)
@@ -376,7 +401,8 @@ int BuildStore(const std::filesystem::path& store_folder, const std::filesystem:
         }
     }
     if (ec) {
-        std::printf("vkb-build-store: the recipe folder %s cannot be read: %s\n", recipe_dir.string().c_str(), ec.message().c_str());
+        std::printf("vkb-build-store: refused: the recipe folder %s cannot be read: %s\n", recipe_dir.string().c_str(), ec.message().c_str());
+        return 3;
     }
     std::sort(files.begin(), files.end());
     VkbShader::Pools pools;
@@ -407,7 +433,7 @@ int BuildStore(const std::filesystem::path& store_folder, const std::filesystem:
             .code = std::span<const u32>{reinterpret_cast<const u32*>(rc->pgm_base), static_cast<size_t>(rc->code_words)},
             .hash = rc->pgm_hash,
         };
-        const Replay replay{*rc};
+        const Replay replay{*rc}; // also for Find: its resource-kind check refreshes the flattened user data, from the recipe here
         const ShaderStore::Inputs in{.params = params, .runtime = rc->runtime, .start = rc->start, .salt = rc->salt};
         ShaderStore::Translation stored;
         if (ShaderStore::Find(in, stored)) { // the store's own rule: same inputs, and the resources of the same kinds
@@ -462,7 +488,12 @@ int BuildStore(const std::filesystem::path& store_folder, const std::filesystem:
 }
 
 nlohmann::json Report() {
-    return {{"on", On()}, {"kept", c_recorded.load()}, {"dropped", c_not_kept.load()}, {"layout_id", fmt::format("{:016x}", ShaderFields::LayoutId())}};
+    return {{"on", On()},
+            {"kept", c_recorded.load()},
+            {"dropped_not_kept_by_store", c_not_kept.load()},
+            {"dropped_no_folder", c_no_folder.load()},
+            {"dropped_recording_broken", c_broken.load()},
+            {"layout_id", fmt::format("{:016x}", ShaderFields::LayoutId())}};
 }
 
 } // namespace Core::Vkb::ShaderRecipe

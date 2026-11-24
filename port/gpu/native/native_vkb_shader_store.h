@@ -82,7 +82,8 @@ void NoteBypass();
 /// build of the engine made it). Then Find and Keep work on it as in the game; Flush waits until every queued file is written.
 bool OpenForBuild(const std::filesystem::path& folder, VkbShader::Profile& profile, std::string& why);
 void Flush();
-/// Writes a file on the store's writer thread (as "<path>.tmp", then renamed): the shader recipes' files.
+/// Writes a shader recipe's file on the store's writer thread (as "<path>.tmp", then renamed; only with the store on, which starts that
+/// thread). Counted apart from the store's own files (report: recipe_files_written, recipe_files_write_failed).
 void QueueWrite(std::filesystem::path path, std::vector<u8> bytes);
 
 /// Build statistics (TLG_SHADER_BUILD_STATS=1, any mode, also off): the same log lines as the normal renderer's (shader_recipe.cpp), so
