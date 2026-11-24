@@ -4,6 +4,7 @@
 // tlg: the shader list, see shader_list.h.
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -196,19 +197,27 @@ std::filesystem::path Path() {
         return *env == '0' && env[1] == '\0' ? std::filesystem::path{}
                                              : std::filesystem::u8path(env);
     }
-    // The US game (CUSA03627, 1.03) has the same shader archives and eboot.bin as the European
-    // one (CUSA03745, 1.03; SHA-256 compared): one list serves both. Each entry's length and CRC-32
-    // still check every program read from the player's files.
-    std::string serial{Common::ElfInfo::Instance().GameSerial()};
-    if (serial == "CUSA03627") {
-        serial = "CUSA03745";
-    }
-    const auto name = serial + ".tlgsl";
+    // The game's own list first. The US game (CUSA03627, 1.03) has the same shader archives and
+    // eboot.bin as the European one (CUSA03745, 1.03; SHA-256 compared): without a list of its own
+    // it reads that one, and says so. Each entry's length and CRC-32 still check every program
+    // read from the player's files.
+    const std::string serial{Common::ElfInfo::Instance().GameSerial()};
     const auto dir = ExecutableDir();
-    for (const auto& candidate : {dir / "shader-list" / name, dir.parent_path() / "shader-list" / name}) {
-        std::error_code error;
-        if (std::filesystem::is_regular_file(candidate, error)) {
-            return candidate;
+    for (const std::string& list_serial : {serial, std::string{serial == "CUSA03627" ? "CUSA03745" : ""}}) {
+        if (list_serial.empty()) {
+            continue;
+        }
+        const auto name = list_serial + ".tlgsl";
+        for (const auto& candidate : {dir / "shader-list" / name, dir.parent_path() / "shader-list" / name}) {
+            std::error_code error;
+            if (std::filesystem::is_regular_file(candidate, error)) {
+                if (list_serial != serial) {
+                    std::printf("Shader prebuild: %s reads the shader list of %s (the same game "
+                                "files): %s\n",
+                                serial.c_str(), list_serial.c_str(), candidate.string().c_str());
+                }
+                return candidate;
+            }
         }
     }
     return {};

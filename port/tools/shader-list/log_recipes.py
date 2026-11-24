@@ -20,7 +20,7 @@ further folder), for merge_recipes.py to merge them with the other recordings:
   tlg-probe --portable-recipes MERGED PORTABLE_FILE
   make_list.py MERGED GAME_DIR LIST --portable PORTABLE_FILE
 --payloads FILE writes the unpacked recipes exactly as the logs hold them, one after the other,
-for check_no_code.py FILE GAME_DIR (proof that the log lines hold no game code).
+for check_no_code.py --file FILE GAME_DIR (proof that the log lines hold no game code).
 Exit 0 when every recipe line was turned into a recipe file."""
 import argparse
 import base64
@@ -37,6 +37,15 @@ import make_list as ml  # noqa: E402
 LINE = re.compile(r'Shader recipe \(not in list\): (0x[0-9a-f]{16})_(\d+) ([A-Za-z0-9+/]+=*)\s*$')
 LEFT_OUT = re.compile(r'Shader recipe \(not in list\): (0x[0-9a-f]{16}_\d+) left out: (.*)$')
 SCAN = 0x10000  # how far before a shader header in eboot.bin its program may start
+MAX_RECIPE = 1 << 20  # a logged recipe unpacks to a few KB at most; more is a damaged or forged line
+
+
+def unpack(text):
+    d = zlib.decompressobj()
+    data = d.decompress(base64.b64decode(text, validate=True), MAX_RECIPE)
+    if d.unconsumed_tail or not d.eof:
+        raise ValueError('does not unpack within 1 MB')
+    return data
 
 
 def write_v3(r, program):
@@ -125,7 +134,7 @@ def main():
             name = f'{m[1]}_{m[2]}'
             sizes.append(len(line.encode()) + 1)
             try:
-                payload = zlib.decompress(base64.b64decode(m[3], validate=True))
+                payload = unpack(m[3])
                 r = ml.parse_recipe(payload)
             except (binascii.Error, zlib.error, ValueError, struct.error) as e:
                 print(f'{log.name}:{number}: {name}: damaged line ({e})')

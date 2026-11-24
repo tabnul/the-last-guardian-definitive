@@ -281,7 +281,7 @@ std::optional<Recipe> Parse(std::span<const u8> data, const char*& why) {
         why = "is damaged";
         return std::nullopt;
     }
-    if (length != 0) { // version 3: the program, as the log line named it
+    if (version == PortableVersion) { // the program, as the log line named it
         const auto program = std::ranges::find(recipe.regions, recipe.pgm_base,
                                                &std::pair<u64, std::vector<u8>>::first);
         if (program == recipe.regions.end() || program->second.size() != length ||
@@ -510,7 +510,7 @@ std::vector<u8> Take(const Shader::Info& info, std::span<const u32> code,
     NoteBuild(info.pgm_hash, perm_idx, u32(info.hw_stage));
     auto read = std::move(regions);
     regions.clear();
-    if (info.translation_failed) {
+    if (info.translation_failed || (Storage::RecipeDir().empty() && !ShaderList::Enabled())) {
         return {};
     }
     // Motion vertex shaders embed session-local buffer device addresses (never cached either).
@@ -672,7 +672,9 @@ ChildEnd RunChildOnce(const std::vector<std::filesystem::path>& args,
                         "%lu): it may outlive the game\n",
                         GetLastError());
         }
-        ResumeThread(pi.hThread);
+        if (ResumeThread(pi.hThread) == DWORD(-1)) { // it would wait suspended forever
+            TerminateProcess(pi.hProcess, 1);
+        }
         for (;;) {
             const DWORD wait = WaitForSingleObject(pi.hProcess, 100);
             if (wait != WAIT_TIMEOUT) {
@@ -708,12 +710,27 @@ ChildEnd RunChildOnce(const std::vector<std::filesystem::path>& args,
     // reach it, so it is not taken for a shader it cannot build; it ends with the game through its
     // parent-death signal (ImportChild).
     posix_spawnattr_t attr;
-    posix_spawnattr_init(&attr);
-    posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETPGROUP);
-    posix_spawnattr_setpgroup(&attr, 0);
+    const bool attr_ok = posix_spawnattr_init(&attr) == 0;
+    if (!attr_ok || posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETPGROUP) != 0 ||
+        posix_spawnattr_setpgroup(&attr, 0) != 0) {
+        std::printf("Shader prebuild: a build process gets no process group of its own\n");
+    }
+    // The game's process id: the child checks that its parent is still this game once its
+    // parent-death signal is set (a game that ended in between would not send it).
+    std::string parent = fmt::format("TLG_SHADER_PREBUILD_PARENT={}", getpid());
+    std::vector<char*> envp{parent.data()};
+    for (char** e = environ; *e != nullptr; ++e) {
+        if (std::strncmp(*e, "TLG_SHADER_PREBUILD_PARENT=", 27) != 0) {
+            envp.push_back(*e);
+        }
+    }
+    envp.push_back(nullptr);
     pid_t pid = 0;
-    const int spawned = posix_spawn(&pid, "/proc/self/exe", nullptr, &attr, argv.data(), environ);
-    posix_spawnattr_destroy(&attr);
+    const int spawned =
+        posix_spawn(&pid, "/proc/self/exe", nullptr, attr_ok ? &attr : nullptr, argv.data(), envp.data());
+    if (attr_ok) {
+        posix_spawnattr_destroy(&attr);
+    }
     if (spawned == 0) {
         int status = 0;
         for (;;) {
@@ -861,14 +878,16 @@ std::filesystem::path HostGameDir() {
 namespace {
 
 /// Memory the compiler read that may be game code (make_list.py's rule for the list): more than
-/// 64 bytes, the shader header signature, or an s_setpc_b64 (the end of a fetch shader).
-bool LooksLikeCode(std::span<const u8> bytes) {
+/// 64 bytes, the shader header signature, or an s_setpc_b64 (the end of a fetch shader) in an
+/// aligned word.
+bool LooksLikeCode(u64 address, std::span<const u8> bytes) {
     constexpr std::string_view Signature{"OrbShdr"};
     if (bytes.size() > 64 ||
         std::search(bytes.begin(), bytes.end(), Signature.begin(), Signature.end()) != bytes.end()) {
         return true;
     }
-    for (size_t at = 0; at + 4 <= bytes.size(); at += 4) {
+    // Code is 4-byte aligned in memory: every aligned word of the region.
+    for (size_t at = (4 - address % 4) % 4; at + 4 <= bytes.size(); at += 4) {
         u32 word;
         std::memcpy(&word, bytes.data() + at, 4);
         if ((word & 0xFFFFFF00u) == 0xBE802000u) {
@@ -901,7 +920,8 @@ std::string Base64(std::span<const u8> bytes) {
 /// The recipe is version 3 without its program (PortableVersion). No game code goes in: of the
 /// program only its length and CRC-32, a fetch shader as its vertex input layout, and of the other
 /// memory the compiler read only regions that do not look like code (LooksLikeCode, the rule of
-/// make_list.py); a shader that read other memory gets a line without its recipe. Only while the
+/// make_list.py) and lie outside the program; a geometry shader's copy shader (code) is never
+/// written: a shader with one, or that read other memory, gets a line without its recipe. Only while the
 /// shader list is used (Build shaders ahead on, a list read); a program of the list is left out
 /// while the background build runs (the build may still bring this very shader).
 void LogUnlisted(const Shader::Info& info, const std::map<u64, std::vector<u8>>& read,
@@ -924,7 +944,9 @@ void LogUnlisted(const Shader::Info& info, const std::map<u64, std::vector<u8>>&
     const auto ud = info.UserData();
     u64 fetch_address = 0;
     std::optional<Shader::Gcn::FetchShaderData> fetch;
-    bool code_like = program == read.end();
+    const bool copy_shader = lookup_runtime.hw_stage == Shader::HwStage::Geometry &&
+                             !lookup_runtime.hw.gs.vs_copy.empty();
+    bool code_like = program == read.end() || copy_shader;
     if (info.has_fetch_shader && !code_like) {
         if (info.fetch_shader_sgpr_base + 1 < ud.size()) {
             std::memcpy(&fetch_address, &ud[info.fetch_shader_sgpr_base], sizeof(fetch_address));
@@ -940,7 +962,9 @@ void LogUnlisted(const Shader::Info& info, const std::map<u64, std::vector<u8>>&
         if (address == info.pgm_base || (fetch && address == fetch_address)) {
             continue;
         }
-        code_like = LooksLikeCode(bytes);
+        const u64 program_end = info.pgm_base + program->second.size();
+        code_like = LooksLikeCode(address, bytes) ||
+                    (address < program_end && address + bytes.size() > info.pgm_base);
         data_regions.emplace_back(address, bytes);
     }
     if (code_like) {
@@ -961,8 +985,7 @@ void LogUnlisted(const Shader::Info& info, const std::map<u64, std::vector<u8>>&
     w.Pod(u64(perm_idx));
     w.Pod(u64(info.pgm_base));
     w.Words(ud);
-    w.Words(lookup_runtime.hw_stage == Shader::HwStage::Geometry ? lookup_runtime.hw.gs.vs_copy
-                                                                  : std::span<const u32>{});
+    w.Words(std::span<const u32>{}); // no copy shader (code_like above)
     w.Words(info.FlatUserData());
     auto runtime = lookup_runtime;
     runtime.hw.gs.vs_copy = {};
@@ -1341,6 +1364,14 @@ int ImportChild(const std::filesystem::path& cache_dir, const std::filesystem::p
     // Started by the game (RunChildOnce): it ends with the game, also when the game crashes or is
     // killed (Windows: the game's job object).
     prctl(PR_SET_PDEATHSIG, SIGKILL);
+    if (const char* parent = std::getenv("TLG_SHADER_PREBUILD_PARENT");
+        parent && std::strtoll(parent, nullptr, 10) != getppid()) {
+        std::fprintf(stderr, "import-shaders: the game ended before the build began\n");
+        return 1;
+    }
+    // In a background process group: writing to a terminal set to stop such writers (stty tostop)
+    // would stop it, and the parent would take that for a shader it cannot build.
+    signal(SIGTTOU, SIG_IGN);
 #endif
 
     const auto started = std::chrono::steady_clock::now();

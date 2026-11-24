@@ -321,6 +321,8 @@ def main():
                 data_regions.append((address, data))  # resource descriptors (V#), state
             else:
                 bad = True  # looks like code: never copied into the list
+        if r['vs']:
+            bad = True  # a geometry shader's copy shader is code
         if bad:
             left_out.append(r)
             continue

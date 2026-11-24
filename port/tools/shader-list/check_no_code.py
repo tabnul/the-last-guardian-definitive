@@ -6,10 +6,11 @@ Every 32-byte window of the unpacked list (at every byte position) that is not l
 is looked up at every 4-byte position of every ps4_shader_cache/*.sb file of the game's .psarc
 archives and of eboot.bin. Shader code is 4-byte aligned. A hit prints where it is; exit 1 then.
 Also: the list must not contain the shader header signature "OrbShdr".
-A file that is not a shader list (log_recipes.py --payloads: the recipes as the game logs hold
-them) is checked as it is.
+--file: FILE is not a list but checked as it is (log_recipes.py --payloads: the recipes as the
+game logs hold them). Exit 2 when nothing could be checked (an empty or low-content file).
 
-Usage: check_no_code.py LIST_OR_FILE GAME_DIR"""
+Usage: check_no_code.py LIST GAME_DIR
+       check_no_code.py --file FILE GAME_DIR"""
 import pathlib
 import struct
 import sys
@@ -23,10 +24,16 @@ W = 32
 
 
 def main():
-    if len(sys.argv) != 3:
+    args = sys.argv[1:]
+    plain = args[:1] == ['--file']
+    if plain:
+        args = args[1:]
+    if len(args) != 2:
         sys.exit(__doc__)
-    raw = pathlib.Path(sys.argv[1]).read_bytes()
-    if raw[:8] == b'TLGSLIST':
+    raw = pathlib.Path(args[0]).read_bytes()
+    if not plain:
+        if raw[:8] != b'TLGSLIST':
+            sys.exit('not a shader list (use --file for another file)')
         (version,) = struct.unpack_from('<I', raw, 8)
         (size,) = struct.unpack_from('<Q', raw, 16)
         payload = zlib.decompress(raw[24 if version == 1 else 32:])  # version 2: + layout id, 3: + portable id
@@ -41,13 +48,16 @@ def main():
             skipped += 1
             continue
         windows.setdefault(w, at)
-    print(f'{"list" if raw[:8] == b"TLGSLIST" else "file"}: {len(payload)} bytes unpacked, {len(windows)} distinct windows checked, '
+    print(f'{"file" if plain else "list"}: {len(payload)} bytes unpacked, {len(windows)} distinct windows checked, '
           f'{skipped} low-content windows left out')
     hits = 0
     if b'OrbShdr' in payload:
         print('HIT: the list holds the shader header signature OrbShdr')
         hits += 1
-    game = pathlib.Path(sys.argv[2])
+    if not windows:
+        print('nothing to check: no window with enough content')
+        sys.exit(2)
+    game = pathlib.Path(args[1])
     sources = []
     for name in ['trico_bootp.psarc', 'trico_boot.psarc']:
         archive = Psarc(game / name)
