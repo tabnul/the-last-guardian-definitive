@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -77,15 +78,25 @@ std::filesystem::path Path() {
     if (const char* env = std::getenv("TLG_VKB_SHADER_LIST"); env != nullptr && *env != '\0') {
         return std::strcmp(env, "0") == 0 ? std::filesystem::path{} : std::filesystem::u8path(env);
     }
-    // The US game (CUSA03627, 1.03) has the same shader archives and eboot.bin as the European one (CUSA03745, 1.03): one list for both
-    // (as the normal renderer's ShaderList::Path); each entry's length and CRC-32 still check what is read from the player's files.
-    const auto serial = MemoryPatcher::g_game_serial == "CUSA03627" ? std::string{"CUSA03745"} : MemoryPatcher::g_game_serial;
-    const auto name = serial + ".vkb.tlgsl";
+    // The game's own list first. The US game (CUSA03627, 1.03) has the same shader archives and eboot.bin as the European one (CUSA03745,
+    // 1.03): without a list of its own it reads that one, and says so (as the normal renderer's ShaderList::Path); each entry's length and
+    // CRC-32 still check what is read from the player's files.
+    const auto& serial = MemoryPatcher::g_game_serial;
     const auto dir = ExecutableDir();
-    for (const auto& candidate : {dir / "shader-list" / name, dir.parent_path() / "shader-list" / name}) {
-        std::error_code error;
-        if (std::filesystem::is_regular_file(candidate, error)) {
-            return candidate;
+    for (const std::string& list_serial : {serial, std::string{serial == "CUSA03627" ? "CUSA03745" : ""}}) {
+        if (list_serial.empty()) {
+            continue;
+        }
+        const auto name = list_serial + ".vkb.tlgsl";
+        for (const auto& candidate : {dir / "shader-list" / name, dir.parent_path() / "shader-list" / name}) {
+            std::error_code error;
+            if (std::filesystem::is_regular_file(candidate, error)) {
+                if (list_serial != serial) {
+                    std::printf("Shader prebuild (new engine): %s reads the shader list of %s (the same game files): %s\n", serial.c_str(),
+                                list_serial.c_str(), candidate.string().c_str());
+                }
+                return candidate;
+            }
         }
     }
     return {};

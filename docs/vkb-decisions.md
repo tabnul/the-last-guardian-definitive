@@ -18,12 +18,13 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   2.6 s. Build processes of the normal renderer could outlive a game that quit or crashed. Six pull requests (143 to
   148) for one feature.
 - **Owner decisions (11-24):** "Why would I want a crashing solution"; "only the measured list"; one list for the
-  European and US game (the same game files, SHA-256 compared on the owner's PC); "the only way of getting it
+  European and US game (the same game files, SHA-256 compared on the owner's PC; the US game reads its own list first
+  and logs when it takes the European one); "the only way of getting it
   complete": the game logs the recipe of every shader it builds while playing that the list lacks, without game code,
   on by default; two pull requests only (149 normal renderer, public; 150 new engine on `vkb`), 143 to 148 closed.
 - **Choice (box, how):** the guess code is removed, not kept off (it was all new code of these pull requests, so
   removing it makes the change smaller; the restart after a bad shader stays). Build processes: Linux, their own
-  process group and a parent-death signal (as pull request 150 already did); Windows, a job object that kills them
+  process group and a parent-death signal (as the new engine's build processes already had); Windows, a job object that kills them
   when the game's last handle closes. The log line holds a recipe in the portable form (version 3) without the
   program: its length and CRC-32 instead, a fetch program as its vertex input layout, other memory only in small
   regions that pass make_list.py's code rule; `log_recipes.py` reads the program back from the player's game files.
@@ -51,8 +52,7 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 - **Found on the way:** this box's kernel places the heap of the build process anywhere in the first gigabyte, where
   the game's recorded memory also lies; a mapping failed in 2 of 12 runs. The build processes start themselves once
   without address randomization (Linux). Chose this over reserving every recorded range first (more code, same result).
-- **Guesses (B):** left for a later step: the list format has their marks already; a guess is used only where the
-  store's own rule says it fits.
+- **Guesses (B):** left for a later step at the time; dropped for good by the owner on 2026-11-24 (entry at the top).
 - Box choices. **Links:** pull request of branch `fix/vkb-shader-prebuild`.
 
 ## 2026-11-24 - Shader pre-build for the new engine: a store on disk, filled by a separate build process (not yet merged)
@@ -125,7 +125,8 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 - **Choice:** a and b. The box check dropped 39 of 8239 guesses (35 crashes, 4 failed checks, 0 hangs); b keeps
   every machine's first start from losing the build to a bad entry (switches `TLG_SHADER_PREBUILD_RESTART`,
   `TLG_SHADER_PREBUILD_ENTRY_S`). The list marks the guesses (list version 4), so they are built after the recorded
-  ones and `TLG_SHADER_LIST_GUESSES=0` leaves them out. Cost on the box: garden first start, background build 5.4 s
+  ones and `TLG_SHADER_LIST_GUESSES=0` leaves them out (all of it removed on 2026-11-24 by the owner's decision, entry at
+  the top). Cost on the box: garden first start, background build 5.4 s
   with the guesses against 1.3 s without (4 build processes).
 - **Chosen by:** box (rule 14).
 - **Links:** job 2100d3; pull request of branch `fix/shader-list-guesses` (stacked on 146).
