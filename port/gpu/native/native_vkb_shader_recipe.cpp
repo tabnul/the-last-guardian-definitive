@@ -199,7 +199,7 @@ std::optional<Recipe> Parse(const std::vector<u8>& bytes, const char*& why) {
         why = "names memory outside the game's address range";
         return std::nullopt;
     }
-    if (static_cast<u32>(rc.hw_stage) > static_cast<u32>(VkbShader::HwStage::Compute) || static_cast<u32>(rc.sw_stage) >= VkbShader::MaxStageTypes) {
+    if (r.ok && static_cast<u32>(rc.hw_stage) > static_cast<u32>(VkbShader::HwStage::Compute) || static_cast<u32>(rc.sw_stage) >= VkbShader::MaxStageTypes) {
         why = "names a stage this build does not know";
         return std::nullopt;
     }
@@ -365,7 +365,9 @@ void Recording::Take(const ShaderStore::Inputs& in, const VkbShader::Info& info,
     }
     // the program itself, at its guest address (the translation reads it there: its base, inline constants)
     auto& program = read[in.params.Base()];
-    if (std::memcmp(program.data(), in.params.code.data(), std::min(program.size(), in.params.code.size_bytes())) != 0) {
+    if (program.size() > in.params.code.size_bytes()) {
+        recording_broken = "the translation read past the end of the program's code";
+    } else if (std::memcmp(program.data(), in.params.code.data(), program.size()) != 0) {
         recording_broken = "the program's bytes changed during the translation";
     }
     program.assign(reinterpret_cast<const u8*>(in.params.code.data()), reinterpret_cast<const u8*>(in.params.code.data()) + in.params.code.size_bytes());
@@ -402,9 +404,10 @@ void Recording::Take(const ShaderStore::Inputs& in, const VkbShader::Info& info,
     }
     w.Pod(static_cast<u64>(XXH3_64bits(w.out.data(), w.out.size())));
     const u64 digest = XXH3_64bits(w.out.data(), w.out.size());
-    c_recorded.fetch_add(1, std::memory_order_relaxed);
-    ShaderStore::QueueWrite(folder / fmt::format("{:016x}_{}_{}_{:016x}.vkr", in.params.hash, static_cast<u32>(in.runtime.hw_stage), static_cast<u32>(in.runtime.sw_stage), digest),
-                            std::move(w.out));
+    if (ShaderStore::QueueWrite(folder / fmt::format("{:016x}_{}_{}_{:016x}.vkr", in.params.hash, static_cast<u32>(in.runtime.hw_stage), static_cast<u32>(in.runtime.sw_stage), digest),
+                            std::move(w.out))) {
+        c_recorded.fetch_add(1, std::memory_order_relaxed);
+    }
 }
 
 int BuildStore(const std::filesystem::path& store_folder, const std::filesystem::path& recipe_dir) {

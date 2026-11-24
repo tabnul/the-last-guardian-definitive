@@ -83,8 +83,9 @@ void NoteBypass();
 bool OpenForBuild(const std::filesystem::path& folder, VkbShader::Profile& profile, std::string& why);
 void Flush();
 /// Writes a shader recipe's file on the store's writer thread (as "<path>.tmp", then renamed; only with the store on, which starts that
-/// thread). Counted apart from the store's own files (report: recipe_files_written, recipe_files_write_failed).
-void QueueWrite(std::filesystem::path path, std::vector<u8> bytes);
+/// thread; false, counted and said once, without it). Counted apart from the store's own files (report: recipe_files_written,
+/// recipe_files_write_failed).
+bool QueueWrite(std::filesystem::path path, std::vector<u8> bytes);
 
 /// Build statistics (TLG_SHADER_BUILD_STATS=1, any mode, also off): the same log lines as the normal renderer's (shader_recipe.cpp), so
 /// one reader (port/tools/shader-list/check_run.py) counts both renderers: "Shader built while playing: <hash>_<n> (hw stage <s>)" per

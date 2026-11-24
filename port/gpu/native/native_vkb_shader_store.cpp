@@ -883,12 +883,15 @@ bool Same(const Inputs& in, const Translation& stored, const VkbShader::Info& in
     return same;
 }
 
-void QueueWrite(std::filesystem::path path, std::vector<u8> bytes) {
+bool QueueWrite(std::filesystem::path path, std::vector<u8> bytes) {
     if (!writer_started.load(std::memory_order_acquire)) { // recipes are recorded only with the store on, which starts the writer: never queued without it
-        c_recipe_write_failed.fetch_add(1, std::memory_order_relaxed);
-        return;
+        if (c_recipe_write_failed.fetch_add(1) == 0) {
+            LOG_ERROR(Render_Vulkan, "vkb shader recipes: {} not written: the store's writer does not run (the store is off); refused writes are counted", path.string());
+        }
+        return false;
     }
     QueueWriteFile(std::move(path), std::move(bytes), true);
+    return true;
 }
 
 void Flush() {
