@@ -9,6 +9,34 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-24 - Shader cache: a missing permutation is looked for in the cache before it is built, also for a program loaded by keys (not yet merged)
+
+- **Problem:** in the log-line proof of job 2100g (garden, a list rebuilt from the log lines after 65 programs were
+  cut), 3 shaders of listed programs were still built while playing. Owner question (job 2100g1): log the pipeline
+  keys too? Measured: the 3 shaders were in the cache already, with the same settings by the game's own compare
+  (`tlg-probe --same-permutation`); they were rebuilt because a program that pipeline keys had loaded never looks at
+  the cache again (the lookup of pull request 149 was only for programs no key loaded). With the shipped list a cold
+  garden and a cold condor start create 18 pipelines while playing, all 18 already in the list (made before the first
+  frame, while the background build still runs): 0 missing keys. 67 graphics pipelines more while playing (the cut
+  list) gave no more slow frames on this box (7 against 9). With the shipped list the new rule never runs on these
+  two scenes (no miss); it acts only where a list lacks keys. The cache walk's normal end (asking for a number that
+  is not there) also logged a "Failed to open the file" error line; it now asks without opening (24 such lines per
+  start with the shipped list, about 108 with the cut list, now 0).
+- **Recurring (rule 14f):** the second fix of the kind "a shader in the cache is not reached" (the first: the lookup
+  for programs without a key, in pull request 149). So one rule for both, not a second special case.
+- **Considered:** (1) log the pipeline keys and turn them into list keys (the owner's question): helps the pipelines
+  too, but a key names its shaders by session-local numbers, half of them from the list the player had; a wrong
+  mapping pairs a shader with the wrong layout, the driver crash of pull request 146; new log line, tool and list
+  path; (2) one cache rule: before the game builds any permutation, the cache's permutations that program lacks are
+  added and the game's compare picks from them; covers keys cut, keys never recorded and new combinations of known
+  shaders, no new data, every machine (plain files, the same code on Windows); does not build the pipelines ahead;
+  (3) both.
+- **Choice:** 2 (switch `TLG_SHADER_STORE_FILL`, default as `TLG_SHADER_STORE_LOOKUP`). It fixes the cause measured
+  (no key was needed, the shader was there), adds no path for data, and makes a new build take a number after the
+  cache's own. Keys from logs (1) stay possible later, if a run on the owner's Nvidia PC shows hitches from pipelines
+  made while playing; this box cannot show them. Box choice; the owner can overrule at the merge.
+- **Who:** box. **Links:** job 2100g1; pull request 161 (branch `fix/shader-store-fill`, stacked on 149).
+
 ## 2026-11-24 - Shader pre-build: only measured shaders, build processes end with the game, a log line for missing shaders (not yet merged)
 
 - **Problem:** the normal renderer's shader list also held guessed shaders (B). On 218 scenes they were used 0 times,
