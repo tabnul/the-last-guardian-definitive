@@ -199,7 +199,7 @@ std::optional<Recipe> Parse(const std::vector<u8>& bytes, const char*& why) {
         why = "names memory outside the game's address range";
         return std::nullopt;
     }
-    if (r.ok && static_cast<u32>(rc.hw_stage) > static_cast<u32>(VkbShader::HwStage::Compute) || static_cast<u32>(rc.sw_stage) >= VkbShader::MaxStageTypes) {
+    if (r.ok && (static_cast<u32>(rc.hw_stage) > static_cast<u32>(VkbShader::HwStage::Compute) || static_cast<u32>(rc.sw_stage) >= VkbShader::MaxStageTypes)) {
         why = "names a stage this build does not know";
         return std::nullopt;
     }
