@@ -9,6 +9,155 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-24 - Shader recipes of two sessions: how to merge them (not yet merged)
+
+- **Problem:** the recipes of the 219-scene recording laid over the box's recipes crashed the graphics driver in
+  the pipeline warm-up (3 of 3 starts). A recipe is named program + permutation number, and the number is only the
+  order in which one session met that program's settings. Pipeline keys name their stages the same way. So a key of
+  one session can pick up another session's shader under the same name, with other binding numbers or other output
+  state; the driver does not check that and crashes. The 81 recipes that differ in that way crash on their own;
+  the 792 that differ only in memory addresses never did.
+- **Considered:** (1) take one session whole and add from another only programs it lacks, with only the keys that
+  use nothing else: safe, but drops everything the second session adds to a known program (here all of it);
+  (2) renumber: a recipe of the second session is the same permutation as one already there only when the game
+  itself would take it for that one (the specialization compare the game uses to pick a permutation), otherwise it
+  gets the next free number, and the second session's keys are renamed to match; (3) renumber on equal file bytes:
+  safe but nearly every recipe differs in addresses, so it doubles the shaders and the warm-up then refuses most
+  keys as conflicts.
+- **Choice:** 2 (`port/tools/shader-list/merge_recipes.py`, using the new check `tlg-probe --same-permutation`).
+  It keeps every shader and key of both sessions with names that mean what the session that wrote them meant, and
+  it decides sameness by the game's own rule, not a guess. Both merge orders give the same set (737 programs,
+  937 recipes, 735 keys, equal by the game's compare); garden 3 of 3 starts without a crash. No switch of its own:
+  the tool and the check never run in the game; the rebuilt list stays behind the list's switches
+  (`TLG_SHADER_PREBUILD`, `TLG_SHADER_LIST`). The check is a `tlg-probe` tool mode in the normal renderer's
+  folder, next to the shader list code of the same line (#143).
+- **Chosen by:** box (rule 14).
+
+---
+
+## 2026-11-24 - Shader list: how the guessed shaders (B) are made, and a build that survives a bad one (not yet merged)
+
+- **Problem:** a guessed recipe takes the state a shader is translated with from a seen shader of the same kind (the
+  donor). Taken whole, a guess equalled the game's own shader for only 12% (vertex), 11% (pixel) and 16% (compute)
+  of the seen programs (leave one out), and 180 of 738 guesses killed the build process (a failed check in the
+  compiler or a crash), which ended the rest of the background build.
+- **Considered for the guesses:** (1) the donor's state whole, donors by file name (same material template, closest
+  flag bits); (2) as 1, but the state that belongs to the program itself (register and user data counts, float
+  modes; compute group size; pixel input flags, export formats) read from the program's own registers, which the
+  game file holds next to the program, and donors with the same interface (input slots) first; (3) as 2, and the
+  vertex shader's binding start numbers taken from its pixel shader (the game numbers the pixel shader's bindings
+  first, so they are where the pixel shader's end; every seen pixel program has exactly one).
+- **Choice:** 3 (`port/tools/shader-list/guess_recipes.py`). It fixes the cause of the misses (state of another
+  program) by the rule the game itself uses, for every kind at once. Leave-one-out: vertex 59% (44% when the pixel
+  shader is unseen too), pixel 49%, compute 44%; build process deaths 180 -> 10. What is left comes from the draw
+  (render targets, the vertex shader pairing, the vertex fetch), which no game file holds.
+- **Considered for the build:** (a) build every guess offline on the box and ship only those that built: needed,
+  but another machine (other driver, other compiler profile) could still meet one that dies; (b) the build child
+  writes which shader it builds; the parent starts it again after one it died on or hung on, and that shader is
+  left out for that cache; (c) a build process per shader: safe but a process start per shader.
+- **Choice:** a and b. The box check dropped 39 of 8239 guesses (35 crashes, 4 failed checks, 0 hangs); b keeps
+  every machine's first start from losing the build to a bad entry (switches `TLG_SHADER_PREBUILD_RESTART`,
+  `TLG_SHADER_PREBUILD_ENTRY_S`). The list marks the guesses (list version 4), so they are built after the recorded
+  ones and `TLG_SHADER_LIST_GUESSES=0` leaves them out. Cost on the box: garden first start, background build 5.4 s
+  with the guesses against 1.3 s without (4 build processes).
+- **Chosen by:** box (rule 14).
+- **Links:** job 2100d3; pull request of branch `fix/shader-list-guesses` (stacked on 146).
+
+---
+
+## 2026-11-24 - Shader list: guessed shaders need a way into the game (not yet merged)
+
+- **Problem:** the owner asked for shaders of the game programs no recording has seen ("B", built from settings
+  borrowed from seen shaders of the same kind). The game's files hold 6815 programs; the recordings so far saw 737.
+  In the normal renderer a shader in the cache was used only through a recorded pipeline key (the warm-up); a
+  program without a key was translated again when the game met it. So B shaders would be built and never used.
+- **Considered:** (1) when the game meets a program it has not loaded, read that program's permutations from the
+  shader cache (the same files and reading as the warm-up) and use one only where its specialization equals the one
+  the draw needs, the same compare the game makes for loaded programs; a wrong guess is then never used, the game
+  builds the shader as before; (2) guess pipeline keys too, pairing each B shader with seen partners and render
+  state: the combinations explode and a key needs the exact partner and state; (3) B for compute shaders only, whose
+  key is the program alone: 349 of the 6084 unseen programs.
+- **Choice:** 1 (switch `TLG_SHADER_STORE_LOOKUP`, on with the shader list, else off). It covers every kind of
+  shader with one rule, needs no driver feature (every machine), and keeps the right picture by the game's own
+  compare. Cost: one cache read for each program the game meets for the first time. Garden, cache with the box's
+  recipes and no keys: 279 shaders built while playing without it, 0 with it; picture difference within
+  take-to-take noise. How many B guesses match was measured offline before the list got them (leave one seen
+  program out, guess it from the others, compare by the game's rule): vertex 59% of programs (44% when its pixel
+  shader is unseen too), pixel 49%, compute 44% (job 2100d3; how the guesses are made: the entry above).
+- **Chosen by:** box (rule 14). The owner asked for B; making B usable needed this change in the normal renderer.
+- **Links:** job 2100d; pull request of branch `fix/shader-list-move` (stacked on 145).
+
+## 2026-11-23 - Shader list: one list for every machine (portable form) (not yet merged)
+
+- **Problem:** the shader list kept two compiler structs (the shader's run-time state, its binding start numbers)
+  and the pipeline keys as raw bytes. Windows (MinGW Clang) lays one bit-field struct out otherwise than Linux, the
+  colour buffer entry, which is part of the run-time state and of every graphics pipeline key. So the list made on
+  this Linux box is refused on Windows by the layout id (before the layout id: wrong shaders there). The import also
+  copied the recipe folder's raw pipeline keys when the folder's recipes were all refused for another build.
+- **Considered:** (1) store every member as a plain number in a fixed order (the portable form), written by the
+  game's own code from the build that recorded the recipes (`tlg-probe --portable-recipes`) and read back by any
+  build into its own structs; (2) let `make_list.py` decode the raw recipes itself from a table of known layouts
+  (one per layout id): the struct knowledge kept twice, in Python and C++, and a table to keep up for every compiler;
+  (3) ship one list per machine type: several lists, each made on its own machine, which this box cannot make for
+  Windows.
+- **Choice:** 1. One field list per struct in `shader_fields.h` names every member once; the same list writes and
+  reads the portable form, gives the list's portable id (a hash of the member names in order, the same for every
+  compiler) and now also gives the layout id of the raw recipes, replacing the separate member list of the layout id
+  change (so a member is added in one place). The list is version 3; a pipeline key file is written by the reading
+  build and named by its own key hash, so it matches the game's own key files on that machine. Recorded recipes stay
+  raw with the layout id (same machine). The recipe folder's keys are copied only when no recipe of the folder is of
+  another build. Switch: the list version; `make_list.py --raw` still writes the version 2 raw list (the old
+  behaviour), which this build still reads under the layout id check. Like the shader pre-build entry below, this
+  touches the normal renderer (`port/gpu/shadps4`, principle 8) for the work the owner asked for; with
+  `TLG_SHADER_PREBUILD` off nothing changes. Box choice.
+- **Note:** the layout id is now computed from the field list, so its value changed; recipes recorded by a build of
+  the layout id change alone are refused once (named reason) and recorded again.
+- **Links:** follows the layout id change (pull request 144, which it is stacked on); pull request: this one.
+
+---
+
+## 2026-11-23 - Shader recipes and the shader list: a layout id (not yet merged)
+
+- **Problem:** recipes and the shader list keep two compiler structs (the shader's run-time state and its
+  binding start numbers) as raw bytes and checked only their sizes. A build that lays the members out otherwise at
+  the same size would build wrong shaders without a word (second read of pull request 143).
+- **Considered:** (1) a layout id: a hash of the offset and size of every member (bit fields by the bits they
+  take), written into new recipes and the list header and compared when reading; (2) store the structs member by
+  member in a fixed format, so any build reads them right; (3) a hand-kept version number raised at every struct
+  change: depends on people remembering, and does not see a compiler change at all.
+- **Choice:** 1 now, as a check: small, and it turns a silent wrong shader into a named skip (principle 5).
+  Version 1 recipes are still read as before (sizes only); version 1 lists are refused (the shipped list is made
+  again with the id). A recorded recipe that is refused leaves its program to the shader list. Switch
+  `TLG_SHADER_LAYOUT_CHECK=0` brings back the old size-only check (principle 7). The id is worked out once at start, not at compile time: bit fields have no compile-time
+  offset and one of the structs holds a union, which the compiler cannot copy into bytes at compile time.
+  The layout dump showed that Windows (MinGW Clang) and Linux already lay one member out differently, so a list made
+  on Linux is refused on Windows. Way 2 is what makes one list serve both; it is a follow-up job, not part of this
+  change. Box choice.
+- **Links:** follows pull request 143; pull request: this one (stacked on 143).
+
+---
+
+## 2026-11-23 - Shader pre-build for the normal renderer: a list without program bytes (not yet merged)
+
+- **Problem:** the shader recipes that remove the first-play shader stutter hold the game's shader programs, so
+  they cannot be shipped. The owner asked for a proof of concept on the normal renderer (`TLG_VKB=0`) that ships no
+  game code.
+- **Considered:** (1) a list that names each program by where the player's own game files hold it (an entry of the
+  game's `ps4_shader_cache/*.sb` files inside its archives, by the MD5 of the path, or a range of `eboot.bin`) with
+  length and CRC-32, plus the pipeline state; the fetch shaders the game makes at run time replaced by their
+  vertex input layout; (2) the same, but the game process unpacks the list into ordinary recipe files first: a
+  second copy of the programs on disk and the game's own thread does the archive reads; (3) re-make the fetch
+  shaders as GCN code from the layout: more code, and the list would describe instructions instead of a layout.
+- **Choice:** 1. The import child reads the programs itself, so the game process does no extra work and the
+  title screen is never held; the compiler already reads fetch layouts from a snapshot (its own workers do),
+  so no new compiler path. The children run in parallel (one process per share of the programs, because each
+  maps memory at fixed addresses). The game waits only at the start of a stage load (Continue) if the build is
+  not done. Everything is behind `TLG_SHADER_PREBUILD=1`; with it off the game behaves as before. Box choice;
+  the owner asked for the work and decides at the merge.
+- **Note:** this touches the normal renderer (`port/gpu/shadps4`), which principle 8 keeps unchanged for new-engine
+  work. The owner asked for exactly this change on the normal renderer; with the switch off nothing changes.
+- **Links:** pull request of branch `fix/shader-prebuild-poc`.
+
 ## 2026-11-20 - Draw targets: reuse the last draw's answer while the targets stay the same (not yet merged)
 
 - **Problem:** every draw looked up its colour and depth targets twice in the engine's object table (once to check the
