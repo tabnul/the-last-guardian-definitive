@@ -7,6 +7,7 @@
 #include "native/native_debug_server.h"
 #include "native/native_marker.h"
 #include "native/native_vkb_graphics.h"
+#include "native/native_vkb_shader_store.h"
 
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
 
@@ -153,6 +154,7 @@ bool Ready() {
     }
     instance = &Core::Vkb::Device::Instance();
     profile = Core::Vkb::Device::Profile();
+    Core::Vkb::ShaderStore::Open(profile); // TLG_VKB_SHADER_PREBUILD (no-op when off)
     pools = std::make_unique<VkbShader::Pools>();
     return true;
 }
@@ -528,7 +530,19 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
     out.info = std::make_unique<VkbShader::Info>(hw, sw, params);
     out.info->pgm_base = params.Base();
     std::vector<u32> spv;
-    {
+    // note 41, test only: TLG_VKB_TEST_PS_PROBE=<pixel shader hash>: render target 3 gets the coordinates of the shader's first 2D texture sample (x, y) and the first
+    // barycentric weight they use (z), so a G-buffer dump shows what the shader receives
+    static const u64 probe = [] { const char* e = std::getenv("TLG_VKB_TEST_PS_PROBE"); return e != nullptr ? std::strtoull(e, nullptr, 16) : 0ull; }();
+    // TLG_VKB_SHADER_PREBUILD (shader store): a stage translated before with the same inputs, in this session or an earlier one, is taken from the store; the
+    // debug census and the probe work on the translated program, so with them on every stage is translated
+    namespace Store = Core::Vkb::ShaderStore;
+    const Store::Mode store_mode = Core::Vkb::FlatCensus::On() || probe != 0 ? Store::Mode::Off : Store::GetMode();
+    const VkbShader::RuntimeInfo runtime_in = out.runtime;
+    const Store::Inputs store_in{.params = params, .runtime = runtime_in, .start = binding};
+    Store::Translation stored;
+    const bool found = store_mode != Store::Mode::Off && Store::Find(store_in, stored);
+    if (!found || store_mode == Store::Mode::Check) {
+        const u64 translate_t0 = NowNs();
         const auto program = VkbShader::TranslateProgram(params.code, *pools, *out.info, out.runtime, profile);
         if (out.info->translation_failed) {
             c_fail[FailTranslation].fetch_add(1, std::memory_order_relaxed);
@@ -537,9 +551,6 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
         if (Core::Vkb::FlatCensus::On()) { // note 77 census (debug)
             Core::Vkb::FlatCensus::Note(program, shader ? Rd<u64>(shader, 0x120) : 0, inputs_offset, stage == 0 ? "vs" : "ps", out.info->pgm_hash);
         }
-        // note 41, test only: TLG_VKB_TEST_PS_PROBE=<pixel shader hash>: render target 3 gets the coordinates of the shader's first 2D texture sample (x, y) and the first
-        // barycentric weight they use (z), so a G-buffer dump shows what the shader receives
-        static const u64 probe = [] { const char* e = std::getenv("TLG_VKB_TEST_PS_PROBE"); return e != nullptr ? std::strtoull(e, nullptr, 16) : 0ull; }();
         if (probe != 0 && sw == VkbShader::SwStage::Fragment && out.info->pgm_hash == probe) {
             VkbShader::IR::Inst* coords = nullptr;
             for (VkbShader::IR::Block* block : program.blocks) {
@@ -570,6 +581,18 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
             LOG_WARNING(Render_Vulkan, "vkb ps probe {:#x}: coordinates {} found, {} exports patched", probe, coords != nullptr, patched);
         }
         spv = VkbShader::Backend::SPIRV::EmitSPIRV(profile, out.runtime, program, binding);
+        if (!found) {
+            Store::NoteBuild(params.hash, static_cast<u32>(hw));
+            if (store_mode != Store::Mode::Off) {
+                Store::Keep(store_in, profile, *out.info, out.runtime, binding, spv, {}, NowNs() - translate_t0);
+            }
+        }
+    }
+    if (found && (store_mode != Store::Mode::Check || Store::Same(store_in, stored, *out.info, out.runtime, binding, spv, {}))) {
+        out.info = std::move(stored.info);
+        out.runtime = stored.runtime;
+        binding = stored.end;
+        spv = std::move(stored.spv);
     }
     { // debug: TLG_VKB_DUMP_SPV=<hashes, hex, comma separated>: each compiled stage of those shaders -> log/vkb_spv/<vs|ps>_<hash>_<n>.spv, its GCN code (.gcn) and user data (.ud)
         static const std::vector<u64> dump_spv = [] {
@@ -2539,6 +2562,7 @@ nlohmann::json Report() {
             {"unsupported_layout_type_bits", fmt::format("{:#x}", c_unsupported_layout_bits.load())},
             {"depth_only_variants", c_depth_only.load()},
             {"compile_ms_mean", compiled ? static_cast<double>(c_compile_ns.load()) / 1e6 / static_cast<double>(compiled) : 0.0},
+            {"shader_store", Core::Vkb::ShaderStore::Report()}, // TLG_VKB_SHADER_PREBUILD: graphics and compute stages
             {"key_check_draws_differences", {c_key_checks.load(), c_key_differences.load()}},
             {"variant_key_us_mean", draws ? static_cast<double>(c_key_ns.load()) / 1e3 / static_cast<double>(draws) : 0.0},
             {"slot_map_mapped_unmapped", {{"vertex", src(0)}, {"pixel", src(1)}}},

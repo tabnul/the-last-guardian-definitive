@@ -7,6 +7,7 @@
 #include "native/native_debug_server.h"
 #include "native/native_marker.h"
 #include "native/native_vkb_compute.h"
+#include "native/native_vkb_shader_store.h"
 #include "native/native_device.h"
 
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
@@ -221,6 +222,7 @@ bool Ready() {
     }
     instance = &Core::Vkb::Device::Instance();
     profile = Core::Vkb::Device::Profile();
+    Core::Vkb::ShaderStore::Open(profile); // TLG_VKB_SHADER_PREBUILD (no-op when off)
     pools = std::make_unique<VkbShader::Pools>();
     Stream::Init(*instance);
     Core::Vkb::Aa::Init(*instance);
@@ -278,7 +280,16 @@ void Compile(u64 ctx, u64 shader, Variant& v) {
     v.info->pgm_base = params.Base();
     VkbShader::Backend::Bindings binding{};
     std::vector<u32> spv;
-    {
+    // TLG_VKB_SHADER_PREBUILD (shader store): a program translated before with the same inputs, in this session or an earlier one, is taken from the store, with
+    // its write windows (they also depend on the local size, the salt); the debug census works on the translated program, so with it on every program is translated
+    namespace Store = Core::Vkb::ShaderStore;
+    const Store::Mode store_mode = Core::Vkb::FlatCensus::On() ? Store::Mode::Off : Store::GetMode();
+    const VkbShader::RuntimeInfo runtime_in = runtime;
+    const Store::Inputs store_in{.params = params, .runtime = runtime_in, .start = binding, .salt = v.program.num_thread_x.full};
+    Store::Translation stored;
+    const bool found = store_mode != Store::Mode::Off && Store::Find(store_in, stored);
+    if (!found || store_mode == Store::Mode::Check) {
+        const u64 translate_t0 = NowNs();
         const auto program = VkbShader::TranslateProgram(params.code, *pools, *v.info, runtime, profile);
         if (v.info->translation_failed) {
             c_failed_translation.fetch_add(1, std::memory_order_relaxed);
@@ -325,6 +336,19 @@ void Compile(u64 ctx, u64 shader, Variant& v) {
                                    : std::string{});
             }
         }
+        if (!found) {
+            Store::NoteBuild(params.hash, static_cast<u32>(VkbShader::HwStage::Compute));
+            if (store_mode != Store::Mode::Off) {
+                Store::Keep(store_in, profile, *v.info, runtime, binding, spv, v.windows, NowNs() - translate_t0);
+            }
+        }
+    }
+    if (found && (store_mode != Store::Mode::Check || Store::Same(store_in, stored, *v.info, runtime, binding, spv, v.windows))) {
+        v.info = std::move(stored.info);
+        runtime = stored.runtime;
+        binding = stored.end;
+        spv = std::move(stored.spv);
+        v.windows = std::move(stored.windows);
     }
     const vk::Device device = instance->GetDevice();
     v.module = VkbVulkan::CompileSPV(spv, device);
