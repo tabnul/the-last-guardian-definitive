@@ -2,6 +2,7 @@
 // TLG_VKB_SHADER_PREBUILD: the new engine's translated shader stages, kept on disk (see the header)
 
 #include "native/native_vkb_shader_store.h"
+#include "native/native_vkb_shader_prebuild.h"
 
 #include <algorithm>
 #include <array>
@@ -389,6 +390,7 @@ struct State {
     std::mutex mutex;
     std::unordered_map<u64, std::vector<std::unique_ptr<Entry>>> entries; ///< by program hash and stage
     std::unordered_map<u64, std::vector<std::filesystem::path>> on_disk;  ///< files not read yet, by the same key
+    std::unordered_set<std::string> indexed;                              ///< names of the files indexed or written so far (Rescan adds the others)
     std::filesystem::path folder;
     std::unordered_set<u64> different_logged;
     std::string open_error;
@@ -411,7 +413,7 @@ State& S() {
 std::atomic<bool> ready{false};
 std::atomic<bool> writer_started{false}; ///< WriterLoop runs (QueueWrite)
 std::atomic<u64> c_lookups{0}, c_hits{0}, c_disk_hits{0}, c_kept{0}, c_saved_ns{0}, c_check_same{0}, c_check_different{0}, c_spv_words{0}, c_files_indexed{0},
-    c_files_read{0}, c_files_bad{0}, c_written{0}, c_write_failed{0}, c_not_kept_geometry{0}, c_open_ms{0}, c_bypassed{0}, c_kind_misses{0}, c_recipe_written{0}, c_recipe_write_failed{0};
+    c_files_read{0}, c_files_bad{0}, c_written{0}, c_write_failed{0}, c_not_kept_geometry{0}, c_open_ms{0}, c_bypassed{0}, c_kind_misses{0}, c_recipe_written{0}, c_recipe_write_failed{0}, c_rescanned{0};
 
 std::string FileName(u64 pgm_hash, const VkbShader::RuntimeInfo& runtime, const std::vector<u8>& bytes) {
     return fmt::format("{:016x}_{}_{}_{:016x}.vst", pgm_hash, static_cast<u32>(runtime.hw_stage), static_cast<u32>(runtime.sw_stage), XXH3_64bits(bytes.data(), bytes.size()));
@@ -578,19 +580,26 @@ bool FolderId(const VkbShader::Profile& profile, const std::string& settings, u6
     return true;
 }
 
-/// The stored stages of `dir` by key; cut writes are removed
-void IndexFolder(const std::filesystem::path& dir, std::unordered_map<u64, std::vector<std::filesystem::path>>& found, u64& files, u64& stale) {
+/// The stored stages of `dir` by key, except those named in `skip`; with `remove_cut`, cut writes are removed (only the game's own opening
+/// does that: later, a .tmp file may be another process's write in progress, the shader pre-build's)
+void IndexFolder(const std::filesystem::path& dir, std::unordered_map<u64, std::vector<std::filesystem::path>>& found, u64& files, u64& stale, bool remove_cut,
+                 std::unordered_set<std::string>& names) {
     std::error_code ec;
     for (const auto& item : std::filesystem::directory_iterator{dir, ec}) {
         const auto name = item.path().filename().string();
         if (name.ends_with(".tmp")) { // a write cut by the end of a session
-            std::filesystem::remove(item.path(), ec);
-            ++stale;
+            if (remove_cut) {
+                std::filesystem::remove(item.path(), ec);
+                ++stale;
+            }
             continue;
         }
         unsigned long long pgm = 0;
         u32 hw = 0, sw = 0;
         if (std::sscanf(name.c_str(), "%16llx_%u_%u_", &pgm, &hw, &sw) != 3 || !name.ends_with(".vst")) {
+            continue;
+        }
+        if (!names.insert(name).second) {
             continue;
         }
         VkbShader::RuntimeInfo key_runtime{};
@@ -639,12 +648,14 @@ void OpenFolder(const VkbShader::Profile& profile) {
                   SettingsFile, dir.string());
     }
     std::unordered_map<u64, std::vector<std::filesystem::path>> found;
+    std::unordered_set<std::string> names;
     u64 files = 0, stale = 0;
-    IndexFolder(dir, found, files, stale);
+    IndexFolder(dir, found, files, stale, true, names);
     {
         std::scoped_lock lock{st.mutex};
         st.folder = dir;
         st.on_disk = std::move(found);
+        st.indexed = std::move(names);
     }
     c_files_indexed.store(files);
     c_open_ms.store(static_cast<u64>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count()));
@@ -653,6 +664,7 @@ void OpenFolder(const VkbShader::Profile& profile) {
                 "translator settings %s\n",
                 dir.string().c_str(), static_cast<unsigned long long>(files), static_cast<unsigned long long>(stale), removed,
                 static_cast<unsigned long long>(c_open_ms.load()), settings.c_str());
+    Prebuild::Start(dir); // TLG_VKB_SHADER_PREBUILD: the shipped list's stages this folder lacks, built in the background
 }
 
 /// Reads the files of `key` not read yet. The files are taken from the index under the lock and read without it (another thread that
@@ -701,7 +713,7 @@ bool StatsOn() {
 struct Stats {
     std::mutex mutex;
     std::unordered_map<u64, u32> per_program;
-    u32 builds = 0, frame_builds = 0, before_frame = 0, slow = 0, in_slow = 0;
+    u32 builds = 0, frame_builds = 0, before_frame = 0, slow = 0, in_slow = 0, listed = 0, while_build = 0;
     std::vector<std::pair<u32, u32>> frames; ///< microseconds, builds
     size_t judged = 0;
     std::chrono::steady_clock::time_point last_frame{}, last_report{};
@@ -732,7 +744,7 @@ void ReportLocked(Stats& s) { // the rule and the text of the normal renderer's 
     std::printf("Shader builds while playing: %u (%u inside slow frames; %u before the first frame, %u while the background build ran, %u of programs in the shader "
                 "list); %zu frames, %u slow (over twice the median of the 61 frames around them), %u builds in the last frames not judged yet; %u waits for the build "
                 "gave up; new engine\n",
-                s.builds, s.in_slow, s.before_frame, 0u, 0u, s.frames.size(), s.slow, pending, 0u);
+                s.builds, s.in_slow, s.before_frame, s.while_build, s.listed, s.frames.size(), s.slow, pending, Prebuild::WaitsGivenUp());
 }
 
 void NoteUse(u64 pgm_hash, u32 hw_stage, Entry& e) {
@@ -856,11 +868,60 @@ bool Keep(const Inputs& in, const VkbShader::Profile& profile, const VkbShader::
     {
         std::scoped_lock lock{st.mutex};
         st.entries[KeyOf(in.params.hash, in.runtime)].push_back(std::move(e));
+        st.indexed.insert(name); // a later Rescan does not read it back
     }
     if (ready.load(std::memory_order_acquire)) { // else the folder could not be opened (said at the start): kept in memory only
         QueueWriteFile(st.folder / name, std::move(bytes));
     }
     return true;
+}
+
+const char* Differs(const Translation& a, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
+                    const std::vector<u32>& spv, const std::vector<WriteWindow::Window>& windows) {
+    if (const char* member = FirstDifference(*a.info, info); member != nullptr) {
+        return member;
+    }
+    if (a.spv != spv) {
+        return "module";
+    }
+    if (!(a.end == end)) {
+        return "bindings";
+    }
+    if (!(a.windows == windows)) {
+        return "write windows";
+    }
+    if (std::memcmp(&a.runtime, &runtime, sizeof(VkbShader::RuntimeInfo)) != 0) {
+        return "runtime info";
+    }
+    return nullptr;
+}
+
+u64 Rescan() {
+    if (!ready.load(std::memory_order_acquire)) {
+        return 0;
+    }
+    State& st = S();
+    std::filesystem::path dir;
+    std::unordered_set<std::string> names;
+    {
+        std::scoped_lock lock{st.mutex};
+        dir = st.folder;
+        names = st.indexed;
+    }
+    std::unordered_map<u64, std::vector<std::filesystem::path>> found;
+    u64 files = 0, stale = 0;
+    IndexFolder(dir, found, files, stale, false, names);
+    std::scoped_lock lock{st.mutex};
+    for (auto& [key, paths] : found) {
+        auto& list = st.on_disk[key];
+        for (auto& path : paths) {
+            if (st.indexed.insert(path.filename().string()).second) {
+                list.push_back(std::move(path));
+            }
+        }
+    }
+    c_rescanned.fetch_add(files, std::memory_order_relaxed);
+    return files;
 }
 
 bool Same(const Inputs& in, const Translation& stored, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
@@ -935,13 +996,15 @@ bool OpenForBuild(const std::filesystem::path& folder_in, VkbShader::Profile& pr
         return false;
     }
     std::unordered_map<u64, std::vector<std::filesystem::path>> found;
+    std::unordered_set<std::string> names;
     u64 files = 0, stale = 0;
-    IndexFolder(folder, found, files, stale);
+    IndexFolder(folder, found, files, stale, false, names); // other build processes may be writing into the folder meanwhile
     State& st = S();
     {
         std::scoped_lock lock{st.mutex};
         st.folder = folder;
         st.on_disk = std::move(found);
+        st.indexed = std::move(names);
     }
     c_files_indexed.store(files);
     std::thread{WriterLoop}.detach();
@@ -969,7 +1032,11 @@ void NoteBuild(u64 pgm_hash, u32 hw_stage) {
     ++s.builds;
     ++s.frame_builds;
     s.before_frame += s.last_frame == std::chrono::steady_clock::time_point{};
-    std::printf("Shader built while playing: %#018llx_%u (hw stage %u)\n", static_cast<unsigned long long>(pgm_hash), s.per_program[pgm_hash]++, hw_stage);
+    const bool listed = Prebuild::Listed(pgm_hash), running = Prebuild::Running(); // the normal renderer's words, for check_run.py
+    s.listed += listed;
+    s.while_build += running;
+    std::printf("Shader built while playing: %#018llx_%u (hw stage %u)%s\n", static_cast<unsigned long long>(pgm_hash), s.per_program[pgm_hash]++, hw_stage,
+                !listed ? (running ? ", background build still running" : "") : running ? ", in the list, background build still running" : ", in the list");
 }
 
 void NoteFrame() {
@@ -1019,6 +1086,8 @@ nlohmann::json Report() {
             {"kept", c_kept.load()},
             {"programs_in_memory", programs},
             {"files_indexed_at_open", c_files_indexed.load()},
+            {"files_found_by_rescan", c_rescanned.load()},
+            {"prebuild", Prebuild::Report()},
             {"files_read", c_files_read.load()},
             {"files_damaged_removed", c_files_bad.load()},
             {"files_written", c_written.load()},

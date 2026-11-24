@@ -21,6 +21,7 @@
 #include "tlg_toggles.h"
 #include "video_core/renderer_vulkan/shader_list.h"
 #include "video_core/renderer_vulkan/shader_recipe.h"
+#include "native/native_vkb_shader_prebuild.h"
 #include "../tlggpu.h"
 #include <algorithm>
 #include <atomic>
@@ -1028,8 +1029,10 @@ bool GameEdits(std::string& patched, std::string_view name) {
         // shader_prebuild on: a stage load (a stage start, or a restart: continue, checkpoint)
         // begins with the time blocker; "--TLGLOADING" there waits for the background shader
         // build, except the session's first load (the title stage), so the title screen never
-        // waits and the first stage played starts with its shaders built.
-        if (Vulkan::ShaderList::Enabled()) {
+        // waits and the first stage played starts with its shaders built. The new engine's
+        // pre-build (TLG_VKB=1 with TLG_VKB_SHADER_PREBUILD on: native_vkb_shader_prebuild.h)
+        // waits at the same place.
+        if (Vulkan::ShaderList::Enabled() || Core::Vkb::Prebuild::HookWanted()) {
             static constexpr std::pair<std::string_view, std::string_view> Loads[] = {
                 {"self.timeBlocker = CreateTimeBlocker()",
                  " do local f=(loadstring or load)('--TLGLOADING start '..tostring(name))"
@@ -1376,6 +1379,7 @@ extern "C" __attribute__((sysv_abi)) int tlg_lua_load(void* L, void* options, co
         const std::string what{buffer + 12, size > 12 ? size - 12 : 0};
         std::printf("Shader prebuild: stage load%s%s\n", what.c_str(),
                     loads == 0 ? " (first of the session: no wait)" : "");
+        Core::Vkb::Prebuild::StageLoad(what.c_str(), loads == 0); // no-op unless the new engine's pre-build is on
         if (loads++ != 0) {
             Vulkan::ShaderRecipe::WaitImport("stage load");
         }

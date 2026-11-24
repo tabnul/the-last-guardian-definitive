@@ -5,11 +5,18 @@
 // thrown away with every build; the recipes fill it again), so a recipe is read only by a build that lays those two structs out the same
 // way: equal struct sizes do not prove an equal layout. The normal renderer's way (port/gpu/shadps4/video_core/renderer_vulkan/
 // shader_fields.h, its LayoutId), for the new engine's own copies of the structs, which differ from the normal renderer's (bit fields in
-// the fragment info, Bindings::indexed, dx10_clamp, is_indirect). Only the layout part: the portable form is not needed for a recipe
-// that never leaves the player's machine.
+// the fragment info, Bindings::indexed, dx10_clamp, is_indirect).
+// TLG_VKB_SHADER_PREBUILD's shader list (native_vkb_shader_list.h) leaves the machine: it is made on Linux and read on Windows too, whose
+// compiler lays some bit fields out otherwise. It holds the two structs in the portable form (FieldWriter / FieldReader: every member as a
+// number, LEB128, in the order of the field list; of each union only the variant its stage uses, as RuntimeInfo::operator== compares
+// them), and carries PortableId (a hash of the member names in order): a build with other field lists does not read the list. The normal
+// renderer's way (shader_fields.h there, FieldWriter / FieldReader / FieldSchema), copied.
 
 #include <cstring>
+#include <span>
 #include <string_view>
+#include <type_traits>
+#include <vector>
 
 #include "common/types.h"
 #include "native/shadps4/shader_recompiler/backend/bindings.h"
@@ -28,6 +35,69 @@ struct Hash {
             Byte(static_cast<u8>(number >> (8 * i)));
         }
     }
+    void Text(std::string_view text) {
+        Number(text.size());
+        for (const char c : text) {
+            Byte(static_cast<u8>(c));
+        }
+    }
+};
+
+/// The portable form of a struct
+struct FieldWriter {
+    static constexpr bool AllVariants = false;
+    std::vector<u8> out;
+    template <typename Get, typename Set>
+    void Field(std::string_view, Get get, Set) {
+        for (u64 v = get();; v >>= 7) {
+            if (v < 0x80) {
+                out.push_back(static_cast<u8>(v));
+                break;
+            }
+            out.push_back(static_cast<u8>(v | 0x80));
+        }
+    }
+};
+
+/// Reads the portable form into a struct. `ok` turns false when the input ends early or a number does not fit its member (damage, or
+/// a list of another field list).
+struct FieldReader {
+    static constexpr bool AllVariants = false;
+    std::span<const u8> in;
+    size_t pos = 0;
+    bool ok = true;
+    template <typename Get, typename Set>
+    void Field(std::string_view, Get, Set set) {
+        u64 v = 0;
+        for (int shift = 0;; shift += 7) {
+            if (!ok || pos >= in.size() || shift > 63) {
+                ok = false;
+                return;
+            }
+            const u8 byte = in[pos++];
+            v |= static_cast<u64>(byte & 0x7f) << shift;
+            if ((byte & 0x80) == 0) {
+                break;
+            }
+        }
+        if (!set(v)) {
+            ok = false;
+        }
+    }
+    /// All of the input was read, and nothing failed
+    [[nodiscard]] bool Done() const {
+        return ok && pos == in.size();
+    }
+};
+
+/// The field list itself: the member names in order, every variant of a union
+struct FieldSchema {
+    static constexpr bool AllVariants = true;
+    Hash hash;
+    template <typename Get, typename Set>
+    void Field(std::string_view name, Get, Set) {
+        hash.Text(name);
+    }
 };
 
 /// How this build lays a struct out: per member, the struct all zero with that member set to all ones, every byte hashed (bit fields
@@ -37,8 +107,8 @@ struct FieldLayout {
     Hash hash;
     void* object = nullptr;
     size_t size = 0;
-    template <typename Set>
-    void Field(std::string_view, Set set) {
+    template <typename Get, typename Set>
+    void Field(std::string_view, Get, Set set) {
         std::memset(object, 0, size);
         set(~u64{0});
         const auto* bytes = static_cast<const u8*>(object);
@@ -51,12 +121,16 @@ struct FieldLayout {
 
 } // namespace Core::Vkb::ShaderFields
 
-/// One member in a field list (also a bit field, an enum or a bool)
+/// One member in a field list (also a bit field, an enum or a bool). The setter returns false when the number does not fit the member.
 #define TLG_VKB_FIELD(io, x)                                                                                                              \
-    (io).Field(#x, [&](u64 v_) {                                                                                                           \
-        using T_ = std::remove_cvref_t<decltype(x)>;                                                                                       \
-        (x) = static_cast<T_>(v_);                                                                                                         \
-    })
+    (io).Field(                                                                                                                            \
+        #x, [&]() -> u64 { return static_cast<u64>(x); },                                                                                  \
+        [&](u64 v_) -> bool {                                                                                                              \
+            using T_ = std::remove_cvref_t<decltype(x)>;                                                                                   \
+            const T_ t_ = static_cast<T_>(v_);                                                                                             \
+            (x) = t_;                                                                                                                      \
+            return static_cast<u64>(t_) == v_ && static_cast<u64>(x) == v_;                                                                \
+        })
 
 namespace Core::Vkb::ShaderFields {
 
@@ -78,10 +152,15 @@ static_assert(sizeof(VkbShader::PsColorBuffer) == 8);
 static_assert(sizeof(VkbShader::HwComputeRuntimeInfo) == 20);
 static_assert(sizeof(VkbShader::Backend::Bindings) == 12);
 
-/// The field list of VkbShader::RuntimeInfo: every member, once, every variant of its two unions. hw.gs.vs_copy (a pointer and a length)
-/// is not listed: a geometry stage has no recipe (the new engine has no geometry stages; the store never keeps one).
+/// The field list of VkbShader::RuntimeInfo: every member, once. Of its two unions the layout and schema visitors see every variant, the
+/// portable form only the one its stage uses (as RuntimeInfo::operator== compares them; the stages come first, so the reader knows them
+/// when it reaches the unions). hw.gs.vs_copy (a pointer and a length) is not listed: a geometry stage has no recipe (the new engine has
+/// no geometry stages; the store never keeps one).
 template <typename IO>
 void RuntimeFields(IO& io, VkbShader::RuntimeInfo& r) {
+    using VkbShader::HwStage;
+    using VkbShader::SwStage;
+    constexpr bool all = IO::AllVariants;
     TLG_VKB_FIELD(io, r.sw_stage);
     TLG_VKB_FIELD(io, r.hw_stage);
     TLG_VKB_FIELD(io, r.props.fp_denorm_mode32);
@@ -93,7 +172,7 @@ void RuntimeFields(IO& io, VkbShader::RuntimeInfo& r) {
     TLG_VKB_FIELD(io, r.props.num_input_vgprs);
     TLG_VKB_FIELD(io, r.props.dx10_clamp);
     TLG_VKB_FIELD(io, r.props.reserved);
-    {
+    if (all || r.sw_stage == SwStage::Vertex) {
         auto& vs = r.sw.vs;
         TLG_VKB_FIELD(io, vs.step_rate_0);
         TLG_VKB_FIELD(io, vs.step_rate_1);
@@ -102,7 +181,7 @@ void RuntimeFields(IO& io, VkbShader::RuntimeInfo& r) {
         TLG_VKB_FIELD(io, vs.is_indirect);
         TLG_VKB_FIELD(io, vs.tess_emulated_primitive);
     }
-    {
+    if (all || r.sw_stage == SwStage::TessellationControl) {
         auto& tcs = r.sw.tcs;
         TLG_VKB_FIELD(io, tcs.hs_output_cp_stride);
         TLG_VKB_FIELD(io, tcs.num_input_control_points);
@@ -112,16 +191,20 @@ void RuntimeFields(IO& io, VkbShader::RuntimeInfo& r) {
         TLG_VKB_FIELD(io, tcs.ls_stride);
         TLG_VKB_FIELD(io, tcs.hs_output_base);
     }
-    {
+    if (all || r.sw_stage == SwStage::TessellationEval) {
         auto& tes = r.sw.tes;
         TLG_VKB_FIELD(io, tes.hs_output_cp_stride);
         TLG_VKB_FIELD(io, tes.tess_type);
         TLG_VKB_FIELD(io, tes.tess_topology);
         TLG_VKB_FIELD(io, tes.tess_partitioning);
     }
-    TLG_VKB_FIELD(io, r.hw.ls.ls_stride);
-    TLG_VKB_FIELD(io, r.hw.es.vertex_data_size);
-    {
+    if (all || r.hw_stage == HwStage::Local) {
+        TLG_VKB_FIELD(io, r.hw.ls.ls_stride);
+    }
+    if (all || r.hw_stage == HwStage::Export) {
+        TLG_VKB_FIELD(io, r.hw.es.vertex_data_size);
+    }
+    if (all || r.hw_stage == HwStage::Geometry) {
         auto& gs = r.hw.gs;
         TLG_VKB_FIELD(io, gs.num_outputs);
         for (size_t i = 0; i < gs.outputs.size(); ++i) {
@@ -140,7 +223,7 @@ void RuntimeFields(IO& io, VkbShader::RuntimeInfo& r) {
         TLG_VKB_FIELD(io, gs.mode);
         TLG_VKB_FIELD(io, gs.vs_copy_hash);
     }
-    {
+    if (all || r.hw_stage == HwStage::Vertex) {
         auto& vs = r.hw.vs;
         TLG_VKB_FIELD(io, vs.num_outputs);
         for (size_t i = 0; i < vs.outputs.size(); ++i) {
@@ -153,7 +236,7 @@ void RuntimeFields(IO& io, VkbShader::RuntimeInfo& r) {
         TLG_VKB_FIELD(io, vs.user_clip_plane_mask);
         TLG_VKB_FIELD(io, vs.motion_vectors);
     }
-    {
+    if (all || r.hw_stage == HwStage::Fragment) {
         auto& fs = r.hw.fs;
         for (auto* flags : {&fs.en_flags, &fs.addr_flags}) {
             auto& f = *flags;
@@ -202,7 +285,7 @@ void RuntimeFields(IO& io, VkbShader::RuntimeInfo& r) {
         TLG_VKB_FIELD(io, fs.depth_before_shader);
         TLG_VKB_FIELD(io, fs.motion_vectors);
     }
-    {
+    if (all || r.hw_stage == HwStage::Compute) {
         auto& cs = r.hw.cs;
         TLG_VKB_FIELD(io, cs.shared_memory_size);
         for (size_t i = 0; i < cs.workgroup_size.size(); ++i) {
@@ -242,6 +325,56 @@ inline u64 LayoutId() {
         return layout.hash.value;
     }();
     return id;
+}
+
+/// A RuntimeInfo as the engine starts one: all zero (padding too)
+inline VkbShader::RuntimeInfo ZeroRuntime() {
+    VkbShader::RuntimeInfo runtime{};
+    std::memset(static_cast<void*>(&runtime), 0, sizeof(runtime));
+    return runtime;
+}
+
+/// The portable form of the two structs, and back. The From functions return false when the bytes are damaged or of another field list;
+/// the struct starts all zero, so a round trip gives the same bytes where the members of the stage's variants and the padding were zero
+/// before (the list's maker checks that for every entry).
+inline std::vector<u8> PortableRuntime(const VkbShader::RuntimeInfo& runtime) {
+    FieldWriter w;
+    auto copy = runtime;
+    RuntimeFields(w, copy);
+    return std::move(w.out);
+}
+inline bool RuntimeFromPortable(std::span<const u8> portable, VkbShader::RuntimeInfo& runtime) {
+    runtime = ZeroRuntime();
+    FieldReader r{portable};
+    RuntimeFields(r, runtime);
+    return r.Done();
+}
+inline std::vector<u8> PortableBindings(const VkbShader::Backend::Bindings& bindings) {
+    FieldWriter w;
+    auto copy = bindings;
+    BindingsFields(w, copy);
+    return std::move(w.out);
+}
+inline bool BindingsFromPortable(std::span<const u8> portable, VkbShader::Backend::Bindings& bindings) {
+    std::memset(static_cast<void*>(&bindings), 0, sizeof(bindings));
+    FieldReader r{portable};
+    BindingsFields(r, bindings);
+    return r.Done();
+}
+
+/// The id of the portable form: a hash of the field lists' member names in order and of the list entry's own form (`entry_form`, a text
+/// that changes with it), the same in every build of the same source. A shader list carries it; a build with another id does not read it.
+inline u64 PortableId(std::string_view entry_form) {
+    Hash hash;
+    hash.Text("tlg new engine shader list portable form 1");
+    hash.Text(entry_form);
+    FieldSchema schema;
+    auto runtime = ZeroRuntime();
+    RuntimeFields(schema, runtime);
+    VkbShader::Backend::Bindings bindings{};
+    BindingsFields(schema, bindings);
+    hash.Number(schema.hash.value);
+    return hash.value;
 }
 
 } // namespace Core::Vkb::ShaderFields

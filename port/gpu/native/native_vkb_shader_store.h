@@ -69,6 +69,15 @@ bool Keep(const Inputs& in, const VkbShader::Profile& profile, const VkbShader::
 bool Same(const Inputs& in, const Translation& stored, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
           const std::vector<u32>& spv, const std::vector<WriteWindow::Window>& windows);
 
+/// The first member in which a translation differs from `a` (nullptr: the same), compared member by member as Same does, without counting:
+/// the shader list's maker checks each entry with it (native_vkb_shader_recipe.h).
+[[nodiscard]] const char* Differs(const Translation& a, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
+                                  const std::vector<u32>& spv, const std::vector<WriteWindow::Window>& windows);
+
+/// Lists the store's folder again and indexes the files it did not know yet (the shader pre-build's build processes write into it while the
+/// game runs: native_vkb_shader_prebuild.h). Their .tmp files are left alone. The number of new files.
+u64 Rescan();
+
 /// A stage translated without the store although it is on, because a debug tool needs the translated program (census, probe): counted.
 void NoteBypass();
 

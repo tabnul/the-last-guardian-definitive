@@ -55,6 +55,28 @@ private:
 /// (TLG_VKB_SHADER_PREBUILD=check) compares every stage the game uses with a fresh translation: the proof for a built store.
 int BuildStore(const std::filesystem::path& store_folder, const std::filesystem::path& recipe_dir);
 
+/// The shader list's maker (tlg-probe --vkb-list-recipes STORE RECIPES OUT; port/tools/shader-list/make_list.py --vkb then writes the list,
+/// native_vkb_shader_list.h): for every recipe of `recipe_dir`, the list entry's state without the program and the fetch shader's code (the
+/// translator's own parser gives the vertex input layout), and the check of the entry: translated once as recorded and once in its list form
+/// (the portable form read back, the layout in place of the fetch shader, only the state regions), both must give the same stage (Differs).
+/// A recipe that fails is left out, counted by reason. `store_folder`: a store folder of this build, for its translator profile (OpenForBuild;
+/// nothing is written to it). OUT holds, per entry, the recipe's name, the program hash, the program bytes (for make_list.py to find them in
+/// the game files; OUT stays on the machine that made it) and the entry's body. 0 when OUT was written; 2 store refused, 3 recipe folder
+/// unreadable, 4 OUT not written.
+int ListRecipes(const std::filesystem::path& store_folder, const std::filesystem::path& recipe_dir, const std::filesystem::path& out);
+
+/// The shader pre-build's build process for the list (tlg-probe --vkb-build-store STORE --list LIST GAME [PART PARTS]): opens the store as
+/// BuildStore does and builds the list's entries of its part (by program hash) the store lacks, each program read from the game folder
+/// `game_dir` (length and CRC-32 checked). Before each entry it writes the entry's number into list-build-progress-<part>.txt of the store;
+/// entries named in list-build-left-out.txt (a process stopped on them before: the game's parent, native_vkb_shader_prebuild.h) are skipped.
+/// Every entry of the part ends counted: built, already in the store, or skipped with its reason (list-build-result-<part>.txt, and the
+/// first three of each reason in the log). Guesses are skipped with TLG_VKB_SHADER_LIST_GUESSES=0. 0 done, 2 refused, 3 list unreadable,
+/// 4 writes failed.
+int BuildList(const std::filesystem::path& store_folder, const std::filesystem::path& list, const std::filesystem::path& game_dir, u32 part, u32 parts);
+
+/// The portable id of the list this build reads (native_vkb_shader_fields.h PortableId with the entry's form)
+[[nodiscard]] u64 ListPortableId();
+
 /// recipes kept, recordings dropped (the translation failed or the store did not keep the stage), the folder
 [[nodiscard]] nlohmann::json Report();
 

@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""check_run.py RUN_DIR [MARKS_TSV] [--json OUT] [--md OUT]: per scene of a shot.py/sweep run with SHOT_PAD_PATTERN,
+"""check_run.py RUN_DIR [MARKS_TSV] [--json OUT] [--md OUT] [--renderer vkb0|vkb1]: per scene of a shot.py/sweep run with SHOT_PAD_PATTERN,
 counted inside the pattern window (from "Lua: shot pad pattern start" to "... end", which starts 8 s after the load):
   built: shaders the game translated itself (misses with the list A+B), split: before the background build ended;
   slow: of those, built inside slow frames (the game's rule: over twice the median of the 61 frames around, and
   1/60 s over it); frames over 40 ms (meaningless on the box, which draws most scenes far below 25 FPS); uses: shaders used from the cache (first use), by list mark A/B;
   misses_A = built + uses of B programs; misses_B = built + uses of A programs; misses_AB = built;
   frames over 40 ms, worst frame ms, lowest 5 s FPS ("Frame stats" lines in the window).
-MARKS_TSV: lines "0xHASH<TAB>A|B" (the list's marks); without it every use counts as A."""
+MARKS_TSV: lines "0xHASH<TAB>A|B" (the list's marks); without it every use counts as A.
+--renderer: which takes' logs are read: vkb0 (the normal renderer, default) or vkb1 (the new engine, TLG_VKB=1, whose shader store
+prints the same lines: native_vkb_shader_store.h)."""
 import json, re, sys, glob, os
 args = sys.argv[1:]
 def opt(name):
     if name in args:
         i = args.index(name); v = args[i + 1]; del args[i:i + 2]; return v
-jout, mout = opt('--json'), opt('--md')
+jout, mout, renderer = opt('--json'), opt('--md'), opt('--renderer') or 'vkb0'
+if renderer not in ('vkb0', 'vkb1'):
+    sys.exit('--renderer: vkb0 or vkb1')
 run = args[0]
 marks = {}
 if len(args) > 1:
@@ -23,7 +27,7 @@ RU = re.compile(r'Shader used from the cache: (0x[0-9a-f]+)_(\d+) \(hw stage (\d
 RF = re.compile(r'Frame time: ([\d.]+) ms, (\d+) shader builds')
 RS = re.compile(r'Frame stats: ([\d.]+) FPS, worst frame ([\d.]+) ms')
 rows = []
-for log in sorted(glob.glob(os.path.join(run, '*', 'vkb0_take*.log'))):
+for log in sorted(glob.glob(os.path.join(run, '*', renderer + '_take*.log'))):
     scene = log.split('/')[-2]
     ls = open(log, errors='replace').read().splitlines()
     s = next((i for i, l in enumerate(ls) if 'Lua: shot pad pattern start' in l), None)

@@ -46,6 +46,10 @@ bool ParseFetchShader(const VkbShader::Info& info, FetchShaderData& out_fetch_da
         return false;
     }
 
+    if (replay_fetch) [[unlikely]] { // tlg: the shader list's build process (fetch_shader.h)
+        out_fetch_data = *replay_fetch;
+        return true;
+    }
     out_fetch_data.attributes.clear();
 
     struct VsharpLoad {

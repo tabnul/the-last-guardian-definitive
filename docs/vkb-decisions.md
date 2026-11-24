@@ -9,6 +9,29 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-24 - New engine shader list: what an entry holds, how it is checked, when it is built (not yet merged)
+
+- **Problem:** step 3 of the new engine's shader pre-build: a shipped list without game code from which the game fills
+  its shader store at the first start, without a wait at the title and without a bad entry ever stopping the game.
+  The new engine's recipes hold two pieces of game code (the program and the small fetch program that loads vertices)
+  and keep two translator structs as raw bytes, which a Windows build lays out otherwise.
+- **Considered for the entry:** (1) the normal renderer's way: the program named by where the game files hold it, the
+  fetch program replaced by the vertex input layout, the structs in a portable form (one number per member); the
+  layout decoded by the translator's own reader when the list is made, and handed to the translator in its place when
+  the list is built; (2) the same, but the layout decoded by the list maker's own Python decoder (as the normal list
+  does): a second decoder that can disagree with the translator's. **Chose 1.** Each entry is translated twice when
+  the list is made, once as recorded and once in its list form, and kept only when both give the same stage.
+- **Considered for the build:** (1) build processes started by the game at the first start, in the background, a
+  marker in the store folder when done, the wait at a later stage load (the normal renderer's hook); (2) the build
+  inside the game process: a bad entry could stop the game. **Chose 1.** The marker lives in the store folder, so the
+  launcher's clear and any new build of the engine start a fresh build.
+- **Found on the way:** this box's kernel places the heap of the build process anywhere in the first gigabyte, where
+  the game's recorded memory also lies; a mapping failed in 2 of 12 runs. The build processes start themselves once
+  without address randomization (Linux). Chose this over reserving every recorded range first (more code, same result).
+- **Guesses (B):** left for a later step: the list format has their marks already; a guess is used only where the
+  store's own rule says it fits.
+- Box choices. **Links:** pull request of branch `fix/vkb-shader-prebuild`.
+
 ## 2026-11-24 - Shader pre-build for the new engine: a store on disk, filled by a separate build process (not yet merged)
 
 - **Problem:** the new engine translates every shader stage the first time a draw needs it, in every session; that
