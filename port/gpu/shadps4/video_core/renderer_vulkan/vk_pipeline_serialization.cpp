@@ -1078,7 +1078,7 @@ std::unique_ptr<Program> PipelineCache::LoadStoredProgram(u64 pgm_hash, Shader::
     std::unique_ptr<Program> program;
     // Permutations are numbered from 0 in the order they were met; the first missing one
     // ends the walk. A permutation is used only where its specialization equals the one a
-    // draw needs (GetProgram compares), so one made from guessed state is never used wrongly.
+    // draw needs (GetProgram compares), so one built ahead from other state is never used wrongly.
     for (size_t perm = 0; perm < 64; ++perm) {
         std::vector<u8> meta_blob;
         db.Load(Storage::BlobType::ShaderMeta, fmt::format("{:#018x}", HashCombine(pgm_hash, perm)),

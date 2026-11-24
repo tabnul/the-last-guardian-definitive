@@ -16,6 +16,7 @@
 #include <fstream>
 #include <limits>
 #include <map>
+#include <miniz.h>
 #include <mutex>
 #include <set>
 #include <sstream>
@@ -27,6 +28,7 @@
 #else
 #include <signal.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -57,8 +59,13 @@ namespace Vulkan::ShaderRecipe {
 namespace {
 
 constexpr u32 Magic = 0x52474c54; // TLGR
-/// 1: struct sizes only; 2: the layout id (LayoutId()) after the sizes. Both are read.
-constexpr u32 Version = 2;
+/// 1: struct sizes only; 2: the layout id (LayoutId()) after the sizes. All three are read.
+/// 3 (PortableVersion): the portable id (PortableId()) in place of the layout id, the run-time
+/// state and the binding start numbers in the portable form (shader_fields.h), the program's
+/// length and CRC-32, and a fetch shader as its vertex input layout. The game writes it, without
+/// the program, into its log for a shader the list lacked (LogUnlisted); log_recipes.py adds the
+/// program from the player's game files back.
+constexpr u32 Version = 2, PortableVersion = 3;
 
 /// Guest memory the compiler read on this thread since Begin(), by address.
 thread_local bool recording = false;
@@ -157,15 +164,20 @@ struct Recipe {
 /// A recipe's header (magic, version, struct sizes, layout id); false with the reason in `why`
 /// when this build cannot read the recipe. `other_build` (optional) tells a recipe of another
 /// build (version, struct sizes or layout) from a damaged one.
-bool ReadHeader(Reader& r, const char*& why, bool* other_build = nullptr) {
+bool ReadHeader(Reader& r, const char*& why, bool* other_build = nullptr,
+                u32* version_out = nullptr) {
     if (other_build) {
         *other_build = false;
     }
     const u32 magic = r.Pod<u32>();
     const u32 version = r.Pod<u32>();
+    if (version_out) {
+        *version_out = version;
+    }
     const u32 runtime_size = r.Pod<u32>();
     const u32 bindings_size = r.Pod<u32>();
     // Version 1 recipes have no layout id: read as before, on the struct sizes alone.
+    // Version 3: the portable id.
     const u64 layout = version >= 2 ? r.Pod<u64>() : 0;
     if (!r.ok) {
         why = "is damaged";
@@ -175,12 +187,22 @@ bool ReadHeader(Reader& r, const char*& why, bool* other_build = nullptr) {
         why = "is not a recipe";
         return false;
     }
-    if (version != 1 && version != 2) {
+    if (version != 1 && version != 2 && version != PortableVersion) {
         why = "has a recipe version this build does not read";
         if (other_build) {
             *other_build = true;
         }
         return false;
+    }
+    if (version == PortableVersion) {
+        if (layout != PortableId()) {
+            why = "was made with other field lists (portable id differs)";
+            if (other_build) {
+                *other_build = true;
+            }
+            return false;
+        }
+        return true;
     }
     if (runtime_size != sizeof(Shader::RuntimeInfo) ||
         bindings_size != sizeof(Shader::Backend::Bindings)) {
@@ -203,7 +225,8 @@ bool ReadHeader(Reader& r, const char*& why, bool* other_build = nullptr) {
 /// A recorded recipe; nullopt with the reason in `why` when it cannot be read by this build.
 std::optional<Recipe> Parse(std::span<const u8> data, const char*& why) {
     Reader r{data};
-    if (!ReadHeader(r, why)) {
+    u32 version = 0;
+    if (!ReadHeader(r, why, nullptr, &version)) {
         return std::nullopt;
     }
     Recipe recipe{};
@@ -215,8 +238,40 @@ std::optional<Recipe> Parse(std::span<const u8> data, const char*& why) {
     recipe.user_data = r.Words();
     recipe.vs_copy = r.Words();
     recipe.flat = r.Words();
-    recipe.runtime = r.Pod<Shader::RuntimeInfo>();
-    recipe.start = r.Pod<Shader::Backend::Bindings>();
+    u32 length = 0, crc = 0;
+    if (version == PortableVersion) {
+        const auto runtime = r.Bytes();
+        const auto start = r.Bytes();
+        if (!r.ok || !RuntimeFromPortable(runtime, recipe.runtime) ||
+            !BindingsFromPortable(start, recipe.start)) {
+            why = "is damaged";
+            return std::nullopt;
+        }
+        length = r.Pod<u32>();
+        crc = r.Pod<u32>();
+        if (r.Pod<u8>() != 0) {
+            auto& fetch = recipe.fetch.emplace();
+            fetch.size = r.Pod<u32>();
+            fetch.vertex_offset_sgpr = r.Pod<s8>();
+            fetch.instance_offset_sgpr = r.Pod<s8>();
+            const u8 attributes = r.Pod<u8>();
+            for (u8 i = 0; r.ok && i < attributes; ++i) {
+                auto& a = fetch.attributes.emplace_back();
+                a.semantic = r.Pod<u8>();
+                a.dest_vgpr = r.Pod<u8>();
+                a.num_elements = r.Pod<u8>();
+                a.sgpr_base = r.Pod<u8>();
+                a.dword_offset = r.Pod<u8>();
+                a.instance_data = r.Pod<u8>();
+                a.inst_offset = r.Pod<u8>();
+                a.data_format = r.Pod<u8>();
+                a.num_format = r.Pod<u8>();
+            }
+        }
+    } else {
+        recipe.runtime = r.Pod<Shader::RuntimeInfo>();
+        recipe.start = r.Pod<Shader::Backend::Bindings>();
+    }
     const auto count = r.Pod<u64>();
     for (u64 i = 0; r.ok && i < count; ++i) {
         const auto address = r.Pod<u64>();
@@ -225,6 +280,15 @@ std::optional<Recipe> Parse(std::span<const u8> data, const char*& why) {
     if (!r.ok || recipe.user_data.size() != Shader::ShaderParams::NumShaderUserData) {
         why = "is damaged";
         return std::nullopt;
+    }
+    if (length != 0) { // version 3: the program, as the log line named it
+        const auto program = std::ranges::find(recipe.regions, recipe.pgm_base,
+                                               &std::pair<u64, std::vector<u8>>::first);
+        if (program == recipe.regions.end() || program->second.size() != length ||
+            u32(mz_crc32(MZ_CRC32_INIT, program->second.data(), length)) != crc) {
+            why = "has no program, or another one than it names (length, CRC-32)";
+            return std::nullopt;
+        }
     }
     recipe.runtime.hw.gs.vs_copy = {};
     return recipe;
@@ -425,6 +489,11 @@ std::string FolderKeysRefused(const std::filesystem::path& recipe_dir) {
                  : std::string{};
 }
 
+/// LogUnlisted's line for a shader the shader list lacks (defined with the background state).
+void LogUnlisted(const Shader::Info& info, const std::map<u64, std::vector<u8>>& read,
+                 const Shader::RuntimeInfo& lookup_runtime, const Shader::Backend::Bindings& start,
+                 size_t perm_idx);
+
 } // namespace
 
 void Begin() {
@@ -441,7 +510,7 @@ std::vector<u8> Take(const Shader::Info& info, std::span<const u32> code,
     NoteBuild(info.pgm_hash, perm_idx, u32(info.hw_stage));
     auto read = std::move(regions);
     regions.clear();
-    if (Storage::RecipeDir().empty() || info.translation_failed) {
+    if (info.translation_failed) {
         return {};
     }
     // Motion vertex shaders embed session-local buffer device addresses (never cached either).
@@ -458,6 +527,10 @@ std::vector<u8> Take(const Shader::Info& info, std::span<const u32> code,
     if (program.size() < code.size_bytes()) {
         program.resize(code.size_bytes());
         std::memcpy(program.data(), code.data(), code.size_bytes());
+    }
+    LogUnlisted(info, read, lookup_runtime, start, perm_idx);
+    if (Storage::RecipeDir().empty()) {
+        return {};
     }
 
     Writer w;
@@ -571,10 +644,35 @@ ChildEnd RunChildOnce(const std::vector<std::filesystem::path>& args,
     for (const auto& arg : args) {
         command += L" \"" + arg.wstring() + L"\"";
     }
+    // The game's job object: its build processes end with the game, also when it crashes or is
+    // ended from outside (the job closes with the game's last handle).
+    static const HANDLE job = [] {
+        HANDLE h = CreateJobObjectW(nullptr, nullptr);
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (h != nullptr && !SetInformationJobObject(h, JobObjectExtendedLimitInformation, &limits,
+                                                     sizeof(limits))) {
+            CloseHandle(h);
+            h = nullptr;
+        }
+        if (h == nullptr) {
+            std::printf("Shader prebuild: no job object (error %lu): build processes may outlive "
+                        "the game\n",
+                        GetLastError());
+        }
+        return h;
+    }();
     STARTUPINFOW si{sizeof(si)};
     PROCESS_INFORMATION pi{};
-    if (CreateProcessW(nullptr, command.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si,
-                       &pi)) {
+    // Suspended until it is in the job: it never runs outside it.
+    if (CreateProcessW(nullptr, command.data(), nullptr, nullptr, TRUE, CREATE_SUSPENDED, nullptr,
+                       nullptr, &si, &pi)) {
+        if (job != nullptr && !AssignProcessToJobObject(job, pi.hProcess)) {
+            std::printf("Shader prebuild: a build process is not in the game's job object (error "
+                        "%lu): it may outlive the game\n",
+                        GetLastError());
+        }
+        ResumeThread(pi.hThread);
         for (;;) {
             const DWORD wait = WaitForSingleObject(pi.hProcess, 100);
             if (wait != WAIT_TIMEOUT) {
@@ -605,9 +703,18 @@ ChildEnd RunChildOnce(const std::vector<std::filesystem::path>& args,
     argv.push_back(nullptr);
     std::fflush(stdout);
     // posix_spawn, not fork: the game runs meanwhile, and a fork copies its (large) memory map
-    // while every other thread of the game stops.
-    if (pid_t pid = 0; posix_spawn(&pid, "/proc/self/exe", nullptr, nullptr, argv.data(),
-                                   environ) == 0) {
+    // while every other thread of the game stops. In its own process group: a stop signal sent to
+    // the game's group (Ctrl+C in a terminal, a launcher or test tool ending the game) does not
+    // reach it, so it is not taken for a shader it cannot build; it ends with the game through its
+    // parent-death signal (ImportChild).
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETPGROUP);
+    posix_spawnattr_setpgroup(&attr, 0);
+    pid_t pid = 0;
+    const int spawned = posix_spawn(&pid, "/proc/self/exe", nullptr, &attr, argv.data(), environ);
+    posix_spawnattr_destroy(&attr);
+    if (spawned == 0) {
         int status = 0;
         for (;;) {
             const pid_t done = waitpid(pid, &status, WNOHANG);
@@ -635,8 +742,8 @@ ChildEnd RunChildOnce(const std::vector<std::filesystem::path>& args,
 std::mutex left_out_mutex;
 
 /// Runs the import child (tlg-probe --import-shaders ARGS) for `cache_dir`, share `part`, until it
-/// ends well. A child that stops early on a shader (a guessed list entry the compiler cannot take:
-/// a failed assertion, a crash, a hang) is started again without it, at most 32 times; the
+/// ends well. A child that stops early on a shader (one the compiler cannot take: a failed
+/// assertion, a crash, a hang) is started again without it, at most 32 times; the
 /// shaders it built before are in the cache and are not built again. 0 when the last run ended
 /// well.
 int RunChild(const std::vector<std::filesystem::path>& args, const std::filesystem::path& cache_dir,
@@ -653,6 +760,16 @@ int RunChild(const std::vector<std::filesystem::path>& args, const std::filesyst
         if (end.code == 0) {
             return 0;
         }
+#ifndef _WIN32
+        // Stopped from outside (the machine shuts down, someone ended it): not the shader's fault,
+        // nothing is left out.
+        if (end.signal == SIGTERM || end.signal == SIGINT || end.signal == SIGHUP) {
+            std::printf("Shader prebuild: a build process was stopped from outside (signal %d); "
+                        "its share of the build ends here\n",
+                        end.signal);
+            return 1;
+        }
+#endif
         const auto how = end.hung     ? fmt::format("no progress for {} s", limit_s)
                          : end.signal ? fmt::format("signal {}", end.signal)
                                       : fmt::format("exit {}", end.code);
@@ -702,6 +819,7 @@ struct Background {
     size_t judged = 0;    ///< frames judged slow or not so far
     u32 slow = 0, in_slow = 0; ///< slow frames, builds counted in them
     u32 waits_given_up = 0;    ///< waits that hit TLG_SHADER_PREBUILD_WAIT_S
+    std::set<std::pair<u64, u64>> logged; ///< shaders LogUnlisted wrote a line for
 };
 
 Background& State() {
@@ -736,6 +854,154 @@ std::filesystem::path HostGameDir() {
         return {};
     }
     return std::filesystem::u8path(host).parent_path();
+}
+
+} // namespace
+
+namespace {
+
+/// Memory the compiler read that may be game code (make_list.py's rule for the list): more than
+/// 64 bytes, the shader header signature, or an s_setpc_b64 (the end of a fetch shader).
+bool LooksLikeCode(std::span<const u8> bytes) {
+    constexpr std::string_view Signature{"OrbShdr"};
+    if (bytes.size() > 64 ||
+        std::search(bytes.begin(), bytes.end(), Signature.begin(), Signature.end()) != bytes.end()) {
+        return true;
+    }
+    for (size_t at = 0; at + 4 <= bytes.size(); at += 4) {
+        u32 word;
+        std::memcpy(&word, bytes.data() + at, 4);
+        if ((word & 0xFFFFFF00u) == 0xBE802000u) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string Base64(std::span<const u8> bytes) {
+    static constexpr char Digits[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve((bytes.size() + 2) / 3 * 4);
+    for (size_t at = 0; at < bytes.size(); at += 3) {
+        const u32 n = u32(bytes[at]) << 16 | (at + 1 < bytes.size() ? u32(bytes[at + 1]) << 8 : 0) |
+                      (at + 2 < bytes.size() ? u32(bytes[at + 2]) : 0);
+        out += Digits[n >> 18 & 63];
+        out += Digits[n >> 12 & 63];
+        out += at + 1 < bytes.size() ? Digits[n >> 6 & 63] : '=';
+        out += at + 2 < bytes.size() ? Digits[n & 63] : '=';
+    }
+    return out;
+}
+
+/// tlg: a shader the game built while playing that the shader list lacks: its recipe goes into
+/// the game log as one line, once per shader and session, so players' logs can complete the list
+/// (port/tools/shader-list/log_recipes.py):
+///   Shader recipe (not in list): <program hash>_<permutation> <base64 of the zlib-packed recipe>
+/// The recipe is version 3 without its program (PortableVersion). No game code goes in: of the
+/// program only its length and CRC-32, a fetch shader as its vertex input layout, and of the other
+/// memory the compiler read only regions that do not look like code (LooksLikeCode, the rule of
+/// make_list.py); a shader that read other memory gets a line without its recipe. Only while the
+/// shader list is used (Build shaders ahead on, a list read); a program of the list is left out
+/// while the background build runs (the build may still bring this very shader).
+void LogUnlisted(const Shader::Info& info, const std::map<u64, std::vector<u8>>& read,
+                 const Shader::RuntimeInfo& lookup_runtime, const Shader::Backend::Bindings& start,
+                 size_t perm_idx) {
+    if (!ShaderList::Enabled()) {
+        return;
+    }
+    {
+        auto& state = State();
+        std::scoped_lock lock{state.mutex};
+        if (state.listed.empty() ||
+            (state.running && std::ranges::binary_search(state.listed, info.pgm_hash)) ||
+            !state.logged.emplace(info.pgm_hash, perm_idx).second) {
+            return;
+        }
+    }
+    const auto name = RecipeName(info.pgm_hash, perm_idx);
+    const auto program = read.find(info.pgm_base);
+    const auto ud = info.UserData();
+    u64 fetch_address = 0;
+    std::optional<Shader::Gcn::FetchShaderData> fetch;
+    bool code_like = program == read.end();
+    if (info.has_fetch_shader && !code_like) {
+        if (info.fetch_shader_sgpr_base + 1 < ud.size()) {
+            std::memcpy(&fetch_address, &ud[info.fetch_shader_sgpr_base], sizeof(fetch_address));
+            fetch = Shader::Gcn::ParseFetchShader(info);
+        }
+        code_like = !fetch || fetch->attributes.size() > 255;
+    }
+    std::vector<std::pair<u64, std::span<const u8>>> data_regions;
+    for (const auto& [address, bytes] : read) {
+        if (code_like) {
+            break;
+        }
+        if (address == info.pgm_base || (fetch && address == fetch_address)) {
+            continue;
+        }
+        code_like = LooksLikeCode(bytes);
+        data_regions.emplace_back(address, bytes);
+    }
+    if (code_like) {
+        std::printf("Shader recipe (not in list): %s left out: the compiler read memory that may "
+                    "be game code\n",
+                    name.c_str());
+        return;
+    }
+    Writer w;
+    w.Pod(Magic);
+    w.Pod(PortableVersion);
+    w.Pod(u32{0});
+    w.Pod(u32{0});
+    w.Pod(PortableId());
+    w.Pod(info.hw_stage);
+    w.Pod(info.sw_stage);
+    w.Pod(info.pgm_hash);
+    w.Pod(u64(perm_idx));
+    w.Pod(u64(info.pgm_base));
+    w.Words(ud);
+    w.Words(lookup_runtime.hw_stage == Shader::HwStage::Geometry ? lookup_runtime.hw.gs.vs_copy
+                                                                  : std::span<const u32>{});
+    w.Words(info.FlatUserData());
+    auto runtime = lookup_runtime;
+    runtime.hw.gs.vs_copy = {};
+    const auto portable_runtime = PortableRuntime(runtime);
+    const auto portable_start = PortableBindings(start);
+    w.Bytes(portable_runtime.data(), portable_runtime.size());
+    w.Bytes(portable_start.data(), portable_start.size());
+    const auto& code = program->second;
+    w.Pod(u32(code.size()));
+    w.Pod(u32(mz_crc32(MZ_CRC32_INIT, code.data(), code.size())));
+    w.Pod(u8(fetch ? 1 : 0));
+    if (fetch) {
+        w.Pod(fetch->size);
+        w.Pod(fetch->vertex_offset_sgpr);
+        w.Pod(fetch->instance_offset_sgpr);
+        w.Pod(u8(fetch->attributes.size()));
+        for (const auto& a : fetch->attributes) {
+            for (const u8 field : {a.semantic, a.dest_vgpr, a.num_elements, a.sgpr_base,
+                                   a.dword_offset, a.instance_data, a.inst_offset, a.data_format,
+                                   a.num_format}) {
+                w.Pod(field);
+            }
+        }
+    }
+    w.Pod(u64(data_regions.size()));
+    for (const auto& [address, bytes] : data_regions) {
+        w.Pod(address);
+        w.Bytes(bytes.data(), bytes.size());
+    }
+    mz_ulong packed_size = mz_compressBound(mz_ulong(w.out.size()));
+    std::vector<u8> packed(packed_size);
+    if (mz_compress2(packed.data(), &packed_size, w.out.data(), mz_ulong(w.out.size()), 9) !=
+        MZ_OK) {
+        std::printf("Shader recipe (not in list): %s left out: it could not be packed\n",
+                    name.c_str());
+        return;
+    }
+    packed.resize(packed_size);
+    std::printf("Shader recipe (not in list): %s %s\n", name.c_str(), Base64(packed).c_str());
 }
 
 } // namespace
@@ -1071,6 +1337,10 @@ int ImportChild(const std::filesystem::path& cache_dir, const std::filesystem::p
     // A shader the compiler cannot take may crash the child: no error dialog, the parent
     // restarts it (RunChild).
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+#else
+    // Started by the game (RunChildOnce): it ends with the game, also when the game crashes or is
+    // killed (Windows: the game's job object).
+    prctl(PR_SET_PDEATHSIG, SIGKILL);
 #endif
 
     const auto started = std::chrono::steady_clock::now();
@@ -1121,9 +1391,6 @@ int ImportChild(const std::filesystem::path& cache_dir, const std::filesystem::p
         }
     }
     std::sort(work.begin(), work.end());
-    // A shader list's guessed entries (version 4) last: the recorded ones are ready first.
-    std::stable_partition(work.begin(), work.end(),
-                          [](const Work& item) { return !(item.entry && item.entry->guessed); });
     // Programs a build process stopped on before (RunChild): left out, never tried again.
     std::set<u64> left_out;
     {

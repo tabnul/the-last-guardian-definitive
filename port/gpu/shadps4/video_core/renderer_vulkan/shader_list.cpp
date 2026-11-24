@@ -27,15 +27,12 @@ namespace Vulkan::ShaderList {
 namespace {
 
 constexpr std::array<char, 8> Magic = {'T', 'L', 'G', 'S', 'L', 'I', 'S', 'T'};
-/// 4: version 3 and, after the pipeline keys, the programs whose entries are guesses (no recorded
-/// recipe; guess_recipes.py), so TLG_SHADER_LIST_GUESSES=0 leaves them out and the recorded
-/// entries are built first.
 /// 3: the runtime info, bindings and pipeline keys in the portable form (shader_fields.h), the
 /// portable id (ShaderRecipe::PortableId()) after the payload size: one list for every build.
 /// 2: raw struct bytes, the layout id (ShaderRecipe::LayoutId()) after the payload size: read
 /// only by a build that lays the structs out the same way (make_list.py --raw still writes it).
 /// Version 1 lists had no id and are not read: their raw struct bytes could be laid out otherwise.
-constexpr u32 Version = 3, RawVersion = 2, MarkedVersion = 4;
+constexpr u32 Version = 3, RawVersion = 2;
 constexpr u8 SourcePsarc = 1, SourceGameFile = 2;
 
 std::vector<u8> ReadAll(const std::filesystem::path& path) {
@@ -88,9 +85,9 @@ std::vector<u8> Payload(const std::filesystem::path& path, u32& version, std::st
         return {};
     }
     std::memcpy(&version, file.data() + Magic.size(), 4);
-    if (version != Version && version != RawVersion && version != MarkedVersion) {
-        error = fmt::format("list version {} (this build reads {} to {})", version, RawVersion,
-                            MarkedVersion);
+    if (version != Version && version != RawVersion) {
+        error = fmt::format("list version {} (this build reads {} and {})", version, RawVersion,
+                            Version);
         return {};
     }
     if (file.size() < Header) {
@@ -188,11 +185,6 @@ u32 Crc(std::span<const u8> bytes) {
 
 } // namespace
 
-bool Guesses() {
-    const char* env = std::getenv("TLG_SHADER_LIST_GUESSES");
-    return !(env && std::strcmp(env, "0") == 0);
-}
-
 bool Enabled() {
     // Performance > Build shaders ahead (tlg.ini shader_prebuild, TLG_SHADER_PREBUILD wins), as
     // it was when the game started.
@@ -204,7 +196,14 @@ std::filesystem::path Path() {
         return *env == '0' && env[1] == '\0' ? std::filesystem::path{}
                                              : std::filesystem::u8path(env);
     }
-    const auto name = std::string{Common::ElfInfo::Instance().GameSerial()} + ".tlgsl";
+    // The US game (CUSA03627, 1.03) has the same shader archives and eboot.bin as the European
+    // one (CUSA03745, 1.03; SHA-256 compared): one list serves both. Each entry's length and CRC-32
+    // still check every program read from the player's files.
+    std::string serial{Common::ElfInfo::Instance().GameSerial()};
+    if (serial == "CUSA03627") {
+        serial = "CUSA03745";
+    }
+    const auto name = serial + ".tlgsl";
     const auto dir = ExecutableDir();
     for (const auto& candidate : {dir / "shader-list" / name, dir.parent_path() / "shader-list" / name}) {
         std::error_code error;
@@ -289,22 +288,9 @@ std::optional<List> Read(const std::filesystem::path& path, std::string& error) 
             r.ok = false; // a key file name never leaves the cache folder
         }
     }
-    if (version == MarkedVersion) {
-        const u32 guessed = r.Pod<u32>();
-        for (u32 i = 0; r.ok && i < guessed; ++i) {
-            list.guessed.push_back(r.Pod<u64>());
-        }
-        std::ranges::sort(list.guessed);
-        for (auto& e : list.entries) {
-            e.guessed = std::ranges::binary_search(list.guessed, e.pgm_hash);
-        }
-    }
     if (!r.ok || r.pos != payload.size()) {
         error = "damaged list";
         return std::nullopt;
-    }
-    if (!Guesses()) {
-        std::erase_if(list.entries, [](const Entry& e) { return e.guessed; });
     }
     return list;
 }

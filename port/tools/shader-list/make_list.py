@@ -27,12 +27,12 @@ read it.
 read only by a build with the same layout). Version 1 recipes carry no layout id: with --raw,
 --v1-layout-id gives theirs, once it is proven that they were recorded by a build with that
 layout (the import prints its id: "layout id 0x...").
---marks FILE (lines "0xHASH<TAB>A|B", one per program): the list is version 4, which names the
-programs marked B (guesses, guess_recipes.py) after the keys; the game builds them last and leaves
-them out with TLG_SHADER_LIST_GUESSES=0. Every program of the list needs a mark.
+Version 3 recipes (log_recipes.py: a shader the game built while playing that the list lacked,
+from the line the game writes into its log) hold the two structs in the portable form already, the
+fetch shader as its vertex input layout, and the program's length and CRC-32.
 Recipes of several game sessions are merged with merge_recipes.py first, never by copying the
 folders over each other (the same recipe name can be another shader in another session).
-Usage: make_list.py RECIPE_DIR GAME_DIR OUT --portable PORTABLE_FILE [--marks FILE] [--report FILE]
+Usage: make_list.py RECIPE_DIR GAME_DIR OUT --portable PORTABLE_FILE [--report FILE]
        make_list.py RECIPE_DIR GAME_DIR OUT --raw [--v1-layout-id ID] [--report FILE]
 Exit 0 when the list was written; prints which programs were not found in the game files.
 No game data in the output other than state (registers, descriptors, layouts) and hashes."""
@@ -47,8 +47,8 @@ PORT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PORT / 'launcher'))
 from soundtrack import Psarc  # noqa: E402
 
-RECIPE_MAGIC, RECIPE_VERSIONS = 0x52474C54, (1, 2)  # TLGR, shader_recipe.cpp
-LIST_MAGIC, LIST_VERSION, RAW_LIST_VERSION, MARKED_LIST_VERSION = b'TLGSLIST', 3, 2, 4  # shader_list.cpp
+RECIPE_MAGIC, RECIPE_VERSIONS, PORTABLE_RECIPE = 0x52474C54, (1, 2, 3), 3  # TLGR, shader_recipe.cpp
+LIST_MAGIC, LIST_VERSION, RAW_LIST_VERSION = b'TLGSLIST', 3, 2  # shader_list.cpp
 PORTABLE_MAGIC, PORTABLE_VERSION = b'TLGPORTB', 1  # shader_recipe.cpp, PortableRecipes
 SRC_PSARC_SB, SRC_GAME_FILE = 1, 2
 ARCHIVES = ['trico_bootp.psarc', 'trico_boot.psarc']  # the update first, as the game reads them
@@ -72,15 +72,27 @@ def parse_recipe(data):
 
     magic, ver, sri, sb = pod('IIII')
     if magic != RECIPE_MAGIC or ver not in RECIPE_VERSIONS:
-        raise ValueError('not a version 1 or 2 recipe')
-    r = {'sri': sri, 'sb': sb, 'layout': pod('Q')[0] if ver >= 2 else None}
+        raise ValueError('not a version 1, 2 or 3 recipe')
+    r = {'sri': sri, 'sb': sb, 'version': ver, 'fetch': None}
+    # Version 2: the layout id; version 3: the portable id of its two structs.
+    r['layout'] = pod('Q')[0] if ver >= 2 else None
     r['hw'], r['sw'] = pod('II')
     r['hash'], r['perm'], r['base'] = pod('QQQ')
     r['ud'], r['vs'], r['flat'] = blob(), blob(), blob()
-    r['rt'] = data[p:p + sri]
-    p += sri
-    r['start'] = data[p:p + sb]
-    p += sb
+    if ver == PORTABLE_RECIPE:
+        r['rt'], r['start'] = blob(), blob()
+        r['length'], r['crc'] = pod('II')
+        (has_fetch,) = pod('B')
+        if has_fetch:
+            size, vofs, iofs, n = pod('IbbB')
+            r['fetch'] = {'size': size, 'vofs': vofs, 'iofs': iofs,
+                          'attrs': [data[p + 9 * i:p + 9 * i + 9] for i in range(n)]}
+            p += 9 * n
+    else:
+        r['rt'] = data[p:p + sri]
+        p += sri
+        r['start'] = data[p:p + sb]
+        p += sb
     (count,) = pod('Q')
     r['regions'] = []
     for _ in range(count):
@@ -193,22 +205,11 @@ def main():
                     help='the file of tlg-probe --portable-recipes RECIPE_DIR FILE (version 3 list)')
     ap.add_argument('--raw', action='store_true',
                     help='the old version 2 list: raw struct bytes, read only by a build of the same layout')
-    ap.add_argument('--marks', type=pathlib.Path,
-                    help='with --portable: lines "0xHASH<TAB>A|B"; B = a guess (version 4 list)')
     ap.add_argument('--v1-layout-id', type=lambda v: int(v, 0),
                     help='with --raw: the layout id of version 1 recipes (they carry none)')
     a = ap.parse_args()
     if a.raw == (a.portable is not None):
         sys.exit('give --portable FILE (the list for every build) or --raw (see the usage)')
-    marks = {}
-    if a.marks:
-        if a.raw:
-            sys.exit('--marks: with --portable only')
-        for line in a.marks.read_text().splitlines():
-            h, m = line.split('\t')[:2]
-            if m not in ('A', 'B'):
-                sys.exit(f'{a.marks}: mark {m!r} (A or B)')
-            marks[int(h, 16)] = m
     if a.v1_layout_id is not None and (not a.raw or not 0 <= a.v1_layout_id < 1 << 64):
         sys.exit('--v1-layout-id: with --raw only, a 64-bit number as the import prints it')
 
@@ -223,6 +224,8 @@ def main():
     v1 = sum(r['layout'] is None for r in recipes)
     unportable = []
     if a.raw:
+        if any(r['version'] == PORTABLE_RECIPE for r in recipes):
+            sys.exit('version 3 recipes (portable form): with --portable only')
         keys = [(k.name, k.read_bytes()) for k in sorted(a.recipes.glob('*.key'))]
         # One layout for the whole list: the game checks one id, so every recipe must have it.
         if v1 and a.v1_layout_id is None:
@@ -301,14 +304,13 @@ def main():
         out += struct.pack('<B', kind) + blob(ident)
     entries = bytearray()
     count = fetch_count = 0
-    written = set()  # programs with an entry in the list
     for r in recipes:
         loc = located.get(r['hash'])
         if loc is None:
             continue
         ud = [int.from_bytes(r['ud'][i:i + 4], 'little') for i in range(0, len(r['ud']), 4)]
         pointers = {ud[i] | ud[i + 1] << 32 for i in range(len(ud) - 1)}
-        fetch, data_regions, bad = None, [], False
+        fetch, data_regions, bad = r['fetch'], [], False
         for address, data in r['regions']:
             if address == r['base']:
                 continue
@@ -337,22 +339,14 @@ def main():
             e += struct.pack('<Q', address) + blob(data)
         entries += e
         count += 1
-        written.add(r['hash'])
     out += struct.pack('<I', count) + entries
     out += struct.pack('<I', len(keys))
     for name, data in keys:
         # Version 3: the game names a key file itself (by its key's hash in that build).
         out += blob(name.encode()) + blob(data) if a.raw else blob(data)
-    listed = sorted(written)
-    if a.marks:
-        unmarked = [h for h in listed if h not in marks]
-        if unmarked:
-            sys.exit(f'{len(unmarked)} programs of the list have no mark, the first {unmarked[0]:#018x}')
-        guessed = [h for h in listed if marks[h] == 'B']
-        out += struct.pack('<I', len(guessed)) + b''.join(struct.pack('<Q', h) for h in guessed)
 
     a.out.parent.mkdir(parents=True, exist_ok=True)
-    version = RAW_LIST_VERSION if a.raw else MARKED_LIST_VERSION if a.marks else LIST_VERSION
+    version = RAW_LIST_VERSION if a.raw else LIST_VERSION
     a.out.write_bytes(LIST_MAGIC + struct.pack('<IIQQ', version, 0, len(out), list_id) +
                       zlib.compress(bytes(out), 9))
     programs = len(located)
@@ -365,8 +359,6 @@ def main():
              f'list: {count} recipes, {fetch_count} with a fetch layout, {len(sources)} game file sources, '
              f'{a.out.stat().st_size} bytes',
              f'programs found in the game files: {programs - len(missing)} of {programs}']
-    if a.marks:
-        lines.append(f'marks: {len(listed) - len(guessed)} recorded programs (A), {len(guessed)} guessed (B)')
     for r in missing:
         lines.append(f'  not found: program {r["hash"]:#018x} (hw stage {r["hw"]}, {len(dict(r["regions"])[r["base"]])} bytes)')
     for r in unportable:

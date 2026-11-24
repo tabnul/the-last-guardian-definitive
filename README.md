@@ -187,7 +187,9 @@ Each setting shows what the game originally used and what we recommend.
   never visited stutter less. The list holds only build recipes, no game code: the shaders are
   made from your own game files. Loading a stage waits until the build is done, so the first
   start takes a little longer. **Build shaders ahead** (in-game menu, Performance; launcher,
-  Advanced settings) turns it off; on by default.
+  Advanced settings) turns it off; on by default. When the game still has to build a shader
+  the list lacks, it writes one line "Shader recipe (not in list)" into its log (build settings
+  only, no game code): posting such a log in an issue helps make the list complete.
 - **Wind and grass:** the stock wind looks like a storm on PC. You can set it separately for the
   boy, the trees and Trico; 50% is a breeze. Grass that the game moved only every 4th frame now
   moves every frame, which stops the flicker.

@@ -26,12 +26,9 @@ namespace Vulkan::ShaderList {
 /// was at start: the list is read and the import runs in the background.
 bool Enabled();
 
-/// TLG_SHADER_LIST_GUESSES (default 1): 0 leaves the list's guessed entries out (Read drops them),
-/// so only recorded ones are built.
-bool Guesses();
-
 /// The list of this game: TLG_SHADER_LIST, else <serial>.tlgsl in shader-list/ next to the
-/// executable or one folder above it (a build in port/out). Empty when there is none.
+/// executable or one folder above it (a build in port/out); the US game (CUSA03627) reads the
+/// European one's (CUSA03745: the same game files). Empty when there is none.
 std::filesystem::path Path();
 
 struct Source {
@@ -50,9 +47,6 @@ struct Entry {
     u32 length{}, crc{};
     std::optional<Shader::Gcn::FetchShaderData> fetch;
     std::vector<std::pair<u64, std::vector<u8>>> regions; ///< descriptors the compiler reads
-    /// Version 4: a guess (guess_recipes.py: the state of a recorded recipe of another program),
-    /// not a recording. The game uses its shader only where it equals the draw's (the lookup).
-    bool guessed = false;
 };
 
 struct List {
@@ -61,7 +55,6 @@ struct List {
     std::vector<std::pair<std::string, std::vector<u8>>> keys; ///< pipeline key files
     u32 keys_refused = 0;         ///< version 3: keys this build does not read (key version)
     std::string keys_refused_why; ///< the reason of the last one
-    std::vector<u64> guessed;     ///< version 4: the programs whose entries are guesses, sorted
 };
 
 /// Reads a list; nullopt (with the reason in `error`) when it is damaged, was made with other

@@ -32,7 +32,8 @@ The settings are compared on what this build makes of each recipe: every folder 
 (tlg-probe --import-shaders) into a scratch folder first, which needs the build's profile.bin
 (user/cache/<serial>-<build>/profile.bin, written by any start of that build). The recipe and key
 files are read at the byte offsets of that build's formats (recipe version 1 or 2, key version as
-written); use the tlg-probe of the build that recorded them or reads them. On Linux the probe's
+written; version 3 recipes, log_recipes.py, hold the portable form that every build reads); use
+the tlg-probe of the build that recorded them or reads them. On Linux the probe's
 out/lib is put on LD_LIBRARY_PATH (as the launcher does); on Windows its DLLs sit beside it.
 
 Usage: merge_recipes.py --probe TLG_PROBE --profile PROFILE_BIN OUT FIRST_DIR [MORE_DIR ...]
@@ -74,9 +75,9 @@ def key_stages(data):
 def perm_offset(data):
     """Where a recipe file keeps its permutation number (shader_recipe.cpp, Parse)."""
     magic, version = struct.unpack_from('<II', data, 0)
-    if magic != RECIPE_MAGIC or version not in (1, 2):
-        raise ValueError('not a version 1 or 2 recipe')
-    return 16 + (8 if version >= 2 else 0) + 8 + 8  # header, layout id, stages, program hash
+    if magic != RECIPE_MAGIC or version not in (1, 2, 3):
+        raise ValueError('not a version 1, 2 or 3 recipe')
+    return 16 + (8 if version >= 2 else 0) + 8 + 8  # header, layout or portable id, stages, program hash
 
 
 def recipes_of(folder):
