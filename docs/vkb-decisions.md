@@ -104,6 +104,8 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ## 2026-11-24 - Shader list: how the guessed shaders (B) are made, and a build that survives a bad one (not yet merged)
 
+**Dropped on 2026-11-24 by the owner (entry at the top): the guesses and their code are removed.**
+
 - **Problem:** a guessed recipe takes the state a shader is translated with from a seen shader of the same kind (the
   donor). Taken whole, a guess equalled the game's own shader for only 12% (vertex), 11% (pixel) and 16% (compute)
   of the seen programs (leave one out), and 180 of 738 guesses killed the build process (a failed check in the
@@ -134,6 +136,8 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 ---
 
 ## 2026-11-24 - Shader list: guessed shaders need a way into the game (not yet merged)
+
+**Dropped on 2026-11-24 by the owner (entry at the top): the guesses and their code are removed.**
 
 - **Problem:** the owner asked for shaders of the game programs no recording has seen ("B", built from settings
   borrowed from seen shaders of the same kind). The game's files hold 6815 programs; the recordings so far saw 737.
