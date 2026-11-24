@@ -536,7 +536,11 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
     // TLG_VKB_SHADER_PREBUILD (shader store): a stage translated before with the same inputs, in this session or an earlier one, is taken from the store; the
     // debug census and the probe work on the translated program, so with them on every stage is translated
     namespace Store = Core::Vkb::ShaderStore;
-    const Store::Mode store_mode = Core::Vkb::FlatCensus::On() || probe != 0 ? Store::Mode::Off : Store::GetMode();
+    const bool debug_tool = Core::Vkb::FlatCensus::On() || probe != 0;
+    const Store::Mode store_mode = debug_tool ? Store::Mode::Off : Store::GetMode();
+    if (debug_tool && Store::GetMode() != Store::Mode::Off) {
+        Store::NoteBypass();
+    }
     const VkbShader::RuntimeInfo runtime_in = out.runtime;
     const Store::Inputs store_in{.params = params, .runtime = runtime_in, .start = binding};
     Store::Translation stored;

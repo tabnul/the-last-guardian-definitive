@@ -10,9 +10,10 @@
 // stage reads through this draw's user data (the normal renderer's rule, StageSpecialization). That is the rule of the session store of
 // pull request 120 (issue 111), made persistent.
 //
-// Folder: <user>/cache/<serial>-vkb-shaders/<id>/, id = a hash of the engine's own module file's size and time (any other build: another folder) and of
-// the translator's profile (another graphics card, driver or setting: another folder). Folders of other ids are removed when a new one
-// is opened. The launcher's "clear shader cache" removes cache/<serial>* and so this folder too.
+// Folder: <user>/cache/<serial>-vkb-shaders/<id>/, id = a hash of the engine's own module file's size and time (any other build: another folder), of
+// the translator's profile (another graphics card, driver or setting: another folder) and of every other setting the translator reads
+// (TranslatorEnv in the .cpp; port/tests/test_vkb_store_settings.py keeps that list complete). Folders of other ids are removed when a new
+// one is opened. The launcher's "clear shader cache" removes cache/<serial>* and so this folder too.
 //
 // TLG_VKB_SHADER_PREBUILD=0 or off (default): nothing is read or written, every stage is translated (the old behaviour).
 // =1 or on: on. =check: every stage is translated anyway, and a stored entry that differs from the fresh translation is counted and
@@ -65,6 +66,9 @@ void Keep(const Inputs& in, const VkbShader::Profile& profile, const VkbShader::
 /// Check mode: compares a stored translation with a fresh one; false (counted, one error line per program) when they differ.
 bool Same(const Inputs& in, const Translation& stored, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
           const std::vector<u32>& spv, const std::vector<WriteWindow::Window>& windows);
+
+/// A stage translated without the store although it is on, because a debug tool needs the translated program (census, probe): counted.
+void NoteBypass();
 
 /// The store's folder (empty while it is not open, or the store is off).
 [[nodiscard]] std::filesystem::path Folder();

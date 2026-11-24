@@ -98,9 +98,8 @@ class ShaderCacheTest(unittest.TestCase):
         """The new engine's shader store (TLG_VKB_SHADER_PREBUILD: translated stages, a write cut
         by the end of a session) is in <serial>-vkb-shaders/ and goes with the rest; the shader
         list shipped next to the executable stays."""
-        if os.name == 'nt':
-            self.skipTest('the XDG location is Linux only')
         store = self.user / 'cache' / 'CUSA03627-vkb-shaders' / '0123456789abcdef'
+        before = shader_cache.size(['CUSA03627'], self.user, self.env)  # the rest of this game's cache (OS-dependent)
         files = [store / '00000000deadbeef_1_1_0011223344556677.vst',
                  store / '00000000deadbeef_0_0_8899aabbccddeeff.vst',
                  store / '00000000deadbeef_0_0_0000000000000001.vst.tmp']
@@ -108,9 +107,9 @@ class ShaderCacheTest(unittest.TestCase):
             write(path, 100)
         shipped = self.root / 'port' / 'shader-list' / 'CUSA03627.tlgsl'
         write(shipped, 10)
-        self.assertEqual(shader_cache.size(['CUSA03627'], self.user, self.env), 5000 + 300)
+        self.assertEqual(shader_cache.size(['CUSA03627'], self.user, self.env), before + 300)
         freed, failures = shader_cache.clear(['CUSA03627'], self.user, self.env)
-        self.assertEqual((freed, failures), (5300, []))
+        self.assertEqual((freed, failures), (before + 300, []))
         for path in files:
             self.assertFalse(path.exists(), path)
         self.assertFalse(store.parent.exists())

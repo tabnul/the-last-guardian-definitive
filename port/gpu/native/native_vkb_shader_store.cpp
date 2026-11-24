@@ -4,6 +4,7 @@
 #include "native/native_vkb_shader_store.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -31,6 +32,7 @@
 #include "common/logging/log.h"
 #include "common/memory_patcher.h"
 #include "common/path_util.h"
+#include "core/emulator_settings.h"
 #include "native/shadps4/shader_recompiler/specialization.h"
 
 namespace Core::Vkb::ShaderStore {
@@ -382,36 +384,42 @@ std::unique_ptr<Entry> Decode(const std::vector<u8>& bytes) {
 
 // ---- the store ----
 
-std::mutex mutex;
-std::unordered_map<u64, std::vector<std::unique_ptr<Entry>>> entries; ///< by program hash and stage
-std::unordered_map<u64, std::vector<std::filesystem::path>> on_disk;  ///< files not read yet, by the same key
+// The store's state lives as long as the process: never destroyed, so the writer thread may still run at exit.
+struct State {
+    std::mutex mutex;
+    std::unordered_map<u64, std::vector<std::unique_ptr<Entry>>> entries; ///< by program hash and stage
+    std::unordered_map<u64, std::vector<std::filesystem::path>> on_disk;  ///< files not read yet, by the same key
+    std::filesystem::path folder;
+    std::unordered_set<u64> different_logged;
+    std::string open_error;
+    // the writer: files are written on a thread of their own, as "<name>.tmp" first and then renamed, so a reader never sees half a file
+    std::mutex write_mutex;
+    std::condition_variable write_cv;
+    std::deque<std::pair<std::string, std::vector<u8>>> write_queue;
+};
+State& S() {
+    static State* const state = new State;
+    return *state;
+}
 std::atomic<bool> ready{false};
-std::filesystem::path folder;
-std::unordered_set<u64> different_logged;
 std::atomic<u64> c_lookups{0}, c_hits{0}, c_disk_hits{0}, c_kept{0}, c_saved_ns{0}, c_check_same{0}, c_check_different{0}, c_spv_words{0}, c_files_indexed{0},
-    c_files_read{0}, c_files_bad{0}, c_written{0}, c_write_failed{0}, c_not_kept_geometry{0}, c_open_ms{0};
-std::string open_error;
-
-// the writer: files are written on a thread of their own, as "<name>.tmp" first and then renamed, so a reader never sees half a file
-std::mutex write_mutex;
-std::condition_variable write_cv;
-std::deque<std::pair<std::string, std::vector<u8>>> write_queue;
-std::thread writer;
+    c_files_read{0}, c_files_bad{0}, c_written{0}, c_write_failed{0}, c_not_kept_geometry{0}, c_open_ms{0}, c_bypassed{0}, c_kind_misses{0};
 
 std::string FileName(u64 pgm_hash, const VkbShader::RuntimeInfo& runtime, const std::vector<u8>& bytes) {
     return fmt::format("{:016x}_{}_{}_{:016x}.vst", pgm_hash, static_cast<u32>(runtime.hw_stage), static_cast<u32>(runtime.sw_stage), XXH3_64bits(bytes.data(), bytes.size()));
 }
 
 void WriterLoop() {
+    State& st = S();
     for (;;) {
         std::pair<std::string, std::vector<u8>> item;
         {
-            std::unique_lock lock{write_mutex};
-            write_cv.wait(lock, [] { return ready.load() && !write_queue.empty(); });
-            item = std::move(write_queue.front());
-            write_queue.pop_front();
+            std::unique_lock lock{st.write_mutex};
+            st.write_cv.wait(lock, [&] { return !st.write_queue.empty(); });
+            item = std::move(st.write_queue.front());
+            st.write_queue.pop_front();
         }
-        const auto path = folder / item.first, tmp = folder / (item.first + ".tmp");
+        const auto path = st.folder / item.first, tmp = st.folder / (item.first + ".tmp");
         std::error_code ec;
         bool ok = false;
         if (std::ofstream f{tmp, std::ios::binary | std::ios::trunc}) {
@@ -425,7 +433,8 @@ void WriterLoop() {
         if (!ok) {
             std::filesystem::remove(tmp, ec);
             if (c_write_failed.fetch_add(1) == 0) {
-                LOG_ERROR(Render_Vulkan, "vkb shader store: could not write {} (the stage stays translated in memory for this session)", path.string());
+                LOG_ERROR(Render_Vulkan, "vkb shader store: could not write {} (the stage stays translated in memory for this session; failed writes are counted)",
+                          path.string());
             }
         } else {
             c_written.fetch_add(1, std::memory_order_relaxed);
@@ -473,22 +482,55 @@ bool BuildId(const std::filesystem::path& path, u64& out) {
     return true;
 }
 
+/// A hash of the bytes of `v` that hold its members, without its padding bytes (they can differ between two equal values). A byte is a
+/// member's when flipping its lowest bit makes the value compare different (a bool stays a valid bool); `T`'s == compares every member.
+template <typename T>
+u64 HashMembers(const T& v, u64 seed) {
+    static_assert(std::is_trivially_copyable_v<T>);
+    std::array<u8, sizeof(T)> bytes;
+    std::memcpy(bytes.data(), &v, sizeof(T));
+    for (size_t i = 0; i < sizeof(T); ++i) {
+        T flipped;
+        std::memcpy(&flipped, &v, sizeof(T));
+        reinterpret_cast<u8*>(&flipped)[i] ^= 1;
+        if (flipped == v) {
+            bytes[i] = 0; // padding
+        }
+    }
+    return XXH3_64bits_withSeed(bytes.data(), bytes.size(), seed);
+}
+
+/// Every setting the translator reads besides its profile; each value is part of the folder id, so a start with another value never takes
+/// a stage translated with the old one. port/tests/test_vkb_store_settings.py fails when the translator reads a setting this list does
+/// not name. Read by the translator but without effect on its result: EmulatorSettings.IsDumpShaders (writes debug files only).
+constexpr const char* TranslatorEnv[] = {"TLG_CONST_OFFSET_FLOATRULE", "TLG_BLOCK1D"};
+std::string TranslatorSettings() {
+    std::string out = fmt::format("IsDirectMemoryAccessEnabled={}", EmulatorSettings.IsDirectMemoryAccessEnabled() ? 1 : 0);
+    for (const char* name : TranslatorEnv) {
+        const char* value = std::getenv(name);
+        out += fmt::format(";{}={}", name, value != nullptr ? value : "<unset>");
+    }
+    return out;
+}
+
 void OpenFolder(const VkbShader::Profile& profile) {
+    State& st = S();
     const auto t0 = std::chrono::steady_clock::now();
     const auto module = ModulePath();
     u64 build = 0;
     if (module.empty() || !BuildId(module, build)) {
-        std::scoped_lock lock{mutex};
-        open_error = fmt::format("the engine's module file {} could not be read; the store stays in memory for this session", module.string());
-        LOG_ERROR(Render_Vulkan, "vkb shader store: {}", open_error);
+        std::scoped_lock lock{st.mutex};
+        st.open_error = fmt::format("the engine's module file {} could not be read; the store stays in memory for this session", module.string());
+        LOG_ERROR(Render_Vulkan, "vkb shader store: {}", st.open_error);
         return; // never ready: nothing is read or written
     }
-    const u64 id = XXH3_64bits_withSeed(&profile, sizeof(profile), build);
+    const std::string settings = TranslatorSettings();
+    const u64 id = XXH3_64bits_withSeed(settings.data(), settings.size(), HashMembers(profile, build));
     const auto parent = Common::FS::GetUserPath(Common::FS::PathType::CacheDir) / (MemoryPatcher::g_game_serial + "-vkb-shaders");
     const auto dir = parent / fmt::format("{:016x}", id);
     std::error_code ec;
     u32 removed = 0;
-    for (const auto& other : std::filesystem::directory_iterator{parent, ec}) { // another build or another card: never read again
+    for (const auto& other : std::filesystem::directory_iterator{parent, ec}) { // another build, card or setting: never read again
         if (other.path().filename() != dir.filename()) {
             std::filesystem::remove_all(other.path(), ec);
             ++removed;
@@ -496,9 +538,9 @@ void OpenFolder(const VkbShader::Profile& profile) {
     }
     std::filesystem::create_directories(dir, ec);
     if (ec) {
-        std::scoped_lock lock{mutex};
-        open_error = fmt::format("could not create {}: {}; the store stays in memory for this session", dir.string(), ec.message());
-        LOG_ERROR(Render_Vulkan, "vkb shader store: {}", open_error);
+        std::scoped_lock lock{st.mutex};
+        st.open_error = fmt::format("could not create {}: {}; the store stays in memory for this session", dir.string(), ec.message());
+        LOG_ERROR(Render_Vulkan, "vkb shader store: {}", st.open_error);
         return;
     }
     std::unordered_map<u64, std::vector<std::filesystem::path>> found;
@@ -510,9 +552,9 @@ void OpenFolder(const VkbShader::Profile& profile) {
             ++stale;
             continue;
         }
-        u64 pgm = 0;
+        unsigned long long pgm = 0;
         u32 hw = 0, sw = 0;
-        if (std::sscanf(name.c_str(), "%16llx_%u_%u_", reinterpret_cast<unsigned long long*>(&pgm), &hw, &sw) != 3 || !name.ends_with(".vst")) {
+        if (std::sscanf(name.c_str(), "%16llx_%u_%u_", &pgm, &hw, &sw) != 3 || !name.ends_with(".vst")) {
             continue;
         }
         VkbShader::RuntimeInfo key_runtime{};
@@ -522,35 +564,40 @@ void OpenFolder(const VkbShader::Profile& profile) {
         ++files;
     }
     {
-        std::scoped_lock lock{mutex};
-        folder = dir;
-        on_disk = std::move(found);
+        std::scoped_lock lock{st.mutex};
+        st.folder = dir;
+        st.on_disk = std::move(found);
     }
     c_files_indexed.store(files);
     c_open_ms.store(static_cast<u64>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count()));
-    {
-        std::scoped_lock lock{write_mutex};
-        ready.store(true);
-    }
-    write_cv.notify_all();
-    std::printf("Shader store (new engine): %s, %llu stored stages, %llu cut writes removed, %u folders of other builds removed, %llu ms\n", dir.string().c_str(),
-                static_cast<unsigned long long>(files), static_cast<unsigned long long>(stale), removed, static_cast<unsigned long long>(c_open_ms.load()));
+    ready.store(true, std::memory_order_release);
+    std::printf("Shader store (new engine): %s, %llu stored stages, %llu cut writes removed, %u folders of other builds or settings removed, %llu ms; "
+                "translator settings %s\n",
+                dir.string().c_str(), static_cast<unsigned long long>(files), static_cast<unsigned long long>(stale), removed,
+                static_cast<unsigned long long>(c_open_ms.load()), settings.c_str());
 }
 
-/// Reads the files of `key` not read yet (mutex held).
+/// Reads the files of `key` not read yet. The files are taken from the index under the lock and read without it (another thread that
+/// looks up the same stage meanwhile does not find them and translates).
 void LoadKey(u64 key) {
-    const auto it = on_disk.find(key);
-    if (it == on_disk.end()) {
-        return;
+    State& st = S();
+    std::vector<std::filesystem::path> files;
+    {
+        std::scoped_lock lock{st.mutex};
+        const auto it = st.on_disk.find(key);
+        if (it == st.on_disk.end()) {
+            return;
+        }
+        files = std::move(it->second);
+        st.on_disk.erase(it);
     }
-    auto files = std::move(it->second);
-    on_disk.erase(it);
+    std::vector<std::unique_ptr<Entry>> loaded;
     for (const auto& path : files) {
         std::ifstream f{path, std::ios::binary};
         std::vector<u8> bytes{std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
         auto e = f.bad() ? nullptr : Decode(bytes);
         if (!e) {
-            if (c_files_bad.fetch_add(1) < 5) {
+            if (c_files_bad.fetch_add(1) < 5) { // all are counted (report: files_damaged_removed)
                 LOG_ERROR(Render_Vulkan, "vkb shader store: {} is damaged or of another store version; removed (the stage is translated again)", path.string());
             }
             std::error_code ec;
@@ -558,7 +605,12 @@ void LoadKey(u64 key) {
             continue;
         }
         c_files_read.fetch_add(1, std::memory_order_relaxed);
-        entries[key].push_back(std::move(e));
+        loaded.push_back(std::move(e));
+    }
+    std::scoped_lock lock{st.mutex};
+    auto& list = st.entries[key];
+    for (auto& e : loaded) {
+        list.push_back(std::move(e));
     }
 }
 
@@ -639,8 +691,7 @@ void Open(const VkbShader::Profile& profile) {
         return;
     }
     std::call_once(once, [&] {
-        writer = std::thread{WriterLoop};
-        writer.detach();
+        std::thread{WriterLoop}.detach();
         OpenFolder(profile); // at the engine's start, before its first draw: a stat, a folder listing (a few ms)
     });
 }
@@ -649,18 +700,21 @@ bool Find(const Inputs& in, Translation& out) {
     c_lookups.fetch_add(1, std::memory_order_relaxed);
     const u64 key = KeyOf(in.params.hash, in.runtime);
     const CodeId code = CodeOf(in.params.code);
-    std::scoped_lock lock{mutex};
     if (ready.load(std::memory_order_acquire)) {
         LoadKey(key);
     }
-    const auto it = entries.find(key);
-    if (it == entries.end()) {
+    State& st = S();
+    std::scoped_lock lock{st.mutex};
+    const auto it = st.entries.find(key);
+    if (it == st.entries.end()) {
         return false;
     }
+    bool same_inputs = false;
     for (const auto& e : it->second) {
         if (!SameInputs(*e, in, code)) {
             continue;
         }
+        same_inputs = true;
         // the resource kinds are read through this draw's user data (and the tables it points to), as the normal renderer does
         VkbShader::Info& info = *e->result.info;
         info.user_data = in.params.user_data;
@@ -684,6 +738,9 @@ bool Find(const Inputs& in, Translation& out) {
             NoteUse(in.params.hash, static_cast<u32>(in.runtime.hw_stage), *e);
             return true;
         }
+    }
+    if (same_inputs) { // stored with the same settings, but the draw's resources are of other kinds: a new variant, translated
+        c_kind_misses.fetch_add(1, std::memory_order_relaxed);
     }
     return false;
 }
@@ -716,18 +773,19 @@ void Keep(const Inputs& in, const VkbShader::Profile& profile, const VkbShader::
     c_spv_words.fetch_add(spv.size(), std::memory_order_relaxed);
     std::vector<u8> bytes = Encode(*e);
     std::string name = FileName(in.params.hash, in.runtime, bytes);
+    State& st = S();
     {
-        std::scoped_lock lock{mutex};
-        entries[KeyOf(in.params.hash, in.runtime)].push_back(std::move(e));
+        std::scoped_lock lock{st.mutex};
+        st.entries[KeyOf(in.params.hash, in.runtime)].push_back(std::move(e));
     }
     if (!ready.load(std::memory_order_acquire)) { // the folder could not be opened (said at the start): kept in memory only
         return;
     }
     {
-        std::scoped_lock lock{write_mutex};
-        write_queue.emplace_back(std::move(name), std::move(bytes));
+        std::scoped_lock lock{st.write_mutex};
+        st.write_queue.emplace_back(std::move(name), std::move(bytes));
     }
-    write_cv.notify_one();
+    st.write_cv.notify_one();
 }
 
 bool Same(const Inputs& in, const Translation& stored, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
@@ -738,8 +796,9 @@ bool Same(const Inputs& in, const Translation& stored, const VkbShader::Info& in
     const bool same = differs == nullptr && spv_same && end_same && windows_same && runtime_same;
     (same ? c_check_same : c_check_different).fetch_add(1, std::memory_order_relaxed);
     if (!same) {
-        std::scoped_lock lock{mutex};
-        if (different_logged.insert(in.params.hash).second) {
+        State& st = S();
+        std::scoped_lock lock{st.mutex};
+        if (st.different_logged.insert(in.params.hash).second) {
             LOG_ERROR(Render_Vulkan, "vkb shader store: the stored translation of program {:#x} (stage {}) differs from a fresh one: module {} / {} words ({}), bindings {}, "
                       "runtime {}, windows {}, first info member that differs: {}",
                       in.params.hash, static_cast<u32>(in.runtime.sw_stage), stored.spv.size(), spv.size(), spv_same ? "same" : "differ", end_same ? "same" : "differ",
@@ -750,8 +809,13 @@ bool Same(const Inputs& in, const Translation& stored, const VkbShader::Info& in
 }
 
 std::filesystem::path Folder() {
-    std::scoped_lock lock{mutex};
-    return folder;
+    State& st = S();
+    std::scoped_lock lock{st.mutex};
+    return st.folder;
+}
+
+void NoteBypass() {
+    c_bypassed.fetch_add(1, std::memory_order_relaxed);
 }
 
 void NoteBuild(u64 pgm_hash, u32 hw_stage) {
@@ -792,15 +856,16 @@ nlohmann::json Report() {
     size_t programs = 0, waiting = 0;
     std::string error;
     std::string dir;
+    State& st = S();
     {
-        std::scoped_lock lock{mutex};
-        programs = entries.size();
-        error = open_error;
-        dir = folder.string();
+        std::scoped_lock lock{st.mutex};
+        programs = st.entries.size();
+        error = st.open_error;
+        dir = st.folder.string();
     }
     {
-        std::scoped_lock lock{write_mutex};
-        waiting = write_queue.size();
+        std::scoped_lock lock{st.write_mutex};
+        waiting = st.write_queue.size();
     }
     return {{"mode", mode},
             {"folder", dir},
@@ -818,6 +883,8 @@ nlohmann::json Report() {
             {"files_write_failed", c_write_failed.load()},
             {"files_waiting", waiting},
             {"not_kept_geometry", c_not_kept_geometry.load()},
+            {"misses_other_resource_kinds", c_kind_misses.load()},
+            {"bypassed_for_debug_tools", c_bypassed.load()},
             {"module_mb_kept", static_cast<double>(c_spv_words.load()) * 4.0 / 1048576.0},
             {"translate_ms_saved", static_cast<double>(c_saved_ns.load()) / 1e6},
             {"check_same", c_check_same.load()},

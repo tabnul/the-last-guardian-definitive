@@ -284,6 +284,9 @@ void Compile(u64 ctx, u64 shader, Variant& v) {
     // its write windows (they also depend on the local size, the salt); the debug census works on the translated program, so with it on every program is translated
     namespace Store = Core::Vkb::ShaderStore;
     const Store::Mode store_mode = Core::Vkb::FlatCensus::On() ? Store::Mode::Off : Store::GetMode();
+    if (Core::Vkb::FlatCensus::On() && Store::GetMode() != Store::Mode::Off) {
+        Store::NoteBypass();
+    }
     const VkbShader::RuntimeInfo runtime_in = runtime;
     const Store::Inputs store_in{.params = params, .runtime = runtime_in, .start = binding, .salt = v.program.num_thread_x.full};
     Store::Translation stored;

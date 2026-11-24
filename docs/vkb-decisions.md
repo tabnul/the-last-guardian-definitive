@@ -9,6 +9,27 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-24 - Shader pre-build for the new engine: a store on disk, filled by a separate build process (not yet merged)
+
+- **Problem:** the new engine translates every shader stage the first time a draw needs it, in every session; that
+  translation is most of the cost of a first draw (issue 111: 87% on this box, the graphics driver 12%). The owner
+  wants the shader pre-build of the normal renderer (pull requests 143 to 148) for the new engine too: shaders built
+  at the first start from a shipped list that holds no game code, without stutter while playing.
+- **Considered:** (1) keep every translation on disk in the player's cache folder (a store), and fill it at the first
+  start from the list in a separate process that maps the recorded descriptor memory at its own addresses, as the
+  normal renderer's import does; a bad entry can only stop that process; (2) no disk store: translate the list again
+  inside the game at every start into a store kept for the session; nothing to save to disk, but the whole list costs
+  CPU time at every start, and any read of the translator that the replay does not catch reads live game memory
+  inside the game process (against the requirement that a bad entry must never crash or hang the game); (3) warm only the
+  graphics driver's own cache by building pipelines early: covers the driver's 12% only and needs every draw's whole
+  pipeline state recorded.
+- **Choice:** 1, in steps: the store first (it alone already removes the translations of a second start), then the
+  recording and the build process, then the list. It uses the normal renderer's rule for when a stored translation
+  fits a draw (same program, same settings, same kinds of resources), so a stored stage is never used where a fresh
+  translation would differ; a check mode translates anyway and counts differences. Box choice.
+- **Links:** pull request of branch `fix/vkb-shader-prebuild` (stacked on pull request 148); session store of pull
+  request 120 (parked) used the same rule in memory only.
+
 ## 2026-11-24 - Shader recipes of two sessions: how to merge them (not yet merged)
 
 - **Problem:** the recipes of the 219-scene recording laid over the box's recipes crashed the graphics driver in
