@@ -56,7 +56,7 @@ def main():
         hits += 1
     if not windows:
         print('nothing to check: no window with enough content')
-        sys.exit(2)
+        sys.exit(1 if hits else 2)
     game = pathlib.Path(args[1])
     sources = []
     for name in ['trico_bootp.psarc', 'trico_boot.psarc']:

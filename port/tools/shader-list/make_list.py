@@ -191,6 +191,16 @@ def decode_fetch(code):
     return None
 
 
+def looks_like_code(address, data, base, length):
+    """Memory the compiler read that may be game code, the rule of shader_recipe.cpp LooksLikeCode
+    and LogUnlisted: more than 64 bytes, the shader header signature, an s_setpc_b64 (the end of a
+    fetch shader) in a word aligned in memory, or a place inside the program's range."""
+    if len(data) > 64 or data.find(b'OrbShdr') >= 0 or (address < base + length and address + len(data) > base):
+        return True
+    return any((int.from_bytes(data[i:i + 4], 'little') & 0xFFFFFF00) == 0xBE802000
+               for i in range((4 - address % 4) % 4, len(data) - 3, 4))
+
+
 def blob(b):
     return struct.pack('<I', len(b)) + bytes(b)
 
@@ -316,8 +326,7 @@ def main():
                 continue
             if address in pointers and (layout := decode_fetch(data)) is not None and fetch is None:
                 fetch = layout
-            elif len(data) <= 64 and data.find(b'OrbShdr') < 0 and not any(
-                    (int.from_bytes(data[i:i + 4], 'little') & 0xFFFFFF00) == 0xBE802000 for i in range(0, len(data) - 3, 4)):
+            elif not looks_like_code(address, data, r['base'], loc[2]):
                 data_regions.append((address, data))  # resource descriptors (V#), state
             else:
                 bad = True  # looks like code: never copied into the list

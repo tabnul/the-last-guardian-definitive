@@ -673,6 +673,8 @@ ChildEnd RunChildOnce(const std::vector<std::filesystem::path>& args,
                         GetLastError());
         }
         if (ResumeThread(pi.hThread) == DWORD(-1)) { // it would wait suspended forever
+            std::printf("Shader prebuild: a build process could not be started (error %lu)\n",
+                        GetLastError());
             TerminateProcess(pi.hProcess, 1);
         }
         for (;;) {
@@ -968,9 +970,9 @@ void LogUnlisted(const Shader::Info& info, const std::map<u64, std::vector<u8>>&
         data_regions.emplace_back(address, bytes);
     }
     if (code_like) {
-        std::printf("Shader recipe (not in list): %s left out: the compiler read memory that may "
-                    "be game code\n",
-                    name.c_str());
+        std::printf("Shader recipe (not in list): %s left out: %s\n", name.c_str(),
+                    copy_shader ? "a geometry shader's copy shader is game code"
+                                : "the compiler read memory that may be game code");
         return;
     }
     Writer w;

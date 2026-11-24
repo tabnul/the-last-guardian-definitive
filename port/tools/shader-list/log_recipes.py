@@ -44,7 +44,7 @@ def unpack(text):
     d = zlib.decompressobj()
     data = d.decompress(base64.b64decode(text, validate=True), MAX_RECIPE)
     if d.unconsumed_tail or not d.eof:
-        raise ValueError('does not unpack within 1 MB')
+        raise ValueError('cut short, or does not unpack within 1 MB')
     return data
 
 
