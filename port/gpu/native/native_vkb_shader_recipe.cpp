@@ -131,7 +131,7 @@ std::filesystem::path RecipeFolder() {
     return dir;
 }
 
-std::atomic<u64> c_recorded{0}, c_not_kept{0}, c_no_folder{0}, c_broken{0};
+std::atomic<u64> c_recorded{0}, c_not_taken{0}, c_no_folder{0}, c_broken{0};
 
 // ---- the build process ----
 
@@ -198,6 +198,25 @@ std::optional<Recipe> Parse(const std::vector<u8>& bytes, const char*& why) {
     if (r.ok && !addresses_ok) {
         why = "names memory outside the game's address range";
         return std::nullopt;
+    }
+    if (static_cast<u32>(rc.hw_stage) > static_cast<u32>(VkbShader::HwStage::Compute) || static_cast<u32>(rc.sw_stage) >= VkbShader::MaxStageTypes) {
+        why = "names a stage this build does not know";
+        return std::nullopt;
+    }
+    // the recording keeps them by address, in order: overlaps must agree, or the replay is not what the game read
+    for (size_t i = 1; r.ok && i < rc.regions.size(); ++i) {
+        const auto& [b, bbytes] = rc.regions[i];
+        if (b < rc.regions[i - 1].first) {
+            why = "is damaged (regions out of order)";
+            return std::nullopt;
+        }
+        for (size_t j = 0; j < i; ++j) {
+            const auto& [a, abytes] = rc.regions[j];
+            if (b < a + abytes.size() && std::memcmp(abytes.data() + (b - a), bbytes.data(), std::min<u64>(a + abytes.size() - b, bbytes.size())) != 0) {
+                why = "holds two overlapping reads with different bytes";
+                return std::nullopt;
+            }
+        }
     }
     if (!r.ok || r.left != 0 || rc.kind > 1 || flat.size() % sizeof(u32) != 0) {
         why = "is damaged";
@@ -327,7 +346,7 @@ Recording::~Recording() {
     if (active_) {
         VkbShader::guest_read_hook = nullptr;
         regions.clear();
-        c_not_kept.fetch_add(1, std::memory_order_relaxed);
+        c_not_taken.fetch_add(1, std::memory_order_relaxed);
     }
 }
 
@@ -339,12 +358,6 @@ void Recording::Take(const ShaderStore::Inputs& in, const VkbShader::Info& info,
     VkbShader::guest_read_hook = nullptr;
     auto read = std::move(regions);
     regions.clear();
-    if (recording_broken != nullptr) {
-        if (c_broken.fetch_add(1) < 3) { // all are counted (report: dropped_recording_broken)
-            LOG_WARNING(Render_Vulkan, "vkb shader recipes: no recipe for program {:#x}: {}", in.params.hash, recording_broken);
-        }
-        return;
-    }
     const auto folder = RecipeFolder();
     if (folder.empty()) { // said once when the folder could not be made; every recipe lost so is counted (report: dropped_no_folder)
         c_no_folder.fetch_add(1, std::memory_order_relaxed);
@@ -352,7 +365,16 @@ void Recording::Take(const ShaderStore::Inputs& in, const VkbShader::Info& info,
     }
     // the program itself, at its guest address (the translation reads it there: its base, inline constants)
     auto& program = read[in.params.Base()];
+    if (std::memcmp(program.data(), in.params.code.data(), std::min(program.size(), in.params.code.size_bytes())) != 0) {
+        recording_broken = "the program's bytes changed during the translation";
+    }
     program.assign(reinterpret_cast<const u8*>(in.params.code.data()), reinterpret_cast<const u8*>(in.params.code.data()) + in.params.code.size_bytes());
+    if (recording_broken != nullptr) {
+        if (c_broken.fetch_add(1) < 3) { // all are counted (report: dropped_recording_broken)
+            LOG_WARNING(Render_Vulkan, "vkb shader recipes: no recipe for program {:#x}: {}", in.params.hash, recording_broken);
+        }
+        return;
+    }
 
     Writer w;
     w.Pod(Magic);
@@ -395,9 +417,9 @@ int BuildStore(const std::filesystem::path& store_folder, const std::filesystem:
     }
     std::vector<std::filesystem::path> files;
     std::error_code ec;
-    for (const auto& item : std::filesystem::directory_iterator{recipe_dir, ec}) {
-        if (item.path().extension() == ".vkr") {
-            files.push_back(item.path());
+    for (std::filesystem::directory_iterator it{recipe_dir, ec}, end; !ec && it != end; it.increment(ec)) {
+        if (it->path().extension() == ".vkr") {
+            files.push_back(it->path());
         }
     }
     if (ec) {
@@ -484,13 +506,13 @@ int BuildStore(const std::filesystem::path& store_folder, const std::filesystem:
     std::printf("vkb-build-store: %zu recipes, %u stages built, %u already in the store, %u skipped; %llu files written, %llu writes failed; %s, %lld ms\n",
                 files.size(), built, already, skipped, static_cast<unsigned long long>(report.value("files_written", u64{0})),
                 static_cast<unsigned long long>(report.value("files_write_failed", u64{0})), store_folder.string().c_str(), static_cast<long long>(ms));
-    return 0;
+    return report.value("files_write_failed", u64{0}) != 0 ? 4 : 0;
 }
 
 nlohmann::json Report() {
     return {{"on", On()},
             {"kept", c_recorded.load()},
-            {"dropped_not_kept_by_store", c_not_kept.load()},
+            {"dropped_translation_failed_or_stage_not_kept", c_not_taken.load()},
             {"dropped_no_folder", c_no_folder.load()},
             {"dropped_recording_broken", c_broken.load()},
             {"layout_id", fmt::format("{:016x}", ShaderFields::LayoutId())}};

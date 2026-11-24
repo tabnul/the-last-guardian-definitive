@@ -409,6 +409,7 @@ State& S() {
     return *state;
 }
 std::atomic<bool> ready{false};
+std::atomic<bool> writer_started{false}; ///< WriterLoop runs (QueueWrite)
 std::atomic<u64> c_lookups{0}, c_hits{0}, c_disk_hits{0}, c_kept{0}, c_saved_ns{0}, c_check_same{0}, c_check_different{0}, c_spv_words{0}, c_files_indexed{0},
     c_files_read{0}, c_files_bad{0}, c_written{0}, c_write_failed{0}, c_not_kept_geometry{0}, c_open_ms{0}, c_bypassed{0}, c_kind_misses{0}, c_recipe_written{0}, c_recipe_write_failed{0};
 
@@ -769,6 +770,7 @@ void Open(const VkbShader::Profile& profile) {
     }
     std::call_once(once, [&] {
         std::thread{WriterLoop}.detach();
+        writer_started.store(true, std::memory_order_release);
         OpenFolder(profile); // at the engine's start, before its first draw: a stat, a folder listing (a few ms)
     });
 }
@@ -881,7 +883,11 @@ bool Same(const Inputs& in, const Translation& stored, const VkbShader::Info& in
     return same;
 }
 
-void QueueWrite(std::filesystem::path path, std::vector<u8> bytes) { // recipes are recorded only with the store on: Open started the writer
+void QueueWrite(std::filesystem::path path, std::vector<u8> bytes) {
+    if (!writer_started.load(std::memory_order_acquire)) { // recipes are recorded only with the store on, which starts the writer: never queued without it
+        c_recipe_write_failed.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
     QueueWriteFile(std::move(path), std::move(bytes), true);
 }
 
@@ -936,6 +942,7 @@ bool OpenForBuild(const std::filesystem::path& folder_in, VkbShader::Profile& pr
     }
     c_files_indexed.store(files);
     std::thread{WriterLoop}.detach();
+    writer_started.store(true, std::memory_order_release);
     ready.store(true, std::memory_order_release);
     return true;
 }
