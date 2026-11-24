@@ -501,10 +501,13 @@ u64 HashMembers(const T& v, u64 seed) {
 }
 
 /// Every setting the translator reads besides its profile; each value is part of the folder id, so a start with another value never takes
-/// a stage translated with the old one. port/tests/test_vkb_store_settings.py fails when the translator reads a setting this list does
-/// not name. Read by the translator but without effect on its result: EmulatorSettings.IsDumpShaders (writes debug files only).
-constexpr const char* TranslatorEnv[] = {"TLG_CONST_OFFSET_FLOATRULE", "TLG_BLOCK1D"};
+/// a stage translated with the old one. port/tests/test_vkb_store_settings.py reads these three lists and fails when the translator reads a
+/// setting none of them names.
+constexpr const char* TranslatorEnv[] = {"TLG_CONST_OFFSET_FLOATRULE", "TLG_BLOCK1D"};          ///< environment, by value
+constexpr const char* TranslatorEmulatorSettings[] = {"IsDirectMemoryAccessEnabled"};            ///< EmulatorSettings, in TranslatorSettings()
+constexpr const char* TranslatorWithoutEffect[] = {"IsDumpShaders"};                              ///< read, but only to write debug files
 std::string TranslatorSettings() {
+    static_assert(std::size(TranslatorEmulatorSettings) == 1 && std::size(TranslatorWithoutEffect) == 1, "name each EmulatorSettings value below");
     std::string out = fmt::format("IsDirectMemoryAccessEnabled={}", EmulatorSettings.IsDirectMemoryAccessEnabled() ? 1 : 0);
     for (const char* name : TranslatorEnv) {
         const char* value = std::getenv(name);

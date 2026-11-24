@@ -30,8 +30,15 @@ def settings_read():
 class StoreSettingsTest(unittest.TestCase):
     def test_every_translator_setting_is_in_the_store_id(self):
         store = STORE.read_text()
-        listed = store[store.index('/// Every setting the translator reads besides its profile'):]
-        listed = listed[:listed.index('void OpenFolder(')]
+        listed = set()
+        for array in ('TranslatorEnv', 'TranslatorEmulatorSettings', 'TranslatorWithoutEffect'):
+            body = re.search(r'constexpr const char\* ' + array + r'\[\] = \{([^}]*)\}', store)
+            self.assertIsNotNone(body, array)
+            listed |= set(re.findall(r'"([A-Za-z0-9_]+)"', body.group(1)))
+        # the EmulatorSettings values must also be read where the id is made
+        made = store[store.index('std::string TranslatorSettings() {'):store.index('void OpenFolder(')]
+        for name in re.findall(r'"([A-Za-z0-9_]+)"', re.search(r'TranslatorEmulatorSettings\[\] = \{([^}]*)\}', store).group(1)):
+            self.assertIn('EmulatorSettings.' + name + '()', made, name)
         missing = [f'{name} ({where})' for name, where in settings_read().items() if name not in listed]
         self.assertEqual(missing, [], 'the translator reads settings the shader store does not name '
                          '(add them to TranslatorEnv / TranslatorSettings in native_vkb_shader_store.cpp, '
