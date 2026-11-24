@@ -395,7 +395,9 @@ struct State {
     // the writer: files are written on a thread of their own, as "<name>.tmp" first and then renamed, so a reader never sees half a file
     std::mutex write_mutex;
     std::condition_variable write_cv;
-    std::deque<std::pair<std::string, std::vector<u8>>> write_queue;
+    std::deque<std::pair<std::filesystem::path, std::vector<u8>>> write_queue; ///< full paths (store entries, and the recipes' files)
+    u64 writes_pending = 0;                                                     ///< queued or being written (Flush)
+    std::condition_variable flushed_cv;
 };
 State& S() {
     static State* const state = new State;
@@ -412,14 +414,16 @@ std::string FileName(u64 pgm_hash, const VkbShader::RuntimeInfo& runtime, const 
 void WriterLoop() {
     State& st = S();
     for (;;) {
-        std::pair<std::string, std::vector<u8>> item;
+        std::pair<std::filesystem::path, std::vector<u8>> item;
         {
             std::unique_lock lock{st.write_mutex};
             st.write_cv.wait(lock, [&] { return !st.write_queue.empty(); });
             item = std::move(st.write_queue.front());
             st.write_queue.pop_front();
         }
-        const auto path = st.folder / item.first, tmp = st.folder / (item.first + ".tmp");
+        const auto& path = item.first;
+        auto tmp = path;
+        tmp += ".tmp";
         std::error_code ec;
         bool ok = false;
         if (std::ofstream f{tmp, std::ios::binary | std::ios::trunc}) {
@@ -439,7 +443,43 @@ void WriterLoop() {
         } else {
             c_written.fetch_add(1, std::memory_order_relaxed);
         }
+        {
+            std::scoped_lock lock{st.write_mutex};
+            --st.writes_pending;
+        }
+        st.flushed_cv.notify_all();
     }
+}
+
+void QueueWriteFile(std::filesystem::path path, std::vector<u8> bytes) {
+    State& st = S();
+    {
+        std::scoped_lock lock{st.write_mutex};
+        st.write_queue.emplace_back(std::move(path), std::move(bytes));
+        ++st.writes_pending;
+    }
+    st.write_cv.notify_one();
+}
+
+/// Writes a small file now (tmp, then renamed): the folder's profile and settings
+bool WriteNow(const std::filesystem::path& path, const void* data, size_t size) {
+    auto tmp = path;
+    tmp += ".tmp";
+    {
+        std::ofstream f{tmp, std::ios::binary | std::ios::trunc};
+        f.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
+        if (!f) {
+            return false;
+        }
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec);
+    return !ec;
+}
+
+std::vector<u8> ReadAll(const std::filesystem::path& path) {
+    std::ifstream f{path, std::ios::binary};
+    return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
 }
 
 /// The file of the module that holds this code (libtlggpu.so / tlggpu.dll): its bytes name the build.
@@ -516,38 +556,20 @@ std::string TranslatorSettings() {
     return out;
 }
 
-void OpenFolder(const VkbShader::Profile& profile) {
-    State& st = S();
-    const auto t0 = std::chrono::steady_clock::now();
-    const auto module = ModulePath();
+/// The folder id of this build for `profile` and `settings`; false when the engine's module file cannot be read
+bool FolderId(const VkbShader::Profile& profile, const std::string& settings, u64& id, std::filesystem::path& module) {
+    module = ModulePath();
     u64 build = 0;
     if (module.empty() || !BuildId(module, build)) {
-        std::scoped_lock lock{st.mutex};
-        st.open_error = fmt::format("the engine's module file {} could not be read; the store stays in memory for this session", module.string());
-        LOG_ERROR(Render_Vulkan, "vkb shader store: {}", st.open_error);
-        return; // never ready: nothing is read or written
+        return false;
     }
-    const std::string settings = TranslatorSettings();
-    const u64 id = XXH3_64bits_withSeed(settings.data(), settings.size(), HashMembers(profile, build));
-    const auto parent = Common::FS::GetUserPath(Common::FS::PathType::CacheDir) / (MemoryPatcher::g_game_serial + "-vkb-shaders");
-    const auto dir = parent / fmt::format("{:016x}", id);
+    id = XXH3_64bits_withSeed(settings.data(), settings.size(), HashMembers(profile, build));
+    return true;
+}
+
+/// The stored stages of `dir` by key; cut writes are removed
+void IndexFolder(const std::filesystem::path& dir, std::unordered_map<u64, std::vector<std::filesystem::path>>& found, u64& files, u64& stale) {
     std::error_code ec;
-    u32 removed = 0;
-    for (const auto& other : std::filesystem::directory_iterator{parent, ec}) { // another build, card or setting: never read again
-        if (other.path().filename() != dir.filename()) {
-            std::filesystem::remove_all(other.path(), ec);
-            ++removed;
-        }
-    }
-    std::filesystem::create_directories(dir, ec);
-    if (ec) {
-        std::scoped_lock lock{st.mutex};
-        st.open_error = fmt::format("could not create {}: {}; the store stays in memory for this session", dir.string(), ec.message());
-        LOG_ERROR(Render_Vulkan, "vkb shader store: {}", st.open_error);
-        return;
-    }
-    std::unordered_map<u64, std::vector<std::filesystem::path>> found;
-    u64 files = 0, stale = 0;
     for (const auto& item : std::filesystem::directory_iterator{dir, ec}) {
         const auto name = item.path().filename().string();
         if (name.ends_with(".tmp")) { // a write cut by the end of a session
@@ -566,6 +588,48 @@ void OpenFolder(const VkbShader::Profile& profile) {
         found[KeyOf(pgm, key_runtime)].push_back(item.path());
         ++files;
     }
+}
+
+constexpr const char* ProfileFile = "profile.bin";   ///< the translator profile the folder's stages were made with (raw: this build reads it)
+constexpr const char* SettingsFile = "settings.txt"; ///< TranslatorSettings() of the game that opened the folder
+
+void OpenFolder(const VkbShader::Profile& profile) {
+    State& st = S();
+    const auto t0 = std::chrono::steady_clock::now();
+    const std::string settings = TranslatorSettings();
+    u64 id = 0;
+    std::filesystem::path module;
+    if (!FolderId(profile, settings, id, module)) {
+        std::scoped_lock lock{st.mutex};
+        st.open_error = fmt::format("the engine's module file {} could not be read; the store stays in memory for this session", module.string());
+        LOG_ERROR(Render_Vulkan, "vkb shader store: {}", st.open_error);
+        return; // never ready: nothing is read or written
+    }
+    const auto parent = Common::FS::GetUserPath(Common::FS::PathType::CacheDir) / (MemoryPatcher::g_game_serial + "-vkb-shaders");
+    const auto dir = parent / fmt::format("{:016x}", id);
+    std::error_code ec;
+    u32 removed = 0;
+    for (const auto& other : std::filesystem::directory_iterator{parent, ec}) { // another build, card or setting: never read again
+        if (other.path().filename() != dir.filename()) {
+            std::filesystem::remove_all(other.path(), ec);
+            ++removed;
+        }
+    }
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+        std::scoped_lock lock{st.mutex};
+        st.open_error = fmt::format("could not create {}: {}; the store stays in memory for this session", dir.string(), ec.message());
+        LOG_ERROR(Render_Vulkan, "vkb shader store: {}", st.open_error);
+        return;
+    }
+    // the build process (tlg-probe --vkb-build-store) translates with this profile and refuses a folder whose settings are not its own
+    if (!WriteNow(dir / ProfileFile, &profile, sizeof(profile)) || !WriteNow(dir / SettingsFile, settings.data(), settings.size())) {
+        LOG_ERROR(Render_Vulkan, "vkb shader store: could not write {} or {} in {}; the shader pre-build cannot fill this folder (the store itself works)", ProfileFile,
+                  SettingsFile, dir.string());
+    }
+    std::unordered_map<u64, std::vector<std::filesystem::path>> found;
+    u64 files = 0, stale = 0;
+    IndexFolder(dir, found, files, stale);
     {
         std::scoped_lock lock{st.mutex};
         st.folder = dir;
@@ -748,11 +812,11 @@ bool Find(const Inputs& in, Translation& out) {
     return false;
 }
 
-void Keep(const Inputs& in, const VkbShader::Profile& profile, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
+bool Keep(const Inputs& in, const VkbShader::Profile& profile, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
           const std::vector<u32>& spv, const std::vector<WriteWindow::Window>& windows, u64 translate_ns) {
     if (!info.gs_copy_data.attr_map.empty() || in.runtime.hw_stage == VkbShader::HwStage::Geometry) { // the new engine has no geometry stages; never kept, counted
         c_not_kept_geometry.fetch_add(1, std::memory_order_relaxed);
-        return;
+        return false;
     }
     auto e = std::make_unique<Entry>();
     e->code = CodeOf(in.params.code);
@@ -781,14 +845,10 @@ void Keep(const Inputs& in, const VkbShader::Profile& profile, const VkbShader::
         std::scoped_lock lock{st.mutex};
         st.entries[KeyOf(in.params.hash, in.runtime)].push_back(std::move(e));
     }
-    if (!ready.load(std::memory_order_acquire)) { // the folder could not be opened (said at the start): kept in memory only
-        return;
+    if (ready.load(std::memory_order_acquire)) { // else the folder could not be opened (said at the start): kept in memory only
+        QueueWriteFile(st.folder / name, std::move(bytes));
     }
-    {
-        std::scoped_lock lock{st.write_mutex};
-        st.write_queue.emplace_back(std::move(name), std::move(bytes));
-    }
-    st.write_cv.notify_one();
+    return true;
 }
 
 bool Same(const Inputs& in, const Translation& stored, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
@@ -809,6 +869,69 @@ bool Same(const Inputs& in, const Translation& stored, const VkbShader::Info& in
         }
     }
     return same;
+}
+
+void QueueWrite(std::filesystem::path path, std::vector<u8> bytes) {
+    static std::once_flag once;
+    if (GetMode() == Mode::Off) {
+        std::call_once(once, [] { std::thread{WriterLoop}.detach(); }); // Open starts the writer only with the store on
+    }
+    QueueWriteFile(std::move(path), std::move(bytes));
+}
+
+void Flush() {
+    State& st = S();
+    std::unique_lock lock{st.write_mutex};
+    st.flushed_cv.wait(lock, [&] { return st.writes_pending == 0; });
+}
+
+bool OpenForBuild(const std::filesystem::path& folder_in, VkbShader::Profile& profile, std::string& why) {
+    std::error_code ec;
+    auto folder = folder_in.lexically_normal();
+    if (folder.filename().empty()) { // given with a separator at the end
+        folder = folder.parent_path();
+    }
+    if (!std::filesystem::is_directory(folder, ec)) {
+        why = fmt::format("{} is not a folder", folder.string());
+        return false;
+    }
+    const std::vector<u8> profile_bytes = ReadAll(folder / ProfileFile);
+    if (profile_bytes.size() != sizeof(VkbShader::Profile)) {
+        why = fmt::format("{} has no {} of this build's size ({} bytes, this build {}): not opened by this build's game", folder.string(), ProfileFile,
+                          profile_bytes.size(), sizeof(VkbShader::Profile));
+        return false;
+    }
+    std::memcpy(static_cast<void*>(&profile), profile_bytes.data(), sizeof(profile));
+    const std::vector<u8> settings_bytes = ReadAll(folder / SettingsFile);
+    const std::string game_settings{settings_bytes.begin(), settings_bytes.end()};
+    const std::string settings = TranslatorSettings();
+    if (game_settings != settings) {
+        why = fmt::format("the translator settings differ: the game's \"{}\", this process \"{}\" (start it with the game's environment)", game_settings, settings);
+        return false;
+    }
+    u64 id = 0;
+    std::filesystem::path module;
+    if (!FolderId(profile, settings, id, module)) {
+        why = fmt::format("the engine's module file {} could not be read", module.string());
+        return false;
+    }
+    if (folder.filename() != fmt::format("{:016x}", id)) {
+        why = fmt::format("{} is not this build's folder for its profile and settings (this build: {:016x}): another build of the engine made it", folder.string(), id);
+        return false;
+    }
+    std::unordered_map<u64, std::vector<std::filesystem::path>> found;
+    u64 files = 0, stale = 0;
+    IndexFolder(folder, found, files, stale);
+    State& st = S();
+    {
+        std::scoped_lock lock{st.mutex};
+        st.folder = folder;
+        st.on_disk = std::move(found);
+    }
+    c_files_indexed.store(files);
+    std::thread{WriterLoop}.detach();
+    ready.store(true, std::memory_order_release);
+    return true;
 }
 
 std::filesystem::path Folder() {

@@ -7,6 +7,7 @@
 #include "native/native_debug_server.h"
 #include "native/native_marker.h"
 #include "native/native_vkb_compute.h"
+#include "native/native_vkb_shader_recipe.h"
 #include "native/native_vkb_shader_store.h"
 #include "native/native_device.h"
 
@@ -292,6 +293,8 @@ void Compile(u64 ctx, u64 shader, Variant& v) {
     Store::Translation stored;
     const bool found = store_mode != Store::Mode::Off && Store::Find(store_in, stored);
     if (!found || store_mode == Store::Mode::Check) {
+        // TLG_VKB_SHADER_RECIPES: a program the store lacks also keeps its recipe (the guest memory the translation reads, recorded on this thread)
+        Core::Vkb::ShaderRecipe::Recording recording{!found && store_mode != Store::Mode::Off && Core::Vkb::ShaderRecipe::On()};
         const u64 translate_t0 = NowNs();
         const auto program = VkbShader::TranslateProgram(params.code, *pools, *v.info, runtime, profile);
         if (v.info->translation_failed) {
@@ -341,8 +344,8 @@ void Compile(u64 ctx, u64 shader, Variant& v) {
         }
         if (!found) {
             Store::NoteBuild(params.hash, static_cast<u32>(VkbShader::HwStage::Compute));
-            if (store_mode != Store::Mode::Off) {
-                Store::Keep(store_in, profile, *v.info, runtime, binding, spv, v.windows, NowNs() - translate_t0);
+            if (store_mode != Store::Mode::Off && Store::Keep(store_in, profile, *v.info, runtime, binding, spv, v.windows, NowNs() - translate_t0)) {
+                recording.Take(store_in, *v.info, v.program.num_thread_x.full);
             }
         }
     }

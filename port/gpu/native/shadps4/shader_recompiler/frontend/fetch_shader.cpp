@@ -55,7 +55,9 @@ bool ParseFetchShader(const VkbShader::Info& info, FetchShaderData& out_fetch_da
     std::array<VsharpLoad, 104> loads{};
 
     const auto* code = GetFetchShaderCode(info, info.fetch_shader_sgpr_base);
-    if (!Core::Memory::Instance()->IsValidMapping(reinterpret_cast<VAddr>(code), sizeof(u32))) {
+    // tlg: in the recipe build process the recorded guest memory answers (guest_valid_hook, info.h); the game has none set
+    const bool readable = guest_valid_hook ? guest_valid_hook(code, sizeof(u32)) : Core::Memory::Instance()->IsValidMapping(reinterpret_cast<VAddr>(code), sizeof(u32));
+    if (!readable) {
         // a stale pointer of the draw state (the game freed or never set the fetch shader): there is no code to read
         return false;
     }
@@ -137,6 +139,9 @@ bool ParseFetchShader(const VkbShader::Info& info, FetchShaderData& out_fetch_da
     }
 
     out_fetch_data.size = (ptr - code) * sizeof(u32);
+    if (guest_read_hook) [[unlikely]] { // tlg: shader recipes (info.h): the code as far as it was read
+        guest_read_hook(code, code, out_fetch_data.size);
+    }
     return true;
 }
 

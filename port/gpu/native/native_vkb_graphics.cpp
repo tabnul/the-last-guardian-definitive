@@ -7,6 +7,7 @@
 #include "native/native_debug_server.h"
 #include "native/native_marker.h"
 #include "native/native_vkb_graphics.h"
+#include "native/native_vkb_shader_recipe.h"
 #include "native/native_vkb_shader_store.h"
 
 #include "native/shadps4/video_core/renderer_vulkan/vk_common.h"
@@ -546,6 +547,8 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
     Store::Translation stored;
     const bool found = store_mode != Store::Mode::Off && Store::Find(store_in, stored);
     if (!found || store_mode == Store::Mode::Check) {
+        // TLG_VKB_SHADER_RECIPES: a stage the store lacks also keeps its recipe (the guest memory the translation reads, recorded on this thread)
+        Core::Vkb::ShaderRecipe::Recording recording{!found && store_mode != Store::Mode::Off && Core::Vkb::ShaderRecipe::On()};
         const u64 translate_t0 = NowNs();
         const auto program = VkbShader::TranslateProgram(params.code, *pools, *out.info, out.runtime, profile);
         if (out.info->translation_failed) {
@@ -587,8 +590,8 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
         spv = VkbShader::Backend::SPIRV::EmitSPIRV(profile, out.runtime, program, binding);
         if (!found) {
             Store::NoteBuild(params.hash, static_cast<u32>(hw));
-            if (store_mode != Store::Mode::Off) {
-                Store::Keep(store_in, profile, *out.info, out.runtime, binding, spv, {}, NowNs() - translate_t0);
+            if (store_mode != Store::Mode::Off && Store::Keep(store_in, profile, *out.info, out.runtime, binding, spv, {}, NowNs() - translate_t0)) {
+                recording.Take(store_in, *out.info, 0);
             }
         }
     }
@@ -2567,6 +2570,7 @@ nlohmann::json Report() {
             {"depth_only_variants", c_depth_only.load()},
             {"compile_ms_mean", compiled ? static_cast<double>(c_compile_ns.load()) / 1e6 / static_cast<double>(compiled) : 0.0},
             {"shader_store", Core::Vkb::ShaderStore::Report()}, // TLG_VKB_SHADER_PREBUILD: graphics and compute stages
+            {"shader_recipes", Core::Vkb::ShaderRecipe::Report()}, // TLG_VKB_SHADER_RECIPES
             {"key_check_draws_differences", {c_key_checks.load(), c_key_differences.load()}},
             {"variant_key_us_mean", draws ? static_cast<double>(c_key_ns.load()) / 1e3 / static_cast<double>(draws) : 0.0},
             {"slot_map_mapped_unmapped", {{"vertex", src(0)}, {"pixel", src(1)}}},

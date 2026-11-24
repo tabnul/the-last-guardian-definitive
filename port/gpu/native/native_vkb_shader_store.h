@@ -21,6 +21,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <string>
 #include <vector>
 #include <nlohmann/json_fwd.hpp>
 
@@ -60,8 +61,9 @@ struct Inputs {
 
 /// A stored translation for these inputs: true and `out` filled (the info is a copy, set to `in`'s user data and program base).
 bool Find(const Inputs& in, Translation& out);
-/// Keeps a fresh translation (`info` still holds `in`'s user data) in memory and, once the folder is open, on disk.
-void Keep(const Inputs& in, const VkbShader::Profile& profile, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
+/// Keeps a fresh translation (`info` still holds `in`'s user data) in memory and, once the folder is open, on disk. False when the stage is
+/// never kept (a geometry stage: counted).
+bool Keep(const Inputs& in, const VkbShader::Profile& profile, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
           const std::vector<u32>& spv, const std::vector<WriteWindow::Window>& windows, u64 translate_ns);
 /// Check mode: compares a stored translation with a fresh one; false (counted, one error line per program) when they differ.
 bool Same(const Inputs& in, const Translation& stored, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
@@ -72,6 +74,16 @@ void NoteBypass();
 
 /// The store's folder (empty while it is not open, or the store is off).
 [[nodiscard]] std::filesystem::path Folder();
+
+/// The store's folder also holds profile.bin (the translator profile, raw) and settings.txt (TranslatorSettings in the .cpp), written at
+/// Open: the shader pre-build's build process (tlg-probe --vkb-build-store, native_vkb_shader_recipe.h) translates with that profile.
+/// OpenForBuild opens `folder` for that process: reads its profile into `profile`, and refuses (false, the reason in `why`) a folder whose
+/// settings are not this process's own (the process must run with the game's environment) or whose id is not this build's for them (another
+/// build of the engine made it). Then Find and Keep work on it as in the game; Flush waits until every queued file is written.
+bool OpenForBuild(const std::filesystem::path& folder, VkbShader::Profile& profile, std::string& why);
+void Flush();
+/// Writes a file on the store's writer thread (as "<path>.tmp", then renamed): the shader recipes' files.
+void QueueWrite(std::filesystem::path path, std::vector<u8> bytes);
 
 /// Build statistics (TLG_SHADER_BUILD_STATS=1, any mode, also off): the same log lines as the normal renderer's (shader_recipe.cpp), so
 /// one reader (port/tools/shader-list/check_run.py) counts both renderers: "Shader built while playing: <hash>_<n> (hw stage <s>)" per

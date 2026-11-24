@@ -115,6 +115,24 @@ class ShaderCacheTest(unittest.TestCase):
         self.assertFalse(store.parent.exists())
         self.assertTrue(shipped.exists())
 
+    def test_new_engine_recipes_are_cleared(self):
+        """The new engine's shader recipes (TLG_VKB_SHADER_RECIPES) are in <serial>-vkb-recipes/: the
+        rule cache/<serial>* takes them with the store, and the store folder's profile.bin and
+        settings.txt with it."""
+        cache = self.user / 'cache'
+        before = shader_cache.size(['CUSA03627'], self.user, self.env)
+        files = [cache / 'CUSA03627-vkb-recipes' / '00000000deadbeef_1_1_0011223344556677.vkr',
+                 cache / 'CUSA03627-vkb-recipes' / '00000000deadbeef_4_4_8899aabbccddeeff.vkr.tmp',
+                 cache / 'CUSA03627-vkb-shaders' / '0123456789abcdef' / 'profile.bin',
+                 cache / 'CUSA03627-vkb-shaders' / '0123456789abcdef' / 'settings.txt']
+        for path in files:
+            write(path, 50)
+        freed, failures = shader_cache.clear(['CUSA03627'], self.user, self.env)
+        self.assertEqual((freed, failures), (before + 200, []))
+        for path in files:
+            self.assertFalse(path.exists(), path)
+        self.assertFalse((cache / 'CUSA03627-vkb-recipes').exists())
+
     def test_files_that_cannot_go_are_reported(self):
         if os.name == 'nt' or os.geteuid() == 0:
             self.skipTest('needs POSIX permissions without root')

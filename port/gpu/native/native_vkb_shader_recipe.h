@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#pragma once
+// TLG_VKB_SHADER_RECIPES: the new engine's shader recipes, the inputs of every fresh translation, so a build process can fill the shader
+// store (native_vkb_shader_store.h) again without the game: after a new build (its store folder starts empty) or a cleared store.
+//
+// A recipe holds what the translator read: the stage, the program's hash, base and code, the 16 user data words, the guest memory the
+// translator read through them (descriptor tables through Info::ReadUdReg, the fetch shader's code, tessellation constants; the bytes as
+// the translator got them), the flattened user data after translation (the resource tables' walk, replayed instead of walked again), the
+// runtime info as handed to the translator, where its bindings start, the caller's salt and the compute stage's local size x. It is the
+// normal renderer's way (commit 4e42ca0: video_core/renderer_vulkan/shader_recipe.cpp, ported from deadinside28/bloodborne_pc), on the
+// new engine's own translator copy (port/gpu/native/shadps4/shader_recompiler: guest_read_hook, replay_flat, guest_valid_hook in info.h).
+//
+// Folder: <user>/cache/<serial>-vkb-recipes/<program>_<hw stage>_<sw stage>_<digest>.vkr, written by the store's writer thread. It holds
+// program code and game memory: the player's own cache, never shipped (a shipped list names the game file instead). The launcher's "clear
+// shader cache" removes cache/<serial>* and so this folder too (port/tests/test_shader_cache.py checks the rule).
+// A recipe carries a layout id (native_vkb_shader_fields.h): a build that lays RuntimeInfo or Bindings out otherwise does not read it.
+//
+// Recording: TLG_VKB_SHADER_RECIPES=1 with the store on (TLG_VKB_SHADER_PREBUILD=1 or check); default off. A recipe is kept for each
+// translation the store keeps (Keep), so one per stage variant the store lacked.
+
+#include <filesystem>
+#include <nlohmann/json_fwd.hpp>
+
+#include "native/native_vkb_shader_store.h"
+
+namespace Core::Vkb::ShaderRecipe {
+
+/// TLG_VKB_SHADER_RECIPES=1 (read once)
+[[nodiscard]] bool On();
+
+/// Records the guest memory the translator reads on this thread while it lives (when `active`; inactive: nothing happens). Take() keeps
+/// the recipe; without it the recording is dropped (a failed translation).
+class Recording {
+public:
+    explicit Recording(bool active);
+    ~Recording();
+    Recording(const Recording&) = delete;
+    Recording& operator=(const Recording&) = delete;
+    /// Ends the recording and queues the recipe of the translation since the start: `in` as handed to the store, `info` after
+    /// translation (its flattened user data), `local_x` the compute stage's local size x (graphics: 0).
+    void Take(const ShaderStore::Inputs& in, const VkbShader::Info& info, u32 local_x);
+
+private:
+    bool active_;
+};
+
+/// The build process (tlg-probe --vkb-build-store STORE RECIPES): opens the game's store folder `store_folder` (ShaderStore::OpenForBuild:
+/// its profile, refused when the settings or the build differ) and, for every recipe of `recipe_dir` whose stage the store lacks (the
+/// store's own rule, Find), maps the recorded memory at its guest addresses, translates with the recorded inputs and the replayed
+/// flattened user data and keeps the stage through the store's own Keep (its encoder and file names). A recipe it cannot read, map or
+/// translate is counted and named. No graphics device is used. 0 when the folder was opened (skipped recipes are reported, not
+/// failures), 2 when it was refused.
+int BuildStore(const std::filesystem::path& store_folder, const std::filesystem::path& recipe_dir);
+
+/// recipes kept, recordings dropped (the translation failed or the store did not keep the stage), the folder
+[[nodiscard]] nlohmann::json Report();
+
+} // namespace Core::Vkb::ShaderRecipe
