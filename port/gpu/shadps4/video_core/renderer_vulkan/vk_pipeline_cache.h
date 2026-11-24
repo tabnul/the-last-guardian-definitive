@@ -47,9 +47,12 @@ struct AsyncShaderCompilation;
 struct AsyncGraphicsCompilation;
 
 struct Program {
+    /// tlg: where a permutation came from (the shader build stats name it at its first use).
+    enum class Origin : u8 { Built, CacheKey, CacheLookup };
     struct Module {
         vk::ShaderModule module;
         Shader::StageSpecialization spec;
+        Origin origin = Origin::Built;
     };
     static constexpr size_t MaxPermutations = 8;
     using ModuleList = boost::container::small_vector<Module, MaxPermutations>;
@@ -63,6 +66,21 @@ struct Program {
     std::shared_ptr<AsyncShaderCompilation> pending;
     bool compilation_failed = false;
     std::vector<Shader::StageSpecialization> failed_permutations;
+    /// tlg: permutations (bit = index, below 64) whose first use from the cache was noted.
+    mutable std::atomic<u64> noted_uses{0};
+    /// tlg: notes the first use of a permutation that came from the cache (build stats).
+    void NoteUse(size_t perm_idx) const {
+        const Origin origin = modules[perm_idx].origin;
+        if (origin == Origin::Built || perm_idx >= 64) {
+            return;
+        }
+        const u64 bit = u64(1) << perm_idx;
+        if (!(noted_uses.load(std::memory_order_relaxed) & bit) &&
+            !(noted_uses.fetch_or(bit, std::memory_order_relaxed) & bit)) {
+            NoteCacheUse(perm_idx, origin == Origin::CacheLookup);
+        }
+    }
+    void NoteCacheUse(size_t perm_idx, bool lookup) const;
 
     Program() = default;
     Program(Shader::HwStage stage, Shader::SwStage l_stage, Shader::ShaderParams params)
@@ -77,9 +95,9 @@ struct Program {
     void LogPermutationGrowth() const;
 
     void InsertPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec,
-                      size_t perm_idx) {
+                      size_t perm_idx, Origin origin = Origin::Built) {
         modules.resize(std::max(modules.size(), perm_idx + 1)); // <-- beware of realloc
-        modules[perm_idx] = {module, std::move(spec)};
+        modules[perm_idx] = {module, std::move(spec), origin};
         LogPermutationGrowth();
     }
 };
@@ -148,6 +166,10 @@ public:
     bool LoadComputePipeline(Serialization::Archive& ar);
     bool LoadGraphicsPipeline(Serialization::Archive& ar);
     bool LoadPipelineStage(Serialization::Archive& ar, size_t stage);
+    /// tlg: TLG_SHADER_STORE_LOOKUP: a program the game meets for the first time that no
+    /// pipeline key loaded: its permutations in the shader cache (the list's prebuild writes
+    /// programs without keys too), or null when the cache has none. GPU thread only.
+    std::unique_ptr<Program> LoadStoredProgram(u64 pgm_hash, Shader::HwStage hw_stage);
 
     const GraphicsPipeline* GetGraphicsPipeline(const DrawIndirectParams params = {},
                                                 const PreparedDraw* prepared = nullptr);

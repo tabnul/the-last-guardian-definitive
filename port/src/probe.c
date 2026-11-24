@@ -54,7 +54,11 @@ static void isa_report_hook(void) { isa_rewrite_report(isa_table, stdout); }
 int vulkan_smoke(void);
 /* tlg: shader recipes, gpu/shadps4/video_core/renderer_vulkan/shader_recipe.cpp */
 int tlg_import_shaders(const char *cache_dir, const char *recipe_dir);
+int tlg_import_shaders_list(const char *cache_dir, const char *recipe_dir, const char *list, const char *game_dir, unsigned part, unsigned parts);
 int tlg_compare_meta(const char *dir_a, const char *dir_b);
+int tlg_same_permutation(const char *dir_a, const char *dir_b);
+int tlg_portable_recipes(const char *recipe_dir, const char *out);
+int tlg_prebuild(const char *cache_dir, const char *recipe_dir, const char *list, const char *game_dir, unsigned jobs);
 
 static void fail(const char *message) { fprintf(stderr, "ERROR: %s\n", message); exit(1); }
 static uint64_t read64(FILE *f) {
@@ -1607,7 +1611,13 @@ int main(int argc, char **argv) {
     if (argc == 5 && !strcmp(argv[1], "--zar-extract")) return zar_extract(argv[2], argv[3], argv[4]);
     if (argc == 4 && !strcmp(argv[1], "--zar-pack")) return zarchive_pack(argv[2], argv[3]);
     if (argc == 4 && !strcmp(argv[1], "--import-shaders")) return tlg_import_shaders(argv[2], argv[3]);
+    if (argc == 6 && !strcmp(argv[1], "--import-shaders")) return tlg_import_shaders_list(argv[2], argv[3], argv[4], argv[5], 0, 1);
+    if (argc == 8 && !strcmp(argv[1], "--import-shaders"))
+        return tlg_import_shaders_list(argv[2], argv[3], argv[4], argv[5], (unsigned)strtoul(argv[6], NULL, 10), (unsigned)strtoul(argv[7], NULL, 10));
     if (argc == 4 && !strcmp(argv[1], "--compare-meta")) return tlg_compare_meta(argv[2], argv[3]);
+    if (argc == 4 && !strcmp(argv[1], "--same-permutation")) return tlg_same_permutation(argv[2], argv[3]);
+    if (argc == 4 && !strcmp(argv[1], "--portable-recipes")) return tlg_portable_recipes(argv[2], argv[3]);
+    if (argc == 7 && !strcmp(argv[1], "--prebuild")) return tlg_prebuild(argv[2], argv[3], argv[4], argv[5], (unsigned)strtoul(argv[6], NULL, 10));
     char missing[128];
     if (argc == 2 && !strcmp(argv[1], "--cpu-features")) {
         if (!cpu_supported(missing, sizeof missing)) return 20;

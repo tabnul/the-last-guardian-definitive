@@ -1370,6 +1370,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         }
         info.AddBindings(binding);
         const size_t perm_idx = std::distance(program->modules.begin(), it);
+        program->NoteUse(perm_idx);
         worker.stages.push_back(
             {program, params.hash, hw_stage, info.pgm_base, &info.flattened_ud_buf});
         return std::make_tuple(&info, it->module, it->spec.fetch_shader_data,
@@ -1392,6 +1393,14 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         std::unique_lock lock{programs_mutex};
         program_cache.erase(it_pgm);
         it_pgm = program_cache.end();
+    }
+    if (it_pgm == program_cache.end()) {
+        // tlg: TLG_SHADER_STORE_LOOKUP: a program no pipeline key loaded may still be in the
+        // shader cache (the shader list's prebuild); its permutations count like loaded ones.
+        if (auto stored = LoadStoredProgram(params.hash, hw_stage)) {
+            std::unique_lock lock{programs_mutex};
+            it_pgm = program_cache.emplace(params.hash, std::move(stored)).first;
+        }
     }
     if (it_pgm == program_cache.end()) {
         auto new_program = std::make_unique<Program>(hw_stage, sw_stage, params);
@@ -1480,6 +1489,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         module = it->module;
         perm_idx = std::distance(program->modules.begin(), it);
         perm_hash = HashCombine(params.hash, perm_idx);
+        program->NoteUse(perm_idx);
     }
     return std::make_tuple(&program->info, module,
                            program->modules[perm_idx].spec.fetch_shader_data, perm_hash);
