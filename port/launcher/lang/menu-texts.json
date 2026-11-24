@@ -147,6 +147,8 @@
  "After each stage or checkpoint load, frees the textures of earlier stages that the new one does not use. Without it they stay in video memory until it runs short. In one test it kept 69 FPS where the game had dropped to 57 after 28 loads, but in a longer test the game still got slower over many loads (issue #20), so it is off by default for now. Off is the emulator's original behaviour.",
  "Keep GPU-only textures",
  "Keeps a texture the GPU drew into while its only correct copy is on the GPU (a game write right next to it blocks the copy back), until video memory is almost full. Without it, cleanup can throw that picture away and the game gets old data back. From SpartanPort (@maze1377). On by default; turn it off if video memory runs full more often.",
+ "Build shaders ahead",
+ "At start, builds the shaders of the shader list that comes with the port in the background, so places you see for the first time stutter less. The first start after an update or after clearing the shader cache takes longer: loading a stage waits until the build is done. The list holds only build recipes, no game code. Applies at the next start. On by default.",
  "Debug: give back freed buffer memory",
  "Since v0.5.2: when the game frees memory, its graphics card copy goes too. Test switch (issue #38): turn it off to check whether a problem started with v0.5.2. Off is the behaviour before v0.5.2. From the Shadow of the Colossus PC port (@AjncSystem, @Oussama268).",
  "Debug: texture cleanup follows the driver",

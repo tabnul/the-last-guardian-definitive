@@ -938,6 +938,12 @@ void PerformanceTab() {
         CheckRow(TR("Keep GPU-only textures"), s.keep_gpu_textures,
                  TR("Keeps a texture the GPU drew into while its only correct copy is on the GPU (a game write right next to it blocks the copy back), until video memory is almost full. Without it, cleanup can throw that picture away and the game gets old data back. From SpartanPort (@maze1377). On by default; turn it off if video memory runs full more often."),
                  d.keep_gpu_textures);
+        CheckRow(TR("Build shaders ahead"), s.shader_prebuild,
+                 TR("At start, builds the shaders of the shader list that comes with the port in the background, so "
+                    "places you see for the first time stutter less. The first start after an update or after "
+                    "clearing the shader cache takes longer: loading a stage waits until the build is done. The list "
+                    "holds only build recipes, no game code. Applies at the next start. On by default."),
+                 d.shader_prebuild);
         // Test switches for the buffer memory return of v0.5.2 (SotC port), issue #38.
         CheckRow(TR("Debug: give back freed buffer memory"), s.arena_release,
                  TR("Since v0.5.2: when the game frees memory, its graphics card copy goes too. Test switch (issue #38): "

@@ -2929,6 +2929,21 @@ class Launcher:
         slow_box.bind('<<ComboboxSelected>>', lambda _: slow_picked())
         help_mark(parent, slow.what).grid(row=row, column=2, sticky='w', padx=(4, 0), pady=3)
         resets.append(lambda: (slow_box.current(slow_values.index(slow.default)), slow_picked()))
+        # Build shaders ahead (tlg.ini shader_prebuild, read at start), next to Clear shader cache below.
+        prebuild = next(item for item in backports_table.MENU if item.key == 'shader_prebuild')
+        parent, row = place(0)
+        prebuild_var = tk.BooleanVar(
+            value=tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini').get('shader_prebuild', prebuild.default) != '0')
+
+        def prebuild_toggled():
+            tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
+            tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {'shader_prebuild': '1' if prebuild_var.get() else '0'})
+            self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
+
+        prebuild_box = ttk.Checkbutton(parent, text=prebuild.name, variable=prebuild_var, command=prebuild_toggled)
+        prebuild_box.grid(row=row, column=0, columnspan=2, sticky='w')
+        help_mark(parent, prebuild.what, prebuild_box).grid(row=row, column=2, sticky='w', padx=(4, 0), pady=3)
+        resets.append(lambda: (prebuild_var.set(prebuild.default == '1'), prebuild_toggled()))
         # The memory test switches moved to Debug > Flags (2026-11-12).
         bottom = ttk.Frame(frame)
         bottom.grid(row=2, column=0, columnspan=2, sticky='ew', pady=(10, 0))

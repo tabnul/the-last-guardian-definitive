@@ -70,6 +70,30 @@ class ShaderCacheTest(unittest.TestCase):
             self.assertTrue(path.exists(), path)
         self.assertEqual(shader_cache.clear(['CUSA03627'], self.user, self.env), (0, []))
 
+    def test_prebuild_files_are_counted_and_cleared(self):
+        """What Build shaders ahead writes (built shaders, pipeline keys and binaries, the build's
+        progress and left-out files, a half-written file) is in the game's keyed folder and goes
+        with the rest, and so do the player's recorded recipes; the shader list shipped next to
+        the executable stays."""
+        if os.name == 'nt':
+            self.skipTest('the XDG location is Linux only')
+        keyed = self.user / 'cache' / 'CUSA03627-e3bd0f4d2138'
+        prebuild = [keyed / '0x00000000deadbeef_0.spv', keyed / '0x00000000deadbeef_0.meta',
+                    keyed / 'pipelines' / 'graphics.key', keyed / 'import-progress-0.txt',
+                    keyed / 'import-progress-3.txt', keyed / 'import-left-out.txt',
+                    keyed / 'pipeline-binaries' / 'c.bin', keyed / 'profile.bin.4242.tmp',
+                    self.user / 'cache' / 'CUSA03627-recipes' / '0x00000000deadbeef_0.bin']
+        for path in prebuild:
+            write(path, 100)
+        shipped = self.root / 'port' / 'shader-list' / 'CUSA03627.tlgsl'
+        write(shipped, 10)
+        self.assertEqual(shader_cache.size(['CUSA03627'], self.user, self.env), 5000 + 900)
+        freed, failures = shader_cache.clear(['CUSA03627'], self.user, self.env)
+        self.assertEqual((freed, failures), (5900, []))
+        for path in prebuild:
+            self.assertFalse(path.exists(), path)
+        self.assertTrue(shipped.exists())
+
     def test_files_that_cannot_go_are_reported(self):
         if os.name == 'nt' or os.geteuid() == 0:
             self.skipTest('needs POSIX permissions without root')

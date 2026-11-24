@@ -853,6 +853,10 @@
         "3": "高",
         "4": "最大"
       }
+    },
+    "menu:shader_prebuild": {
+      "name": "シェーダーを事前に構築",
+      "what": "起動時に、移植版に同梱のシェーダーリストのシェーダーをバックグラウンドで構築し、初めて訪れる場所でのカクつきを減らします。アップデート後やシェーダーキャッシュの削除後の最初の起動は時間がかかります：ステージの読み込みは構築の完了を待ちます。リストには構築用のレシピだけが含まれ、ゲームのコードは含まれません。次回の起動から有効です。初期設定はオンです。"
     }
   },
   "menu": {
@@ -1269,6 +1273,8 @@
     "High": "高",
     "Extreme": "最大",
     "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "木の葉の茂みが平たく明るすぎて見えます。内部の光に、葉の重なりによる影がありません。この設定は茂みの内部の光を暗くします。",
-    "Realistic tree shade": "リアルな木の陰影"
+    "Realistic tree shade": "リアルな木の陰影",
+    "Build shaders ahead": "シェーダーを事前に構築",
+    "At start, builds the shaders of the shader list that comes with the port in the background, so places you see for the first time stutter less. The first start after an update or after clearing the shader cache takes longer: loading a stage waits until the build is done. The list holds only build recipes, no game code. Applies at the next start. On by default.": "起動時に、移植版に同梱のシェーダーリストのシェーダーをバックグラウンドで構築し、初めて訪れる場所でのカクつきを減らします。アップデート後やシェーダーキャッシュの削除後の最初の起動は時間がかかります：ステージの読み込みは構築の完了を待ちます。リストには構築用のレシピだけが含まれ、ゲームのコードは含まれません。次回の起動から有効です。初期設定はオンです。"
   }
 }

@@ -853,6 +853,10 @@
         "3": "Alto",
         "4": "Extremo"
       }
+    },
+    "menu:shader_prebuild": {
+      "name": "Compilar shaders por adelantado",
+      "what": "Al iniciar, compila en segundo plano los shaders de la lista de shaders que viene con el port, para que los lugares que ves por primera vez den menos tirones. El primer inicio tras una actualización o tras borrar la caché de shaders tarda más: la carga de una fase espera a que termine la compilación. La lista solo contiene recetas de compilación, nada de código del juego. Se aplica en el próximo inicio. Activado por defecto."
     }
   },
   "menu": {
@@ -1269,6 +1273,8 @@
     "High": "Alto",
     "Extreme": "Extremo",
     "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "Las copas de los árboles se ven planas y demasiado claras: la luz en su interior no tiene sombra entre las capas de hojas. Esto oscurece la luz dentro de las copas.",
-    "Realistic tree shade": "Sombra realista de árboles"
+    "Realistic tree shade": "Sombra realista de árboles",
+    "Build shaders ahead": "Compilar shaders por adelantado",
+    "At start, builds the shaders of the shader list that comes with the port in the background, so places you see for the first time stutter less. The first start after an update or after clearing the shader cache takes longer: loading a stage waits until the build is done. The list holds only build recipes, no game code. Applies at the next start. On by default.": "Al iniciar, compila en segundo plano los shaders de la lista de shaders que viene con el port, para que los lugares que ves por primera vez den menos tirones. El primer inicio tras una actualización o tras borrar la caché de shaders tarda más: la carga de una fase espera a que termine la compilación. La lista solo contiene recetas de compilación, nada de código del juego. Se aplica en el próximo inicio. Activado por defecto."
   }
 }
