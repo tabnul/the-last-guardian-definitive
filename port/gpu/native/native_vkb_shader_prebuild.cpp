@@ -311,8 +311,6 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
         st.listed = std::move(listed);
         st.entries = list->items.size();
     }
-    const char* guesses_env = std::getenv("TLG_VKB_SHADER_LIST_GUESSES");
-    const bool guesses = !(guesses_env != nullptr && std::strcmp(guesses_env, "0") == 0);
     const auto list_line = fmt::format("list {:016x}", ShaderList::FileId(list_path));
     // the game files the programs are read from: an updated game builds again
     std::string game_files;
@@ -322,7 +320,7 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
         const auto time = std::filesystem::last_write_time(game / name, time_ec);
         game_files += fmt::format(" {}:{}:{}", name, size_ec ? 0 : size, time_ec ? 0 : static_cast<long long>(time.time_since_epoch().count()));
     }
-    const auto marker_line = fmt::format("{} guesses {} game{}", list_line, guesses ? 1 : 0, game_files);
+    const auto marker_line = fmt::format("{} game{}", list_line, game_files);
     if (FirstLine(ShaderList::BuiltMarker(store)) == marker_line) {
         std::printf("Shader prebuild (new engine): the list (%zu entries) was built into this store before (list-built.txt): nothing to build\n", list->items.size());
         {

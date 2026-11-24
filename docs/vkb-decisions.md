@@ -9,6 +9,29 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-24 - Shader pre-build: only measured shaders, build processes end with the game, a log line for missing shaders (not yet merged)
+
+- **Problem:** the normal renderer's shader list also held guessed shaders (B). On 218 scenes they were used 0 times,
+  took about three quarters of the first-start build and crashed build processes (39 bad guesses removed on Linux, 4
+  more crashed the build on the owner's Windows PC, exit 0xC0000409). With guesses on, the 4 condor shaders the
+  recording missed were still built while playing (the game wanted another permutation), first start 11.9 s against
+  2.6 s. Build processes of the normal renderer could outlive a game that quit or crashed. Six pull requests (143 to
+  148) for one feature.
+- **Owner decisions (11-24):** "Why would I want a crashing solution"; "only the measured list"; one list for the
+  European and US game (the same game files, SHA-256 compared on the owner's PC); "the only way of getting it
+  complete": the game logs the recipe of every shader it builds while playing that the list lacks, without game code,
+  on by default; two pull requests only (149 normal renderer, public; 150 new engine on `vkb`), 143 to 148 closed.
+- **Choice (box, how):** the guess code is removed, not kept off (it was all new code of these pull requests, so
+  removing it makes the change smaller; the restart after a bad shader stays). Build processes: Linux, their own
+  process group and a parent-death signal (as pull request 150 already did); Windows, a job object that kills them
+  when the game's last handle closes. The log line holds a recipe in the portable form (version 3) without the
+  program: its length and CRC-32 instead, a fetch program as its vertex input layout, other memory only in small
+  regions that pass make_list.py's code rule; `log_recipes.py` reads the program back from the player's game files.
+  Considered and left: logging the program bytes (game code in public logs: never); a list entry form in the log
+  (the tools merge recipes, so a recipe form keeps one path). Not covered: pipeline keys (a pipeline built while
+  playing is not logged), and a missing permutation of a listed program met while the background build still runs.
+- **Who:** owner (what), box (how). **Links:** pull requests 149 and 150; job 2100g.
+
 ## 2026-11-24 - New engine shader list: what an entry holds, how it is checked, when it is built (not yet merged)
 
 - **Problem:** step 3 of the new engine's shader pre-build: a shipped list without game code from which the game fills

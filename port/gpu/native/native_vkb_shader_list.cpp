@@ -77,7 +77,10 @@ std::filesystem::path Path() {
     if (const char* env = std::getenv("TLG_VKB_SHADER_LIST"); env != nullptr && *env != '\0') {
         return std::strcmp(env, "0") == 0 ? std::filesystem::path{} : std::filesystem::u8path(env);
     }
-    const auto name = MemoryPatcher::g_game_serial + ".vkb.tlgsl";
+    // The US game (CUSA03627, 1.03) has the same shader archives and eboot.bin as the European one (CUSA03745, 1.03): one list for both
+    // (as the normal renderer's ShaderList::Path); each entry's length and CRC-32 still check what is read from the player's files.
+    const auto serial = MemoryPatcher::g_game_serial == "CUSA03627" ? std::string{"CUSA03745"} : MemoryPatcher::g_game_serial;
+    const auto name = serial + ".vkb.tlgsl";
     const auto dir = ExecutableDir();
     for (const auto& candidate : {dir / "shader-list" / name, dir.parent_path() / "shader-list" / name}) {
         std::error_code error;
@@ -101,7 +104,7 @@ std::optional<List> Read(const std::filesystem::path& path, u64 portable_id, std
     std::memcpy(&size, file.data() + Magic.size() + 8, 8);
     std::memcpy(&id, file.data() + Magic.size() + 16, 8);
     if (version != ListVersion) {
-        error = fmt::format("list version {} (the new engine reads version {} only; versions 1 to 4 are the normal renderer's)", version, ListVersion);
+        error = fmt::format("list version {} (the new engine reads version {} only; versions 1 to 3 are the normal renderer's)", version, ListVersion);
         return std::nullopt;
     }
     if (id != portable_id) {
@@ -140,15 +143,10 @@ std::optional<List> Read(const std::filesystem::path& path, u64 portable_id, std
         }
         list.items.push_back(std::move(item));
     }
-    const u32 guessed = r.Pod<u32>();
-    for (u32 i = 0; r.ok && i < guessed; ++i) {
-        list.guessed.push_back(r.Pod<u64>());
-    }
     if (!r.ok || r.pos != payload.size()) {
         error = "damaged list";
         return std::nullopt;
     }
-    std::ranges::sort(list.guessed);
     return list;
 }
 

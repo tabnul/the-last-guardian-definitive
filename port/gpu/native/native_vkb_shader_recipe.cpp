@@ -956,8 +956,6 @@ int BuildList(const std::filesystem::path& store_folder, const std::filesystem::
         std::printf("vkb-build-list: the list %s is not read: %s\n", list_path.string().c_str(), why.c_str());
         return 3;
     }
-    const char* guesses_env = std::getenv("TLG_VKB_SHADER_LIST_GUESSES");
-    const bool guesses = !(guesses_env != nullptr && std::strcmp(guesses_env, "0") == 0);
     std::map<u64, std::string> left; // entries a build process stopped on before (crash, hang): the parent wrote them
     {
         std::ifstream f{ShaderList::LeftOutFile(store)};
@@ -1001,10 +999,6 @@ int BuildList(const std::filesystem::path& store_folder, const std::filesystem::
         ++mine;
         if (const auto it = left.find(index); it != left.end()) {
             skip(index, item, fmt::format("a build process stopped on it before ({})", it->second.empty() ? "?" : it->second.substr(1)));
-            continue;
-        }
-        if (!guesses && std::ranges::binary_search(list->guessed, item.pgm_hash)) {
-            skip(index, item, "a guess, and guesses are off (TLG_VKB_SHADER_LIST_GUESSES=0)");
             continue;
         }
         if (progress != nullptr) { // the parent reads which entry a process that stopped was building (before its program is read: a crash there names this entry too)

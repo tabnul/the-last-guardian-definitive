@@ -70,7 +70,7 @@ int ListRecipes(const std::filesystem::path& store_folder, const std::filesystem
 /// `game_dir` (length and CRC-32 checked). Before each entry it writes the entry's number into list-build-progress-<part>.txt of the store;
 /// entries named in list-build-left-out.txt (a process stopped on them before: the game's parent, native_vkb_shader_prebuild.h) are skipped.
 /// Every entry of the part ends counted: built, already in the store, or skipped with its reason (list-build-result-<part>.txt, and the
-/// first three of each reason in the log). Guesses are skipped with TLG_VKB_SHADER_LIST_GUESSES=0. 0 done, 2 refused, 3 list unreadable,
+/// first three of each reason in the log). 0 done, 2 refused, 3 list unreadable,
 /// 4 writes failed.
 int BuildList(const std::filesystem::path& store_folder, const std::filesystem::path& list, const std::filesystem::path& game_dir, u32 part, u32 parts);
 
