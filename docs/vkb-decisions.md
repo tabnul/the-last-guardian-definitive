@@ -9,6 +9,23 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-25 - Shader translation: not at file load, but made faster with the same output (not yet merged)
+
+- **Problem:** step 2 of issue 160 was to translate a shader when the game loads its file, so no draw waits for it.
+  Step 2 of issue 160 (translate at file load) not built: a translation reads the draw's targets, resource tables and
+  binding start; only decode + control flow graph (12-14%, about 30 ms per scene) are free of them.
+- **Considered:** (1) decode and the control flow graph at file load, (2) a translation independent of the draw,
+  (3) the disk store of pull request 150 read at file load, (4) guessed draw data (dropped by the owner on 2026-11-24),
+  (5) a faster translator, proven word for word, (6) translating the new stages of one frame in parallel.
+- **Choice:** 5 now, 2 only if 5 gives too little. A sampling profile showed the time in three data structures used
+  by every pass (each instruction's list of its uses, the dead code pass's set of live instructions, a quadratic search
+  in the local common-subexpression step), not in one pass. Replacing them keeps every list in the same order, so the
+  module the driver gets is the same word for word (switch `TLG_VKB_TRANSLATE_FAST`, default on). Measured: 14-21% less
+  translation time when all recorded shaders are translated in a row, 10-13% less in the scene while playing (garden,
+  condor). A cache for the use lists' memory was tried and left out: faster in the row, not in the game. What is left is
+  mostly the algorithm of the passes themselves; a larger gain needs way 2. Chosen by the box.
+- **Links:** issue 160 comment 7155304062 (design note of step 2), the pull request of branch `fix/vkb-translate-faster`.
+
 ## 2026-11-25 - Shader stages: translated once per session and taken again for a new settings combination (not yet merged)
 
 - **Problem:** the new engine translated a shader stage again for every new settings combination (variant) of a draw,
