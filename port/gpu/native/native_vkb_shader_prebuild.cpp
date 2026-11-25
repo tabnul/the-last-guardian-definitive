@@ -502,7 +502,7 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
 bool HookWanted() {
     static const bool on = [] {
         const char* vkb = std::getenv("TLG_VKB");
-        return vkb != nullptr && vkb[0] == '1' && ShaderStore::GetMode() != ShaderStore::Mode::Off;
+        return vkb != nullptr && vkb[0] == '1' && ShaderStore::OnDisk(); // TLG_VKB_SHADER_PREBUILD (not the session memo alone)
     }();
     return on;
 }

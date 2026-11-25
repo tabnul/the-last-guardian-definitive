@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
-// TLG_VKB_SHADER_PREBUILD: the new engine's translated shader stages, kept on disk.
+// TLG_VKB_SHADER_MEMO and TLG_VKB_SHADER_PREBUILD: the new engine's translated shader stages, kept for the session and on disk.
 //
 // The new engine translates a stage (program + the settings its translation reads) into a Vulkan module the first time a draw or dispatch
 // needs it; the translation is most of the cost of a first draw (issue 111: 87% on this box, the driver 12%). The store keeps every
@@ -15,9 +15,14 @@
 // (TranslatorEnv in the .cpp; port/tests/test_vkb_store_settings.py keeps that list complete). Folders of other ids are removed when a new
 // one is opened. The launcher's "clear shader cache" removes cache/<serial>* and so this folder too.
 //
-// TLG_VKB_SHADER_PREBUILD=0 or off (default): nothing is read or written, every stage is translated (the old behaviour).
-// =1 or on: on. =check: every stage is translated anyway, and a stored entry that differs from the fresh translation is counted and
-// logged as an error (the fresh one is used). Any other value: off, with a warning.
+// Two switches, each 0/off, 1/on or check (any other value: off, with a warning):
+// TLG_VKB_SHADER_MEMO (default on, issue 160 step 1): every translation is kept in memory for the session, so a new settings combination
+// (variant) of a stage translated before with the same inputs takes it instead of translating it again (on this box about three quarters of
+// all translations were such repeats). Nothing is read from or written to disk. =0: every stage is translated (the old behaviour).
+// TLG_VKB_SHADER_PREBUILD (default off): the store is also on disk (the folder below) and the shader pre-build fills it. On or check
+// keeps the stages in memory too, whatever TLG_VKB_SHADER_MEMO says.
+// check (in either switch): every stage is translated anyway, and a stored entry that differs from the fresh translation is counted and
+// logged as an error (the fresh one is used).
 
 #include <filesystem>
 #include <memory>
@@ -36,10 +41,13 @@
 namespace Core::Vkb::ShaderStore {
 
 enum class Mode : u8 { Off, On, Check };
+/// The store's mode for its callers: off only when both switches are off; check when either is check
 [[nodiscard]] Mode GetMode();
+/// TLG_VKB_SHADER_PREBUILD is on or check: the store's folder on disk, its writer, the shader recipes and the shader pre-build
+[[nodiscard]] bool OnDisk();
 
-/// Opens the store for `profile` (the translator's; once, later calls are ignored): finds and lists its folder. When that fails nothing is
-/// read or written (said once in the log) and translations are kept in memory for the session.
+/// Opens the store for `profile` (the translator's; once, later calls are ignored): with OnDisk, finds and lists its folder; when that fails
+/// nothing is read or written (said once in the log) and translations are kept in memory for the session, as without OnDisk.
 void Open(const VkbShader::Profile& profile);
 
 /// What one translation hands back to its caller

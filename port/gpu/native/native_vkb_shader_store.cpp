@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// TLG_VKB_SHADER_PREBUILD: the new engine's translated shader stages, kept on disk (see the header)
+// TLG_VKB_SHADER_MEMO and TLG_VKB_SHADER_PREBUILD: the new engine's translated shader stages, kept for the session and on disk (see the header)
 
 #include "native/native_vkb_shader_store.h"
 #include "native/native_vkb_shader_list.h"
@@ -758,29 +758,47 @@ void NoteUse(u64 pgm_hash, u32 hw_stage, Entry& e) {
     std::printf("Shader used from the cache: %#018llx_0 (hw stage %u), found by the lookup\n", static_cast<unsigned long long>(pgm_hash), hw_stage);
 }
 
+/// A store switch's value: 1/on, 0/off, check; unset: `fallback`; anything else: off, with a warning
+Mode ReadMode(const char* name, Mode fallback) {
+    const char* e = std::getenv(name);
+    if (e == nullptr) {
+        return fallback;
+    }
+    if (std::strcmp(e, "0") == 0 || std::strcmp(e, "off") == 0) {
+        return Mode::Off;
+    }
+    if (std::strcmp(e, "1") == 0 || std::strcmp(e, "on") == 0) {
+        return Mode::On;
+    }
+    if (std::strcmp(e, "check") == 0) {
+        return Mode::Check;
+    }
+    LOG_WARNING(Render_Vulkan, "{}={}: not 0, off, 1, on or check; taken as off", name, e);
+    return Mode::Off;
+}
+
+Mode MemoMode() {
+    static const Mode mode = ReadMode("TLG_VKB_SHADER_MEMO", Mode::On);
+    return mode;
+}
+
+Mode DiskMode() {
+    // unset: follows Performance > Build shaders ahead (tlg.ini shader_prebuild, on by default), the same setting as the normal renderer's pre-build
+    static const Mode mode = ReadMode("TLG_VKB_SHADER_PREBUILD", TlgSettings::Get().startup_shader_prebuild ? Mode::On : Mode::Off);
+    return mode;
+}
 } // namespace
 
 Mode GetMode() {
-    static const Mode mode = [] {
-        // Unset: follows Performance > Build shaders ahead (tlg.ini shader_prebuild, on by
-        // default), the same setting as the normal renderer's pre-build.
-        const char* e = std::getenv("TLG_VKB_SHADER_PREBUILD");
-        if (e == nullptr) {
-            return TlgSettings::Get().startup_shader_prebuild ? Mode::On : Mode::Off;
-        }
-        if (std::strcmp(e, "0") == 0 || std::strcmp(e, "off") == 0) {
-            return Mode::Off;
-        }
-        if (std::strcmp(e, "1") == 0 || std::strcmp(e, "on") == 0) {
-            return Mode::On;
-        }
-        if (std::strcmp(e, "check") == 0) {
-            return Mode::Check;
-        }
-        LOG_WARNING(Render_Vulkan, "TLG_VKB_SHADER_PREBUILD={}: not 0, off, 1, on or check; the store is off (every stage is translated)", e);
-        return Mode::Off;
-    }();
+    // the disk store keeps its stages in memory too, so either switch on keeps them for the session; check in either switch checks
+    static const Mode mode = MemoMode() == Mode::Check || DiskMode() == Mode::Check ? Mode::Check
+                             : MemoMode() == Mode::On || DiskMode() == Mode::On     ? Mode::On
+                                                                                    : Mode::Off;
     return mode;
+}
+
+bool OnDisk() {
+    return DiskMode() != Mode::Off;
 }
 
 void Open(const VkbShader::Profile& profile) {
@@ -789,6 +807,11 @@ void Open(const VkbShader::Profile& profile) {
         return;
     }
     std::call_once(once, [&] {
+        if (!OnDisk()) { // TLG_VKB_SHADER_MEMO only: kept in memory for this session; no folder, no writer, no shader pre-build
+            std::printf("Shader store (new engine): in memory for this session (TLG_VKB_SHADER_MEMO=%s), not on disk (TLG_VKB_SHADER_PREBUILD off)\n",
+                        GetMode() == Mode::Check ? "check" : "on");
+            return;
+        }
         std::thread{WriterLoop}.detach();
         writer_started.store(true, std::memory_order_release);
         OpenFolder(profile); // at the engine's start, before its first draw: a stat, a folder listing (a few ms)
@@ -881,17 +904,26 @@ bool Keep(const Inputs& in, const VkbShader::Profile& profile, const VkbShader::
         }
     }
     c_spv_words.fetch_add(spv.size(), std::memory_order_relaxed);
-    std::vector<u8> bytes = Encode(*e);
-    std::string name = FileName(in.params.hash, in.runtime, bytes);
+    // on disk only once the folder is open (else the store is in memory only: TLG_VKB_SHADER_MEMO without TLG_VKB_SHADER_PREBUILD, or the folder could not be opened, said
+    // at the start)
+    const bool to_disk = ready.load(std::memory_order_acquire);
+    std::vector<u8> bytes;
+    std::string name;
+    if (to_disk) {
+        bytes = Encode(*e);
+        name = FileName(in.params.hash, in.runtime, bytes);
+    }
     State& st = S();
     {
         std::scoped_lock lock{st.mutex};
         st.entries[KeyOf(in.params.hash, in.runtime)].push_back(std::move(e));
-        st.indexed.insert(name); // a later Rescan does not read it back
+        if (to_disk) {
+            st.indexed.insert(name); // a later Rescan does not read it back
+        }
     }
-    if (ready.load(std::memory_order_acquire)) {
+    if (to_disk) {
         QueueWriteFile(st.folder / name, std::move(bytes));
-    } else { // the folder could not be opened (said once at the start): kept in memory only, every one counted
+    } else if (OnDisk()) { // the folder could not be opened (said once at the start): kept in memory only, every one counted
         c_memory_only.fetch_add(1, std::memory_order_relaxed);
     }
     return true;
@@ -1082,7 +1114,8 @@ void NoteFrame() {
 }
 
 nlohmann::json Report() {
-    const char* mode = GetMode() == Mode::Off ? "off" : GetMode() == Mode::Check ? "check" : "on";
+    const auto name = [](Mode m) { return m == Mode::Off ? "off" : m == Mode::Check ? "check" : "on"; };
+    const char* mode = name(GetMode());
     size_t programs = 0, waiting = 0;
     std::string error;
     std::string dir;
@@ -1098,6 +1131,8 @@ nlohmann::json Report() {
         waiting = st.write_queue.size();
     }
     return {{"mode", mode},
+            {"memo", name(MemoMode())}, // TLG_VKB_SHADER_MEMO: in memory for the session
+            {"disk", name(DiskMode())}, // TLG_VKB_SHADER_PREBUILD: on disk, and the shader pre-build
             {"folder", dir},
             {"open_error", error},
             {"open_ms", c_open_ms.load()},

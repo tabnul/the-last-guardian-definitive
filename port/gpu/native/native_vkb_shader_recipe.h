@@ -15,7 +15,7 @@
 // shader cache" removes cache/<serial>* and so this folder too (port/tests/test_shader_cache.py checks the rule).
 // A recipe carries a layout id (native_vkb_shader_fields.h): a build that lays RuntimeInfo or Bindings out otherwise does not read it.
 //
-// Recording: TLG_VKB_SHADER_RECIPES=1 with the store on (TLG_VKB_SHADER_PREBUILD=1 or check); default off. A recipe is kept for each
+// Recording: TLG_VKB_SHADER_RECIPES=1 with the store on disk (TLG_VKB_SHADER_PREBUILD=1 or check; the session memo TLG_VKB_SHADER_MEMO alone records none); default off. A recipe is kept for each
 // translation the store keeps (Keep), so one per stage variant the store lacked.
 
 #include <filesystem>

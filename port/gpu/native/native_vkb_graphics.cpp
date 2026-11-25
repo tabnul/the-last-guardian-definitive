@@ -534,7 +534,7 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
     // note 41, test only: TLG_VKB_TEST_PS_PROBE=<pixel shader hash>: render target 3 gets the coordinates of the shader's first 2D texture sample (x, y) and the first
     // barycentric weight they use (z), so a G-buffer dump shows what the shader receives
     static const u64 probe = [] { const char* e = std::getenv("TLG_VKB_TEST_PS_PROBE"); return e != nullptr ? std::strtoull(e, nullptr, 16) : 0ull; }();
-    // TLG_VKB_SHADER_PREBUILD (shader store): a stage translated before with the same inputs, in this session or an earlier one, is taken from the store; the
+    // TLG_VKB_SHADER_MEMO / TLG_VKB_SHADER_PREBUILD (shader store): a stage translated before with the same inputs, in this session (or an earlier one, on disk), is taken from the store; the
     // debug census and the probe work on the translated program, so with them on every stage is translated
     namespace Store = Core::Vkb::ShaderStore;
     const bool debug_tool = Core::Vkb::FlatCensus::On() || probe != 0;
@@ -548,7 +548,7 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
     const bool found = store_mode != Store::Mode::Off && Store::Find(store_in, stored);
     if (!found || store_mode == Store::Mode::Check) {
         // TLG_VKB_SHADER_RECIPES: a stage the store lacks also keeps its recipe (the guest memory the translation reads, recorded on this thread)
-        Core::Vkb::ShaderRecipe::Recording recording{!found && store_mode != Store::Mode::Off && Core::Vkb::ShaderRecipe::On()};
+        Core::Vkb::ShaderRecipe::Recording recording{!found && store_mode != Store::Mode::Off && Store::OnDisk() && Core::Vkb::ShaderRecipe::On()};
         const u64 translate_t0 = NowNs();
         const auto program = VkbShader::TranslateProgram(params.code, *pools, *out.info, out.runtime, profile);
         if (out.info->translation_failed) {
