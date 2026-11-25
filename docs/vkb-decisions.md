@@ -9,6 +9,32 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-25 - New engine shader list: made from the normal renderer's list, two settings fixed (way A) (not yet merged)
+
+- **Problem:** the owner wants one shipped shader list for both renderers ("the list of 149 and 150 is the same, 150
+  can use the same list as a source", 2026-11-24). Every setting the new engine's translator needs can be copied or
+  worked out from a normal list entry, except two the normal renderer does not use and so does not keep:
+  `dx10_clamp` (all stages) and `depth_before_shader` (pixel stages).
+- **Considered:** (A) fixed values `dx10_clamp` = 1 and `depth_before_shader` = 0, the values of every stage the new
+  engine recorded, each fixed value counted; (B) read both settings from the game's shader files at build time (more
+  game-file code, file layout not checked); (C) the normal renderer's recording also keeps them (changes the normal
+  renderer and needs a new recording of all scenes).
+- **Owner's choice (PR 150, 2026-11-25):** "A. Fixed values for the two settings (dx10_clamp = 1,
+  depth_before_shader = 0), each fixed-value conversion counted in the build result. B and C are dropped. Build it
+  and run the three-scene check; if the count of shaders built while playing for this reason is ever above zero,
+  report it."
+- **How (box choices):** the conversion runs in the build process, entry by entry, from the shipped normal list
+  (read with the normal renderer's own reader, not changed); nothing is converted at packaging time, so there is no
+  second list file to keep in step. Fields are matched by name; a field of either side without a rule stops that
+  entry (counted by reason), nothing is guessed. The build result counts the fixed values (`fixed_dx10_clamp`,
+  `fixed_depth_before_shader`); the game counts every stage it translates with another value
+  (`built_outside_list_fixed_values`, with a warning line), since such a stage can never come from the list. The new
+  engine's own list file, its maker (`tlg-probe --vkb-list-recipes`, `make_list.py --vkb`) and its portable form are
+  removed.
+- **Data behind A:** 60907 recorded stages of all 219 scenes (combined run 2026-11-25): `dx10_clamp` is 1 in all,
+  `depth_before_shader` is 0 in all 24386 pixel stages. Stages that appear only later in play are not covered.
+- **Who:** owner (way A); box (where the conversion runs). **Links:** pull request 150.
+
 ## 2026-11-24 - Shader cache: a missing permutation is looked for in the cache before it is built, also for a program loaded by keys (not yet merged)
 
 - **Problem:** in the log-line proof of job 2100g (garden, a list rebuilt from the log lines after 65 programs were
@@ -81,6 +107,8 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   the game's recorded memory also lies; a mapping failed in 2 of 12 runs. The build processes start themselves once
   without address randomization (Linux). Chose this over reserving every recorded range first (more code, same result).
 - **Guesses (B):** left for a later step at the time; dropped for good by the owner on 2026-11-24 (entry at the top).
+- **Entry part replaced on 2026-11-25:** the new engine reads the normal renderer's list (entry at the top); its own
+  entry form, the twice-translated check and its list file are gone. The build part stays.
 - Box choices. **Links:** pull request of branch `fix/vkb-shader-prebuild`.
 
 ## 2026-11-24 - Shader pre-build for the new engine: a store on disk, filled by a separate build process (not yet merged)

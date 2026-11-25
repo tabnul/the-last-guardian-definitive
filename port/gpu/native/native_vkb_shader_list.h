@@ -1,56 +1,87 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
-// TLG_VKB_SHADER_PREBUILD: the new engine's shader list. A shipped file (shader-list/<serial>.vkb.tlgsl next to the executable) that names
-// the shader stages the game needs without holding any program bytes: each entry is the recipe of one translation (native_vkb_shader_recipe.h)
-// with its program replaced by where the player's own game files hold it (an entry of a .psarc archive or a game file, an offset, the length
-// and a CRC-32), and its fetch shader (code too) replaced by the vertex input layout the translator reads from it. The rest is state: the
-// user data words, the descriptor bytes the translator read, the flattened user data, the runtime info and binding start (in the portable
-// form of native_vkb_shader_fields.h, so a Windows build reads a list made on Linux), the salt and the local size.
+// TLG_VKB_SHADER_PREBUILD: the new engine's shader list is the normal renderer's (owner decision 2026-11-24: one shipped list for both
+// renderers; way A of 2026-11-25). The list file is shader-list/<serial>.tlgsl next to the executable, made by
+// port/tools/shader-list/make_list.py and read by the normal renderer's own reader (video_core/renderer_vulkan/shader_list.h: its Read and
+// GameFiles, which only read files; port/gpu/shadps4 is not changed: principle 8). Each entry names one shader stage as the normal
+// renderer's translator was handed it, its program by where the player's game files hold it; Convert below turns it into the inputs of the
+// new engine's translator.
 //
-// The same container as the normal renderer's list (video_core/renderer_vulkan/shader_list.cpp: "TLGSLIST", a version, the payload size, an
-// id, the payload packed with zlib) and the same game-file reader (its GameFiles, which reads trico_bootp/trico_boot.psarc and files of the
-// game folder): port/tools/shader-list/make_list.py --vkb writes it, check_no_code.py proves it holds no program bytes. The version is the
-// new engine's own (ListVersion), so neither renderer reads the other's list.
-//
-// Payload: u32 sources, per source (u8 kind, u32 n, n bytes ident); u32 entries, per entry (u64 program hash, u32 source, u64 offset, u32
-// length, u32 crc, u32 n, n bytes body: the recipe's state, written and read by native_vkb_shader_recipe.cpp). Only recorded shaders: the
-// list carries no guesses (owner decision 2026-11-24; version 101 had an empty field for them).
+// Per field of the new engine's inputs (native_vkb_shader_fields.h, by member name):
+// - copied: the stages, the program's hash and base, the 16 user data words, the flattened user data, the recorded memory reads, the vertex
+//   input layout (without the normal renderer's `semantic`, which the new engine does not have), every runtime info field both renderers
+//   have, and the binding starts `unified` and `buffer`;
+// - derived: kind (compute when the stage is compute), the code length (the entry's length / 4), salt and local size x (compute: the
+//   workgroup's size x, the new engine's own rule in native_vkb_compute.cpp; graphics: 0), vs.is_indirect (a vertex or instance offset
+//   register is named: the normal renderer sets them only for indirect draws, the new engine sets is_indirect with them,
+//   native_vkb_graphics.cpp), props.reserved = 0 (spare bits), Bindings.indexed = 0 (the new engine never starts a stage past 0 there);
+// - fixed (way A; the normal list does not hold them): props.dx10_clamp = 1 and, for a pixel stage, fs.depth_before_shader = 0, the values
+//   of every stage the new engine recorded (60907 stages of 219 scenes). Each fixed value is counted in the build result. A stage the game
+//   uses with another value is never built from the list: the store's rule (same inputs) lets the game translate it while playing, and
+//   the store counts that (OutsideFixedValues, report: built_outside_list_fixed_values) with a warning line.
+// - dropped: the normal renderer's Bindings.user_data (its own push constant counter; the new engine's translation does not have it).
+// A field of either side that is in none of these lists stops the conversion of the entry (counted by reason): nothing is guessed.
 
+#include <array>
 #include <filesystem>
-#include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "common/types.h"
+#include "native/shadps4/shader_recompiler/backend/bindings.h"
+#include "native/shadps4/shader_recompiler/frontend/fetch_shader.h"
+#include "native/shadps4/shader_recompiler/params.h"
+#include "native/shadps4/shader_recompiler/runtime_info.h"
+
+namespace Vulkan::ShaderList {
+struct Entry;
+}
 
 namespace Core::Vkb::ShaderList {
 
-inline constexpr u32 ListVersion = 102; ///< the new engine's list, form 2 (the normal renderer's lists are versions 1 to 3)
+/// The fixed values of way A (see above)
+inline constexpr bool FixedDx10Clamp = true;
+inline constexpr bool FixedDepthBeforeShader = false;
 
-/// The list of this game: TLG_VKB_SHADER_LIST (a path; "0": none), else <serial>.vkb.tlgsl in shader-list/ next to the executable or one folder
-/// above it (a build in port/out). Empty when there is none.
+/// A stage whose inputs hold another value than the list's fixed ones: the list can never hold it
+[[nodiscard]] inline bool OutsideFixedValues(const VkbShader::RuntimeInfo& runtime) {
+    return runtime.props.dx10_clamp != FixedDx10Clamp ||
+           (runtime.hw_stage == VkbShader::HwStage::Fragment && runtime.hw.fs.depth_before_shader != FixedDepthBeforeShader);
+}
+
+/// The list of this game: TLG_VKB_SHADER_LIST (a path; "0": none), else <serial>.tlgsl in shader-list/ next to the executable or one folder
+/// above it (a build in port/out); the US game (CUSA03627) without a list of its own reads the European one's (CUSA03745: the same game
+/// files), and says so. Empty when there is none.
 [[nodiscard]] std::filesystem::path Path();
-
-struct Item {
-    u64 pgm_hash{};
-    u32 source{};
-    u64 offset{};
-    u32 length{}, crc{};
-    std::vector<u8> body;
-};
-
-struct List {
-    std::vector<std::pair<u8, std::vector<u8>>> sources; ///< kind (1: .psarc entry by the MD5 of its path, 2: game file by name), ident
-    std::vector<Item> items;
-};
-
-/// Reads a list; nullopt with the reason in `error` when it is not one, is damaged, or carries another portable id than `portable_id` (made
-/// with other field lists or another entry form).
-std::optional<List> Read(const std::filesystem::path& path, u64 portable_id, std::string& error);
 
 /// An id of the list file's contents (its size and a hash of its bytes): the shader pre-build's "built" marker names it. 0 when unreadable.
 [[nodiscard]] u64 FileId(const std::filesystem::path& path);
+
+/// One list entry in the new engine's form: the inputs of one translation, without the program (the game files hold it)
+struct Stage {
+    u32 kind{}; ///< 0 graphics, 1 compute
+    VkbShader::HwStage hw_stage{};
+    VkbShader::SwStage sw_stage{};
+    u64 pgm_hash{};
+    u64 pgm_base{};
+    u64 code_words{};
+    std::array<u32, VkbShader::ShaderParams::NumShaderUserData> user_data{};
+    std::vector<u32> flat;
+    VkbShader::RuntimeInfo runtime{};
+    VkbShader::Backend::Bindings start{};
+    u64 salt{};
+    u32 local_x{};
+    std::optional<VkbShader::Gcn::FetchShaderData> fetch; ///< the vertex input layout in place of the fetch shader's code
+    std::vector<std::pair<u64, std::vector<u8>>> regions; ///< the recorded memory reads, without the program
+    bool fixed_dx10_clamp{};          ///< the conversion set dx10_clamp to its fixed value (every stage)
+    bool fixed_depth_before_shader{}; ///< the conversion set depth_before_shader to its fixed value (a pixel stage)
+};
+
+/// The new engine's form of a normal list entry; nullopt with the reason in `why` when a field has no rule (see above) or the entry is not
+/// one the new engine can build (a geometry stage, a damaged entry).
+[[nodiscard]] std::optional<Stage> Convert(const Vulkan::ShaderList::Entry& entry, std::string& why);
 
 /// The files of the list build in the store folder (they go with it: the launcher's "clear shader cache" removes them, and a new build of
 /// the engine, card or setting has a new folder without them). Progress: the entry a build process works on. Result: its counts. Left out: a
@@ -71,20 +102,5 @@ inline std::filesystem::path BuiltMarker(const std::filesystem::path& store) {
 
 /// The game folder on the host; empty for a packed game (.zar), which the list cannot read yet.
 [[nodiscard]] std::filesystem::path HostGameDir();
-
-/// Reads programs out of the game folder for the list's items: the normal renderer's GameFiles (renderer-neutral: it only reads files).
-class Programs {
-public:
-    Programs(std::filesystem::path game_dir, const List& list);
-    ~Programs();
-    Programs(const Programs&) = delete;
-    Programs& operator=(const Programs&) = delete;
-    /// The program of `item`, checked by its length and CRC-32; nullopt when the game files do not have it.
-    std::optional<std::vector<u8>> Get(const Item& item);
-
-private:
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
-};
 
 } // namespace Core::Vkb::ShaderList

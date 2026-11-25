@@ -35,6 +35,7 @@ extern char** environ;
 #include "native/native_vkb_shader_list.h"
 #include "native/native_vkb_shader_recipe.h"
 #include "native/native_vkb_shader_store.h"
+#include "video_core/renderer_vulkan/shader_list.h" // the normal renderer's list reader (read only)
 
 namespace Core::Vkb::Prebuild {
 namespace {
@@ -50,6 +51,7 @@ struct State {
     // the last build's numbers (Report)
     std::string list, outcome = "not started";
     u64 entries = 0, built = 0, already = 0, skipped = 0, write_failed = 0, restarts = 0, parts = 0, parts_failed = 0, accounted = 0, ms = 0, rescanned = 0;
+    u64 fixed_dx10_clamp = 0, fixed_depth_before_shader = 0; ///< way A: values the conversion fixed (native_vkb_shader_list.h)
     std::map<std::string, u64> reasons;
 };
 State& S() {
@@ -289,7 +291,7 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
     State& st = S();
     const auto t0 = std::chrono::steady_clock::now();
     std::string error;
-    const auto list = ShaderList::Read(list_path, ShaderRecipe::ListPortableId(), error);
+    const auto list = Vulkan::ShaderList::Read(list_path, error); // the normal renderer's list and reader (native_vkb_shader_list.h)
     if (!list) {
         std::printf("Shader prebuild (new engine): shader list %s not used: %s\n", list_path.string().c_str(), error.c_str());
         LOG_WARNING(Render_Vulkan, "vkb shader pre-build: shader list {} not used: {}", list_path.string(), error);
@@ -302,14 +304,14 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
     }
     {
         std::vector<u64> listed;
-        for (const auto& item : list->items) {
+        for (const auto& item : list->entries) {
             listed.push_back(item.pgm_hash);
         }
         std::ranges::sort(listed);
         listed.erase(std::unique(listed.begin(), listed.end()), listed.end());
         std::scoped_lock lock{st.mutex};
         st.listed = std::move(listed);
-        st.entries = list->items.size();
+        st.entries = list->entries.size();
     }
     const auto list_line = fmt::format("list {:016x}", ShaderList::FileId(list_path));
     // the game files the programs are read from: an updated game builds again
@@ -322,7 +324,7 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
     }
     const auto marker_line = fmt::format("{} game{}", list_line, game_files);
     if (FirstLine(ShaderList::BuiltMarker(store)) == marker_line) {
-        std::printf("Shader prebuild (new engine): the list (%zu entries) was built into this store before (list-built.txt): nothing to build\n", list->items.size());
+        std::printf("Shader prebuild (new engine): the list (%zu entries) was built into this store before (list-built.txt): nothing to build\n", list->entries.size());
         {
             std::scoped_lock lock{st.mutex};
             st.outcome = "built before";
@@ -343,7 +345,7 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
     for (u32 part = 0; part < 32; ++part) {
         std::filesystem::remove(ShaderList::ResultFile(store, part), ec);
     }
-    std::printf("Shader prebuild (new engine): building the shader list in the background: %zu entries, %u build processes; list %s\n", list->items.size(), jobs,
+    std::printf("Shader prebuild (new engine): building the shader list in the background: %zu entries, %u build processes; list %s\n", list->entries.size(), jobs,
                 list_path.string().c_str());
     // test only: TLG_VKB_SHADER_PREBUILD_DELAY_MS holds the build back, to check the waits
     if (const char* env = std::getenv("TLG_VKB_SHADER_PREBUILD_DELAY_MS"); env != nullptr && *env != '\0') {
@@ -360,7 +362,7 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
         }
     }
     // every entry ends counted: the parts' results, and the parts that left none
-    u64 entries = 0, built = 0, already = 0, skipped = 0, write_failed = 0, restarts = 0, failed = 0;
+    u64 entries = 0, built = 0, already = 0, skipped = 0, write_failed = 0, restarts = 0, failed = 0, fixed_dx10_clamp = 0, fixed_depth_before_shader = 0;
     std::map<std::string, u64> reasons;
     for (u32 part = 0; part < jobs; ++part) {
         restarts += ends[part].restarts;
@@ -375,6 +377,10 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
             f >> n;
             if (word == "entries") {
                 entries += n;
+            } else if (word == "fixed_dx10_clamp") {
+                fixed_dx10_clamp += n;
+            } else if (word == "fixed_depth_before_shader") {
+                fixed_depth_before_shader += n;
             } else if (word == "built") {
                 built += n;
             } else if (word == "already") {
@@ -390,7 +396,7 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
         }
     }
     const u64 accounted = built + already + skipped;
-    const u64 lost = list->items.size() > accounted ? list->items.size() - accounted : 0;
+    const u64 lost = list->entries.size() > accounted ? list->entries.size() - accounted : 0;
     if (lost != 0) {
         reasons[fmt::format("{} build process(es) ended without a result", failed)] += lost;
     }
@@ -402,8 +408,9 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
     if (complete) {
         std::ofstream f{ShaderList::BuiltMarker(store), std::ios::trunc};
         f << marker_line << "\n"
-          << "entries " << list->items.size() << "\nbuilt " << built << "\nalready " << already << "\nskipped " << skipped << "\nnot accounted " << lost
-          << "\nwrite_failed " << write_failed << "\nrestarts " << restarts << "\nparts " << jobs << "\nparts_failed " << failed << "\nms " << ms << "\n";
+          << "entries " << list->entries.size() << "\nbuilt " << built << "\nalready " << already << "\nskipped " << skipped << "\nnot accounted " << lost
+          << "\nwrite_failed " << write_failed << "\nfixed_dx10_clamp " << fixed_dx10_clamp << "\nfixed_depth_before_shader " << fixed_depth_before_shader
+          << "\nrestarts " << restarts << "\nparts " << jobs << "\nparts_failed " << failed << "\nms " << ms << "\n";
         for (const auto& [reason, n] : reasons) {
             f << "left " << n << " " << reason << "\n";
         }
@@ -415,9 +422,11 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
         std::printf("Shader prebuild (new engine): %llu list entries not built: %s\n", static_cast<unsigned long long>(n), reason.c_str());
     }
     std::printf("Shader prebuild (new engine): background build done in %llu ms: %zu entries, %llu built, %llu already in the store, %llu not built (%llu "
-                "skipped, %llu not accounted for); %u build processes, %llu restarts, %llu stopped early, %llu writes failed; %llu new stage files read\n",
-                static_cast<unsigned long long>(ms), list->items.size(), static_cast<unsigned long long>(built), static_cast<unsigned long long>(already),
-                static_cast<unsigned long long>(skipped + lost), static_cast<unsigned long long>(skipped), static_cast<unsigned long long>(lost), jobs,
+                "skipped, %llu not accounted for); fixed values set: dx10_clamp %llu, depth_before_shader %llu; %u build processes, %llu restarts, %llu stopped "
+                "early, %llu writes failed; %llu new stage files read\n",
+                static_cast<unsigned long long>(ms), list->entries.size(), static_cast<unsigned long long>(built), static_cast<unsigned long long>(already),
+                static_cast<unsigned long long>(skipped + lost), static_cast<unsigned long long>(skipped), static_cast<unsigned long long>(lost),
+                static_cast<unsigned long long>(fixed_dx10_clamp), static_cast<unsigned long long>(fixed_depth_before_shader), jobs,
                 static_cast<unsigned long long>(restarts), static_cast<unsigned long long>(failed), static_cast<unsigned long long>(write_failed),
                 static_cast<unsigned long long>(rescanned));
     if (failed != 0 || write_failed != 0 || lost != 0) {
@@ -429,6 +438,8 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
         st.list = list_path.string();
         st.outcome = failed != 0 || lost != 0 ? "done, with build processes that stopped early" : "done";
         st.built = built;
+        st.fixed_dx10_clamp = fixed_dx10_clamp;
+        st.fixed_depth_before_shader = fixed_depth_before_shader;
         st.already = already;
         st.skipped = skipped + lost;
         st.write_failed = write_failed;
@@ -461,7 +472,7 @@ void Start(const std::filesystem::path& store_folder) {
     std::call_once(once, [&] {
         const auto list = ShaderList::Path();
         if (list.empty()) {
-            std::printf("Shader prebuild (new engine): no shader list for this game (shader-list/<serial>.vkb.tlgsl, TLG_VKB_SHADER_LIST)\n");
+            std::printf("Shader prebuild (new engine): no shader list for this game (shader-list/<serial>.tlgsl, the normal renderer's; TLG_VKB_SHADER_LIST)\n");
             std::scoped_lock lock{S().mutex};
             S().outcome = "no list";
             return;
@@ -533,7 +544,7 @@ nlohmann::json Report() {
         left[reason] = n;
     }
     return {{"on", HookWanted()},       {"outcome", st.outcome}, {"list", st.list},        {"entries", st.entries},       {"built", st.built},
-            {"already", st.already},    {"not_built", st.skipped}, {"not_built_by_reason", left}, {"write_failed", st.write_failed},
+            {"already", st.already}, {"fixed_dx10_clamp", st.fixed_dx10_clamp}, {"fixed_depth_before_shader", st.fixed_depth_before_shader},    {"not_built", st.skipped}, {"not_built_by_reason", left}, {"write_failed", st.write_failed},
             {"restarts", st.restarts},  {"parts", st.parts},     {"parts_stopped_early", st.parts_failed}, {"ms", st.ms},
             {"files_read_after", st.rescanned}, {"running", st.running}, {"waits_given_up", st.waits_given_up},
             {"processes_without_job_object", unguarded.load()}};

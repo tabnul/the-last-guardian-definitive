@@ -2,6 +2,7 @@
 // TLG_VKB_SHADER_PREBUILD: the new engine's translated shader stages, kept on disk (see the header)
 
 #include "native/native_vkb_shader_store.h"
+#include "native/native_vkb_shader_list.h"
 #include "native/native_vkb_shader_prebuild.h"
 
 #include <algorithm>
@@ -413,7 +414,8 @@ State& S() {
 std::atomic<bool> ready{false};
 std::atomic<bool> writer_started{false}; ///< WriterLoop runs (QueueWrite)
 std::atomic<u64> c_lookups{0}, c_hits{0}, c_disk_hits{0}, c_kept{0}, c_saved_ns{0}, c_check_same{0}, c_check_different{0}, c_spv_words{0}, c_files_indexed{0},
-    c_files_read{0}, c_files_bad{0}, c_written{0}, c_write_failed{0}, c_not_kept_geometry{0}, c_open_ms{0}, c_bypassed{0}, c_kind_misses{0}, c_recipe_written{0}, c_recipe_write_failed{0}, c_rescanned{0};
+    c_files_read{0}, c_files_bad{0}, c_written{0}, c_write_failed{0}, c_not_kept_geometry{0}, c_open_ms{0}, c_bypassed{0}, c_kind_misses{0}, c_recipe_written{0}, c_recipe_write_failed{0}, c_rescanned{0},
+    c_outside_fixed{0};
 
 std::string FileName(u64 pgm_hash, const VkbShader::RuntimeInfo& runtime, const std::vector<u8>& bytes) {
     return fmt::format("{:016x}_{}_{}_{:016x}.vst", pgm_hash, static_cast<u32>(runtime.hw_stage), static_cast<u32>(runtime.sw_stage), XXH3_64bits(bytes.data(), bytes.size()));
@@ -861,6 +863,17 @@ bool Keep(const Inputs& in, const VkbShader::Profile& profile, const VkbShader::
     e->translate_ns = translate_ns;
     e->used = true; // its first use is this draw: logged as a build
     c_kept.fetch_add(1, std::memory_order_relaxed);
+    // way A (native_vkb_shader_list.h): the shader list fixes two settings; a stage translated with another value can never come from it
+    if (ShaderList::OutsideFixedValues(in.runtime)) {
+        if (c_outside_fixed.fetch_add(1, std::memory_order_relaxed) < 3) { // every one is counted (report: built_outside_list_fixed_values)
+            LOG_WARNING(Render_Vulkan,
+                        "vkb shader store: program {:#x} (hw stage {}) translated with dx10_clamp {} and depth_before_shader {}: the shader list fixes "
+                        "them to {} and {}, so it cannot hold this stage",
+                        in.params.hash, static_cast<u32>(in.runtime.hw_stage), static_cast<u32>(in.runtime.props.dx10_clamp),
+                        in.runtime.hw_stage == VkbShader::HwStage::Fragment ? static_cast<u32>(in.runtime.hw.fs.depth_before_shader) : 0u,
+                        static_cast<u32>(ShaderList::FixedDx10Clamp), static_cast<u32>(ShaderList::FixedDepthBeforeShader));
+        }
+    }
     c_spv_words.fetch_add(spv.size(), std::memory_order_relaxed);
     std::vector<u8> bytes = Encode(*e);
     std::string name = FileName(in.params.hash, in.runtime, bytes);
@@ -1084,6 +1097,7 @@ nlohmann::json Report() {
             {"hits", c_hits.load()},
             {"hits_from_disk", c_disk_hits.load()},
             {"kept", c_kept.load()},
+            {"built_outside_list_fixed_values", c_outside_fixed.load()},
             {"programs_in_memory", programs},
             {"files_indexed_at_open", c_files_indexed.load()},
             {"files_found_by_rescan", c_rescanned.load()},
