@@ -1197,12 +1197,29 @@ int CompareStores(const std::filesystem::path& dir_a, const std::filesystem::pat
         return x.result.info->pgm_hash == y.result.info->pgm_hash && x.code == y.code && x.salt == y.salt && x.start == y.start &&
                std::memcmp(&x.runtime_in, &y.runtime_in, sizeof(VkbShader::RuntimeInfo)) == 0;
     };
+    const auto same_kinds = [](const VkbShader::StageSpecialization& x, const VkbShader::StageSpecialization& y) {
+        // StageSpecialization's == reads y's lists by x's sizes and uses only y's bits: the sizes and bits are compared first, so a
+        // translation that changed the number of resources is reported and never read past a list's end
+        return x.bitset == y.bitset && x.vs_attribs.size() == y.vs_attribs.size() && x.buffers.size() == y.buffers.size() &&
+               x.images.size() == y.images.size() && x.fmasks.size() == y.fmasks.size() && x.samplers.size() == y.samplers.size() && x == y;
+    };
     std::vector<bool> paired(b.size(), false);
     u64 pairs = 0, different = 0, only_a = 0, ns_a = 0, ns_b = 0, words = 0;
     for (const auto& x : a) {
-        size_t j = 0;
-        while (j < b.size() && (paired[j] || !same_inputs(*x, *b[j]))) {
-            ++j;
+        // A store may hold several stages with the same inputs that differ only in the kinds of the resources the draw used (Find picks
+        // one by spec.Matches). Files are read in name order and a name holds a hash of the whole entry, its translation time too, so the
+        // order of such variants changes from run to run: pair a stage first with the one of the same kinds, and only when there is
+        // none with another one of the same inputs (then the kinds are reported as the difference).
+        const auto find = [&](bool by_kinds) {
+            size_t j = 0;
+            while (j < b.size() && (paired[j] || !same_inputs(*x, *b[j]) || (by_kinds && !same_kinds(x->spec, b[j]->spec)))) {
+                ++j;
+            }
+            return j;
+        };
+        size_t j = find(true);
+        if (j == b.size()) {
+            j = find(false);
         }
         if (j == b.size()) {
             ++only_a;
@@ -1215,7 +1232,7 @@ int CompareStores(const std::filesystem::path& dir_a, const std::filesystem::pat
         ns_b += y.translate_ns;
         words += x->result.spv.size();
         const char* member = Differs(x->result, *y.result.info, y.result.runtime, y.result.end, y.result.spv, y.result.windows);
-        if (member == nullptr && !(x->spec == y.spec)) {
+        if (member == nullptr && !same_kinds(x->spec, y.spec)) {
             member = "resource kinds";
         }
         if (member != nullptr && different++ < 10) {
