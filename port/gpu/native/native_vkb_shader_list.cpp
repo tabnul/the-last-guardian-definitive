@@ -11,6 +11,7 @@
 #include <map>
 #include <set>
 #include <string_view>
+#include <type_traits>
 #include <fmt/format.h>
 #include <xxhash.h>
 
@@ -39,6 +40,8 @@ static_assert(static_cast<u32>(VkbShader::SwStage::Fragment) == static_cast<u32>
               static_cast<u32>(VkbShader::SwStage::Geometry) == static_cast<u32>(Shader::SwStage::Geometry) &&
               static_cast<u32>(VkbShader::SwStage::Compute) == static_cast<u32>(Shader::SwStage::Compute) &&
               VkbShader::MaxStageTypes == Shader::MaxStageTypes);
+// Convert copies the normal entry's runtime info and bindings as bytes (its reader made them this build's structs)
+static_assert(std::is_trivially_copyable_v<Shader::RuntimeInfo> && std::is_trivially_copyable_v<Shader::Backend::Bindings>);
 
 std::vector<u8> ReadAll(const std::filesystem::path& path) {
     std::ifstream f{path, std::ios::binary};

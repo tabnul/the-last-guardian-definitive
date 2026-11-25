@@ -31,6 +31,10 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
   (`built_outside_list_fixed_values`, with a warning line), since such a stage can never come from the list. The new
   engine's own list file, its maker (`tlg-probe --vkb-list-recipes`, `make_list.py --vkb`) and its portable form are
   removed.
+- **Coupling (second read):** the new engine's pre-build now depends on the normal list's format and its field lists; a
+  new normal list version needs the conversion checked again (a field without a rule is counted, never guessed). The
+  new engine's own list never reached `vkb` (pull request 150 was not merged), so its removal needs no switch of its
+  own: `TLG_VKB_SHADER_PREBUILD` switches the whole pre-build.
 - **Data behind A:** 60907 recorded stages of all 219 scenes (combined run 2026-11-25): `dx10_clamp` is 1 in all,
   `depth_before_shader` is 0 in all 24386 pixel stages. Stages that appear only later in play are not covered.
 - **Who:** owner (way A); box (where the conversion runs). **Links:** pull request 150.

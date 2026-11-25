@@ -324,10 +324,29 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
     }
     const auto marker_line = fmt::format("{} game{}", list_line, game_files);
     if (FirstLine(ShaderList::BuiltMarker(store)) == marker_line) {
-        std::printf("Shader prebuild (new engine): the list (%zu entries) was built into this store before (list-built.txt): nothing to build\n", list->entries.size());
+        // the fixed values of that build stay in the report (the marker keeps them)
+        u64 fixed_dx10_clamp = 0, fixed_depth_before_shader = 0;
+        {
+            std::ifstream f{ShaderList::BuiltMarker(store)};
+            std::string word;
+            std::getline(f, word);
+            while (f >> word) {
+                u64 n = 0;
+                if (word == "fixed_dx10_clamp" && f >> n) {
+                    fixed_dx10_clamp = n;
+                } else if (word == "fixed_depth_before_shader" && f >> n) {
+                    fixed_depth_before_shader = n;
+                }
+            }
+        }
+        std::printf("Shader prebuild (new engine): the list (%zu entries) was built into this store before (list-built.txt): nothing to build; fixed values set "
+                    "then: dx10_clamp %llu, depth_before_shader %llu\n",
+                    list->entries.size(), static_cast<unsigned long long>(fixed_dx10_clamp), static_cast<unsigned long long>(fixed_depth_before_shader));
         {
             std::scoped_lock lock{st.mutex};
             st.outcome = "built before";
+            st.fixed_dx10_clamp = fixed_dx10_clamp;
+            st.fixed_depth_before_shader = fixed_depth_before_shader;
         }
         Finish();
         return;
