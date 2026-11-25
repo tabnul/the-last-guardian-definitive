@@ -58,6 +58,8 @@ int tlg_import_shaders_list(const char *cache_dir, const char *recipe_dir, const
 /* New engine (TLG_VKB_SHADER_RECIPES): fills the store folder STORE (cache/<serial>-vkb-shaders/<id>) from the recipes of RECIPES. */
 int tlg_vkb_build_store(const char *store_folder, const char *recipe_dir);
 int tlg_vkb_build_list(const char *store_folder, const char *list, const char *game_dir, unsigned part, unsigned parts);
+/* Test tool: compares the stages of two store folders member by member (issue 160 step 2b). */
+int tlg_vkb_compare_stores(const char *dir_a, const char *dir_b);
 int tlg_compare_meta(const char *dir_a, const char *dir_b);
 int tlg_same_permutation(const char *dir_a, const char *dir_b);
 int tlg_portable_recipes(const char *recipe_dir, const char *out);
@@ -1622,6 +1624,7 @@ int main(int argc, char **argv) {
     if (argc == 6 && !strcmp(argv[1], "--vkb-build-store") && !strcmp(argv[3], "--list")) return tlg_vkb_build_list(argv[2], argv[4], argv[5], 0, 1);
     if (argc == 8 && !strcmp(argv[1], "--vkb-build-store") && !strcmp(argv[3], "--list"))
         return tlg_vkb_build_list(argv[2], argv[4], argv[5], (unsigned)strtoul(argv[6], NULL, 10), (unsigned)strtoul(argv[7], NULL, 10));
+    if (argc == 4 && !strcmp(argv[1], "--vkb-compare-stores")) return tlg_vkb_compare_stores(argv[2], argv[3]);
     if (argc == 4 && !strcmp(argv[1], "--compare-meta")) return tlg_compare_meta(argv[2], argv[3]);
     if (argc == 4 && !strcmp(argv[1], "--same-permutation")) return tlg_same_permutation(argv[2], argv[3]);
     if (argc == 4 && !strcmp(argv[1], "--portable-recipes")) return tlg_portable_recipes(argv[2], argv[3]);

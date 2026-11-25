@@ -35,6 +35,7 @@
 #include "common/memory_patcher.h"
 #include "common/path_util.h"
 #include "core/emulator_settings.h"
+#include "native/shadps4/shader_recompiler/ir/microinstruction.h"
 #include "tlg_settings.h"
 #include "native/shadps4/shader_recompiler/specialization.h"
 
@@ -561,9 +562,11 @@ u64 HashMembers(const T& v, u64 seed) {
 /// setting none of them names.
 constexpr const char* TranslatorEnv[] = {"TLG_CONST_OFFSET_FLOATRULE", "TLG_BLOCK1D"};          ///< environment, by value
 constexpr const char* TranslatorEmulatorSettings[] = {"IsDirectMemoryAccessEnabled"};            ///< EmulatorSettings, in TranslatorSettings()
-constexpr const char* TranslatorWithoutEffect[] = {"IsDumpShaders"};                              ///< read, but only to write debug files
+/// read, but only to write debug files (IsDumpShaders), or only to choose how fast the same result is made (TLG_VKB_TRANSLATE_FAST: the same
+/// module word for word, proven with tlg-probe --vkb-compare-stores)
+constexpr const char* TranslatorWithoutEffect[] = {"IsDumpShaders", "TLG_VKB_TRANSLATE_FAST"};
 std::string TranslatorSettings() {
-    static_assert(std::size(TranslatorEmulatorSettings) == 1 && std::size(TranslatorWithoutEffect) == 1, "name each EmulatorSettings value below");
+    static_assert(std::size(TranslatorEmulatorSettings) == 1 && std::size(TranslatorWithoutEffect) == 2, "name each EmulatorSettings value below");
     std::string out = fmt::format("IsDirectMemoryAccessEnabled={}", EmulatorSettings.IsDirectMemoryAccessEnabled() ? 1 : 0);
     for (const char* name : TranslatorEnv) {
         const char* value = std::getenv(name);
@@ -1159,7 +1162,78 @@ nlohmann::json Report() {
             {"module_mb_kept", static_cast<double>(c_spv_words.load()) * 4.0 / 1048576.0},
             {"translate_ms_saved", static_cast<double>(c_saved_ns.load()) / 1e6},
             {"check_same", c_check_same.load()},
-            {"check_different", c_check_different.load()}};
+            {"check_different", c_check_different.load()},
+            {"translator_use_slot_misses", VkbShader::IR::UseSlotMisses()}}; // TLG_VKB_TRANSLATE_FAST: microinstruction.h
+}
+
+int CompareStores(const std::filesystem::path& dir_a, const std::filesystem::path& dir_b) {
+    // test tool (tlg-probe --vkb-compare-stores A B; issue 160 step 2b): the stages of two stores built from the same recipes (for example by
+    // two builds, or with TLG_VKB_TRANSLATE_FAST=0 and 1) are paired by their inputs and compared member by member (Differs)
+    const auto load = [](const std::filesystem::path& dir, std::vector<std::unique_ptr<Entry>>& out, u64& bad) {
+        std::error_code ec;
+        std::vector<std::filesystem::path> files;
+        for (std::filesystem::directory_iterator it{dir, ec}, end; !ec && it != end; it.increment(ec)) {
+            if (it->path().extension() == ".vst") {
+                files.push_back(it->path());
+            }
+        }
+        std::sort(files.begin(), files.end());
+        for (const auto& file : files) {
+            if (auto e = Decode(ReadAll(file))) {
+                out.push_back(std::move(e));
+            } else {
+                ++bad;
+            }
+        }
+        return !ec;
+    };
+    std::vector<std::unique_ptr<Entry>> a, b;
+    u64 bad_a = 0, bad_b = 0;
+    if (!load(dir_a, a, bad_a) || !load(dir_b, b, bad_b)) {
+        std::printf("vkb-compare-stores: a folder cannot be read\n");
+        return 3;
+    }
+    const auto same_inputs = [](const Entry& x, const Entry& y) {
+        return x.result.info->pgm_hash == y.result.info->pgm_hash && x.code == y.code && x.salt == y.salt && x.start == y.start &&
+               std::memcmp(&x.runtime_in, &y.runtime_in, sizeof(VkbShader::RuntimeInfo)) == 0;
+    };
+    std::vector<bool> paired(b.size(), false);
+    u64 pairs = 0, different = 0, only_a = 0, ns_a = 0, ns_b = 0, words = 0;
+    for (const auto& x : a) {
+        size_t j = 0;
+        while (j < b.size() && (paired[j] || !same_inputs(*x, *b[j]))) {
+            ++j;
+        }
+        if (j == b.size()) {
+            ++only_a;
+            continue;
+        }
+        paired[j] = true;
+        ++pairs;
+        const Entry& y = *b[j];
+        ns_a += x->translate_ns;
+        ns_b += y.translate_ns;
+        words += x->result.spv.size();
+        const char* member = Differs(x->result, *y.result.info, y.result.runtime, y.result.end, y.result.spv, y.result.windows);
+        if (member == nullptr && !(x->spec == y.spec)) {
+            member = "resource kinds";
+        }
+        if (member != nullptr && different++ < 10) {
+            std::printf("vkb-compare-stores: %016llx (stage %u) differs: %s\n", static_cast<unsigned long long>(x->result.info->pgm_hash),
+                        static_cast<u32>(x->runtime_in.hw_stage), member);
+        }
+    }
+    const u64 only_b = static_cast<u64>(std::count(paired.begin(), paired.end(), false));
+    std::printf("vkb-compare-stores: A %zu stages (%llu unreadable), B %zu (%llu unreadable); %llu pairs with the same inputs, %llu different, %llu only in A, "
+                "%llu only in B; %llu module words compared; translation A %.1f ms, B %.1f ms (B/A %.3f)\n",
+                a.size(), static_cast<unsigned long long>(bad_a), b.size(), static_cast<unsigned long long>(bad_b), static_cast<unsigned long long>(pairs),
+                static_cast<unsigned long long>(different), static_cast<unsigned long long>(only_a), static_cast<unsigned long long>(only_b),
+                static_cast<unsigned long long>(words), ns_a / 1e6, ns_b / 1e6, ns_a != 0 ? static_cast<double>(ns_b) / static_cast<double>(ns_a) : 0.0);
+    return different == 0 && only_a == 0 && only_b == 0 && bad_a == 0 && bad_b == 0 && pairs != 0 ? 0 : 1;
 }
 
 } // namespace Core::Vkb::ShaderStore
+
+extern "C" int tlg_vkb_compare_stores(const char* dir_a, const char* dir_b) {
+    return Core::Vkb::ShaderStore::CompareStores(std::filesystem::u8path(dir_a), std::filesystem::u8path(dir_b));
+}

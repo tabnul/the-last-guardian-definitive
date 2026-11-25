@@ -82,6 +82,10 @@ bool Same(const Inputs& in, const Translation& stored, const VkbShader::Info& in
 [[nodiscard]] const char* Differs(const Translation& a, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
                                   const std::vector<u32>& spv, const std::vector<WriteWindow::Window>& windows);
 
+/// Test tool (tlg-probe --vkb-compare-stores A B): pairs the stages of two store folders by their inputs and compares each pair as Differs
+/// does (and the resource kinds); prints the counts and the summed translation times. 0 = every stage on both sides and all the same.
+int CompareStores(const std::filesystem::path& dir_a, const std::filesystem::path& dir_b);
+
 /// Lists the store's folder again and indexes the files it did not know yet (the shader pre-build's build processes write into it while the
 /// game runs: native_vkb_shader_prebuild.h). Their .tmp files are left alone. The number of new files.
 u64 Rescan();
