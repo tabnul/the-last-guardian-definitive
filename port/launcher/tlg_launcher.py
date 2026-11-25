@@ -1034,6 +1034,7 @@ def scroll_area(parent, padding=12):
     inner.bind('<Configure>', fit, add='+')
     canvas.bind('<Configure>', fit, add='+')
     canvas.scroll_inner = inner   # marks it for the wheel handler
+    canvas.refit = fit            # for content that got shorter (no event tells the canvas)
     return inner
 
 
@@ -1492,8 +1493,18 @@ class Launcher:
         and switched it off just before release (tlg.ini trico_drool; the game reads it live, also from
         the in-game Extras tab)."""
         drool = next(item for item in backports_table.MENU if item.key == 'trico_drool')
-        box = section(parent, drool.name)
-        box.pack(fill='x', anchor='w', pady=(0, 8))
+        # Two columns of equal width (#103); the texts wrap to the column (see rewrap below).
+        grid = ttk.Frame(parent)
+        grid.pack(fill='x', anchor='w')
+        grid.columnconfigure((0, 1), weight=1, uniform='cols')
+        texts = []
+
+        def place(box, index):
+            box.grid(row=index // 2, column=index % 2, sticky='nsew', pady=(0, 8),
+                     padx=(0, 8) if index % 2 == 0 else (8, 0))
+
+        box = section(grid, drool.name)
+        place(box, 0)
         values = [choice[0] for choice in drool.choices]
         combo = ttk.Combobox(box, values=[choice[1] for choice in drool.choices], state='readonly', width=28)
         chosen = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini').get('trico_drool', drool.default)
@@ -1506,14 +1517,15 @@ class Launcher:
             self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
 
         combo.bind('<<ComboboxSelected>>', lambda _: picked())
-        ttk.Label(box, text=drool.what, foreground=DIM, wraplength=420, justify='left').grid(
-            row=1, column=0, sticky='w', pady=(6, 0))
+        texts.append(ttk.Label(box, text=drool.what, foreground=DIM, wraplength=420, justify='left'))
+        texts[-1].grid(row=1, column=0, columnspan=2, sticky='w', pady=(6, 0))
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
-        for key in ('trico_fur', 'trico_helmet', 'mod_treasures', 'mod_horns', 'mod_foxtail', 'mod_plays',
-                    'mod_throw_up', 'mod_hints', 'leaf_ao'):
+        for index, key in enumerate(('trico_fur', 'trico_helmet', 'mod_treasures', 'mod_horns', 'mod_foxtail', 'mod_plays',
+                    'mod_throw_up', 'mod_hints', 'leaf_ao'), start=1):
             item = next(i for i in backports_table.MENU if i.key == key)
-            mod = section(parent, item.name)
-            mod.pack(fill='x', anchor='w', pady=(0, 8))
+            mod = section(grid, item.name)
+            mod.columnconfigure(1, weight=1)   # spare width goes right of the control
+            place(mod, index)
             def write(value, k=key):
                 tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
                 tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {k: value})
@@ -1556,8 +1568,17 @@ class Launcher:
                         n.grid(row=2, column=0, sticky='w', pady=(4, 0))
 
                 ttk.Checkbutton(mod, text=item.name, variable=var, command=ticked).grid(row=0, column=0, sticky='w')
-            ttk.Label(mod, text=item.what, foreground=DIM, wraplength=900, justify='left').grid(
-                row=1, column=0, sticky='w', pady=(6, 0))
+            texts.append(ttk.Label(mod, text=item.what, foreground=DIM, wraplength=420, justify='left'))
+            texts[-1].grid(row=1, column=0, columnspan=2, sticky='w', pady=(6, 0))
+
+        # Wrap to the column, measured from the visible area (not from the boxes: those never
+        # shrink below their own text). Below the floor the page scrolls sideways instead.
+        def rewrap(event):
+            width = max(260, (event.width - 24 - 16) // 2 - 36)
+            for label in texts:
+                label.configure(wraplength=width)
+            parent.master.after(60, parent.master.refit)   # once the new heights have settled
+        parent.master.bind('<Configure>', rewrap, add='+')
 
     def build_gpu_choice(self, parent, row):
         """Video > Graphics card: Automatic or one of the cards Vulkan lists (tlg_run.gpu_list, the
@@ -1802,6 +1823,7 @@ class Launcher:
         the music tool plays it). The list is read when the page first opens."""
         win = self.soundtrack_window = Page(self, 'soundtrack')
         win.title(self.t('home_soundtrack'), self.t('soundtrack_hint'))
+        win = scroll_area(win, padding=0)   # the page scrolls when the window is too small (#103)
         bar = ttk.Frame(win, padding=(12, 8, 12, 0))
         bar.pack(fill='x')
         self.track_button = ttk.Button(bar, text=self.t('soundtrack_play'), command=self.track_play_pause)
@@ -2637,24 +2659,16 @@ class Launcher:
             return
         win = self.mods_window = Page(self, 'mods')
         win.title(self.t('mods_title'), self.t('mods_hint'))
-        frame = ttk.Frame(win, padding=12)
-        frame.pack(fill='both', expand=True)
+        # The whole page scrolls (#103): the built-in extras alone are taller than a small window,
+        # so the cheat list no longer scrolls on its own in whatever height was left over.
+        frame = scroll_area(win)
         self.show_page('mods')
         self.build_drool(frame)  # built-in mods (tlg.ini, live in game) above the cheat files
         ttk.Label(frame, text=self.t('mods_warning'), foreground='#d07060', wraplength=900, justify='left').pack(
             anchor='w', pady=(4, 8))
 
-        list_frame = ttk.Frame(frame)
-        list_frame.pack(fill='both', expand=True)
-        canvas = tk.Canvas(list_frame, highlightthickness=0, background=BG, yscrollincrement=24)
-        scroll = ttk.Scrollbar(list_frame, orient='vertical', command=canvas.yview)
-        rows = ttk.Frame(canvas)
-        canvas.scroll_inner = rows
-        rows.bind('<Configure>', lambda _: canvas.configure(scrollregion=canvas.bbox('all')))
-        canvas.create_window((0, 0), window=rows, anchor='nw')
-        canvas.configure(yscrollcommand=scroll.set)
-        canvas.pack(side='left', fill='both', expand=True)
-        scroll.pack(side='right', fill='y')
+        rows = ttk.Frame(frame)
+        rows.pack(fill='x', anchor='w')
 
         def toggle(key, var):
             tlg_run.set_mod_enabled(key, var.get())
@@ -3080,8 +3094,7 @@ class Launcher:
             return
         win = self.start_window = Page(self, 'start')
         win.title(self.t('start_title'), self.t('start_hint'))
-        frame = ttk.Frame(win, padding=(12, 12))
-        frame.pack(fill='x')
+        frame = scroll_area(win)
         stages = list(dict.fromkeys(stage for stage, _ in start_points.POINTS))
         ttk.Label(frame, text=self.t('start_stage')).grid(row=0, column=0, sticky='w', pady=4)
         stage_box = ttk.Combobox(frame, values=stages, state='readonly', width=32)
