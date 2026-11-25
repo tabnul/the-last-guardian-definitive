@@ -9,6 +9,32 @@ An entry marked "not yet merged" counts only once the owner merges the pull requ
 
 ---
 
+## 2026-11-25 - Shader stages: translated once per session and taken again for a new settings combination (not yet merged)
+
+- **Problem:** the new engine translated a shader stage again for every new settings combination (variant) of a draw,
+  even when that same stage had been translated before in the session (issue 160: about three quarters of all
+  translation time). The owner approved step 1 of the proposal in issue 160 ("Ok go"): translate each shader once,
+  keyed on the settings only where the translation depends on them.
+- **Measured first** (garden and condor, one start each, every translation's inputs logged): of the repeated
+  translations of a graphics stage, about 97 in 100 had exactly the same inputs as an earlier one (program, translator
+  settings, where its bindings start) and gave the same module word for word. The rest (19 to 28 ms per start) differed
+  in where the bindings start (the vertex stage's bindings follow the pixel stage's) or in a target format.
+- **Considered:** (1) keep every translation for the session, keyed on all its inputs (the rule the shader store of
+  pull request 150 already has, made for the disk store): a pure memo, nothing to prove beyond the key, a check mode
+  that compares each reused stage with a fresh translation; (2) key on the program alone and make the translation
+  independent of the binding start and the settings (move the binding numbers and row offsets out of the module,
+  patch them per pipeline): would save the last 19 to 28 ms per start, but changes the module the driver sees and
+  adds a second path for bindings; (3) turn on the disk store of pull request 150 by default: also removes the first
+  translations of a second start, but writes to the player's disk and is the owner's open pre-build decision.
+- **Choice:** 1, as its own switch `TLG_VKB_SHADER_MEMO` (default on; in memory only, nothing on disk). The disk store
+  and the pre-build stay behind `TLG_VKB_SHADER_PREBUILD` (default off) as before. It removes the measured cause, adds
+  no path, works on every machine (CPU only), and the check mode proves the key on each run (0 different in both
+  scenes). 2 is left until the remaining repeats show up as a cost on the owner's PC. Box choice.
+- **Who:** box. **Links:** issue 160; pull request of branch `fix/vkb-shader-once` (stacked on pull request 150); the
+  parked pull request 120 did the same in memory on an older base.
+
+---
+
 ## 2026-11-25 - New engine shader list: made from the normal renderer's list, two settings fixed (way A) (not yet merged)
 
 - **Problem:** the owner wants one shipped shader list for both renderers ("the list of 149 and 150 is the same, 150
