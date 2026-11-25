@@ -189,8 +189,9 @@ Block* Inst::PhiBlock(size_t index) const {
 }
 
 void Inst::AddPhiOperand(Block* predecessor, const Value& value) {
-    phi_args.emplace_back(predecessor, value); // first, so Use finds the operand's slot
-    if (auto* inst = value.TryInst()) {
+    IR::Inst* const inst = value.TryInst(); // read before the list of operands can grow
+    phi_args.emplace_back(predecessor, value); // then the operand, so Use finds its slot
+    if (inst != nullptr) {
         Use(inst, phi_args.size() - 1);
     }
 }
@@ -248,22 +249,29 @@ void Inst::ReplaceOpcode(IR::Opcode opcode) {
 void Inst::Use(Inst* used, u32 operand) {
     DEBUG_ASSERT(0 == std::count(used->uses.begin(), used->uses.end(), IR::Use(this, operand)));
     UseSlot(operand) = used->uses.emplace(used->uses.begin(), this, operand); // at the front, as emplace_front
+    FillSlot(operand, true);
 }
 
 void Inst::UndoUse(Inst* used, u32 operand) {
     IR::Use use(this, operand);
     DEBUG_ASSERT(1 == std::count(used->uses.begin(), used->uses.end(), use));
     if (FastTranslate()) { // the one node of this use (Use keeps it unique), without searching the list for it
-        if (*UseSlot(operand) == use) [[likely]] {
+        // A slot is filled only by Use, with the node of this very use, and emptied here when that node goes, so a filled slot always holds
+        // a live node of this use; the comparison is a second check of that.
+        if (SlotFilled(operand) && *UseSlot(operand) == use) [[likely]] {
             used->uses.erase(UseSlot(operand));
+            FillSlot(operand, false);
             return;
         }
-        // never seen: the slot does not hold this use (an operand changed without Use). The old removal, so the result stays the old one;
-        // counted and said once (UseSlotMisses)
+        // never seen: an empty slot for an argument that is an instruction (an operand set without Use). The old removal, so the result stays
+        // the old one; counted and said once (UseSlotMisses)
         if (c_slot_misses.fetch_add(1, std::memory_order_relaxed) == 0) {
             LOG_ERROR(Render_Recompiler, "TLG_VKB_TRANSLATE_FAST: a use was not where its operand said (opcode {}, operand {}); removed by searching the list",
                       op, operand);
         }
+        used->uses.remove(use);
+        FillSlot(operand, false);
+        return;
     }
     used->uses.remove(use);
 }

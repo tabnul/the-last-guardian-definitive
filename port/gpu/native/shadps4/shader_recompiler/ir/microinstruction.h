@@ -147,9 +147,20 @@ private:
 
     void Use(Inst* used, u32 operand);
     void UndoUse(Inst* used, u32 operand);
-    /// TLG_VKB_TRANSLATE_FAST: where this instruction's use of its operand sits in the used instruction's list (set by Use)
+    /// TLG_VKB_TRANSLATE_FAST: where this instruction's use of its operand sits in the used instruction's list (filled by Use, emptied by
+    /// UndoUse; an empty slot's iterator is never read: a list iterator made without a list holds no defined value)
     UseList::iterator& UseSlot(u32 operand) noexcept {
         return op == Opcode::Phi ? phi_args[operand].use : arg_uses[operand];
+    }
+    bool SlotFilled(u32 operand) const noexcept {
+        return op == Opcode::Phi ? phi_args[operand].use_filled : (arg_uses_filled >> operand & 1u) != 0;
+    }
+    void FillSlot(u32 operand, bool filled) noexcept {
+        if (op == Opcode::Phi) {
+            phi_args[operand].use_filled = filled;
+        } else {
+            arg_uses_filled = static_cast<u8>(filled ? arg_uses_filled | 1u << operand : arg_uses_filled & ~(1u << operand));
+        }
     }
     void ReplaceUsesWith(Value replacement, bool preserve);
 
@@ -158,11 +169,13 @@ private:
     u64 flags{};
     IR::Block* parent{};
     RegTag reg_tag{};
+    u8 arg_uses_filled{}; ///< TLG_VKB_TRANSLATE_FAST: which of arg_uses are filled (SlotFilled)
     /// a phi's operand: its block, its value and where its use sits in the value's list (TLG_VKB_TRANSLATE_FAST)
     struct PhiArg {
         Block* first;
         Value second;
-        UseList::iterator use{};
+        UseList::iterator use;
+        bool use_filled = false;
         PhiArg(Block* block, const Value& value) : first{block}, second{value} {}
     };
     union {
@@ -170,11 +183,11 @@ private:
         boost::container::small_vector<PhiArg, 2> phi_args;
         std::array<Value, 6> args;
     };
-    std::array<UseList::iterator, 6> arg_uses{}; ///< TLG_VKB_TRANSLATE_FAST: UseSlot of the arguments (not a phi)
+    std::array<UseList::iterator, 6> arg_uses; ///< TLG_VKB_TRANSLATE_FAST: UseSlot of the arguments (not a phi)
 
     UseList uses;
 };
-static_assert(sizeof(Inst) <= 232, "Inst size unintentionally increased (issue 160 step 2b: +48 for arg_uses)");
+static_assert(sizeof(Inst) <= 240, "Inst size unintentionally increased (issue 160 step 2b: +56 for arg_uses and arg_uses_filled)");
 
 [[nodiscard]] inline bool IsPhi(const Inst& inst) {
     return inst.GetOpcode() == Opcode::Phi;
