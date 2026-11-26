@@ -415,7 +415,7 @@ std::atomic<bool> ready{false};
 std::atomic<bool> writer_started{false}; ///< WriterLoop runs (QueueWrite)
 std::atomic<u64> c_lookups{0}, c_hits{0}, c_disk_hits{0}, c_kept{0}, c_saved_ns{0}, c_check_same{0}, c_check_different{0}, c_spv_words{0}, c_files_indexed{0},
     c_files_read{0}, c_files_bad{0}, c_written{0}, c_write_failed{0}, c_not_kept_geometry{0}, c_open_ms{0}, c_bypassed{0}, c_kind_misses{0}, c_recipe_written{0}, c_recipe_write_failed{0}, c_rescanned{0},
-    c_outside_fixed{0};
+    c_outside_fixed{0}, c_memory_only{0};
 
 std::string FileName(u64 pgm_hash, const VkbShader::RuntimeInfo& runtime, const std::vector<u8>& bytes) {
     return fmt::format("{:016x}_{}_{}_{:016x}.vst", pgm_hash, static_cast<u32>(runtime.hw_stage), static_cast<u32>(runtime.sw_stage), XXH3_64bits(bytes.data(), bytes.size()));
@@ -623,7 +623,7 @@ void OpenFolder(const VkbShader::Profile& profile) {
     std::filesystem::path module;
     if (!FolderId(profile, settings, id, module)) {
         std::scoped_lock lock{st.mutex};
-        st.open_error = fmt::format("the engine's module file {} could not be read; the store stays in memory for this session", module.string());
+        st.open_error = fmt::format("the engine's module file {} could not be read; the store stays in memory for this session (report: kept_in_memory_only_no_folder)", module.string());
         LOG_ERROR(Render_Vulkan, "vkb shader store: {}", st.open_error);
         return; // never ready: nothing is read or written
     }
@@ -640,7 +640,7 @@ void OpenFolder(const VkbShader::Profile& profile) {
     std::filesystem::create_directories(dir, ec);
     if (ec) {
         std::scoped_lock lock{st.mutex};
-        st.open_error = fmt::format("could not create {}: {}; the store stays in memory for this session", dir.string(), ec.message());
+        st.open_error = fmt::format("could not create {}: {}; the store stays in memory for this session (report: kept_in_memory_only_no_folder)", dir.string(), ec.message());
         LOG_ERROR(Render_Vulkan, "vkb shader store: {}", st.open_error);
         return;
     }
@@ -883,8 +883,10 @@ bool Keep(const Inputs& in, const VkbShader::Profile& profile, const VkbShader::
         st.entries[KeyOf(in.params.hash, in.runtime)].push_back(std::move(e));
         st.indexed.insert(name); // a later Rescan does not read it back
     }
-    if (ready.load(std::memory_order_acquire)) { // else the folder could not be opened (said at the start): kept in memory only
+    if (ready.load(std::memory_order_acquire)) {
         QueueWriteFile(st.folder / name, std::move(bytes));
+    } else { // the folder could not be opened (said once at the start): kept in memory only, every one counted
+        c_memory_only.fetch_add(1, std::memory_order_relaxed);
     }
     return true;
 }
@@ -1097,6 +1099,7 @@ nlohmann::json Report() {
             {"hits", c_hits.load()},
             {"hits_from_disk", c_disk_hits.load()},
             {"kept", c_kept.load()},
+            {"kept_in_memory_only_no_folder", c_memory_only.load()},
             {"built_outside_list_fixed_values", c_outside_fixed.load()},
             {"programs_in_memory", programs},
             {"files_indexed_at_open", c_files_indexed.load()},
