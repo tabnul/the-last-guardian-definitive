@@ -31,7 +31,8 @@ and a pack name, then press **Start**. The launcher does the rest:
 
 Before you start:
 - There is only **FULL** for now, which upscales *every* texture. **Light** (only the textures the
-  game draws larger than they are) is planned and will be the advised choice.
+  game draws larger than they are) is planned and will be the advised choice; the plan and progress
+  are in [issue #43](https://github.com/tabnul/the-last-guardian-definitive/issues/43).
 - **Disk**: about **160 GB** free while building. About **80 GB** stays once the pack is done.
 - **Time**: about 3 hours on an RTX 5090. AMD has not been timed yet, and the CPU kit takes days.
   **Stop** ends the build; **Start** again later continues where it stopped.
