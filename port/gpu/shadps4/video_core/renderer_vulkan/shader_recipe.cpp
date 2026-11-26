@@ -5,6 +5,7 @@
 // @deadinside28.
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -50,6 +51,7 @@
 #include "video_core/renderer_vulkan/shader_list.h"
 #include "video_core/renderer_vulkan/shader_recipe.h"
 #include "video_core/renderer_vulkan/vk_pipeline_serialization.h"
+#include "tlg_overlay.h"
 
 // The runtime's file layer (src/runtime.h): a guest path on the host.
 extern "C" int runtime_file_translate(const char* guest, char* out, size_t size);
@@ -617,25 +619,46 @@ struct ChildEnd {
     bool hung = false; ///< killed: no progress for the entry limit
 };
 
+/// How far each build process is (its progress file: shaders done and in its share), for the
+/// corner note "Building shaders NN%". A restarted process counts on from the runs before it.
+struct BuildCount {
+    std::atomic<u32> done{0}, total{0};
+};
+std::array<BuildCount, 32> build_counts;
+
+void ShowBuildProgress() {
+    u32 done = 0, total = 0;
+    for (const auto& count : build_counts) {
+        done += count.done;
+        total += count.total;
+    }
+    TlgOverlay::SetShaderBuild(done, std::max(total, 1u));
+}
+
 /// One run of the child. With `limit_s` > 0 it is killed when its progress file names the same
-/// shader for longer than that.
+/// shader for longer than that. `count` gets its progress on top of `base` (runs before it).
 ChildEnd RunChildOnce(const std::vector<std::filesystem::path>& args,
-                      const std::filesystem::path& progress, long limit_s) {
+                      const std::filesystem::path& progress, long limit_s, BuildCount& count,
+                      u32 base) {
     ChildEnd end;
     std::string last;
     auto changed = std::chrono::steady_clock::now();
     // True when the child has worked on one shader for longer than the limit.
     const auto stalled = [&] {
-        if (limit_s <= 0) {
-            return false;
-        }
         const auto now = std::chrono::steady_clock::now();
         if (auto text = ReadText(progress); text != last) {
             last = std::move(text);
             changed = now;
+            unsigned long long hash = 0, perm = 0;
+            unsigned done = 0, total = 0;
+            if (std::sscanf(last.c_str(), "%llx %llu %u %u", &hash, &perm, &done, &total) == 4) {
+                count.total = base + total;
+                count.done = base + done;
+                ShowBuildProgress();
+            }
             return false;
         }
-        return !last.empty() && now - changed > std::chrono::seconds{limit_s};
+        return limit_s > 0 && !last.empty() && now - changed > std::chrono::seconds{limit_s};
     };
 #ifdef _WIN32
     wchar_t exe[MAX_PATH];
@@ -770,13 +793,16 @@ int RunChild(const std::vector<std::filesystem::path>& args, const std::filesyst
     const bool restart = RestartOn();
     const long limit_s = restart ? EntryLimitSeconds() : 0;
     const auto progress = ProgressFile(cache_dir, part);
+    auto& count = build_counts[part % build_counts.size()];
     std::error_code error;
     for (u32 runs = 1;; ++runs) {
         std::filesystem::remove(progress, error);
-        const auto end = RunChildOnce(args, progress, limit_s);
+        const auto end = RunChildOnce(args, progress, limit_s, count, count.done);
         const auto at = ReadText(progress);
         std::filesystem::remove(progress, error);
         if (end.code == 0) {
+            count.done = count.total.load();
+            ShowBuildProgress();
             return 0;
         }
 #ifndef _WIN32
@@ -833,6 +859,9 @@ struct Background {
     // Builds while playing:
     u32 builds = 0, builds_listed = 0, builds_while_import = 0, builds_before_frame = 0;
     u32 frame_builds = 0;
+    u32 fill_looks = 0, fill_empty = 0, fill_added = 0; ///< NoteFill: looks, of these without
+                                                        ///< a permutation, permutations taken
+    FillRefused fill_refused{};                         ///< NoteFill: left out, by reason
     std::vector<std::pair<u32, u32>> frames; ///< frame time in us, builds counted in that frame
     std::chrono::steady_clock::time_point last_frame{}, last_report{};
     size_t judged = 0;    ///< frames judged slow or not so far
@@ -1115,6 +1144,7 @@ bool ImportMissing(const std::filesystem::path& cache_dir) {
         Storage::DataBase::Instance().Flush(std::chrono::seconds{5});
         const auto started = std::chrono::steady_clock::now();
         const int code = RunChild({cache_dir, recipe_dir}, cache_dir, 0);
+        TlgOverlay::SetShaderBuild(0, 0);
         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                             std::chrono::steady_clock::now() - started)
                             .count();
@@ -1184,6 +1214,7 @@ bool ImportMissing(const std::filesystem::path& cache_dir) {
             std::this_thread::sleep_for(std::chrono::milliseconds{std::atoi(env)});
         }
         const int code = RunChildren(args, jobs);
+        TlgOverlay::SetShaderBuild(0, 0);
         auto& state = State();
         std::scoped_lock lock{state.mutex};
         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1257,6 +1288,38 @@ bool StoreLookup() {
         return value;
     }();
     return on;
+}
+
+bool StoreFill() {
+    static const bool on = [] {
+        const char* env = std::getenv("TLG_SHADER_STORE_FILL");
+        const bool value = env && *env ? *env == '1' : StoreLookup();
+        std::printf("Shader cache lookup for permutations a known program lacks: %s "
+                    "(TLG_SHADER_STORE_FILL)\n",
+                    value ? "on" : "off");
+        return value;
+    }();
+    return on;
+}
+
+void NoteFill(u64 pgm_hash, size_t perms, const FillRefused& refused, u32 hw_stage) {
+    {
+        auto& state = State();
+        std::scoped_lock lock{state.mutex};
+        ++state.fill_looks;
+        state.fill_empty += perms == 0;
+        state.fill_added += u32(perms);
+        state.fill_refused.meta += refused.meta;
+        state.fill_refused.spirv += refused.spirv;
+        state.fill_refused.module += refused.module;
+    }
+    if (StatsVerbose()) {
+        std::printf("Shader permutations added from the cache to a known program: %#018llx, %zu "
+                    "permutations; left out: %u meta refused, %u without SPIR-V, %u module "
+                    "refused (hw stage %u)\n",
+                    static_cast<unsigned long long>(pgm_hash), perms, refused.meta, refused.spirv,
+                    refused.module, hw_stage);
+    }
 }
 
 void NoteLookup(u64 pgm_hash, size_t perms, u32 hw_stage) {
@@ -1334,6 +1397,13 @@ void ReportLocked(Background& state) {
                 "builds in the last frames not judged yet; %u waits for the build gave up\n",
                 state.builds, state.in_slow, state.builds_before_frame, state.builds_while_import,
                 state.builds_listed, frames.size(), state.slow, pending, state.waits_given_up);
+    if (state.fill_looks) {
+        std::printf("Shader cache looks before a build (TLG_SHADER_STORE_FILL): %u (%u found "
+                    "nothing), %u permutations taken; left out: %u meta refused, %u without "
+                    "SPIR-V, %u module refused\n",
+                    state.fill_looks, state.fill_empty, state.fill_added, state.fill_refused.meta,
+                    state.fill_refused.spirv, state.fill_refused.module);
+    }
 }
 } // namespace
 
@@ -1495,9 +1565,11 @@ int ImportChild(const std::filesystem::path& cache_dir, const std::filesystem::p
     for (const auto& item : work) {
         if (progress) {
             std::fseek(progress, 0, SEEK_SET);
-            std::fprintf(progress, "%#018llx %20llu\n",
+            // Fixed width (rewritten in place): shader, then shaders done and in this share.
+            std::fprintf(progress, "%#018llx %20llu %10u %10u\n",
                          static_cast<unsigned long long>(item.pgm_hash),
-                         static_cast<unsigned long long>(item.perm_idx));
+                         static_cast<unsigned long long>(item.perm_idx), done,
+                         static_cast<unsigned>(work.size()));
             std::fflush(progress);
         }
         if (++done % 100 == 0) {

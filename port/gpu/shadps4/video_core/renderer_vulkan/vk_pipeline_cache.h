@@ -66,6 +66,9 @@ struct Program {
     std::shared_ptr<AsyncShaderCompilation> pending;
     bool compilation_failed = false;
     std::vector<Shader::StageSpecialization> failed_permutations;
+    /// tlg: cache permutations (bit = number, below 64) the game cannot use: FillStoredPermutations
+    /// does not read them again. GPU thread only.
+    u64 store_refused = 0;
     /// tlg: permutations (bit = index, below 64) whose first use from the cache was noted.
     mutable std::atomic<u64> noted_uses{0};
     /// tlg: notes the first use of a permutation that came from the cache (build stats).
@@ -170,6 +173,11 @@ public:
     /// pipeline key loaded: its permutations in the shader cache (the list's prebuild writes
     /// programs without keys too), or null when the cache has none. GPU thread only.
     std::unique_ptr<Program> LoadStoredProgram(u64 pgm_hash, Shader::HwStage hw_stage);
+    /// tlg: TLG_SHADER_STORE_FILL: a program the game already has (loaded by pipeline keys, by
+    /// the lookup, or built) lacks the permutation a draw needs: before one is built, the
+    /// cache's permutations the program does not hold yet are added (the same compare then
+    /// picks one). The number added. GPU thread only; inserts under programs_mutex.
+    size_t FillStoredPermutations(Program& program, u64 pgm_hash, Shader::HwStage hw_stage);
 
     const GraphicsPipeline* GetGraphicsPipeline(const DrawIndirectParams params = {},
                                                 const PreparedDraw* prepared = nullptr);

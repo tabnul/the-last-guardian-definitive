@@ -92,8 +92,21 @@ void NoteBuild(u64 pgm_hash, size_t perm_idx, u32 hw_stage);
 /// TLG_SHADER_STORE_LOOKUP (default: on when shader_prebuild is on, else off): a program the
 /// game meets that no pipeline key loaded is looked up in the shader cache (vk_pipeline_cache).
 bool StoreLookup();
+/// TLG_SHADER_STORE_FILL (default: as TLG_SHADER_STORE_LOOKUP): before the game builds a
+/// permutation of a program it already has, it adds the cache's permutations of that program it
+/// does not hold yet (a program loaded by pipeline keys holds only those its keys name).
+bool StoreFill();
 /// A program the lookup found in the cache, with its number of permutations (build stats).
 void NoteLookup(u64 pgm_hash, size_t perms, u32 hw_stage);
+/// Cache permutations a look of StoreFill could not use, by reason: meta refused (another
+/// version, a shader rebuilt every session, another program or stage), no SPIR-V, the driver
+/// refused the module. Each is counted once per session and program.
+struct FillRefused {
+    u32 meta = 0, spirv = 0, module = 0;
+};
+/// A known program's look into the cache before a build (StoreFill): permutations added, and
+/// those it left out (build stats; a look that found nothing counts too).
+void NoteFill(u64 pgm_hash, size_t perms, const FillRefused& refused, u32 hw_stage);
 /// The first use of a permutation that came from the cache: through a pipeline key (the
 /// warm-up) or the lookup (build stats: the check of the shader list counts them).
 void NoteCacheUse(u64 pgm_hash, size_t perm_idx, u32 hw_stage, bool lookup);

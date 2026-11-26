@@ -74,7 +74,7 @@ fi
 cp fsr4_shaders/LICENSE-FSR4-v07.txt "$dest/"
 # The shader list: the game finds it in shader-list/ one folder above out/ (ShaderList::Path),
 # so the first start builds the known shaders in the background. Recipes only, no game code.
-[[ -f shader-list/CUSA03745.tlgsl ]] || { echo 'shader-list/CUSA03745.tlgsl is missing' >&2; exit 1; }
+[[ -f shader-list/shaders.tlgsl ]] || { echo 'shader-list/shaders.tlgsl is missing' >&2; exit 1; }
 mkdir -p "$dest/shader-list"
 cp shader-list/*.tlgsl "$dest/shader-list/"
 cp -r scripts "$dest/"

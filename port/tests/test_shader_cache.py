@@ -85,7 +85,7 @@ class ShaderCacheTest(unittest.TestCase):
                     self.user / 'cache' / 'CUSA03627-recipes' / '0x00000000deadbeef_0.bin']
         for path in prebuild:
             write(path, 100)
-        shipped = self.root / 'port' / 'shader-list' / 'CUSA03627.tlgsl'
+        shipped = self.root / 'port' / 'shader-list' / 'shaders.tlgsl'
         write(shipped, 10)
         self.assertEqual(shader_cache.size(['CUSA03627'], self.user, self.env), 5000 + 900)
         freed, failures = shader_cache.clear(['CUSA03627'], self.user, self.env)

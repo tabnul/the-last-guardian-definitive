@@ -217,7 +217,12 @@ def main():
                     help='the old version 2 list: raw struct bytes, read only by a build of the same layout')
     ap.add_argument('--v1-layout-id', type=lambda v: int(v, 0),
                     help='with --raw: the layout id of version 1 recipes (they carry none)')
+    ap.add_argument('--keys-from', type=pathlib.Path,
+                    help='a version 3 list whose pipeline keys go into the new list as they are '
+                         '(list_recipes.py: the recipe folder of that list holds no keys)')
     a = ap.parse_args()
+    if a.keys_from is not None and a.raw:
+        sys.exit('--keys-from: with --portable only')
     if a.raw == (a.portable is not None):
         sys.exit('give --portable FILE (the list for every build) or --raw (see the usage)')
     if a.v1_layout_id is not None and (not a.raw or not 0 <= a.v1_layout_id < 1 << 64):
@@ -265,6 +270,17 @@ def main():
         recipes = [r for r in recipes if r['name'] in portable]
         if not recipes:
             sys.exit('no recipe of the folder is in the portable file')
+        if a.keys_from is not None:
+            sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+            from list_recipes import read_list  # noqa: E402 (beside this file)
+            try:
+                from_id, _sources, _entries, from_keys = read_list(a.keys_from)
+            except (ValueError, struct.error, zlib.error) as e:
+                sys.exit(f'{a.keys_from}: {e}')
+            if from_id != list_id:
+                sys.exit(f'--keys-from: that list has portable id {from_id:#018x}, the recipes {list_id:#018x}')
+            have = {data for _name, data in keys}
+            keys = keys + [('', data) for data in from_keys if data not in have]
 
     # The game's shader files, and where each program hash has its header (OrbShdr) in them.
     sb_files, footers = {}, {}

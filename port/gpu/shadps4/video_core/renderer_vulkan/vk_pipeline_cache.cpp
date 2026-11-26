@@ -329,6 +329,10 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     : instance{instance_}, scheduler{scheduler_}, liverpool{liverpool_},
       desc_heap{instance, scheduler.GetWorkSemaphore(), DescriptorHeapSizes} {
     sel.regs = &liverpool->regs;
+    // tlg: both cache-lookup switches are fixed at start; their state goes into the log now,
+    // not at the first miss (a run without a miss still shows it).
+    ShaderRecipe::StoreLookup();
+    ShaderRecipe::StoreFill();
     const auto& vk12_props = instance.GetVk12Properties();
     profile = Shader::Profile{
         .max_viewport_width = instance.GetMaxViewportWidth(),
@@ -1473,6 +1477,18 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
                                     program->failed_permutations.end()) {
             return {};
         }
+        // tlg: TLG_SHADER_STORE_FILL: the cache may hold it (the shader list's prebuild writes
+        // every permutation of a program, the keys load only those they name).
+        if (FillStoredPermutations(*program, params.hash, hw_stage)) {
+            it = std::ranges::find(program->modules, spec, &Program::Module::spec);
+            if (it != program->modules.end()) {
+                program->last_used = std::distance(program->modules.begin(), it);
+            }
+            perm_idx = program->modules.size();
+            perm_hash = HashCombine(params.hash, perm_idx);
+        }
+    }
+    if (it == program->modules.end()) {
         if (compile_async) {
             QueueShader(*program, hw_stage, sw_stage, params, runtime_info, binding, perm_idx, false,
                         std::move(spec));

@@ -1288,6 +1288,7 @@
     "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "樹冠看起來扁平且過亮：內部的光線在層層樹葉之間沒有陰影。此選項會讓樹冠內部的光線變暗。",
     "Realistic tree shade": "真實樹蔭",
     "Build shaders ahead": "預先建置著色器",
-    "At start, builds the shaders of the shader list that comes with the port in the background, so places you see for the first time stutter less. The first start after an update or after clearing the shader cache takes longer: loading a stage waits until the build is done. The list holds only build recipes, no game code. Applies at the next start. On by default.": "啟動時在背景建置移植版附帶的著色器清單中的著色器，讓第一次看到的地方更少卡頓。更新後或清除著色器快取後的首次啟動會更久：關卡載入會等待建置完成。清單只包含建置配方，不含遊戲程式碼。下次啟動時生效。預設開啟。"
+    "At start, builds the shaders of the shader list that comes with the port in the background, so places you see for the first time stutter less. The first start after an update or after clearing the shader cache takes longer: loading a stage waits until the build is done. The list holds only build recipes, no game code. Applies at the next start. On by default.": "啟動時在背景建置移植版附帶的著色器清單中的著色器，讓第一次看到的地方更少卡頓。更新後或清除著色器快取後的首次啟動會更久：關卡載入會等待建置完成。清單只包含建置配方，不含遊戲程式碼。下次啟動時生效。預設開啟。",
+    "Building shaders %u%%": "正在建置著色器 %u%%"
   }
 }

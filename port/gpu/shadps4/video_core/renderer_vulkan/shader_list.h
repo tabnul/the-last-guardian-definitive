@@ -26,9 +26,9 @@ namespace Vulkan::ShaderList {
 /// was at start: the list is read and the import runs in the background.
 bool Enabled();
 
-/// The list of this game: TLG_SHADER_LIST, else <serial>.tlgsl in shader-list/ next to the
-/// executable or one folder above it (a build in port/out); the US game (CUSA03627) without a list
-/// of its own reads the European one's (CUSA03745: the same game files). Empty when there is none.
+/// The list: TLG_SHADER_LIST, else shaders.tlgsl in shader-list/ next to the executable or one
+/// folder above it (a build in port/out). One list for every region (made from the European
+/// CUSA03745; the US game has the same game files). Empty when there is none.
 std::filesystem::path Path();
 
 struct Source {

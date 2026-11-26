@@ -1067,6 +1067,53 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
     return true;
 }
 
+namespace {
+
+/// Missing ends a walk; the others name why a permutation of the cache is not used (counted).
+enum class StoredPermutation { Missing, MetaRefused, NoSpirv, ModuleRefused, Ok };
+
+/// tlg: one permutation of the shader cache (plain cache files): its meta into `info` and
+/// `spec`, its module. Missing: the cache has no meta of this number (asked without opening the
+/// file: the walk ends on such a miss, which is no fault). MetaRefused: the meta is empty, or
+/// LoadShaderMeta refuses it (another version, or a motion vertex shader that is rebuilt every
+/// session), or it is another program or stage; NoSpirv: no SPIR-V beside it; ModuleRefused:
+/// the driver refused the module.
+StoredPermutation ReadStoredPermutation(u64 pgm_hash, size_t perm, Shader::HwStage hw_stage,
+                                        vk::Device device, Shader::Info& info,
+                                        Shader::StageSpecialization& spec,
+                                        vk::ShaderModule& module) {
+    auto& db = Storage::DataBase::Instance();
+    const auto meta_name = fmt::format("{:#018x}", HashCombine(pgm_hash, perm));
+    if (!db.Has(Storage::BlobType::ShaderMeta, meta_name)) {
+        return StoredPermutation::Missing;
+    }
+    std::vector<u8> meta_blob;
+    db.Load(Storage::BlobType::ShaderMeta, meta_name, meta_blob);
+    if (meta_blob.empty()) {
+        return StoredPermutation::MetaRefused;
+    }
+    std::optional<Shader::Gcn::FetchShaderData> fetch;
+    size_t perm_idx{};
+    Serialization::Archive meta_ar{std::move(meta_blob)};
+    if (!LoadShaderMeta(meta_ar, info, fetch, spec, perm_idx) || perm_idx != perm ||
+        info.pgm_hash != pgm_hash || info.hw_stage != hw_stage) {
+        return StoredPermutation::MetaRefused;
+    }
+    std::vector<u32> spv;
+    db.Load(Storage::BlobType::ShaderBinary, fmt::format("{:#018x}_{}", pgm_hash, perm), spv);
+    if (spv.empty()) {
+        return StoredPermutation::NoSpirv;
+    }
+    try {
+        module = CreateCachedModule(spv, device);
+    } catch (...) {
+        return StoredPermutation::ModuleRefused; // the game builds this permutation itself
+    }
+    return StoredPermutation::Ok;
+}
+
+} // namespace
+
 std::unique_ptr<Program> PipelineCache::LoadStoredProgram(u64 pgm_hash, Shader::HwStage hw_stage) {
     // Plain cache files only (the archive cannot be read while it is written); the profile
     // check at start cleared a cache of another build or GPU, so what is there is this one's.
@@ -1080,37 +1127,18 @@ std::unique_ptr<Program> PipelineCache::LoadStoredProgram(u64 pgm_hash, Shader::
     // ends the walk. A permutation is used only where its specialization equals the one a
     // draw needs (GetProgram compares), so one built ahead from other state is never used wrongly.
     for (size_t perm = 0; perm < 64; ++perm) {
-        std::vector<u8> meta_blob;
-        db.Load(Storage::BlobType::ShaderMeta, fmt::format("{:#018x}", HashCombine(pgm_hash, perm)),
-                meta_blob);
-        if (meta_blob.empty()) {
-            break;
-        }
         // The first permutation's meta gives the program its info; later ones are read into a
         // scratch info (the same program, other state).
         auto first = program ? nullptr : std::make_unique<Program>();
         Program& target = program ? *program : *first;
         Shader::Info scratch{};
-        Shader::Info& info = program ? scratch : target.info;
         Shader::StageSpecialization spec{};
         spec.info = &target.info;
-        std::optional<Shader::Gcn::FetchShaderData> fetch;
-        size_t perm_idx{};
-        Serialization::Archive meta_ar{std::move(meta_blob)};
-        if (!LoadShaderMeta(meta_ar, info, fetch, spec, perm_idx) || perm_idx != perm ||
-            info.pgm_hash != pgm_hash || info.hw_stage != hw_stage) {
-            break;
-        }
-        std::vector<u32> spv;
-        db.Load(Storage::BlobType::ShaderBinary, fmt::format("{:#018x}_{}", pgm_hash, perm), spv);
-        if (spv.empty()) {
-            break;
-        }
         vk::ShaderModule module;
-        try {
-            module = CreateCachedModule(spv, instance.GetDevice());
-        } catch (...) {
-            break; // the game builds this program itself
+        if (ReadStoredPermutation(pgm_hash, perm, hw_stage, instance.GetDevice(),
+                                  program ? scratch : target.info, spec,
+                                  module) != StoredPermutation::Ok) {
+            break;
         }
         target.InsertPermut(module, std::move(spec), perm, Program::Origin::CacheLookup);
         if (!program) {
@@ -1121,6 +1149,62 @@ std::unique_ptr<Program> PipelineCache::LoadStoredProgram(u64 pgm_hash, Shader::
         ShaderRecipe::NoteLookup(pgm_hash, program->modules.size(), u32(program->info.hw_stage));
     }
     return program;
+}
+
+size_t PipelineCache::FillStoredPermutations(Program& program, u64 pgm_hash,
+                                             Shader::HwStage hw_stage) {
+    auto& db = Storage::DataBase::Instance();
+    if (!ShaderRecipe::StoreFill() || !EmulatorSettings.IsPipelineCacheEnabled() ||
+        !db.ConcurrentReads()) {
+        return 0;
+    }
+    // The numbers are the cache's own (the keys, the lookup and this session's builds all use
+    // them), so a permutation goes to its number; one the program holds is not read again. The
+    // walk ends at the first number past the program's own that the cache has no meta for. A
+    // number the game cannot use stays empty, so a build still gets a number of its own, and is
+    // remembered (store_refused), so a later miss of the program does not read it again.
+    struct Found {
+        size_t perm;
+        vk::ShaderModule module;
+        Shader::StageSpecialization spec;
+    };
+    std::vector<Found> found;
+    ShaderRecipe::FillRefused refused{};
+    for (size_t perm = 0; perm < 64; ++perm) {
+        if ((perm < program.modules.size() && program.modules[perm].module) ||
+            (program.store_refused >> perm & 1)) {
+            continue;
+        }
+        Shader::Info scratch{};
+        Shader::StageSpecialization spec{};
+        spec.info = &program.info;
+        vk::ShaderModule module;
+        const auto read = ReadStoredPermutation(pgm_hash, perm, hw_stage, instance.GetDevice(),
+                                                scratch, spec, module);
+        if (read == StoredPermutation::Missing && perm >= program.modules.size()) {
+            break;
+        }
+        if (read == StoredPermutation::Ok) {
+            found.push_back({perm, module, std::move(spec)});
+        } else if (read != StoredPermutation::Missing) {
+            program.store_refused |= u64(1) << perm;
+            refused.meta += read == StoredPermutation::MetaRefused;
+            refused.spirv += read == StoredPermutation::NoSpirv;
+            refused.module += read == StoredPermutation::ModuleRefused;
+        }
+    }
+    if (found.empty()) {
+        ShaderRecipe::NoteFill(pgm_hash, 0, refused, u32(hw_stage));
+        return 0;
+    }
+    {
+        std::unique_lock lock{programs_mutex}; // draw-preparation workers read the list
+        for (auto& f : found) {
+            program.InsertPermut(f.module, std::move(f.spec), f.perm, Program::Origin::CacheLookup);
+        }
+    }
+    ShaderRecipe::NoteFill(pgm_hash, found.size(), refused, u32(hw_stage));
+    return found.size();
 }
 
 void Program::NoteCacheUse(size_t perm_idx, bool lookup) const {

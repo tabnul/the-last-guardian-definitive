@@ -15,7 +15,6 @@
 #include <fmt/format.h>
 #include <miniz.h>
 
-#include "common/elf_info.h"
 #include "shader_recompiler/backend/bindings.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/renderer_vulkan/shader_list.h"
@@ -197,27 +196,16 @@ std::filesystem::path Path() {
         return *env == '0' && env[1] == '\0' ? std::filesystem::path{}
                                              : std::filesystem::u8path(env);
     }
-    // The game's own list first. The US game (CUSA03627, 1.03) has the same shader archives and
-    // eboot.bin as the European one (CUSA03745, 1.03; SHA-256 compared): without a list of its own
-    // it reads that one, and says so. Each entry's length and CRC-32 still check every program
-    // read from the player's files.
-    const std::string serial{Common::ElfInfo::Instance().GameSerial()};
+    // One list for every region: the US disc (CUSA03627) has the same shader archives and
+    // eboot.bin as the European CUSA03745 1.03 it was made from (SHA-256 compared); for the other
+    // discs each entry's length and CRC-32 check every program read from the player's files: one
+    // that differs is skipped, never built wrong.
     const auto dir = ExecutableDir();
-    for (const std::string& list_serial : {serial, std::string{serial == "CUSA03627" ? "CUSA03745" : ""}}) {
-        if (list_serial.empty()) {
-            continue;
-        }
-        const auto name = list_serial + ".tlgsl";
-        for (const auto& candidate : {dir / "shader-list" / name, dir.parent_path() / "shader-list" / name}) {
-            std::error_code error;
-            if (std::filesystem::is_regular_file(candidate, error)) {
-                if (list_serial != serial) {
-                    std::printf("Shader prebuild: %s reads the shader list of %s (the same game "
-                                "files): %s\n",
-                                serial.c_str(), list_serial.c_str(), candidate.string().c_str());
-                }
-                return candidate;
-            }
+    for (const auto& candidate : {dir / "shader-list" / "shaders.tlgsl",
+                                  dir.parent_path() / "shader-list" / "shaders.tlgsl"}) {
+        std::error_code error;
+        if (std::filesystem::is_regular_file(candidate, error)) {
+            return candidate;
         }
     }
     return {};
