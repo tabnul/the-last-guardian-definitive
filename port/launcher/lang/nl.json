@@ -492,7 +492,14 @@
     "launcher.trophy_key_format": "Een sleutel is 32 hexadecimale cijfers (0-9, A-F). Niet opgeslagen.",
     "launcher.trophy_key_nofile": "Opgeslagen, maar niet gecontroleerd: geen trofeeënbestand in de spelmap.",
     "launcher.trophy_key_cleared": "Sleutel verwijderd: de trofeeën worden genummerd.",
-    "launcher.trophy_key_hint": "Optioneel: de PS4-trofeesleutel (32 hexadecimale tekens) toont de namen van de trofeeën. De port levert hem niet mee. Ook in het menu in de game (tabblad Trofeeën)."
+    "launcher.trophy_key_hint": "Optioneel: de PS4-trofeesleutel (32 hexadecimale tekens) toont de namen van de trofeeën. De port levert hem niet mee. Ook in het menu in de game (tabblad Trofeeën).",
+    "launcher.disc_check": "Gamedisc controleren",
+    "launcher.disc_check_busy": "Gamebestanden worden gecontroleerd…",
+    "launcher.disc_check_no_game": "Kies eerst de gamemap (Instellingen > Gamemap).",
+    "launcher.disc_check_done": "Disccontrole opgeslagen als {file} in de logmap. Stuur dat bestand of de gekopieerde tekst naar de ontwikkelaars.",
+    "launcher.disc_check_copy": "Kopiëren",
+    "launcher.disc_check_copied": "Gekopieerd: plak het in je GitHub-issue of bericht.",
+    "launcher.disc_check_open": "Bestand openen"
   },
   "items": {
     "menu:sharpen": {

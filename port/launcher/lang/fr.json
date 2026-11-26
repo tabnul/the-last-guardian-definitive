@@ -485,7 +485,14 @@
     "launcher.trophy_key_format": "Une clé compte 32 chiffres hexadécimaux (0-9, A-F). Non enregistrée.",
     "launcher.trophy_key_nofile": "Enregistrée, mais non vérifiée : aucun fichier de trophées dans le dossier du jeu.",
     "launcher.trophy_key_cleared": "Clé supprimée : les trophées sont numérotés.",
-    "launcher.trophy_key_hint": "Facultatif : la clé des trophées PS4 (32 chiffres hexadécimaux) affiche le nom des trophées. Le portage ne la fournit pas. Aussi dans le menu du jeu (onglet Trophées)."
+    "launcher.trophy_key_hint": "Facultatif : la clé des trophées PS4 (32 chiffres hexadécimaux) affiche le nom des trophées. Le portage ne la fournit pas. Aussi dans le menu du jeu (onglet Trophées).",
+    "launcher.disc_check": "Vérifier le disque du jeu",
+    "launcher.disc_check_busy": "Vérification des fichiers du jeu…",
+    "launcher.disc_check_no_game": "Choisissez d'abord le dossier du jeu (Paramètres > Dossier du jeu).",
+    "launcher.disc_check_done": "Vérification enregistrée sous {file} dans le dossier des journaux. Envoyez ce fichier ou le texte copié aux développeurs.",
+    "launcher.disc_check_copy": "Copier",
+    "launcher.disc_check_copied": "Copié : collez-le dans votre ticket GitHub ou votre message.",
+    "launcher.disc_check_open": "Ouvrir le fichier"
   },
   "items": {
     "menu:sharpen": {

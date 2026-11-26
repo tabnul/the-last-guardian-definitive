@@ -492,7 +492,14 @@
     "launcher.trophy_key_format": "Anahtar 32 onaltılık basamaktır (0-9, A-F). Kaydedilmedi.",
     "launcher.trophy_key_nofile": "Kaydedildi ama denetlenmedi: oyun klasöründe kupa dosyası yok.",
     "launcher.trophy_key_cleared": "Anahtar kaldırıldı: kupalar numaralandırılır.",
-    "launcher.trophy_key_hint": "İsteğe bağlı: PS4 kupa anahtarı (32 onaltılık hane) kupa adlarını gösterir. Port bunu içermez. Oyun içi menüde de var (Kupalar sekmesi)."
+    "launcher.trophy_key_hint": "İsteğe bağlı: PS4 kupa anahtarı (32 onaltılık hane) kupa adlarını gösterir. Port bunu içermez. Oyun içi menüde de var (Kupalar sekmesi).",
+    "launcher.disc_check": "Oyun diskini denetle",
+    "launcher.disc_check_busy": "Oyun dosyaları denetleniyor…",
+    "launcher.disc_check_no_game": "Önce oyun klasörünü seçin (Ayarlar > Oyun klasörü).",
+    "launcher.disc_check_done": "Disk denetimi günlük klasörüne {file} olarak kaydedildi. Bu dosyayı veya kopyalanan metni geliştiricilere gönderin.",
+    "launcher.disc_check_copy": "Kopyala",
+    "launcher.disc_check_copied": "Kopyalandı: GitHub sorununuza veya mesajınıza yapıştırın.",
+    "launcher.disc_check_open": "Dosyayı aç"
   },
   "items": {
     "menu:sharpen": {

@@ -485,7 +485,14 @@
     "launcher.trophy_key_format": "キーは16進数32桁（0-9、A-F）です。保存していません。",
     "launcher.trophy_key_nofile": "保存しましたが未確認です：ゲームフォルダにトロフィーファイルがありません。",
     "launcher.trophy_key_cleared": "キーを削除しました：トロフィーは番号で表示されます。",
-    "launcher.trophy_key_hint": "任意：PS4のトロフィーキー（16進数32桁）を入れるとトロフィー名が表示されます。このポートには含まれていません。ゲーム内メニュー（トロフィータブ）でも設定できます。"
+    "launcher.trophy_key_hint": "任意：PS4のトロフィーキー（16進数32桁）を入れるとトロフィー名が表示されます。このポートには含まれていません。ゲーム内メニュー（トロフィータブ）でも設定できます。",
+    "launcher.disc_check": "ゲームディスクを確認",
+    "launcher.disc_check_busy": "ゲームファイルを確認中…",
+    "launcher.disc_check_no_game": "先にゲームフォルダーを選んでください（設定 > ゲームフォルダー）。",
+    "launcher.disc_check_done": "ディスク確認を {file} としてログフォルダーに保存しました。このファイルかコピーしたテキストを開発者に送ってください。",
+    "launcher.disc_check_copy": "コピー",
+    "launcher.disc_check_copied": "コピーしました。GitHub の issue かメッセージに貼り付けてください。",
+    "launcher.disc_check_open": "ファイルを開く"
   },
   "items": {
     "menu:sharpen": {

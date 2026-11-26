@@ -404,6 +404,13 @@ TEXT = {
     'rep_no_events': 'No Fault:, STOP: or FREEZE: lines in this log.',
     'rep_issue_title': 'Problem report: {gpu}',
     'report_busy': 'Collecting the report…',
+    'disc_check': 'Check game disc',
+    'disc_check_busy': 'Checking the game files…',
+    'disc_check_no_game': 'Pick the game folder first (Settings > Game folder).',
+    'disc_check_done': 'Disc check saved as {file} in the logs folder. Send that file or the copied text to the developers.',
+    'disc_check_copy': 'Copy',
+    'disc_check_copied': 'Copied: paste it in your GitHub issue or message.',
+    'disc_check_open': 'Open file',
     'report_done': 'Issue form opened in the browser. Attach {zip} from the logs folder (log with user names removed).',
     'clear_cache': 'Clear shader cache',
     'clear_cache_ask': ('This deletes the compiled shaders ({size}); the next start takes longer to load and '
@@ -1788,6 +1795,8 @@ class Launcher:
         ttk.Button(header, text=self.t('logs'), command=lambda: self.open(tlg_run.LOG_DIR)).pack(
             side='right', pady=(6, 0))
         ttk.Button(header, text=self.t('report_issue'), command=self.report_issue).pack(
+            side='right', padx=(0, 6), pady=(6, 0))
+        ttk.Button(header, text=self.t('disc_check'), command=self.check_disc).pack(
             side='right', padx=(0, 6), pady=(6, 0))
         # The same Advanced logging switch as Settings > Debug; shown on Debug > Flags.
         self.debug_logging_var = tk.BooleanVar(value=bool(self.settings.get('debug_logging')))
@@ -3274,6 +3283,63 @@ class Launcher:
             self.root.after(0, lambda: (self.open(tlg_run.LOG_DIR), tlg_run.open_external(url),
                                         self.status.configure(text=self.t('report_done', zip=zip_name))))
         threading.Thread(target=work, daemon=True).start()
+
+    def check_disc(self):
+        """Debug > Check game disc (disc_check.py, #105): checksums of the game files compared with
+        the tested US/EU discs, saved as a text file in the logs folder (opened) for the player to
+        send. No game content and no folder names in it."""
+        import threading
+        import disc_check
+        import report
+        game_dir = self.settings.get('game_dir', '')
+        if not game_dir:
+            messagebox.showwarning(TITLE, self.t('disc_check_no_game'))
+            return
+        self.status.configure(text=self.t('disc_check_busy'))
+
+        def work():
+            try:
+                text = report.redact(disc_check.report(game_dir), report.own_names())[0]
+                title = disc_check.disc(game_dir)[0] or 'unknown'
+                name = f'disc-check-{title}-' + time.strftime('%Y%m%d-%H%M%S') + '.txt'
+                tlg_run.LOG_DIR.mkdir(parents=True, exist_ok=True)
+                (tlg_run.LOG_DIR / name).write_text(text, encoding='utf-8')
+            except Exception as error:   # shown, never a silent failure
+                message = str(error)
+                self.root.after(0, lambda: (self.status.configure(text=''),
+                                            messagebox.showerror(self.t('error'), message)))
+                return
+            self.root.after(0, lambda: (self.status.configure(text=self.t('disc_check_done', file=name)),
+                                        self.show_disc_check(text, tlg_run.LOG_DIR / name)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def show_disc_check(self, text, path):
+        """The disc check in a window: selectable text, Copy (clipboard) and Open file."""
+        win = tk.Toplevel(self.root)
+        win.title(self.t('disc_check'))
+        win.configure(background=BG)
+        win.transient(self.root)
+        body = tk.Text(win, wrap='none', font='TkFixedFont', width=96, height=30, background=FIELD,
+                       foreground=TEXT_COLOR, insertbackground=TEXT_COLOR, highlightthickness=0, relief='flat')
+        body.insert('1.0', text)
+        body.configure(state='disabled')   # read-only, still selectable
+        scroll = ttk.Scrollbar(win, command=body.yview)
+        body.configure(yscrollcommand=scroll.set)
+        buttons = ttk.Frame(win, padding=(12, 8))
+        buttons.pack(side='bottom', fill='x')
+        scroll.pack(side='right', fill='y', pady=(12, 0))
+        body.pack(fill='both', expand=True, padx=(12, 0), pady=(12, 0))
+        note = ttk.Label(buttons, text='')
+        note.pack(side='left')
+
+        def copy():
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            note.configure(text=self.t('disc_check_copied'))
+        ttk.Button(buttons, text=self.t('close'), command=win.destroy).pack(side='right')
+        ttk.Button(buttons, text=self.t('disc_check_open'), command=lambda: tlg_run.open_external(path)).pack(
+            side='right', padx=(0, 6))
+        ttk.Button(buttons, text=self.t('disc_check_copy'), command=copy).pack(side='right', padx=(0, 6))
 
     def copy_command(self):
         self.root.clipboard_clear()

@@ -485,7 +485,14 @@
     "launcher.trophy_key_format": "密钥为 32 位十六进制数字（0-9、A-F）。未保存。",
     "launcher.trophy_key_nofile": "已保存，但未检查：游戏文件夹中没有奖杯文件。",
     "launcher.trophy_key_cleared": "已移除密钥：奖杯以编号显示。",
-    "launcher.trophy_key_hint": "可选：输入 PS4 奖杯密钥（32 位十六进制）即可显示奖杯名称。本移植版不附带该密钥。也可在游戏内菜单（奖杯标签页）中设置。"
+    "launcher.trophy_key_hint": "可选：输入 PS4 奖杯密钥（32 位十六进制）即可显示奖杯名称。本移植版不附带该密钥。也可在游戏内菜单（奖杯标签页）中设置。",
+    "launcher.disc_check": "检查游戏光盘",
+    "launcher.disc_check_busy": "正在检查游戏文件…",
+    "launcher.disc_check_no_game": "请先选择游戏文件夹（设置 > 游戏文件夹）。",
+    "launcher.disc_check_done": "光盘检查已保存为日志文件夹中的 {file}。请将该文件或复制的文本发送给开发者。",
+    "launcher.disc_check_copy": "复制",
+    "launcher.disc_check_copied": "已复制：请粘贴到你的 GitHub issue 或消息中。",
+    "launcher.disc_check_open": "打开文件"
   },
   "items": {
     "menu:sharpen": {

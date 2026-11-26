@@ -492,7 +492,14 @@
     "launcher.trophy_key_format": "Una chiave ha 32 cifre esadecimali (0-9, A-F). Non salvata.",
     "launcher.trophy_key_nofile": "Salvata, ma non verificata: nessun file dei trofei nella cartella del gioco.",
     "launcher.trophy_key_cleared": "Chiave rimossa: i trofei sono numerati.",
-    "launcher.trophy_key_hint": "Facoltativo: la chiave dei trofei PS4 (32 cifre esadecimali) mostra i nomi dei trofei. Il port non la include. Anche nel menu di gioco (scheda Trofei)."
+    "launcher.trophy_key_hint": "Facoltativo: la chiave dei trofei PS4 (32 cifre esadecimali) mostra i nomi dei trofei. Il port non la include. Anche nel menu di gioco (scheda Trofei).",
+    "launcher.disc_check": "Controlla disco di gioco",
+    "launcher.disc_check_busy": "Controllo dei file di gioco…",
+    "launcher.disc_check_no_game": "Scegli prima la cartella del gioco (Impostazioni > Cartella del gioco).",
+    "launcher.disc_check_done": "Controllo salvato come {file} nella cartella dei log. Invia quel file o il testo copiato agli sviluppatori.",
+    "launcher.disc_check_copy": "Copia",
+    "launcher.disc_check_copied": "Copiato: incollalo nella tua issue su GitHub o nel messaggio.",
+    "launcher.disc_check_open": "Apri file"
   },
   "items": {
     "menu:sharpen": {

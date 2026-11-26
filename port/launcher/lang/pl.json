@@ -492,7 +492,14 @@
     "launcher.trophy_key_format": "Klucz to 32 cyfry szesnastkowe (0-9, A-F). Nie zapisano.",
     "launcher.trophy_key_nofile": "Zapisano, ale nie sprawdzono: brak pliku trofeów w folderze gry.",
     "launcher.trophy_key_cleared": "Klucz usunięty: trofea są numerowane.",
-    "launcher.trophy_key_hint": "Opcjonalnie: klucz trofeów PS4 (32 cyfry szesnastkowe) pokazuje nazwy trofeów. Port go nie zawiera. Również w menu gry (karta Trofea)."
+    "launcher.trophy_key_hint": "Opcjonalnie: klucz trofeów PS4 (32 cyfry szesnastkowe) pokazuje nazwy trofeów. Port go nie zawiera. Również w menu gry (karta Trofea).",
+    "launcher.disc_check": "Sprawdź płytę gry",
+    "launcher.disc_check_busy": "Sprawdzanie plików gry…",
+    "launcher.disc_check_no_game": "Najpierw wybierz folder gry (Ustawienia > Folder gry).",
+    "launcher.disc_check_done": "Wynik sprawdzenia zapisano jako {file} w folderze logów. Wyślij ten plik lub skopiowany tekst twórcom.",
+    "launcher.disc_check_copy": "Kopiuj",
+    "launcher.disc_check_copied": "Skopiowano: wklej to w zgłoszeniu na GitHubie lub w wiadomości.",
+    "launcher.disc_check_open": "Otwórz plik"
   },
   "items": {
     "menu:sharpen": {

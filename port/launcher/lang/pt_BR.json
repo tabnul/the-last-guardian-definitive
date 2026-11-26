@@ -483,7 +483,14 @@
     "launcher.trophy_key_format": "Uma chave tem 32 dígitos hexadecimais (0-9, A-F). Não salva.",
     "launcher.trophy_key_nofile": "Salva, mas não verificada: nenhum arquivo de troféus na pasta do jogo.",
     "launcher.trophy_key_cleared": "Chave removida: os troféus são numerados.",
-    "launcher.trophy_key_hint": "Opcional: a chave de troféus do PS4 (32 dígitos hexadecimais) mostra os nomes dos troféus. O port não a inclui. Também no menu do jogo (aba Troféus)."
+    "launcher.trophy_key_hint": "Opcional: a chave de troféus do PS4 (32 dígitos hexadecimais) mostra os nomes dos troféus. O port não a inclui. Também no menu do jogo (aba Troféus).",
+    "launcher.disc_check": "Verificar disco do jogo",
+    "launcher.disc_check_busy": "Verificando os arquivos do jogo…",
+    "launcher.disc_check_no_game": "Escolha primeiro a pasta do jogo (Configurações > Pasta do jogo).",
+    "launcher.disc_check_done": "Verificação salva como {file} na pasta de logs. Envie esse arquivo ou o texto copiado aos desenvolvedores.",
+    "launcher.disc_check_copy": "Copiar",
+    "launcher.disc_check_copied": "Copiado: cole na sua issue do GitHub ou na sua mensagem.",
+    "launcher.disc_check_open": "Abrir arquivo"
   },
   "items": {
     "menu:sharpen": {

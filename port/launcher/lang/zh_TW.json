@@ -492,7 +492,14 @@
     "launcher.trophy_key_format": "金鑰為 32 位十六進位數字（0-9、A-F）。未儲存。",
     "launcher.trophy_key_nofile": "已儲存，但未檢查：遊戲資料夾中沒有獎盃檔案。",
     "launcher.trophy_key_cleared": "已移除金鑰：獎盃以編號顯示。",
-    "launcher.trophy_key_hint": "選用：輸入 PS4 獎盃金鑰（32 位十六進位）即可顯示獎盃名稱。本移植版不附帶此金鑰。也可在遊戲內選單（獎盃分頁）中設定。"
+    "launcher.trophy_key_hint": "選用：輸入 PS4 獎盃金鑰（32 位十六進位）即可顯示獎盃名稱。本移植版不附帶此金鑰。也可在遊戲內選單（獎盃分頁）中設定。",
+    "launcher.disc_check": "檢查遊戲光碟",
+    "launcher.disc_check_busy": "正在檢查遊戲檔案…",
+    "launcher.disc_check_no_game": "請先選擇遊戲資料夾（設定 > 遊戲資料夾）。",
+    "launcher.disc_check_done": "光碟檢查已儲存為記錄資料夾中的 {file}。請將該檔案或複製的文字傳送給開發者。",
+    "launcher.disc_check_copy": "複製",
+    "launcher.disc_check_copied": "已複製：請貼到你的 GitHub issue 或訊息中。",
+    "launcher.disc_check_open": "開啟檔案"
   },
   "items": {
     "menu:sharpen": {
