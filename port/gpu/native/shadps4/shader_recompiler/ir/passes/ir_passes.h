@@ -81,7 +81,7 @@ ReadsOutOfBranchStats& ReadsOutOfBranchCounters();
 /// Every pixel shader with a read inside a per-pixel branch, by hash (last translation).
 std::vector<ReadsOutOfBranchShader> ReadsOutOfBranchShaders();
 
-/// tlg look option (TLG_VKB_LEAF_AO, off by default): ambient light inside tree crowns, see leaf_ambient_occlusion_pass.cpp
+/// tlg look option (Extras Realistic tree shade / TLG_LEAF_AO, off by default): ambient light inside tree crowns, see leaf_ambient_occlusion_pass.cpp
 enum class LeafAoResult : u32 { Applied, MismatchResources, MismatchWrite };
 constexpr u32 LeafAoResultCount = 3;
 constexpr std::array<const char*, LeafAoResultCount> LeafAoResultNames{"applied", "mismatch_resources", "mismatch_write"};

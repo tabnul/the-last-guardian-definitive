@@ -33,6 +33,7 @@
 #include <nlohmann/json.hpp>
 
 #include "common/logging/log.h"
+#include "tlg_settings.h"
 #include <deque>
 #include <filesystem>
 #include "common/path_util.h"
@@ -4215,7 +4216,7 @@ nlohmann::json ReadsOutOfBranchReport() {
             {"kept_in_per_pixel_branch", kept},
             {"shaders", shaders}};
 }
-/// look option TLG_VKB_LEAF_AO (off by default): ambient light inside tree crowns; translations of the listed ambient shaders by result (a mismatch
+/// look option Realistic tree shade (Extras, TLG_LEAF_AO; off by default): ambient light inside tree crowns; translations of the listed ambient shaders by result (a mismatch
 /// leaves the shader unchanged)
 nlohmann::json LeafAoReport() {
     namespace O = VkbShader::Optimization;
@@ -4228,7 +4229,9 @@ nlohmann::json LeafAoReport() {
     for (const auto& s : O::LeafAoShaders()) {
         shaders.push_back({{"cs", fmt::format("{:016x}", s.hash)}, {"result", O::LeafAoResultNames[static_cast<u32>(s.result)]}});
     }
-    return {{"on", profile.leaf_ao_strength > 0.0f}, {"strength", profile.leaf_ao_strength}, {"radius_m", profile.leaf_ao_radius},
+    float strength = 0.0f, radius = 0.0f;
+    TlgSettings::LeafAoLive(strength, radius);
+    return {{"on", strength > 0.0f}, {"strength", strength}, {"radius_m", radius},
             {"materials_mask", profile.leaf_ao_materials}, {"translations", results}, {"shaders", shaders}};
 }
 

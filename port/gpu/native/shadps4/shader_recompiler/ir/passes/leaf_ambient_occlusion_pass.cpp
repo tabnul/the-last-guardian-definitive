@@ -19,8 +19,11 @@
 // only image write adds a value to what it read from the same image; if not, it changes nothing and counts the
 // shader as a mismatch (LeafAoCounters).
 //
-// Switch: TLG_VKB_LEAF_AO=<strength>[,<radius in metres>[,<material entry>...]], e.g. 0.8 or 0.8,2,14 (default
-// radius 2, material entry 14). Unset or 0: off, the translation is unchanged. Read once at start (Profile).
+// Switch: the Extras setting Realistic tree shade (off, low, medium, high, extreme), or TLG_LEAF_AO=<strength>[,<radius in
+// metres>[,<material entry>...]] (e.g. 0.8 or 0.8,2,14; "off" leaves the pass out), as in the normal renderer. The material
+// entries are part of the translation (Profile); strength and radius are read live from the push data of each dispatch
+// (PushData::LeafAoStrengthIndex/RadiusIndex), so the setting changes in play without a new translation. Strength 0 keeps
+// every pixel as it was (the samples of non-leaf pixels read only the pixel's own depth).
 
 #include <array>
 #include <cmath>
@@ -130,7 +133,7 @@ std::vector<LeafAoShader> LeafAoShaders() {
 }
 
 void LeafAmbientOcclusionPass(IR::Program& program, const Profile& profile) {
-    if (!(profile.leaf_ao_strength > 0.0f) || program.info.sw_stage != SwStage::Compute) {
+    if (profile.leaf_ao_materials == 0 || program.info.sw_stage != SwStage::Compute) {
         return;
     }
     const u64 hash = program.info.pgm_hash;
@@ -272,9 +275,13 @@ void LeafAmbientOcclusionPass(IR::Program& program, const Profile& profile) {
             leaf = ir.LogicalOr(leaf, ir.IEqual(entry, ir.Imm32(k)));
         }
     }
+    // the live setting: strength 0 (off) counts no pixel as a leaf
+    const IR::F32 strength = ir.TlgPushF32(PushData::LeafAoStrengthIndex);
+    const IR::F32 radius_m = ir.TlgPushF32(PushData::LeafAoRadiusIndex);
+    leaf = ir.LogicalAnd(leaf, ir.FPGreaterThan(strength, ir.Imm32(0.0f)));
     // the radius in pixels: world units per screen half-width at depth z
     const IR::F32 scale = ir.FPSqrt(ir.FPAdd(ir.FPAdd(ir.FPMul(sx, sx), ir.FPMul(sy, sy)), ir.FPMul(sz, sz)));
-    const IR::F32 radius_px = ir.FPMin(ir.FPMax(ir.FPMul(ir.FPDiv(ir.Imm32(profile.leaf_ao_radius), ir.FPMax(ir.FPMul(scale, z), ir.Imm32(1e-6f))),
+    const IR::F32 radius_px = ir.FPMin(ir.FPMax(ir.FPMul(ir.FPDiv(radius_m, ir.FPMax(ir.FPMul(scale, z), ir.Imm32(1e-6f))),
                                                         ir.FPMul(width, ir.Imm32(0.5f))),
                                                  ir.Imm32(2.0f)),
                                         ir.Imm32(96.0f));
@@ -283,7 +290,7 @@ void LeafAmbientOcclusionPass(IR::Program& program, const Profile& profile) {
     // the pixel's own turn of the pattern (fixed per pixel, no flicker)
     const IR::F32 turn = ir.FPFract(ir.FPMul(ir.Imm32(52.9829189f), ir.FPFract(ir.FPAdd(ir.FPMul(xf, ir.Imm32(0.06711056f)), ir.FPMul(yf, ir.Imm32(0.00583715f))))));
     const IR::F32 far_x = ir.FPSub(width, ir.Imm32(1.0f)), far_y = ir.FPSub(height, ir.Imm32(1.0f));
-    const IR::F32 reach = ir.FPAdd(z, ir.Imm32(profile.leaf_ao_radius));
+    const IR::F32 reach = ir.FPAdd(z, radius_m);
     IR::F32 hits = ir.Imm32(0.0f);
     for (u32 i = 0; i < 12; ++i) {
         // two rings of six directions (half and full radius), the outer one turned by 30 degrees
@@ -297,7 +304,7 @@ void LeafAmbientOcclusionPass(IR::Program& program, const Profile& profile) {
         const IR::F32 zn = view_depth(qx, qy, dn);
         hits = ir.FPAdd(hits, IR::F32{ir.Select(ir.FPLessThan(zn, reach), ir.Imm32(1.0f), ir.Imm32(0.0f))});
     }
-    const IR::F32 factor = ir.FPSub(ir.Imm32(1.0f), ir.FPMul(hits, ir.Imm32(profile.leaf_ao_strength / 12.0f)));
+    const IR::F32 factor = ir.FPSub(ir.Imm32(1.0f), ir.FPMul(hits, ir.FPMul(strength, ir.Imm32(1.0f / 12.0f))));
     const IR::F32 f = IR::F32{ir.Select(leaf, factor, ir.Imm32(1.0f))};
     for (u32 c = 0; c < 3; ++c) {
         IR::Inst* add = adds[c];
