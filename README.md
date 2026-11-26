@@ -327,8 +327,9 @@ the launcher's Extras page. They go with every outfit,
 
 In Japan, foxtail grass is called nekojarashi (猫じゃらし), "cat teaser": you wave a stalk in
 front of a cat until it pounces. The developers planned that for the boy and Trico. Trico's script
-still has the whole act, but the toy's model was cut and is not on the disc, so Trico's pounce
-stayed in with the boy waving an empty hand. We made a new foxtail stalk, built on your PC by the
+still has the whole act, but the toy's model was cut and is not on the disc. For Trico's part we
+use a pounce move that is still in the game; it looks like the one meant for this act, but we
+can't prove it is. We made a new foxtail stalk, built on your PC by the
 launcher like the ICO horns. Tick **Foxtail toy** on the launcher's Extras page, then use the gold
 **Foxtail** and **Foxtail play** buttons in Trico Tricks,
 [more in the full guide](docs/extras.md#the-foxtail-toy).
