@@ -6,16 +6,19 @@ Measures checksums only, no game content:
     the dump tool does not matter);
   * the file table of every trico_*.psarc (names, sizes and packed block sizes of all its files);
   * the real contents of the shaders and Lua scripts in the boot archives.
-Every value is compared with REFERENCE, measured on the US (CUSA03627) and EU (CUSA03745) 1.03
-dumps. Those two are identical in everything but their language archives, so a disc whose game
-program, shared archives, shaders and scripts all match is the same game with other languages.
+The port ships no checksums of the game: the player's values are sent in and compared by the
+developers with the values of the tested US (CUSA03627) and EU (CUSA03745) 1.03 dumps (a reference
+file kept outside the port). Those two are identical in everything but their language archives, so
+a disc whose game program, shared archives, shaders and scripts all match is the same game with
+other languages.
 
 The "Report a problem" zip carries the text as disc-check.txt, which is how a player with a disc
-nobody tested sends it in (#105). By hand:
+nobody tested sends it in (#105). By hand (--reference compares with a reference file):
 
-    python disc_check.py <game folder or .zar>
+    python disc_check.py [--reference FILE] <game folder or .zar>
 """
 import hashlib
+import json
 from pathlib import Path
 import struct
 import sys
@@ -33,29 +36,7 @@ CONTENT_ARCHIVES = ('trico_boot.psarc', 'trico_bootp.psarc')
 CONTENT_SETS = {'shaders': lambda name: name.startswith('ps4_shader_cache/'),
                 'scripts': lambda name: name.endswith('.lua')}
 OWN_ARCHIVES = ('trico_other.psarc',)              # built by the port (horns, toy), not on a disc
-TESTED = 'US CUSA03627 and EU CUSA03745, update 01.03'
 
-REFERENCE = {
-    'eboot.bin 0x0 r-x': 'a0cee5fa81d57070',
-    'eboot.bin 0x16b4000 r--': '8f82271f3e1db0ca',
-    'eboot.bin 0x1704000 rw-': 'd92f0bdce833198a',
-    'libSceFios2.prx 0x0 r-x': 'ed9da7837f1f3c30',
-    'libSceFios2.prx 0x5c000 r--': '4fd513c5dbb1e3ab',
-    'libSceFios2.prx 0x60000 rw-': '7e2a85e234b63471',
-    'libc.prx 0x0 r-x': '1edc67468917dd3f',
-    'libc.prx 0xd8000 r--': '35e8abcb83e45bbb',
-    'libc.prx 0xdc000 rw-': 'c7be7ae391abb47b',
-    'scripts': '620/8005cffb345903fd',
-    'shaders': '24656/43a9d450f1799536',
-    'trico_001.psarc': '6216761600/13232/1c115424bb06a831',
-    'trico_001p.psarc': '270074112/256/fbdc44f9fd2c466c',
-    'trico_002.psarc': '5743801247/13202/d0f5b2acee95dbae',
-    'trico_002p.psarc': '301924608/445/6e987c3a0f6f78e5',
-    'trico_003.psarc': '7238353034/15031/6af27b678e386c65',
-    'trico_003p.psarc': '528810240/467/654a17ac881994f8',
-    'trico_boot.psarc': '2903783755/32567/49e6a0f4d9b81846',
-    'trico_bootp.psarc': '547745304/24958/812455d0d004a4b2',
-}
 
 
 def digest(data):
@@ -145,10 +126,17 @@ def disc(game_dir):
     return str(sfo.get('TITLE_ID', '')), str(sfo.get('APP_VER', ''))
 
 
+def load_reference(path):
+    """(what it was measured on, {key: value}) of a reference file."""
+    data = json.loads(Path(path).read_text(encoding='utf-8'))
+    return data['tested'], data['values']
+
+
 def groups(values, reference=None):
     """[(group, [(key, value, state)])] with state 'same', 'DIFFERENT', 'MISSING' (in the
-    reference group, not on this disc) or '' (not compared: no tested disc has it)."""
-    reference = REFERENCE if reference is None else reference
+    reference group, not on this disc) or '' (not compared: without a reference, or no tested
+    disc has it)."""
+    reference = reference or {}
     binaries = tuple(Path(name).name + ' ' for name in BINARIES)
     belongs = {
         'Game program': lambda key: key.startswith(binaries),
@@ -160,7 +148,7 @@ def groups(values, reference=None):
     for group, picks in belongs.items():
         rows = [(key, value, ('same' if reference[key] == value else 'DIFFERENT') if key in reference else '')
                 for key, value in sorted(values.items()) if picks(key)]
-        if group != 'Language archives':   # a disc has only its own languages
+        if reference and group != 'Language archives':   # a disc has only its own languages
             rows += [(key, '', 'MISSING') for key in sorted(reference) if picks(key) and key not in values]
         out.append((group, rows))
     return out
@@ -172,13 +160,22 @@ def equal(found):
                for group, rows in found if group != 'Language archives')
 
 
-def report(game_dir, values=None):
-    """The text of disc-check.txt. It names files of the game, never the folder they are in."""
+def report(game_dir, values=None, reference=None):
+    """The text of disc-check.txt. It names files of the game, never the folder they are in.
+    Without `reference` ((tested, values) of load_reference) it lists the values only."""
     values = measure(game_dir) if values is None else values
     title, version = disc(game_dir)
-    found = groups(values)
-    lines = ['The Last Guardian disc check', f'Disc: {title or "unknown"}, update {version or "unknown"}',
-             f'Compared with: {TESTED}', '']
+    lines = ['The Last Guardian disc check', f'Disc: {title or "unknown"}, update {version or "unknown"}']
+    if not reference:
+        lines += ['Send this text to the developers: they compare it with the tested discs.', '']
+        for group, rows in groups(values):
+            lines.append(f'[{group}]')
+            lines += [f'{key:<34} {value}' for key, value, _ in rows] or ['NOT FOUND']
+            lines.append('')
+        return '\n'.join(lines)
+    tested, reference = reference
+    found = groups(values, reference)
+    lines += [f'Compared with: {tested}', '']
     for group, rows in found:
         if group == 'Language archives':
             verdict = f'{len(rows)} on this disc (they differ per region)'
@@ -199,10 +196,13 @@ def report(game_dir, values=None):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    reference = None
+    if len(argv) == 3 and argv[0] == '--reference':
+        reference, argv = load_reference(argv[1]), argv[2:]
     if len(argv) != 1:
         print(__doc__.strip().splitlines()[-1].strip(), file=sys.stderr)
         return 2
-    print(report(argv[0]))
+    print(report(argv[0], reference=reference))
     return 0
 
 
