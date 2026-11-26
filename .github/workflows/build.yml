@@ -1,6 +1,6 @@
 # (Releases ship Linux and Windows; Linux reports: tabnul/the-last-guardian-definitive#1.)
 # Pull requests to master (from integration) build the Windows package, kept as a run artifact for 3
-# days. Only a pushed tag v* (e.g. v0.2) publishes a release, named after that tag and marked latest.
+# days. Only a pushed tag vX.Y.Z-release (e.g. v0.15.0-release; issue #110) publishes a release, named after that tag and marked latest.
 # Every release is kept as version history. No game or console file is ever built in or uploaded.
 name: Build
 
@@ -53,7 +53,20 @@ jobs:
             libxxhash-dev zlib1g-dev libx11-dev libxcb1-dev libxext-dev libxrandr-dev libxcursor-dev \
             libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols \
             libdecor-0-dev libegl-dev libgl-dev libdrm-dev libgbm-dev libpulse-dev libasound2-dev \
-            libpipewire-0.3-dev libudev-dev libdbus-1-dev libusb-1.0-0-dev libzstd-dev
+            libpipewire-0.3-dev libudev-dev libdbus-1-dev libusb-1.0-0-dev libzstd-dev xvfb
+      # Issue #110: a release tag must be vX.Y.Z-release (a plain vX.Y.Z breaks older launchers).
+      # Checked first, so a wrong tag stops in a minute instead of after the build.
+      - name: Release tag form
+        if: startsWith(github.ref, 'refs/tags/')
+        run: python3 -I launcher/update_check.py --release-tag "$GITHUB_REF_NAME"
+      # Issue #110: the launcher window with a release notice, broken texts, offline, odd answers.
+      # A virtual screen (xvfb) so the window tests run; TLG_REQUIRE_TK=1 fails instead of skipping.
+      - name: Regression - launcher release check
+        env:
+          TLG_REQUIRE_TK: '1'
+        run: |
+          xvfb-run -a python3 -m unittest discover -s tests -p test_update_check.py -v
+          xvfb-run -a python3 -m unittest discover -s tests -p test_tk_launcher_builds.py -v
       - name: Clang 23 (reads the PGO profile recorded with Windows Clang 23)
         timeout-minutes: 15
         run: |
@@ -124,6 +137,17 @@ jobs:
         id: python
         with:
           python-version: '3.12'
+      # Issue #110: a newer release once broke the launcher home page. The window tests must run
+      # (TLG_REQUIRE_TK=1 fails instead of skipping), with the Python the package ships.
+      - name: Regression - launcher release check
+        shell: pwsh
+        env:
+          TLG_REQUIRE_TK: '1'
+        run: |
+          & "${{ steps.python.outputs.python-path }}" -m unittest discover -s tests -p test_update_check.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "${{ steps.python.outputs.python-path }}" -m unittest discover -s tests -p test_tk_launcher_builds.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: msys2/setup-msys2@v2
         with:
           msystem: CLANG64
@@ -198,7 +222,11 @@ jobs:
         with:
           sparse-checkout: |
             .github/release-template.md
+            port/launcher/update_check.py
           sparse-checkout-cone-mode: false
+      # Issue #110: never publish a plain vX.Y.Z as Latest; launchers v0.9.1..v0.14.0 break on it.
+      - name: Release tag form
+        run: python3 -I port/launcher/update_check.py --release-tag "$GITHUB_REF_NAME"
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -212,7 +240,7 @@ jobs:
           short=${GITHUB_SHA::7}
           tag=$GITHUB_REF_NAME
           # The notes are .github/release-template.md, with {{CHANGES}} taken from the annotated
-          # tag's message (git tag -a v0.2 -m "..."). A lightweight tag leaves that part out.
+          # tag's message (git tag -a v0.15.0-release -m "..."). A lightweight tag leaves that part out.
           git fetch -q --depth=1 origin "+refs/tags/$tag:refs/tags/$tag"
           : > changes.md
           if [[ $(git cat-file -t "$tag") == tag ]]; then

@@ -1569,7 +1569,15 @@ class Launcher:
 
     # -- text ---------------------------------------------------------------------------------
     def t(self, key, **fmt):
-        return TEXT[key].format(**fmt)
+        """A UI text in the chosen language. A pack text that does not format (stray or missing
+        {placeholder}) falls back to English, so a translation can never break a page (issue #110)."""
+        try:
+            return TEXT[key].format(**fmt)
+        except (KeyError, IndexError, ValueError, AttributeError):
+            try:
+                return langpack.english()['text'][f'launcher.{key}'].format(**fmt)
+            except Exception:  # noqa: BLE001 - last resort: the raw text, never an exception
+                return str(TEXT.get(key, key))
 
     def update_strength(self, ini):
         """The one Sharpening slider (sharpness 0..4 in tlg.ini, shown 0..400%), steps of 5%."""
@@ -1698,16 +1706,38 @@ class Launcher:
         self.start_update_check()
 
     def start_update_check(self):
-        """Once per launcher start, in the background; silent when off, offline or not a release."""
-        if getattr(self, 'update_checked', False) or not self.settings.get('update_check', True):
-            return
-        self.update_checked = True
+        """Once per launcher start, in the background; silent when off, offline or not a release.
+        The worker thread never touches Tk: it leaves its answer in a list that the main thread
+        picks up (Tk calls from another thread can fail). Nothing here may stop the launcher."""
+        try:
+            if getattr(self, 'update_checked', False) or not self.settings.get('update_check', True):
+                return
+            self.update_checked = True
+            result = []
 
-        def work():
-            found = update_check.check(tlg_run.PORT_DIR)
-            if found:
-                self.root.after(0, lambda: (setattr(self, 'update_found', found), self.schedule_home()))
-        threading.Thread(target=work, daemon=True).start()
+            def work():
+                try:
+                    result.append(update_check.check(tlg_run.PORT_DIR))
+                except Exception:  # noqa: BLE001
+                    result.append(None)
+
+            def pick_up(tries=0):
+                try:
+                    if not result:
+                        if tries < 120:               # 60 s, far past the 5 s request timeout
+                            self.root.after(500, pick_up, tries + 1)
+                        return
+                    found = result[0]
+                    if (isinstance(found, tuple) and len(found) == 2
+                            and all(isinstance(part, str) for part in found)):
+                        self.update_found = found
+                        self.schedule_home()
+                except Exception:  # noqa: BLE001 - window closed meanwhile, etc.
+                    pass
+            threading.Thread(target=work, daemon=True).start()
+            self.root.after(500, pick_up)
+        except Exception:  # noqa: BLE001
+            pass
 
     def build_settings(self):
         """Settings: Game + Audio | Language + Launcher + Debug."""
@@ -2542,13 +2572,7 @@ class Launcher:
         if getattr(self, 'version', ''):
             c.create_text(width - 12, height - 10, anchor='se', fill=DIM, font=(SERIF, 8), text=self.version)
         # A newer release on GitHub (update_check.py): one clickable line above the status.
-        if getattr(self, 'update_found', None):
-            tag, url = self.update_found
-            note = c.create_text(left, status_y - 24, anchor='w', fill=ACCENT, font=(SERIF, 10),
-                                 tags='update', text=self.t('update_available').format(tag=tag))
-            c.tag_bind('update', '<Enter>', lambda _: c.configure(cursor='hand2'))
-            c.tag_bind('update', '<Leave>', lambda _: c.configure(cursor=''))
-            c.tag_bind('update', '<Button-1>', lambda _: __import__('webbrowser').open(url))
+        # Drawn last, by draw_update_note(), so it can never keep the rest of the page from working.
         self.home_items.update(play_box=box, play_label=label)
         # A small square next to PLAY copies the start command (Steam, SteamOS).
         if home:
@@ -2583,6 +2607,34 @@ class Launcher:
             c.tag_bind(tag, '<Leave>', lambda _: self.hover_play(False))
             c.tag_bind(tag, '<Button-1>', lambda _: self.play() if self.play_ready() else None)
         self.refresh_home()
+        self.draw_update_note(left, status_y - 24)
+
+    def draw_update_note(self, x, y):
+        """The 'new release' line (update_check.py), clickable. Optional: any failure here only
+        leaves the line out; the page stays complete (issue #110: it once broke the whole page)."""
+        try:
+            found = getattr(self, 'update_found', None)
+            if not found:
+                return
+            tag, url = found
+            if not url.startswith(update_check.RELEASES):
+                url = update_check.RELEASES
+            c = self.home
+            c.create_text(x, y, anchor='w', fill=ACCENT, font=(SERIF, 10), tags='update',
+                          text=self.t('update_available', tag=tag))
+            c.tag_bind('update', '<Enter>', lambda _: c.configure(cursor='hand2'))
+            c.tag_bind('update', '<Leave>', lambda _: c.configure(cursor=''))
+            c.tag_bind('update', '<Button-1>', lambda _: self.open_release_page(url))
+        except Exception as error:  # noqa: BLE001
+            print(f'update notice left out: {error!r}', file=sys.stderr)
+
+    @staticmethod
+    def open_release_page(url):
+        try:
+            import webbrowser
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001 - no browser: nothing happens
+            pass
 
     def play_ready(self):
         return str(self.play_button.cget('state')) == 'normal'
@@ -3401,12 +3453,12 @@ class Launcher:
 
         def work():
             try:
-                game_image.pack(folder, path, lambda line: show(self.t('pack_zar_running').format(line=line)))
+                game_image.pack(folder, path, lambda line: show(self.t('pack_zar_running', line=line)))
             except Exception as error:
-                self.root.after(0, lambda: messagebox.showerror(TITLE, self.t('pack_zar_failed').format(error=error)))
+                self.root.after(0, lambda: messagebox.showerror(TITLE, self.t('pack_zar_failed', error=error)))
                 return
             self.root.after(0, lambda: (self.vars['game_dir'].set(path),
-                                        messagebox.showinfo(TITLE, self.t('pack_zar_done').format(path=path))))
+                                        messagebox.showinfo(TITLE, self.t('pack_zar_done', path=path))))
         threading.Thread(target=work, daemon=True).start()
 
     def open(self, path):
