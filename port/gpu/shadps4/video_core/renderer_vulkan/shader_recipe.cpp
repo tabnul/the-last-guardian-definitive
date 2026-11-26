@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <miniz.h>
@@ -868,6 +869,8 @@ struct Background {
     u32 slow = 0, in_slow = 0; ///< slow frames, builds counted in them
     u32 waits_given_up = 0;    ///< waits that hit TLG_SHADER_PREBUILD_WAIT_S
     std::set<std::pair<u64, u64>> logged; ///< shaders LogUnlisted wrote a line for
+    std::vector<std::string> listed_keys; ///< pipeline key file names of the shader list, sorted
+    std::set<std::string> logged_keys;    ///< keys LogUnlistedKey wrote a line for
 };
 
 Background& State() {
@@ -1060,6 +1063,36 @@ void LogUnlisted(const Shader::Info& info, const std::map<u64, std::vector<u8>>&
 
 } // namespace
 
+void LogUnlistedKey(const std::string& name, std::span<const u8> key_file) {
+    if (!ShaderList::Enabled()) {
+        return;
+    }
+    {
+        auto& state = State();
+        std::scoped_lock lock{state.mutex};
+        if (state.listed.empty() || std::ranges::binary_search(state.listed_keys, name) ||
+            !state.logged_keys.insert(name).second) {
+            return;
+        }
+    }
+    std::string why;
+    const auto portable = PortableKey(key_file, why);
+    if (!portable) {
+        std::printf("Pipeline key (not in list): %s left out: it %s\n", name.c_str(), why.c_str());
+        return;
+    }
+    mz_ulong packed_size = mz_compressBound(mz_ulong(portable->size()));
+    std::vector<u8> packed(packed_size);
+    if (mz_compress2(packed.data(), &packed_size, portable->data(), mz_ulong(portable->size()),
+                     9) != MZ_OK) {
+        std::printf("Pipeline key (not in list): %s left out: it could not be packed\n",
+                    name.c_str());
+        return;
+    }
+    packed.resize(packed_size);
+    std::printf("Pipeline key (not in list): %s %s\n", name.c_str(), Base64(packed).c_str());
+}
+
 u64 LayoutId() {
     static const u64 id = ShaderFields::ComputeLayoutId();
     return id;
@@ -1158,6 +1191,7 @@ bool ImportMissing(const std::filesystem::path& cache_dir) {
     const auto list = ShaderList::Path();
     const auto game_dir = list.empty() ? std::filesystem::path{} : HostGameDir();
     std::vector<u64> listed;
+    std::vector<std::string> listed_keys;
     if (list.empty()) {
         std::printf("Shader prebuild: no shader list for this game\n");
     } else if (game_dir.empty()) {
@@ -1165,7 +1199,7 @@ bool ImportMissing(const std::filesystem::path& cache_dir) {
                     "read for it yet\n");
     } else {
         std::string error;
-        listed = ShaderList::Programs(list, error);
+        listed = ShaderList::Programs(list, error, &listed_keys);
         if (listed.empty()) {
             std::printf("Shader prebuild: shader list %s not used: %s\n", list.string().c_str(),
                         error.empty() ? "it names no programs" : error.c_str());
@@ -1180,6 +1214,7 @@ bool ImportMissing(const std::filesystem::path& cache_dir) {
     {
         std::scoped_lock lock{state.mutex};
         state.listed = listed;
+        state.listed_keys = std::move(listed_keys);
     }
     if (missing_listed == 0 && missing_recorded == 0) {
         return false;
@@ -1830,6 +1865,41 @@ int PortableRecipes(const std::filesystem::path& recipe_dir, const std::filesyst
 extern "C" int tlg_portable_recipes(const char* recipe_dir, const char* out) {
     return Vulkan::ShaderRecipe::PortableRecipes(std::filesystem::u8path(recipe_dir),
                                                  std::filesystem::u8path(out));
+}
+
+// tlg-probe --keys-from-portable DIR: every portable key DIR/<name>.pkey (log_recipes.py, from
+// the log lines of LogUnlistedKey) as this build's key file DIR/<name>, for merge_recipes.py. 0
+// when every one was written.
+extern "C" int tlg_keys_from_portable(const char* dir_name) {
+    const auto dir = std::filesystem::u8path(dir_name);
+    u32 written = 0, refused = 0;
+    std::error_code error;
+    for (const auto& entry : std::filesystem::directory_iterator{dir, error}) {
+        if (entry.path().extension() != ".pkey") {
+            continue;
+        }
+        std::ifstream in{entry.path(), std::ios::binary};
+        const std::vector<u8> portable{std::istreambuf_iterator<char>{in}, {}};
+        std::string name, why;
+        const auto bytes = Vulkan::KeyFromPortable(portable, name, why);
+        const auto out = dir / entry.path().stem();
+        if (!bytes || name.empty()) {
+            std::printf("keys-from-portable: %s skipped: it %s\n",
+                        entry.path().filename().string().c_str(), why.c_str());
+            ++refused;
+            continue;
+        }
+        std::ofstream file{out, std::ios::binary};
+        file.write(reinterpret_cast<const char*>(bytes->data()), std::streamsize(bytes->size()));
+        written += bool(file);
+        refused += !file;
+    }
+    if (error) {
+        std::fprintf(stderr, "keys-from-portable: cannot read %s\n", dir_name);
+        return 2;
+    }
+    std::printf("keys-from-portable: %u keys written, %u skipped\n", written, refused);
+    return refused ? 1 : 0;
 }
 
 // tlg-probe --prebuild CACHE RECIPES LIST GAME_DIR JOBS: the game's background build of the

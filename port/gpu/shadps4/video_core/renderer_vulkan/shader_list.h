@@ -64,8 +64,10 @@ struct List {
 std::optional<List> Read(const std::filesystem::path& path, std::string& error);
 
 /// The program hashes a list names, for the game's side (which shaders are covered); empty with
-/// the reason in `error` when the list cannot be read.
-std::vector<u64> Programs(const std::filesystem::path& path, std::string& error);
+/// the reason in `error` when the list cannot be read. `key_names` (optional): the file names of
+/// its pipeline keys as this build names them, sorted.
+std::vector<u64> Programs(const std::filesystem::path& path, std::string& error,
+                          std::vector<std::string>* key_names = nullptr);
 
 /// Reads programs out of the game folder: the ps4_shader_cache entries of trico_bootp.psarc and
 /// trico_boot.psarc (the update first, as the game does) and files of the folder.

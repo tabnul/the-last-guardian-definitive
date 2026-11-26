@@ -292,12 +292,19 @@ std::optional<List> Read(const std::filesystem::path& path, std::string& error) 
     return list;
 }
 
-std::vector<u64> Programs(const std::filesystem::path& path, std::string& error) {
+std::vector<u64> Programs(const std::filesystem::path& path, std::string& error,
+                          std::vector<std::string>* key_names) {
     const auto list = Read(path, error);
     std::vector<u64> programs;
     if (list) {
         for (const auto& e : list->entries) {
             programs.push_back(e.pgm_hash);
+        }
+        if (key_names) {
+            for (const auto& [name, _bytes] : list->keys) {
+                key_names->push_back(name);
+            }
+            std::ranges::sort(*key_names);
         }
     }
     std::ranges::sort(programs);

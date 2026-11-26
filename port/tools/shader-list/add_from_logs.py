@@ -3,7 +3,9 @@
 list out. One command for the steps in list_recipes.py:
 
   1. the current list back into a recipe folder (list_recipes.py; programs from the game files);
-  2. the log lines "Shader recipe (not in list)" into recipe folders (log_recipes.py);
+  2. the log lines "Shader recipe (not in list)" and "Pipeline key (not in list)" into recipe
+     folders (log_recipes.py), the keys as this build's key files (tlg-probe
+     --keys-from-portable);
   3. both merged, the list first, so its names stay (merge_recipes.py; renumbers same-named
      shaders of other sessions);
   4. the portable form (tlg-probe --portable-recipes) and the new list with the old list's
@@ -94,8 +96,11 @@ def main():
         step('2. log lines -> recipes', tool('log_recipes.py') + [a.game, logged] + a.logs, ok=(0, 1))
         folders = sorted(p for p in logged.iterdir() if p.is_dir()) if logged.is_dir() else []
         if not folders:
-            print('The logs name no shader that can be added: no new list.')
+            print('The logs name no shader or pipeline key that can be added: no new list.')
             sys.exit(3)
+        for folder in folders:
+            if any(folder.glob('*.pkey')):
+                step(f'2b. keys of {folder.name}', [a.probe, '--keys-from-portable', folder])
         step('3. merge (list first)', tool('merge_recipes.py') +
              ['--probe', a.probe, '--profile', a.profile, merged, from_list] + folders)
         step('4a. portable form', [a.probe, '--portable-recipes', merged, portable])
