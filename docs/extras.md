@@ -53,8 +53,9 @@ pick a stalk and wave it in front of a cat until it pounces. The developers plan
 for the boy and Trico. Trico's script still has the act for it (PlayToy, `PJT_CatToy` in
 `intactcondor.lua`): the boy holds up a toy, waves it, claps, and Trico crouches and pounces.
 The toy itself was cut before release. The script still asks for its model, `condorPlayToy_01`,
-but that file is not on the disc. Trico's pounce stayed in, so the move ran with the boy's hand
-empty.
+but that file is not on the disc. For Trico's part we use a crouch-and-pounce move that is still
+in the game. It looks like the one meant for this act, but nothing in the files proves it is, so
+treat it as our best match.
 
 We made a new toy: a stalk of foxtail grass with a soft, nodding head. Like the ICO horns, the
 launcher builds it on your PC from scratch, so nothing comes from the disc and there's no model
@@ -65,7 +66,7 @@ in the Trico Tricks bar, gold and at the end of the **Sealed and unique features
 - **Foxtail play:** the full act. The boy picks up the toy, waves it at Trico and claps, and
   Trico pounces on it. Afterwards the toy goes away again.
 
-**Play like a cat**, in the same group, is Trico's pounce on its own, the way the game left it.
+**Play like a cat**, in the same group, is that pounce move on its own, without the toy.
 
 <p align="center"><a href="https://youtu.be/uQKJ5CMcbLg"><img src="screenshots/extras/foxtail-video.jpg" width="100%" alt="Video: Trico pounces at the foxtail toy the boy holds out"></a></p>
 
