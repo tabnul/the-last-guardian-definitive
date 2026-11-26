@@ -4,6 +4,7 @@
 #include "native/native_vkb_shader_prebuild.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -36,6 +37,7 @@ extern char** environ;
 #include "native/native_vkb_shader_recipe.h"
 #include "native/native_vkb_shader_store.h"
 #include "video_core/renderer_vulkan/shader_list.h" // the normal renderer's list reader (read only)
+#include "tlg_overlay.h"
 
 namespace Core::Vkb::Prebuild {
 namespace {
@@ -96,7 +98,20 @@ struct ChildEnd {
 /// One run of a build process (the normal renderer's RunChildOnce, video_core/renderer_vulkan/shader_recipe.cpp, copied: it is internal to
 /// that file; the engine uses only the normal renderer's game-file reader, through its header, native_vkb_shader_list.cpp). Stopped when its progress file names the same entry for longer than `entry_s`, or when it runs longer
 /// than `part_s`.
-ChildEnd RunOnce(const std::vector<std::string>& args, const std::filesystem::path& progress, long entry_s, long part_s) {
+/// How far each build process is (the second number of its progress file: entries of its part reached), for the corner note
+/// "Building shaders NN%", as the normal renderer's build shows it.
+std::array<std::atomic<u32>, 32> part_reached{};
+std::atomic<u32> build_entries{0};
+
+void ShowProgress() {
+    u32 reached = 0;
+    for (const auto& n : part_reached) {
+        reached += n.load(std::memory_order_relaxed);
+    }
+    TlgOverlay::SetShaderBuild(reached, std::max(build_entries.load(std::memory_order_relaxed), 1u));
+}
+
+ChildEnd RunOnce(const std::vector<std::string>& args, const std::filesystem::path& progress, long entry_s, long part_s, u32 part) {
     ChildEnd end;
     std::string last;
     const auto t0 = std::chrono::steady_clock::now();
@@ -110,6 +125,12 @@ ChildEnd RunOnce(const std::vector<std::string>& args, const std::filesystem::pa
         if (auto text = ReadText(progress); text != last) {
             last = std::move(text);
             changed = now;
+            unsigned long long index = 0;
+            unsigned reached = 0;
+            if (std::sscanf(last.c_str(), "%llu %u", &index, &reached) == 2) {
+                part_reached[part].store(reached, std::memory_order_relaxed);
+                ShowProgress();
+            }
             return false;
         }
         if (!last.empty() && now - changed > std::chrono::seconds{entry_s}) {
@@ -229,7 +250,7 @@ PartEnd RunPart(const std::filesystem::path& store, const std::filesystem::path&
     std::error_code ec;
     for (u32 runs = 1;; ++runs) {
         std::filesystem::remove(progress, ec);
-        const auto end = RunOnce(args, progress, entry_s, part_s);
+        const auto end = RunOnce(args, progress, entry_s, part_s, part);
         const auto at = ReadText(progress);
         std::filesystem::remove(progress, ec);
         result.code = end.code;
@@ -371,6 +392,8 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
         std::this_thread::sleep_for(std::chrono::milliseconds{std::atoi(env)});
     }
     std::vector<PartEnd> ends(jobs);
+    build_entries.store(static_cast<u32>(list->entries.size()), std::memory_order_relaxed);
+    ShowProgress(); // the corner note shows from the start of the build to its end
     {
         std::vector<std::thread> threads;
         for (u32 part = 0; part < jobs; ++part) {
@@ -380,6 +403,7 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
             t.join();
         }
     }
+    TlgOverlay::SetShaderBuild(0, 0);
     // every entry ends counted: the parts' results, and the parts that left none
     u64 entries = 0, built = 0, already = 0, skipped = 0, write_failed = 0, restarts = 0, failed = 0, fixed_dx10_clamp = 0, fixed_depth_before_shader = 0;
     std::map<std::string, u64> reasons;

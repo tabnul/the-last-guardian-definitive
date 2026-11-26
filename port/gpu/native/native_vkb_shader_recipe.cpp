@@ -710,7 +710,7 @@ int BuildList(const std::filesystem::path& store_folder, const std::filesystem::
         }
         if (progress != nullptr) { // the parent reads which entry a process that stopped was building (before its program is read: a crash there names this entry too)
             std::fseek(progress, 0, SEEK_SET);
-            std::fprintf(progress, "%20zu\n", index);
+            std::fprintf(progress, "%20zu %10u\n", index, mine); // and how many entries of its part it has reached (the corner note "Building shaders NN%")
             std::fflush(progress);
         }
         auto program = programs.Program(item);
