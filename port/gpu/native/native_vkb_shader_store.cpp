@@ -4,6 +4,7 @@
 #include "native/native_vkb_shader_store.h"
 #include "native/native_vkb_shader_list.h"
 #include "native/native_vkb_shader_prebuild.h"
+#include "native/native_vkb_pipeline_warm.h"
 
 #include <algorithm>
 #include <array>
@@ -870,6 +871,34 @@ bool Find(const Inputs& in, Translation& out) {
     return false;
 }
 
+bool Ready() {
+    return ready.load(std::memory_order_acquire);
+}
+
+bool ForWarm(u64 pgm_hash, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& start, u64 salt, Translation& out) {
+    const u64 key = KeyOf(pgm_hash, runtime);
+    if (ready.load(std::memory_order_acquire)) {
+        LoadKey(key);
+    }
+    State& st = S();
+    std::scoped_lock lock{st.mutex};
+    const auto it = st.entries.find(key);
+    if (it == st.entries.end()) {
+        return false;
+    }
+    for (const auto& e : it->second) {
+        if (e->salt != salt || !(e->start == start) || std::memcmp(&e->runtime_in, &runtime, sizeof(VkbShader::RuntimeInfo)) != 0) {
+            continue;
+        }
+        out.info = std::make_unique<VkbShader::Info>(*e->result.info);
+        out.runtime = e->result.runtime;
+        out.end = e->result.end;
+        out.spv = e->result.spv;
+        return true;
+    }
+    return false;
+}
+
 bool Keep(const Inputs& in, const VkbShader::Profile& profile, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
           const std::vector<u32>& spv, const std::vector<WriteWindow::Window>& windows, u64 translate_ns) {
     if (!info.gs_copy_data.attr_map.empty() || in.runtime.hw_stage == VkbShader::HwStage::Geometry) { // the new engine has no geometry stages; never kept, counted
@@ -1149,6 +1178,7 @@ nlohmann::json Report() {
             {"files_indexed_at_open", c_files_indexed.load()},
             {"files_found_by_rescan", c_rescanned.load()},
             {"prebuild", Prebuild::Report()},
+            {"pipeline_warm_check", PipelineWarm::Report()},
             {"files_read", c_files_read.load()},
             {"files_damaged_removed", c_files_bad.load()},
             {"files_written", c_written.load()},

@@ -54,6 +54,7 @@
 #include "native/shadps4/video_core/amdgpu/regs_shader.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_fixed_state.h"
 #include "native/native_vkb_pipeline.h"
+#include "native/native_vkb_pipeline_warm.h"
 #include "native/vkb_core/vkb_device.h"
 #include "native/vkb_core/liverpool_to_vk.h"
 #include "native/shadps4/video_core/renderer_vulkan/vk_instance.h"
@@ -95,6 +96,8 @@ struct Stage {
     bool has_flat{};
     std::unique_ptr<VkbShader::Info> info;
     VkbShader::RuntimeInfo runtime{};
+    VkbShader::RuntimeInfo runtime_in{};   ///< the runtime info and bindings as handed to the translator (the store's inputs: the pipeline
+    VkbShader::Backend::Bindings start_in{}; ///< warm-up names the list entry of this stage by them)
     vk::ShaderModule module{};
     std::vector<Source> buffers, images, samplers;
 };
@@ -544,6 +547,8 @@ bool CompileStage(u64 ctx, u64 shader, u32 stage, u64 code_address, Stage& out, 
     }
     const VkbShader::RuntimeInfo runtime_in = out.runtime;
     const Store::Inputs store_in{.params = params, .runtime = runtime_in, .start = binding};
+    out.runtime_in = runtime_in;
+    out.start_in = binding;
     Store::Translation stored;
     const bool found = store_mode != Store::Mode::Off && Store::Find(store_in, stored);
     if (!found || store_mode == Store::Mode::Check) {
@@ -912,7 +917,9 @@ void Compile(u64 ctx, u64 vs, u64 ps, u64 fetch_object, const VkbVulkan::FixedSt
         v.color_formats[i] = instance->GetSupportedFormat(VkbVulkan::Vkb::LiverpoolToVK::SurfaceFormat(key.color_buffers[i].data_format, key.color_buffers[i].num_format),
                                                           vk::FormatFeatureFlagBits2::eColorAttachment);
     }
-    v.pipeline = std::make_unique<VkbVulkan::Vkb::GraphicsPipeline>(*instance, Core::Vkb::Device::Scheduler(), Core::Vkb::Device::DescHeap(), profile, key, vk::PipelineCache{},
+    Core::Vkb::PipelineWarm::Check(key, static_cast<u32>(v.depth_format), {&v.vs.runtime_in, &v.vs.start_in},
+                                   v.has_ps ? Core::Vkb::PipelineWarm::StageInputs{&v.ps.runtime_in, &v.ps.start_in} : Core::Vkb::PipelineWarm::StageInputs{}); // is this pipeline among the list's converted keys
+    v.pipeline = std::make_unique<VkbVulkan::Vkb::GraphicsPipeline>(*instance, Core::Vkb::Device::Scheduler(), Core::Vkb::Device::DescHeap(), profile, key, vk::PipelineCache{Core::Vkb::PipelineWarm::Cache()},
                                                              std::span<const VkbShader::Info*, VkbVulkan::Vkb::MaxShaderStages>{infos},
                                                              std::span<const VkbShader::RuntimeInfo, VkbVulkan::Vkb::MaxShaderStages>{runtimes}, v.has_fetch ? &v.fetch : nullptr,
                                                              std::span<const vk::ShaderModule>{modules}, sdata, false, v.depth_format);

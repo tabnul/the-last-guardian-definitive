@@ -33,6 +33,7 @@ extern char** environ;
 #endif
 
 #include "common/logging/log.h"
+#include "native/native_vkb_pipeline_warm.h"
 #include "native/native_vkb_shader_list.h"
 #include "native/native_vkb_shader_recipe.h"
 #include "native/native_vkb_shader_store.h"
@@ -323,6 +324,7 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
         Finish();
         return;
     }
+    PipelineWarm::NoteList(*list); // the list's pipeline keys for the warm-up check (native_vkb_pipeline_warm.h)
     {
         std::vector<u64> listed;
         for (const auto& item : list->entries) {
@@ -370,6 +372,7 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
             st.fixed_depth_before_shader = fixed_depth_before_shader;
         }
         Finish();
+        PipelineWarm::Start(); // the pipelines from the stored stages (native_vkb_pipeline_warm.h)
         return;
     }
     std::error_code ec;
@@ -495,6 +498,7 @@ void Run(const std::filesystem::path& store, const std::filesystem::path& list_p
         st.reasons = std::move(reasons);
     }
     Finish();
+    PipelineWarm::Start(); // the pipelines from the stored stages (native_vkb_pipeline_warm.h)
 }
 
 } // namespace

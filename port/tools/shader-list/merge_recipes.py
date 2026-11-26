@@ -24,7 +24,9 @@ The rule (every name in the result means what the session that wrote it meant):
      that permutation; otherwise it gets the next free permutation number of that program (the
      number inside the file too).
   4. Every key of a further folder gets its stage names translated by the folder's own map
-     (rule 2 or 3). A key that names a stage the folder has no recipe for is left out. A
+     (rule 2 or 3). A stage the folder has no recipe for keeps its name when the first folder
+     has it (the list: a session that used the list names its shaders as the list does); a key
+     with any other stage is left out. A
      changed key gets a new file name (g_/c_ and a hash of the new file; the warm-up reads keys
      by content, the name only has to be unique; another key under the same name gets such a
      name too). A key whose content is already in the result is not added twice.
@@ -134,14 +136,19 @@ def main():
         sys.exit(f'{out} exists and is not empty')
     result = {}   # program -> {perm: recipe bytes}
     keys = {}     # file name -> bytes
+    other_keys = {}  # .vkey file name -> bytes (the other renderer's keys, as they are)
     caches = []   # per folder: its import's cache
     maps = []     # per folder: {(program, own perm): perm in the result}
     with tempfile.TemporaryDirectory() as tmp:
         scratch = pathlib.Path(tmp)
         for n, folder in enumerate(args.dirs):
             programs = recipes_of(folder)
-            cache, env, metas = import_folder(args.probe, args.profile, folder, scratch)
-            same = [same_permutation(args.probe, env, caches[k], cache) for k in range(n)]
+            if programs:
+                cache, env, metas = import_folder(args.probe, args.profile, folder, scratch)
+                same = [same_permutation(args.probe, env, caches[k], cache) if caches[k] else {}
+                        for k in range(n)]
+            else:  # keys only (log_recipes.py: a log that named keys, no new shader)
+                cache, metas, same = None, set(), [{}] * n
             caches.append(cache)
             own = {}
             kept = matched = renumbered = 0
@@ -174,6 +181,13 @@ def main():
             maps.append(own)
             stage_map = {hash_combine(p, perm): hash_combine(p, target)
                          for (p, perm), target in own.items()}
+            if n:
+                # A stage this folder has no recipe for that the first folder has: the same shader
+                # (a session that used the list names the list's shaders as the list does: the
+                # game loads them from the list's import under the list's names). Logged keys
+                # (log_recipes.py) mostly pair a new shader with stages of the list.
+                for p, perm in maps[0]:
+                    stage_map.setdefault(hash_combine(p, perm), hash_combine(p, perm))
             taken = changed = unknown = dup = damaged = renamed = 0
             left_out = []
             for f in sorted(folder.glob('*.key')):
@@ -203,6 +217,12 @@ def main():
                     renamed += 1
                 keys[name] = data
                 taken += 1
+            # The other renderer's keys (.vkey, log_recipes.py): they name the list's own shaders, which keep
+            # their names here; taken as they are, once.
+            for f in sorted(folder.glob('*.vkey')):
+                data = f.read_bytes()
+                if data not in other_keys.values():
+                    other_keys.setdefault(f.name, data)
             print(f'{folder}: recipes {kept} as they are, {matched} the same shader as one '
                   f'already there, {renumbered} new settings renumbered; keys {taken} taken '
                   f'({changed} with stages renamed), {dup} already there, {unknown} left out (a '
@@ -219,8 +239,10 @@ def main():
             (out / f'{program:#018x}_{perm}.in').write_bytes(data)
     for name, data in keys.items():
         (out / name).write_bytes(data)
+    for name, data in other_keys.items():
+        (out / name).write_bytes(data)
     print(f'{out}: {len(result)} programs, {sum(len(p) for p in result.values())} recipes, '
-          f'{len(keys)} keys')
+          f'{len(keys)} keys, {len(other_keys)} keys of the other renderer')
 
 
 if __name__ == '__main__':

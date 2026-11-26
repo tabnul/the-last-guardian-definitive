@@ -63,6 +63,7 @@ int tlg_vkb_compare_stores(const char *dir_a, const char *dir_b);
 int tlg_compare_meta(const char *dir_a, const char *dir_b);
 int tlg_same_permutation(const char *dir_a, const char *dir_b);
 int tlg_portable_recipes(const char *recipe_dir, const char *out);
+int tlg_keys_from_portable(const char *dir);
 int tlg_prebuild(const char *cache_dir, const char *recipe_dir, const char *list, const char *game_dir, unsigned jobs);
 
 static void fail(const char *message) { fprintf(stderr, "ERROR: %s\n", message); exit(1); }
@@ -1628,6 +1629,7 @@ int main(int argc, char **argv) {
     if (argc == 4 && !strcmp(argv[1], "--compare-meta")) return tlg_compare_meta(argv[2], argv[3]);
     if (argc == 4 && !strcmp(argv[1], "--same-permutation")) return tlg_same_permutation(argv[2], argv[3]);
     if (argc == 4 && !strcmp(argv[1], "--portable-recipes")) return tlg_portable_recipes(argv[2], argv[3]);
+    if (argc == 3 && !strcmp(argv[1], "--keys-from-portable")) return tlg_keys_from_portable(argv[2]);
     if (argc == 7 && !strcmp(argv[1], "--prebuild")) return tlg_prebuild(argv[2], argv[3], argv[4], argv[5], (unsigned)strtoul(argv[6], NULL, 10));
     char missing[128];
     if (argc == 2 && !strcmp(argv[1], "--cpu-features")) {

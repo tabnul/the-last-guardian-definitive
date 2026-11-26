@@ -69,6 +69,12 @@ struct Inputs {
 
 /// A stored translation for these inputs: true and `out` filled (the info is a copy, set to `in`'s user data and program base).
 bool Find(const Inputs& in, Translation& out);
+/// The store's folder is listed (Open's background part is done): ForWarm finds what is on disk
+[[nodiscard]] bool Ready();
+/// The pipeline warm-up (native_vkb_pipeline_warm.h): the first stored translation of `pgm_hash` with these settings, start and salt,
+/// without the program words and the resource kinds (both need a draw's guest memory). Its info has no user data: the warm-up only builds
+/// the pipeline from its binding lists. False: none stored.
+bool ForWarm(u64 pgm_hash, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& start, u64 salt, Translation& out);
 /// Keeps a fresh translation (`info` still holds `in`'s user data) in memory and, once the folder is open, on disk. False when the stage is
 /// never kept (a geometry stage: counted).
 bool Keep(const Inputs& in, const VkbShader::Profile& profile, const VkbShader::Info& info, const VkbShader::RuntimeInfo& runtime, const VkbShader::Backend::Bindings& end,
