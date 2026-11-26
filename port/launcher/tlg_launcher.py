@@ -6,6 +6,7 @@ Game folder, game and interface language, display, FPS overlay, VRAM budget and 
 Play starts the game through tlg_run.py (the same code path as run_tlg.sh) and shows its log.
 Settings live in ~/.config/tlg-launcher/settings.json (%APPDATA% on Windows).
 """
+import atexit
 import locale
 import os
 import re
@@ -372,6 +373,63 @@ TEXT = {
     'texture_pack_dialog_hint': ("AI-upscaled versions of the game's textures, made from your own copy of the game "
                                  '(ps4-texturepack-generator, docs/texture-pack.md); the game files are not changed. In game it '
                                  'switches live; textures appear as they load (a second or two).'),
+    'texbuild_button': 'Build a texture pack… (experimental)',
+    'texbuild_title': 'Build a texture pack (experimental)',
+    'texbuild_experimental': ('EXPERIMENTAL: this is new. It can fail, take far longer than expected, or change in a '
+                              'later version.'),
+    'texbuild_text': ("Makes an AI-upscaled texture pack from your own copy of the game, on your own PC; the game "
+                      'files are not changed. For now it upscales EVERY texture (FULL). A lighter build that only '
+                      'upscales the textures that need it is coming, and will be the advised way.'),
+    'texbuild_full': 'FULL: upscale everything',
+    'texbuild_light': 'Light: advised (coming later)',
+    'texbuild_gpu': 'Runs on',
+    'texbuild_gpu_nvidia': 'Nvidia graphics card (RTX 20 or newer)',
+    'texbuild_gpu_amd_windows': 'AMD or Intel graphics card (DirectML, experimental)',
+    'texbuild_gpu_amd_linux': 'AMD graphics card (ROCm, experimental)',
+    'texbuild_gpu_cpu': 'Processor only (takes days)',
+    'texbuild_detecting': 'Looking for your graphics card…',
+    'texbuild_found_nvidia': 'Found an Nvidia RTX card.',
+    'texbuild_found_nvidia_old': ('This Nvidia card is older than RTX 20: the Nvidia kit does not run on it. Pick '
+                                  '"Processor only", or try anyway?'),
+    'texbuild_found_amd': 'Found an AMD card. AMD is experimental and untested so far.',
+    'texbuild_found_none': 'No Nvidia card found. Check the choice above.',
+    'texbuild_name': 'Pack name',
+    'texbuild_warnings': ('Before you start:\n'
+                          '• Disk: needs about {peak} GB free in the texture packs folder while it builds; about '
+                          '{pack} GB stays when it is done.\n'
+                          '• Download: a ready-made tool kit (Python, PyTorch, texconv; a few GB) and the upscale '
+                          'model (64 MB, by Kim2091, CC BY-NC-SA 4.0: not for commercial use). Nothing is installed.\n'
+                          '• Time: about 3 hours on an RTX 5090. Slower cards take longer, AMD is untested, '
+                          'processor only takes days. You can stop and continue later.\n'
+                          '• While it builds: the graphics card runs at full load and it uses a lot of system '
+                          'memory (tested with 32 GB). Do not play at the same time.\n'
+                          '• While you play: the pack only uses video memory the game leaves free, and gives it '
+                          'back when the game needs it. With 8 GB of video memory or less, integrated graphics or '
+                          'a Steam Deck, you may see few upscaled textures.'),
+    'texbuild_free': 'Free now: {free} GB in {folder}',
+    'texbuild_start': 'Start',
+    'texbuild_stop': 'Stop',
+    'texbuild_open_log': 'Open log',
+    'texbuild_fetching': 'Getting the kit list…',
+    'texbuild_ready': 'Not started.',
+    'texbuild_downloading': 'Downloading {what}: {percent}%',
+    'texbuild_unpacking': 'Unpacking the kit…',
+    'texbuild_scanning': 'Listing the textures…',
+    'texbuild_upscale': 'Upscaling: {done} of {total} textures',
+    'texbuild_encode': 'Compressing: {done} of {total} textures',
+    'texbuild_done': 'Done: pack "{name}" is picked. Start the game to see it.',
+    'texbuild_failed': 'Stopped with an error; see the log: {log}',
+    'texbuild_error': 'Could not go on: {error}',
+    'texbuild_stopped': 'Stopped. Start again to continue where it stopped.',
+    'texbuild_no_game': 'Set the game folder first (Settings).',
+    'texbuild_zar': 'This needs the game as a folder; a packed game (.zar) cannot be read for this yet.',
+    'texbuild_bad_name': 'Use a name of letters, digits, spaces, - _ or . (up to 60).',
+    'texbuild_exists': 'A finished pack "{name}" is already there. Pick another name, or delete that folder first.',
+    'texbuild_low_space': ('Not enough free space: about {need} GB is needed, {free} GB is free in {folder}. '
+                           'The build will stop when the disk is full. Start anyway?'),
+    'texbuild_confirm': ('Start the FULL build? It downloads about {kit} GB now (0 if the kit is already here), then '
+                         'needs up to {peak} GB in {folder} and runs for hours.'),
+    'texbuild_close_running': 'The build is running. Stop it? It continues where it stopped when you start it again.',
     'close': 'Close',
     'mark_default': 'Default: {value}',
     'mark_default_button': 'Default',
@@ -1176,6 +1234,277 @@ def home_background(source, size, faded=False):
     mask = ImageChops.add(left.resize(size), bottom.resize(size))
     img = Image.composite(Image.new('RGB', size, dark), img, mask)
     return ImageTk.PhotoImage(img)
+
+
+class TexpackBuildWindow:
+    """Builds a texture pack from the player's own game copy (experimental, texpack_build): FULL only for
+    now, every texture upscaled. The kit and the model are fetched on first use; nothing is installed.
+    Closing the window stops the build; started again, it continues where it stopped."""
+
+    def __init__(self, app):
+        import texpack_build
+        self.tb = texpack_build
+        self.app = app
+        self.process = None
+        self.running = False
+        self.stop_event = threading.Event()
+        self.events = queue.Queue()
+        self.detected = None
+        t = app.t
+
+        top = self.top = tk.Toplevel(app.root)
+        top.title(t('texbuild_title'))
+        top.configure(background=BG)
+        top.transient(app.root)
+        top.protocol('WM_DELETE_WINDOW', self.close)
+        win = ttk.Frame(top, padding=14)
+        win.pack(fill='both', expand=True)
+        win.columnconfigure(1, weight=1)
+
+        ttk.Label(win, text=t('texbuild_experimental'), foreground=WARN, wraplength=560,
+                  justify='left').grid(row=0, column=0, columnspan=2, sticky='w')
+        ttk.Label(win, text=t('texbuild_text'), wraplength=560, justify='left').grid(
+            row=1, column=0, columnspan=2, sticky='w', pady=(6, 0))
+        # FULL is the only kind now; Light (only what the game draws larger than it is) comes later and
+        # will be the advised one.
+        kind = ttk.Frame(win)
+        kind.grid(row=2, column=0, columnspan=2, sticky='w', pady=(10, 0))
+        self.kind = tk.StringVar(value='full')
+        ttk.Radiobutton(kind, text=t('texbuild_full'), variable=self.kind, value='full').pack(side='left')
+        ttk.Radiobutton(kind, text=t('texbuild_light'), variable=self.kind, value='light',
+                        state='disabled').pack(side='left', padx=(16, 0))
+
+        ttk.Label(win, text=t('texbuild_gpu')).grid(row=3, column=0, sticky='w', pady=(10, 0))
+        amd = 'texbuild_gpu_amd_windows' if texpack_build.SYSTEM == 'windows' else 'texbuild_gpu_amd_linux'
+        self.gpus = [('nvidia', t('texbuild_gpu_nvidia')), ('amd', t(amd)), ('cpu', t('texbuild_gpu_cpu'))]
+        self.gpu = tk.StringVar(value=self.gpus[2][1])
+        self.gpu_box = ttk.Combobox(win, textvariable=self.gpu, state='readonly', width=40,
+                                    values=[name for _k, name in self.gpus])
+        self.gpu_box.grid(row=3, column=1, sticky='w', padx=6, pady=(10, 0))
+        self.gpu_note = ttk.Label(win, text=t('texbuild_detecting'), foreground=MUTED, wraplength=560,
+                                  justify='left')
+        self.gpu_note.grid(row=4, column=0, columnspan=2, sticky='w')
+
+        ttk.Label(win, text=t('texbuild_name')).grid(row=5, column=0, sticky='w', pady=(6, 0))
+        self.name = tk.StringVar(value='Full 4x')
+        ttk.Entry(win, textvariable=self.name, width=30).grid(row=5, column=1, sticky='w', padx=6, pady=(6, 0))
+
+        ttk.Label(win, text=t('texbuild_warnings', peak=texpack_build.FULL_PEAK_GB,
+                              pack=texpack_build.FULL_PACK_GB),
+                  wraplength=560, justify='left').grid(row=6, column=0, columnspan=2, sticky='w', pady=(10, 0))
+        self.space = ttk.Label(win, text='', foreground=MUTED)
+        self.space.grid(row=7, column=0, columnspan=2, sticky='w', pady=(4, 0))
+
+        self.progress = ttk.Progressbar(win, mode='determinate', length=560, maximum=1000)
+        self.progress.grid(row=8, column=0, columnspan=2, sticky='ew', pady=(10, 0))
+        self.status = ttk.Label(win, text='', wraplength=560, justify='left')
+        self.status.grid(row=9, column=0, columnspan=2, sticky='w', pady=(4, 0))
+        buttons = ttk.Frame(win)
+        buttons.grid(row=10, column=0, columnspan=2, sticky='w', pady=(10, 0))
+        self.start_button = ttk.Button(buttons, text=t('texbuild_start'), command=self.start)
+        self.start_button.pack(side='left')
+        self.stop_button = ttk.Button(buttons, text=t('texbuild_stop'), command=self.stop, state='disabled')
+        self.stop_button.pack(side='left', padx=(6, 0))
+        ttk.Button(buttons, text=t('texbuild_open_log'), command=self.open_log).pack(side='left', padx=(6, 0))
+        ttk.Button(buttons, text=t('close'), command=self.close).pack(side='left', padx=(6, 0))
+
+        self.show_space()
+        threading.Thread(target=self.detect, daemon=True).start()
+        top.after(200, self.pump)
+
+    # -- places ------------------------------------------------------------------------------
+    def kit_root(self):
+        return tlg_run.USER_DIR / 'texpack-kit'
+
+    def pack_root(self):
+        return tlg_run.texpack_dir(self.app.settings)
+
+    def pack_dir(self):
+        return self.pack_root() / self.name.get().strip()
+
+    def log_path(self):
+        return self.pack_root() / (self.name.get().strip() + '.build.log')
+
+    def chosen_gpu(self):
+        names = [name for _k, name in self.gpus]
+        value = self.gpu.get()
+        return self.gpus[names.index(value)][0] if value in names else 'cpu'
+
+    def alive(self):
+        try:
+            return bool(self.top.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def show_space(self):
+        root = self.pack_root()
+        self.space.configure(text=self.app.t('texbuild_free', free=int(self.tb.free_gb(root)), folder=root))
+
+    # -- worker thread -> window -------------------------------------------------------------
+    def detect(self):
+        self.events.put(('detected', self.tb.detect_gpu()))
+
+    def say(self, key, fraction=None, **fmt):
+        self.events.put(('status', key, fraction, fmt))
+
+    def pump(self):
+        if not self.alive():
+            return
+        while True:
+            try:
+                event = self.events.get_nowait()
+            except queue.Empty:
+                break
+            if event[0] == 'detected':
+                self.detected = event[1]
+                kit = self.tb.default_kit_gpu(self.detected)
+                self.gpu.set(dict(self.gpus)[kit])
+                note = {'nvidia': 'texbuild_found_nvidia', 'nvidia-old': 'texbuild_found_nvidia_old',
+                        'amd': 'texbuild_found_amd'}.get(self.detected, 'texbuild_found_none')
+                self.gpu_note.configure(text=self.app.t(note))
+            elif event[0] == 'status':
+                _, key, fraction, fmt = event
+                self.status.configure(text=self.app.t(key, **fmt),
+                                      foreground=WARN if key in ('texbuild_failed', 'texbuild_error') else TEXT_COLOR)
+                if fraction is None:
+                    self.progress.configure(mode='indeterminate')
+                    self.progress.start(15)
+                else:
+                    self.progress.stop()
+                    self.progress.configure(mode='determinate', value=int(fraction * 1000))
+            elif event[0] == 'finished':
+                self.running = False
+                self.process = None
+                self.start_button.configure(state='normal')
+                self.stop_button.configure(state='disabled')
+                self.gpu_box.configure(state='readonly')
+                self.show_space()
+                if event[1]:
+                    self.app.texture_pack_built(event[1])
+        self.top.after(200, self.pump)
+
+    # -- start / stop ------------------------------------------------------------------------
+    def problem(self):
+        """Why the build cannot start (a text key and its values), or None."""
+        game = self.app.settings.get('game_dir', '')
+        if not game or not Path(game).exists():
+            return 'texbuild_no_game', {}
+        if game_image.is_zar(game):
+            return 'texbuild_zar', {}
+        name = self.name.get().strip()
+        if not re.fullmatch(r'[\w][\w \-.]{0,59}', name) or name.endswith('.work'):
+            return 'texbuild_bad_name', {}
+        if (self.pack_dir() / 'index.txt').is_file() and \
+                not (self.pack_dir().with_name(name + '.work') / 'png').is_dir():
+            return 'texbuild_exists', {'name': name}
+        return None
+
+    def start(self):
+        bad = self.problem()
+        if bad:
+            messagebox.showwarning(self.app.t('texbuild_title'), self.app.t(bad[0], **bad[1]), parent=self.top)
+            return
+        if self.chosen_gpu() == 'nvidia' and self.detected == 'nvidia-old':
+            if not messagebox.askyesno(self.app.t('texbuild_title'), self.app.t('texbuild_found_nvidia_old'),
+                                       parent=self.top, icon='warning'):
+                return
+        self.running = True
+        self.stop_event.clear()
+        self.start_button.configure(state='disabled')
+        self.stop_button.configure(state='normal')
+        self.gpu_box.configure(state='disabled')
+        gpu, game, pack, log = self.chosen_gpu(), self.app.settings['game_dir'], self.pack_dir(), self.log_path()
+        threading.Thread(target=self.work, args=(gpu, game, pack, log), daemon=True).start()
+
+    def ask(self, key, **fmt):
+        """A yes/no question from the worker thread (asked on the window's thread)."""
+        answer, done = [], threading.Event()
+        if not self.alive():
+            return False
+
+        def show():
+            answer.append(messagebox.askyesno(self.app.t('texbuild_title'), self.app.t(key, **fmt),
+                                              parent=self.top, icon='warning'))
+            done.set()
+        self.top.after(0, show)
+        done.wait()
+        return answer[0]
+
+    def work(self, gpu, game, pack, log):
+        tb, root, built = self.tb, self.kit_root(), None
+        try:
+            self.say('texbuild_fetching')
+            manifest = tb.fetch_manifest(gpu)
+            kit = tb.installed_kit(root, gpu)
+            ready = kit is not None and kit.get('version') == manifest.get('version')
+            kit_gb, pack_gb = tb.needed_gb(manifest, ready)
+            free_kit, free_pack = tb.free_gb(root), tb.free_gb(pack.parent)
+            same_drive = Path(root).resolve().anchor.lower() == Path(pack.parent).resolve().anchor.lower()
+            if same_drive and free_pack < kit_gb + pack_gb or free_pack < pack_gb or free_kit < kit_gb:
+                need, free, where = (kit_gb + pack_gb, free_pack, pack.parent) if same_drive or free_pack < pack_gb \
+                    else (kit_gb, free_kit, root)
+                if not self.ask('texbuild_low_space', need=int(need + 0.999), free=int(free), folder=where):
+                    self.say('texbuild_stopped', 0)
+                    return
+            if not self.ask('texbuild_confirm', kit=f'{kit_gb:.1f}', peak=tb.FULL_PEAK_GB, folder=pack.parent):
+                self.say('texbuild_ready', 0)
+                return
+
+            def progress(label, fraction):
+                if fraction is None:
+                    self.say('texbuild_unpacking')
+                else:
+                    self.say('texbuild_downloading', fraction, what=label, percent=int(fraction * 100))
+            if not ready:
+                kit = tb.install_kit(root, gpu, manifest, progress, self.stop_event.is_set)
+            tb.install_model(root, gpu, kit, progress, self.stop_event.is_set)
+            if self.stop_event.is_set():
+                raise InterruptedError
+            pack.parent.mkdir(parents=True, exist_ok=True)
+            self.process = tb.start_build(tb.build_command(root, gpu, kit, game, pack), log)
+            # Quitting the launcher ends the build too (its workers run in their own process group).
+            atexit.register(tb.stop_build, self.process)
+            while self.process.poll() is None:
+                phase, done, total = tb.build_progress(pack)
+                if phase == 'scan':
+                    self.say('texbuild_scanning')
+                else:
+                    self.say(f'texbuild_{phase}', done / total if total else 0, done=done, total=total)
+                self.stop_event.wait(3)
+            if self.stop_event.is_set():
+                raise InterruptedError
+            if self.process.returncode == 0 and (pack / 'index.txt').is_file():
+                built = pack.name
+                self.say('texbuild_done', 1, name=pack.name)
+            else:
+                self.say('texbuild_failed', 0, log=log)
+        except InterruptedError:
+            self.say('texbuild_stopped', 0)
+        except Exception as error:  # network, disk, a damaged download: shown, the build can start again
+            self.say('texbuild_error', 0, error=error)
+        finally:
+            self.events.put(('finished', built))
+
+    def stop(self):
+        self.stop_event.set()
+        if self.process is not None:
+            self.tb.stop_build(self.process)
+        self.stop_button.configure(state='disabled')
+
+    def close(self):
+        if self.running:
+            if not messagebox.askyesno(self.app.t('texbuild_title'), self.app.t('texbuild_close_running'),
+                                       parent=self.top):
+                return
+            self.stop()
+        self.top.destroy()
+
+    def open_log(self):
+        path = self.log_path()
+        if path.is_file():
+            tlg_run.open_external(path)
+        else:
+            tlg_run.open_external(self.pack_root() if self.pack_root().is_dir() else tlg_run.USER_DIR)
 
 
 class Page(ttk.Frame):
@@ -2398,6 +2727,8 @@ class Launcher:
         self.pack_box.grid(row=row + 4, column=1, sticky='w', padx=6, pady=(6, 2))
         self.pack_box.bind('<<ComboboxSelected>>', lambda _: self.texture_pack_picked())
         self.hint(parent, row + 4, 2, 'texture_pack_hint')
+        ttk.Button(parent, text=self.t('texbuild_button'), command=self.open_texbuild).grid(
+            row=row + 5, column=1, sticky='w', padx=6, pady=(0, 2))
         self.refresh_preset()
         self.refresh_texture_pack()
         self.ini_stamp = self.ini_files_stamp()
@@ -2449,6 +2780,23 @@ class Launcher:
         if current.isdigit():  # older tlg.ini: a 1-based index
             current = self.texture_packs[int(current) - 1] if 0 < int(current) <= len(self.texture_packs) else 'off'
         self.pack_box.set(current if current in self.texture_packs else self.t('texture_pack_off'))
+
+    def open_texbuild(self):
+        """The texture pack build window (experimental); one at a time."""
+        old = getattr(self, 'texbuild_win', None)
+        if old is not None and old.alive():
+            old.top.lift()
+            return
+        self.texbuild_win = TexpackBuildWindow(self)
+
+    def texture_pack_built(self, name):
+        """A finished build: picked in tlg.ini and shown in the pack row."""
+        tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
+        tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {'texture_pack': name})
+        self.ini_stamp = self.ini_files_stamp()
+        if getattr(self, 'pack_box', None) is not None and self.pack_box.winfo_exists():
+            self.refresh_texture_pack()
+            self.refresh_preset()
 
     def texture_pack_picked(self):
         index = self.pack_box.current()
