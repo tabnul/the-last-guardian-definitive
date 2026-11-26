@@ -10,7 +10,11 @@ set to *Off* (the default).
 
 ## Making a pack
 
-### From the launcher (experimental)
+**We advise building it from the launcher**: it downloads everything it needs, nothing has to be
+installed, and it checks disk space first. Building by hand with the generator is the fallback, for
+example when the launcher build does not work on your system.
+
+### From the launcher (experimental, advised)
 
 *Image* > *Texture pack* > **Build a texture pack… (experimental)**. Pick the graphics card kind
 and a pack name, then press **Start**. The launcher does the rest:
@@ -39,9 +43,9 @@ Before you start:
 - The build uses the GPU fully and a lot of RAM (tested with 32 GB). Don't play while it runs.
 - The build log is `<pack name>.build.log` in the texture pack folder (*Open log*).
 
-### By hand
+### By hand (fallback)
 
-Follow the generator's README: set it up once, then
+Use this if the launcher build does not work for you. Follow the generator's README: set it up once, then
 ```
 texpack make "D:\Games\CUSA03745" "D:\Packs\UltraSharp 4x"
 ```
