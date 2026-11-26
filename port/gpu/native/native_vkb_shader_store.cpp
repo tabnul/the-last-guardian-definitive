@@ -35,6 +35,7 @@
 #include "common/memory_patcher.h"
 #include "common/path_util.h"
 #include "core/emulator_settings.h"
+#include "tlg_settings.h"
 #include "native/shadps4/shader_recompiler/specialization.h"
 
 namespace Core::Vkb::ShaderStore {
@@ -761,8 +762,13 @@ void NoteUse(u64 pgm_hash, u32 hw_stage, Entry& e) {
 
 Mode GetMode() {
     static const Mode mode = [] {
+        // Unset: follows Performance > Build shaders ahead (tlg.ini shader_prebuild, on by
+        // default), the same setting as the normal renderer's pre-build.
         const char* e = std::getenv("TLG_VKB_SHADER_PREBUILD");
-        if (e == nullptr || std::strcmp(e, "0") == 0 || std::strcmp(e, "off") == 0) {
+        if (e == nullptr) {
+            return TlgSettings::Get().startup_shader_prebuild ? Mode::On : Mode::Off;
+        }
+        if (std::strcmp(e, "0") == 0 || std::strcmp(e, "off") == 0) {
             return Mode::Off;
         }
         if (std::strcmp(e, "1") == 0 || std::strcmp(e, "on") == 0) {
