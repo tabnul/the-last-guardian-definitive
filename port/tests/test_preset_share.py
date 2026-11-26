@@ -229,6 +229,31 @@ class ValidationTests(Base):
         _, stored = gfxlogic.custom_targets({'items': items})
         self.assertFalse(set(stored) & backports_table.NOT_IN_PRESETS)
 
+    def test_leaving_the_deck_entry_puts_back_what_it_changed(self):
+        # Issue #112: Low-end PC after the Steam Deck entry showed the Deck again (1280x800 at 30 stayed).
+        defaults = {'resolution': '1920x1080', 'frame_rate': '30'}
+        settings = {'resolution': '2560x1440', 'frame_rate': '60'}
+        ini = {'upscaler': 'dlss', 'aa_row': '1', 'preset': '2'}
+        preset_share.remember_before_deck(settings, ini)
+        settings.update(preset_share.DECK_SETTINGS)
+        ini.update(preset_share.DECK_INI)
+        preset_share.remember_before_deck(settings, ini)  # the Deck twice keeps the first values
+        new_settings, new_ini = preset_share.leave_deck(settings, ini, defaults)
+        self.assertEqual(new_settings, {'resolution': '2560x1440', 'frame_rate': '60'})
+        self.assertEqual(new_ini, {'upscaler': 'dlss', 'aa_row': '1', 'preset': '2', 'frame_generation': '0'})
+        self.assertNotIn(preset_share.BEFORE_DECK, settings)
+        settings.update(new_settings)
+        ini.update({**new_ini, **preset_share.GAME_LOWEND})
+        presets = preset_share.launcher_presets(Path(tempfile.mkdtemp()))
+        self.assertEqual(presets[preset_share.current_preset(presets, ini, settings)][0], preset_share.LOWEND_NAME)
+
+    def test_leaving_the_deck_entry_without_saved_values_and_keeping_later_choices(self):
+        defaults = {'resolution': '1920x1080', 'frame_rate': '30'}
+        settings = {'resolution': '1280x800', 'frame_rate': '60'}  # frame rate changed after the Deck
+        ini = {**preset_share.DECK_INI, 'upscaler': 'fsr4'}  # and the upscaler
+        self.assertEqual(preset_share.leave_deck(settings, ini, defaults),
+                         ({'resolution': '1920x1080'}, {'aa_row': '1', 'preset': '0', 'frame_generation': '0'}))
+
     def test_every_problem_code_has_a_text(self):
         for code in ('unreadable', 'too_big', 'not_json', 'format', 'version', 'newer', 'empty', 'game',
                      'unknown_item', 'unknown_setting', 'bad_item', 'bad_setting'):
