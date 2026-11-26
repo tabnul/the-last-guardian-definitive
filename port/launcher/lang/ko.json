@@ -867,6 +867,10 @@
         "3": "높음",
         "4": "최대"
       }
+    },
+    "menu:shader_prebuild": {
+      "name": "셰이더 미리 빌드",
+      "what": "시작할 때 포트에 포함된 셰이더 목록의 셰이더를 백그라운드에서 빌드하여, 처음 보는 장소에서 끊김이 줄어듭니다. 업데이트 후나 셰이더 캐시를 지운 후 첫 시작은 더 오래 걸립니다: 스테이지 로딩이 빌드가 끝날 때까지 기다립니다. 목록에는 빌드 레시피만 있고 게임 코드는 없습니다. 다음 시작부터 적용됩니다. 기본값은 켜짐입니다."
     }
   },
   "menu": {
@@ -1289,6 +1293,9 @@
     "High": "높음",
     "Extreme": "최대",
     "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "나무 수관이 평평하고 너무 밝게 보입니다. 안쪽의 빛에 잎 층 사이의 그림자가 없습니다. 이 설정은 수관 안쪽의 빛을 어둡게 합니다.",
-    "Realistic tree shade": "사실적인 나무 그늘"
+    "Realistic tree shade": "사실적인 나무 그늘",
+    "Build shaders ahead": "셰이더 미리 빌드",
+    "At start, builds the shaders of the shader list that comes with the port in the background, so places you see for the first time stutter less. The first start after an update or after clearing the shader cache takes longer: loading a stage waits until the build is done. The list holds only build recipes, no game code. Applies at the next start. On by default.": "시작할 때 포트에 포함된 셰이더 목록의 셰이더를 백그라운드에서 빌드하여, 처음 보는 장소에서 끊김이 줄어듭니다. 업데이트 후나 셰이더 캐시를 지운 후 첫 시작은 더 오래 걸립니다: 스테이지 로딩이 빌드가 끝날 때까지 기다립니다. 목록에는 빌드 레시피만 있고 게임 코드는 없습니다. 다음 시작부터 적용됩니다. 기본값은 켜짐입니다.",
+    "Building shaders %u%%": "셰이더 빌드 중 %u%%"
   }
 }

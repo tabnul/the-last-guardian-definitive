@@ -867,6 +867,10 @@
         "3": "Yüksek",
         "4": "Aşırı"
       }
+    },
+    "menu:shader_prebuild": {
+      "name": "Gölgelendiricileri önceden derle",
+      "what": "Başlangıçta, port ile gelen gölgelendirici listesindeki gölgelendiricileri arka planda derler; böylece ilk kez gördüğün yerlerde daha az takılma olur. Bir güncellemeden veya gölgelendirici önbelleğini temizledikten sonraki ilk başlatma daha uzun sürer: bir bölümün yüklenmesi derleme bitene kadar bekler. Liste yalnızca derleme tariflerini içerir, oyun kodu içermez. Bir sonraki başlatmada geçerli olur. Varsayılan olarak açık."
     }
   },
   "menu": {
@@ -1289,6 +1293,9 @@
     "High": "Yüksek",
     "Extreme": "Aşırı",
     "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "Ağaç tepeleri düz ve fazla parlak görünür: içlerindeki ışıkta yaprak katmanları arasında gölge yoktur. Bu ayar tepelerin içindeki ışığı koyulaştırır.",
-    "Realistic tree shade": "Gerçekçi ağaç gölgesi"
+    "Realistic tree shade": "Gerçekçi ağaç gölgesi",
+    "Build shaders ahead": "Gölgelendiricileri önceden derle",
+    "At start, builds the shaders of the shader list that comes with the port in the background, so places you see for the first time stutter less. The first start after an update or after clearing the shader cache takes longer: loading a stage waits until the build is done. The list holds only build recipes, no game code. Applies at the next start. On by default.": "Başlangıçta, port ile gelen gölgelendirici listesindeki gölgelendiricileri arka planda derler; böylece ilk kez gördüğün yerlerde daha az takılma olur. Bir güncellemeden veya gölgelendirici önbelleğini temizledikten sonraki ilk başlatma daha uzun sürer: bir bölümün yüklenmesi derleme bitene kadar bekler. Liste yalnızca derleme tariflerini içerir, oyun kodu içermez. Bir sonraki başlatmada geçerli olur. Varsayılan olarak açık.",
+    "Building shaders %u%%": "Gölgelendiriciler derleniyor %u%%"
   }
 }

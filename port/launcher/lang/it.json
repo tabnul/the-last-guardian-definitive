@@ -867,6 +867,10 @@
         "3": "Alto",
         "4": "Estremo"
       }
+    },
+    "menu:shader_prebuild": {
+      "name": "Compila gli shader in anticipo",
+      "what": "All'avvio compila in background gli shader della lista di shader fornita con il port, così i luoghi che vedi per la prima volta scattano meno. Il primo avvio dopo un aggiornamento o dopo aver svuotato la cache shader dura di più: il caricamento di uno stage attende la fine della compilazione. La lista contiene solo ricette di compilazione, nessun codice del gioco. Vale dal prossimo avvio. Attivo per impostazione predefinita."
     }
   },
   "menu": {
@@ -1289,6 +1293,9 @@
     "High": "Alto",
     "Extreme": "Estremo",
     "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "Le chiome degli alberi sembrano piatte e troppo chiare: la luce al loro interno non ha ombra tra gli strati di foglie. Questo scurisce la luce dentro le chiome.",
-    "Realistic tree shade": "Ombra realistica degli alberi"
+    "Realistic tree shade": "Ombra realistica degli alberi",
+    "Build shaders ahead": "Compila gli shader in anticipo",
+    "At start, builds the shaders of the shader list that comes with the port in the background, so places you see for the first time stutter less. The first start after an update or after clearing the shader cache takes longer: loading a stage waits until the build is done. The list holds only build recipes, no game code. Applies at the next start. On by default.": "All'avvio compila in background gli shader della lista di shader fornita con il port, così i luoghi che vedi per la prima volta scattano meno. Il primo avvio dopo un aggiornamento o dopo aver svuotato la cache shader dura di più: il caricamento di uno stage attende la fine della compilazione. La lista contiene solo ricette di compilazione, nessun codice del gioco. Vale dal prossimo avvio. Attivo per impostazione predefinita.",
+    "Building shaders %u%%": "Compilazione shader %u%%"
   }
 }
