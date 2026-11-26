@@ -41,8 +41,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import make_list as ml  # noqa: E402
 
 LINE = re.compile(r'Shader recipe \(not in list\): (0x[0-9a-f]{16})_(\d+) ([A-Za-z0-9+/]+=*)\s*$')
-KEY_LINE = re.compile(r'Pipeline key \(not in list\): ([cg]_0x[0-9a-f]{16}\.key) ([A-Za-z0-9+/]+=*)\s*$')
-KEY_LEFT_OUT = re.compile(r'Pipeline key \(not in list\): ([cg]_0x[0-9a-f]{16}\.key) left out: (.*)$')
+# c_/g_ ...key: keys this build reads; v_ ...vkey: keys of another kind, already final.
+KEY_LINE = re.compile(r'Pipeline key \(not in list\): ([cg]_0x[0-9a-f]{16}\.key|v_0x[0-9a-f]{16}\.vkey) ([A-Za-z0-9+/]+=*)\s*$')
+KEY_LEFT_OUT = re.compile(r'Pipeline key \(not in list\): ([cgv]_0x[0-9a-f]{16}\.v?key) left out: (.*)$')
 LEFT_OUT = re.compile(r'Shader recipe \(not in list\): (0x[0-9a-f]{16}_\d+) left out: (.*)$')
 SCAN = 0x10000  # how far before a shader header in eboot.bin its program may start
 MAX_RECIPE = 1 << 20  # a logged recipe unpacks to a few KB at most; more is a damaged or forged line
@@ -145,7 +146,8 @@ def main():
                 if not log_folders:
                     log_folders.append(a.out / stem)
                 log_folders[0].mkdir(parents=True, exist_ok=True)
-                target = log_folders[0] / f'{m[1]}.pkey'
+                # a .vkey is kept as it is (merge_recipes.py and the list take it unchanged)
+                target = log_folders[0] / (m[1] if m[1].endswith('.vkey') else f'{m[1]}.pkey')
                 if not target.exists():
                     target.write_bytes(key)
                     keys += 1
