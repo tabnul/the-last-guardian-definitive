@@ -19,6 +19,8 @@
 #include "tlg_overlay.h"
 #include "tlg_settings.h"
 #include "tlg_toggles.h"
+#include "video_core/renderer_vulkan/shader_list.h"
+#include "video_core/renderer_vulkan/shader_recipe.h"
 #include "../tlggpu.h"
 #include <algorithm>
 #include <atomic>
@@ -1023,6 +1025,26 @@ bool GameEdits(std::string& patched, std::string_view name) {
         // Do what the game's own restart does: disconnect the stage's regions, preload the new
         // ones, then unload what is still disconnected. The common regions stay.
         static constexpr std::string_view Blocker = "self.timeBlocker = CreateTimeBlocker()";
+        // shader_prebuild on: a stage load (a stage start, or a restart: continue, checkpoint)
+        // begins with the time blocker; "--TLGLOADING" there waits for the background shader
+        // build, except the session's first load (the title stage), so the title screen never
+        // waits and the first stage played starts with its shaders built.
+        if (Vulkan::ShaderList::Enabled()) {
+            static constexpr std::pair<std::string_view, std::string_view> Loads[] = {
+                {"self.timeBlocker = CreateTimeBlocker()",
+                 " do local f=(loadstring or load)('--TLGLOADING start '..tostring(name))"
+                 " if f then f() end end"},
+                {"GameSetupTbl.timeBlocker = CreateTimeBlocker()",
+                 " do local f=(loadstring or load)('--TLGLOADING restart') if f then f() end end"},
+            };
+            for (const auto& [anchor, marker] : Loads) {
+                for (size_t at = patched.find(anchor); at != std::string::npos;
+                     at = patched.find(anchor, at + anchor.size() + marker.size())) {
+                    patched.insert(at + anchor.size(), marker);
+                    changed = true;
+                }
+            }
+        }
         static constexpr std::string_view Preloaded =
             "DelayExec( function() self:Start_Stage_2nd_PreloadWait(area) end )";
         const size_t blocker = patched.find(Blocker);
@@ -1347,6 +1369,16 @@ extern "C" __attribute__((sysv_abi)) int tlg_lua_load(void* L, void* options, co
     }
     if (StartsWith(buffer, size, "--TLGPAUSE")) {
         TlgOverlay::SetPauseMenu(size > 10 && buffer[10] == '1');
+        return original(L, options, Empty.data(), Empty.size(), name);
+    }
+    if (StartsWith(buffer, size, "--TLGLOADING")) {
+        static int loads = 0; // game thread only
+        const std::string what{buffer + 12, size > 12 ? size - 12 : 0};
+        std::printf("Shader prebuild: stage load%s%s\n", what.c_str(),
+                    loads == 0 ? " (first of the session: no wait)" : "");
+        if (loads++ != 0) {
+            Vulkan::ShaderRecipe::WaitImport("stage load");
+        }
         return original(L, options, Empty.data(), Empty.size(), name);
     }
     if (StartsWith(buffer, size, "--TLGLOADED")) {

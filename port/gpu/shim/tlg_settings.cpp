@@ -293,6 +293,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.leaf_ao = i < 0 ? 0 : i > 4 ? 4 : i;
     } else if (key == "keep_gpu_textures") {
         v.keep_gpu_textures = value.empty() || i != 0;
+    } else if (key == "shader_prebuild") {
+        v.shader_prebuild = value.empty() || i != 0;
     } else if (key == "arena_release") {
         v.arena_release = value.empty() || i != 0;
     } else if (key == "gc_live_budget") {
@@ -474,7 +476,7 @@ bool ReadFile(Values& v) {
     if (!file) {
         return false;
     }
-    char line[1024]; // key_map can be long
+    char line[2048]; // key_map can be long
     while (std::fgets(line, sizeof(line), file)) {
         std::string text{line};
         text.erase(text.find_last_not_of(" \t\r\n") + 1);
@@ -551,6 +553,7 @@ void Load() {
         {"TLG_HDR", "hdr"},                          {"TLG_FG", "frame_generation"},
         {"TLG_ARENA_RELEASE", "arena_release"},      {"TLG_GC_LIVE_BUDGET", "gc_live_budget"},
         {"TLG_SHADOW_DISTANCE", "shadow_distance"}, {"TLG_SHADOW_LITE", "shadow_lite"},
+        {"TLG_SHADER_PREBUILD", "shader_prebuild"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -579,6 +582,7 @@ void Load() {
     v.startup_deferred_readback = v.deferred_readback;
     v.startup_stale_readback = v.stale_readback;
     v.startup_hdr = v.hdr;
+    v.startup_shader_prebuild = v.shader_prebuild;
 }
 
 namespace {
@@ -937,6 +941,7 @@ void Save() {
     std::fprintf(file, "audio_device=%s\naudio_surround=%d\n", v.audio_device.c_str(), int(v.audio_surround.load()));
     std::fprintf(file, "trophy_key=%s\ntrophy_popup=%d\n", v.trophy_key.c_str(), int(v.trophy_popup.load()));
     std::fprintf(file, "keep_gpu_textures=%d\n", int(v.keep_gpu_textures.load()));
+    std::fprintf(file, "shader_prebuild=%d\n", int(v.shader_prebuild.load()));
     std::fprintf(file, "arena_release=%d\ngc_live_budget=%d\n", int(v.arena_release.load()),
                  int(v.gc_live_budget.load()));
     std::fprintf(file,

@@ -44,6 +44,7 @@
 #include "core/signals.h"
 #include "sdl_window.h"
 #include "tlg_trophy.h"
+#include "video_core/renderer_vulkan/shader_recipe.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
@@ -279,6 +280,7 @@ bool TlgHdrStartup() {
 }
 
 extern "C" void tlggpu_flush_cache(void) {
+    Vulkan::ShaderRecipe::ReportBuilds(); // TLG_SHADER_PREBUILD / TLG_SHADER_BUILD_STATS
     const char* env = std::getenv("TLG_CACHE_FLUSH_ON_EXIT");
     static const bool enabled = !(env && env[0] == '0');
     auto& cache = Storage::DataBase::Instance();

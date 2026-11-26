@@ -95,7 +95,7 @@ void tlggpu_mouse_take(TlgGpuMouse *mouse);
 typedef struct {
     int32_t mouse_enabled, invert_y;
     float sensitivity, smoothing, accel, deadzone;
-    char key_map[512];
+    char key_map[1024];
 } TlgGpuInputSettings;
 void tlggpu_input_settings(TlgGpuInputSettings *settings);
 /* Sound output (tlg.ini audio_device, audio_surround), read when an audio port opens. device: the

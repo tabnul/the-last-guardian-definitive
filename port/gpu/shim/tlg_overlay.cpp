@@ -114,6 +114,7 @@ std::atomic<u32>* ComboSlot(int slot) {
 std::atomic<bool> loading{false};
 std::atomic<u32> loading_done{0}, loading_total{0};
 std::atomic<u32> background_done{0}, background_total{0};
+std::atomic<u32> build_done{0}, build_total{0}; // background shader build (shader_prebuild)
 bool dirty = false; // settings changed while open: saved on close
 std::chrono::steady_clock::time_point aa_label_until{}; // the AA label after F8
 int requested_tab = -1; // switch on the next frame (L1/R1, Q/E, menu opened)
@@ -1032,6 +1033,12 @@ void PerformanceTab() {
         CheckRow(TR("Keep GPU-only textures"), s.keep_gpu_textures,
                  TR("Keeps a texture the GPU drew into while its only correct copy is on the GPU (a game write right next to it blocks the copy back), until video memory is almost full. Without it, cleanup can throw that picture away and the game gets old data back. From SpartanPort (@maze1377). On by default; turn it off if video memory runs full more often."),
                  d.keep_gpu_textures);
+        CheckRow(TR("Build shaders ahead"), s.shader_prebuild,
+                 TR("At start, builds the shaders of the shader list that comes with the port in the background, so "
+                    "places you see for the first time stutter less. The first start after an update or after "
+                    "clearing the shader cache takes longer: loading a stage waits until the build is done. The list "
+                    "holds only build recipes, no game code. Applies at the next start. On by default."),
+                 d.shader_prebuild);
         // Test switches for the buffer memory return of v0.5.2 (SotC port), issue #38.
         CheckRow(TR("Debug: give back freed buffer memory"), s.arena_release,
                  TR("Since v0.5.2: when the game frees memory, its graphics card copy goes too. Test switch (issue #38): "
@@ -2929,7 +2936,6 @@ void QuitHintBox() {
 }
 
 void BackgroundLoading() {
-    const u32 done = background_done, total = std::max(background_total.load(), 1u);
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     const float pad = 12.0f * base_scale;
     ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + pad,
@@ -2940,7 +2946,12 @@ void BackgroundLoading() {
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                      ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoFocusOnAppearing);
-    ImGui::TextDisabled("Loading shader cache %u%%", u32(u64(done) * 100 / total));
+    if (const u32 total = background_total) {
+        ImGui::TextDisabled("Loading shader cache %u%%", u32(u64(std::min(background_done.load(), total)) * 100 / total));
+    }
+    if (const u32 total = build_total) {
+        ImGui::TextDisabled(TR("Building shaders %u%%"), u32(u64(std::min(build_done.load(), total)) * 100 / total));
+    }
     ImGui::End();
 }
 
@@ -3528,6 +3539,11 @@ void SetBackgroundLoading(u32 done, u32 total) {
     background_total = total;
 }
 
+void SetShaderBuild(u32 done, u32 total) {
+    build_done = done;
+    build_total = total;
+}
+
 void SetLoading(bool active, u32 done, u32 total) {
     loading_done = done;
     loading_total = total;
@@ -3573,7 +3589,7 @@ bool AaLabelOn() {
 bool Visible() {
     const auto& s = TlgSettings::Get();
     const auto now = std::chrono::steady_clock::now();
-    return initialized && (loading || background_total || menu_open || text_entry_active || choice_active ||
+    return initialized && (loading || background_total || build_total || menu_open || text_entry_active || choice_active ||
                            message_active || progress_on || now < progress_until || now < toast_until || AaLabelOn() ||
                            NoticeActive() || quit_hold_start != 0 || pause_menu_open ||
                            choice_retiring || s.show_fps || move_bar_open ||
@@ -3752,7 +3768,7 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     if (TlgSettings::Get().show_fps && !menu_open) {
         FpsCounter();
     }
-    if (background_total && !loading && !menu_open) {
+    if ((background_total || build_total) && !loading && !menu_open) {
         BackgroundLoading();
     }
     if (text_entry_active) {

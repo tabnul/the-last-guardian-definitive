@@ -146,6 +146,12 @@ struct Values {
     /// write next to them blocks the copy back) until VRAM is critical, instead of freeing them
     /// and losing that picture. From SpartanPort (@maze1377). Live. Off: freed as before.
     std::atomic<bool> keep_gpu_textures{true};
+    /// Performance > Build shaders ahead (tlg.ini shader_prebuild, env TLG_SHADER_PREBUILD wins):
+    /// at start the shader list next to the executable (ShaderList::Path) is built into the shader
+    /// cache in the background, and a stage load waits for that build. On by default. Read at
+    /// start only (startup_shader_prebuild); a change applies at the next start.
+    std::atomic<bool> shader_prebuild{true};
+    bool startup_shader_prebuild = true;
     /// Buffer memory return from v0.5.2 (SotC port, issue #38), each live, all on by default.
     /// arena_release: give buffer memory back when the game unmaps it (env TLG_ARENA_RELEASE).
     /// gc_live_budget: the texture collector follows the driver's budget (TLG_GC_LIVE_BUDGET).
