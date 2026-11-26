@@ -21,7 +21,9 @@
 
 #include "common/memory_patcher.h"
 #include "native/native_vkb_shader_fields.h"
-// The normal renderer's list (its entry) and its field lists, read only (port/gpu/shadps4 is not changed: principle 8)
+// The normal renderer's list (its entry) and its field lists, read only. These headers come with pull request 149
+// (the normal renderer's shader pre-build, the lower pull request); the new engine's own commits do not change
+// port/gpu/shadps4, they only include these two headers.
 #include "video_core/renderer_vulkan/shader_fields.h"
 #include "video_core/renderer_vulkan/shader_list.h"
 
