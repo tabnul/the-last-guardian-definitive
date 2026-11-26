@@ -485,7 +485,14 @@
     "launcher.trophy_key_format": "Ein Schlüssel hat 32 Hex-Ziffern (0-9, A-F). Nicht gespeichert.",
     "launcher.trophy_key_nofile": "Gespeichert, aber nicht geprüft: keine Trophäendatei im Spielordner.",
     "launcher.trophy_key_cleared": "Schlüssel entfernt: die Trophäen werden nummeriert.",
-    "launcher.trophy_key_hint": "Optional: Der PS4-Trophäen-Schlüssel (32 Hex-Ziffern) zeigt die Namen der Trophäen. Der Port enthält ihn nicht. Auch im Spielmenü (Tab Trophäen)."
+    "launcher.trophy_key_hint": "Optional: Der PS4-Trophäen-Schlüssel (32 Hex-Ziffern) zeigt die Namen der Trophäen. Der Port enthält ihn nicht. Auch im Spielmenü (Tab Trophäen).",
+    "launcher.disc_check": "Spieldisc prüfen",
+    "launcher.disc_check_busy": "Spieldateien werden geprüft…",
+    "launcher.disc_check_no_game": "Wähle zuerst den Spielordner (Einstellungen > Spielordner).",
+    "launcher.disc_check_done": "Disc-Prüfung als {file} im Log-Ordner gespeichert. Schicke diese Datei oder den kopierten Text an die Entwickler.",
+    "launcher.disc_check_copy": "Kopieren",
+    "launcher.disc_check_copied": "Kopiert: füge es in dein GitHub-Issue oder deine Nachricht ein.",
+    "launcher.disc_check_open": "Datei öffnen"
   },
   "items": {
     "menu:sharpen": {
@@ -853,6 +860,10 @@
         "3": "Hoch",
         "4": "Extrem"
       }
+    },
+    "menu:shader_prebuild": {
+      "name": "Shader vorab bauen",
+      "what": "Baut beim Start im Hintergrund die Shader aus der Shader-Liste, die mit dem Port kommt, damit Orte, die du zum ersten Mal siehst, weniger ruckeln. Der erste Start nach einem Update oder nach dem Leeren des Shader-Caches dauert länger: Das Laden eines Abschnitts wartet, bis der Bau fertig ist. Die Liste enthält nur Bauanleitungen, keinen Spielcode. Gilt ab dem nächsten Start. Standardmäßig an."
     }
   },
   "menu": {
@@ -1269,6 +1280,9 @@
     "High": "Hoch",
     "Extreme": "Extrem",
     "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "Baumkronen wirken flach und zu hell: Das Licht in ihnen hat keinen Schatten zwischen den Blattschichten. Dies dunkelt das Licht in den Kronen ab.",
-    "Realistic tree shade": "Realistischer Baumschatten"
+    "Realistic tree shade": "Realistischer Baumschatten",
+    "Build shaders ahead": "Shader vorab bauen",
+    "At start, builds the shaders of the shader list that comes with the port in the background, so places you see for the first time stutter less. The first start after an update or after clearing the shader cache takes longer: loading a stage waits until the build is done. The list holds only build recipes, no game code. Applies at the next start. On by default.": "Baut beim Start im Hintergrund die Shader aus der Shader-Liste, die mit dem Port kommt, damit Orte, die du zum ersten Mal siehst, weniger ruckeln. Der erste Start nach einem Update oder nach dem Leeren des Shader-Caches dauert länger: Das Laden eines Abschnitts wartet, bis der Bau fertig ist. Die Liste enthält nur Bauanleitungen, keinen Spielcode. Gilt ab dem nächsten Start. Standardmäßig an.",
+    "Building shaders %u%%": "Shader werden gebaut %u%%"
   }
 }

@@ -404,6 +404,13 @@ TEXT = {
     'rep_no_events': 'No Fault:, STOP: or FREEZE: lines in this log.',
     'rep_issue_title': 'Problem report: {gpu}',
     'report_busy': 'Collecting the report…',
+    'disc_check': 'Check game disc',
+    'disc_check_busy': 'Checking the game files…',
+    'disc_check_no_game': 'Pick the game folder first (Settings > Game folder).',
+    'disc_check_done': 'Disc check saved as {file} in the logs folder. Send that file or the copied text to the developers.',
+    'disc_check_copy': 'Copy',
+    'disc_check_copied': 'Copied: paste it in your GitHub issue or message.',
+    'disc_check_open': 'Open file',
     'report_done': 'Issue form opened in the browser. Attach {zip} from the logs folder (log with user names removed).',
     'clear_cache': 'Clear shader cache',
     'clear_cache_ask': ('This deletes the compiled shaders ({size}); the next start takes longer to load and '
@@ -550,6 +557,13 @@ PS4_BUTTONS = [
     ('touchpad_left', 'Touchpad (left)', 'photo mode'),
     ('touchpad_right', 'Touchpad (right)', 'pause'),
     ('up', 'D-pad up', None), ('down', 'D-pad down', None), ('left', 'D-pad left', None), ('right', 'D-pad right', None),
+    # Not buttons: the sticks and the motion sensor from the keyboard (issue #104).
+    ('move_up', 'Left stick up', 'move forward'), ('move_down', 'Left stick down', 'move back'),
+    ('move_left', 'Left stick left', 'move left'), ('move_right', 'Left stick right', 'move right'),
+    ('camera_up', 'Right stick up', 'camera up'), ('camera_down', 'Right stick down', 'camera down'),
+    ('camera_left', 'Right stick left', 'camera left'), ('camera_right', 'Right stick right', 'camera right'),
+    ('tilt_right', 'Tilt controller right', None), ('tilt_left', 'Tilt controller left', None),
+    ('shake', 'Shake controller', None),
 ]
 # Tk key names -> SDL key names (src/runtime_pad.c reads SDL names); letters and digits are the same.
 TK_TO_SDL = {
@@ -1034,6 +1048,7 @@ def scroll_area(parent, padding=12):
     inner.bind('<Configure>', fit, add='+')
     canvas.bind('<Configure>', fit, add='+')
     canvas.scroll_inner = inner   # marks it for the wheel handler
+    canvas.refit = fit            # for content that got shorter (no event tells the canvas)
     return inner
 
 
@@ -1492,8 +1507,18 @@ class Launcher:
         and switched it off just before release (tlg.ini trico_drool; the game reads it live, also from
         the in-game Extras tab)."""
         drool = next(item for item in backports_table.MENU if item.key == 'trico_drool')
-        box = section(parent, drool.name)
-        box.pack(fill='x', anchor='w', pady=(0, 8))
+        # Two columns of equal width (#103); the texts wrap to the column (see rewrap below).
+        grid = ttk.Frame(parent)
+        grid.pack(fill='x', anchor='w')
+        grid.columnconfigure((0, 1), weight=1, uniform='cols')
+        texts = []
+
+        def place(box, index):
+            box.grid(row=index // 2, column=index % 2, sticky='nsew', pady=(0, 8),
+                     padx=(0, 8) if index % 2 == 0 else (8, 0))
+
+        box = section(grid, drool.name)
+        place(box, 0)
         values = [choice[0] for choice in drool.choices]
         combo = ttk.Combobox(box, values=[choice[1] for choice in drool.choices], state='readonly', width=28)
         chosen = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini').get('trico_drool', drool.default)
@@ -1506,14 +1531,15 @@ class Launcher:
             self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
 
         combo.bind('<<ComboboxSelected>>', lambda _: picked())
-        ttk.Label(box, text=drool.what, foreground=DIM, wraplength=420, justify='left').grid(
-            row=1, column=0, sticky='w', pady=(6, 0))
+        texts.append(ttk.Label(box, text=drool.what, foreground=DIM, wraplength=420, justify='left'))
+        texts[-1].grid(row=1, column=0, columnspan=2, sticky='w', pady=(6, 0))
         ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
-        for key in ('trico_fur', 'trico_helmet', 'mod_treasures', 'mod_horns', 'mod_foxtail', 'mod_plays',
-                    'mod_throw_up', 'mod_hints', 'leaf_ao'):
+        for index, key in enumerate(('trico_fur', 'trico_helmet', 'mod_treasures', 'mod_horns', 'mod_foxtail', 'mod_plays',
+                    'mod_throw_up', 'mod_hints', 'leaf_ao'), start=1):
             item = next(i for i in backports_table.MENU if i.key == key)
-            mod = section(parent, item.name)
-            mod.pack(fill='x', anchor='w', pady=(0, 8))
+            mod = section(grid, item.name)
+            mod.columnconfigure(1, weight=1)   # spare width goes right of the control
+            place(mod, index)
             def write(value, k=key):
                 tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
                 tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {k: value})
@@ -1556,8 +1582,17 @@ class Launcher:
                         n.grid(row=2, column=0, sticky='w', pady=(4, 0))
 
                 ttk.Checkbutton(mod, text=item.name, variable=var, command=ticked).grid(row=0, column=0, sticky='w')
-            ttk.Label(mod, text=item.what, foreground=DIM, wraplength=900, justify='left').grid(
-                row=1, column=0, sticky='w', pady=(6, 0))
+            texts.append(ttk.Label(mod, text=item.what, foreground=DIM, wraplength=420, justify='left'))
+            texts[-1].grid(row=1, column=0, columnspan=2, sticky='w', pady=(6, 0))
+
+        # Wrap to the column, measured from the visible area (not from the boxes: those never
+        # shrink below their own text). Below the floor the page scrolls sideways instead.
+        def rewrap(event):
+            width = max(260, (event.width - 24 - 16) // 2 - 36)
+            for label in texts:
+                label.configure(wraplength=width)
+            parent.master.after(60, parent.master.refit)   # once the new heights have settled
+        parent.master.bind('<Configure>', rewrap, add='+')
 
     def build_gpu_choice(self, parent, row):
         """Video > Graphics card: Automatic or one of the cards Vulkan lists (tlg_run.gpu_list, the
@@ -1761,6 +1796,8 @@ class Launcher:
             side='right', pady=(6, 0))
         ttk.Button(header, text=self.t('report_issue'), command=self.report_issue).pack(
             side='right', padx=(0, 6), pady=(6, 0))
+        ttk.Button(header, text=self.t('disc_check'), command=self.check_disc).pack(
+            side='right', padx=(0, 6), pady=(6, 0))
         # The same Advanced logging switch as Settings > Debug; shown on Debug > Flags.
         self.debug_logging_var = tk.BooleanVar(value=bool(self.settings.get('debug_logging')))
 
@@ -1802,6 +1839,7 @@ class Launcher:
         the music tool plays it). The list is read when the page first opens."""
         win = self.soundtrack_window = Page(self, 'soundtrack')
         win.title(self.t('home_soundtrack'), self.t('soundtrack_hint'))
+        win = scroll_area(win, padding=0)   # the page scrolls when the window is too small (#103)
         bar = ttk.Frame(win, padding=(12, 8, 12, 0))
         bar.pack(fill='x')
         self.track_button = ttk.Button(bar, text=self.t('soundtrack_play'), command=self.track_play_pause)
@@ -2637,24 +2675,16 @@ class Launcher:
             return
         win = self.mods_window = Page(self, 'mods')
         win.title(self.t('mods_title'), self.t('mods_hint'))
-        frame = ttk.Frame(win, padding=12)
-        frame.pack(fill='both', expand=True)
+        # The whole page scrolls (#103): the built-in extras alone are taller than a small window,
+        # so the cheat list no longer scrolls on its own in whatever height was left over.
+        frame = scroll_area(win)
         self.show_page('mods')
         self.build_drool(frame)  # built-in mods (tlg.ini, live in game) above the cheat files
         ttk.Label(frame, text=self.t('mods_warning'), foreground='#d07060', wraplength=900, justify='left').pack(
             anchor='w', pady=(4, 8))
 
-        list_frame = ttk.Frame(frame)
-        list_frame.pack(fill='both', expand=True)
-        canvas = tk.Canvas(list_frame, highlightthickness=0, background=BG, yscrollincrement=24)
-        scroll = ttk.Scrollbar(list_frame, orient='vertical', command=canvas.yview)
-        rows = ttk.Frame(canvas)
-        canvas.scroll_inner = rows
-        rows.bind('<Configure>', lambda _: canvas.configure(scrollregion=canvas.bbox('all')))
-        canvas.create_window((0, 0), window=rows, anchor='nw')
-        canvas.configure(yscrollcommand=scroll.set)
-        canvas.pack(side='left', fill='both', expand=True)
-        scroll.pack(side='right', fill='y')
+        rows = ttk.Frame(frame)
+        rows.pack(fill='x', anchor='w')
 
         def toggle(key, var):
             tlg_run.set_mod_enabled(key, var.get())
@@ -2929,6 +2959,21 @@ class Launcher:
         slow_box.bind('<<ComboboxSelected>>', lambda _: slow_picked())
         help_mark(parent, slow.what).grid(row=row, column=2, sticky='w', padx=(4, 0), pady=3)
         resets.append(lambda: (slow_box.current(slow_values.index(slow.default)), slow_picked()))
+        # Build shaders ahead (tlg.ini shader_prebuild, read at start), next to Clear shader cache below.
+        prebuild = next(item for item in backports_table.MENU if item.key == 'shader_prebuild')
+        parent, row = place(0)
+        prebuild_var = tk.BooleanVar(
+            value=tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini').get('shader_prebuild', prebuild.default) != '0')
+
+        def prebuild_toggled():
+            tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
+            tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {'shader_prebuild': '1' if prebuild_var.get() else '0'})
+            self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
+
+        prebuild_box = ttk.Checkbutton(parent, text=prebuild.name, variable=prebuild_var, command=prebuild_toggled)
+        prebuild_box.grid(row=row, column=0, columnspan=2, sticky='w')
+        help_mark(parent, prebuild.what, prebuild_box).grid(row=row, column=2, sticky='w', padx=(4, 0), pady=3)
+        resets.append(lambda: (prebuild_var.set(prebuild.default == '1'), prebuild_toggled()))
         # The memory test switches moved to Debug > Flags (2026-11-12).
         bottom = ttk.Frame(frame)
         bottom.grid(row=2, column=0, columnspan=2, sticky='ew', pady=(10, 0))
@@ -3080,8 +3125,7 @@ class Launcher:
             return
         win = self.start_window = Page(self, 'start')
         win.title(self.t('start_title'), self.t('start_hint'))
-        frame = ttk.Frame(win, padding=(12, 12))
-        frame.pack(fill='x')
+        frame = scroll_area(win)
         stages = list(dict.fromkeys(stage for stage, _ in start_points.POINTS))
         ttk.Label(frame, text=self.t('start_stage')).grid(row=0, column=0, sticky='w', pady=4)
         stage_box = ttk.Combobox(frame, values=stages, state='readonly', width=32)
@@ -3240,14 +3284,77 @@ class Launcher:
             url = report.issue_url(title, full, short)[0]
             zip_name = 'report-' + time.strftime('%Y%m%d-%H%M%S') + '.zip'
             clean_log = report.redact(log_text, names)[0] if log_text else None
-            if not report.leftover_home_paths((clean_log or '') + full, names):   # never save a leak
+            try:   # is this disc the same game as the tested US/EU ones (#105); checksums only
+                import disc_check
+                disc_text = report.redact(disc_check.report(self.settings.get('game_dir', '')), names)[0] \
+                    if self.settings.get('game_dir') else None
+            except Exception:
+                disc_text = None
+            if not report.leftover_home_paths((clean_log or '') + full + (disc_text or ''), names):   # never save a leak
                 try:
-                    report.write_zip(tlg_run.LOG_DIR / zip_name, full, clean_log, log_name)
+                    report.write_zip(tlg_run.LOG_DIR / zip_name, full, clean_log, log_name, disc_text)
                 except OSError:
                     pass
             self.root.after(0, lambda: (self.open(tlg_run.LOG_DIR), tlg_run.open_external(url),
                                         self.status.configure(text=self.t('report_done', zip=zip_name))))
         threading.Thread(target=work, daemon=True).start()
+
+    def check_disc(self):
+        """Debug > Check game disc (disc_check.py, #105): checksums of the game files compared with
+        the tested US/EU discs, saved as a text file in the logs folder (opened) for the player to
+        send. No game content and no folder names in it."""
+        import threading
+        import disc_check
+        import report
+        game_dir = self.settings.get('game_dir', '')
+        if not game_dir:
+            messagebox.showwarning(TITLE, self.t('disc_check_no_game'))
+            return
+        self.status.configure(text=self.t('disc_check_busy'))
+
+        def work():
+            try:
+                text = report.redact(disc_check.report(game_dir), report.own_names())[0]
+                title = disc_check.disc(game_dir)[0] or 'unknown'
+                name = f'disc-check-{title}-' + time.strftime('%Y%m%d-%H%M%S') + '.txt'
+                tlg_run.LOG_DIR.mkdir(parents=True, exist_ok=True)
+                (tlg_run.LOG_DIR / name).write_text(text, encoding='utf-8')
+            except Exception as error:   # shown, never a silent failure
+                message = str(error)
+                self.root.after(0, lambda: (self.status.configure(text=''),
+                                            messagebox.showerror(self.t('error'), message)))
+                return
+            self.root.after(0, lambda: (self.status.configure(text=self.t('disc_check_done', file=name)),
+                                        self.show_disc_check(text, tlg_run.LOG_DIR / name)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def show_disc_check(self, text, path):
+        """The disc check in a window: selectable text, Copy (clipboard) and Open file."""
+        win = tk.Toplevel(self.root)
+        win.title(self.t('disc_check'))
+        win.configure(background=BG)
+        win.transient(self.root)
+        body = tk.Text(win, wrap='none', font='TkFixedFont', width=96, height=30, background=FIELD,
+                       foreground=TEXT_COLOR, insertbackground=TEXT_COLOR, highlightthickness=0, relief='flat')
+        body.insert('1.0', text)
+        body.configure(state='disabled')   # read-only, still selectable
+        scroll = ttk.Scrollbar(win, command=body.yview)
+        body.configure(yscrollcommand=scroll.set)
+        buttons = ttk.Frame(win, padding=(12, 8))
+        buttons.pack(side='bottom', fill='x')
+        scroll.pack(side='right', fill='y', pady=(12, 0))
+        body.pack(fill='both', expand=True, padx=(12, 0), pady=(12, 0))
+        note = ttk.Label(buttons, text='')
+        note.pack(side='left')
+
+        def copy():
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            note.configure(text=self.t('disc_check_copied'))
+        ttk.Button(buttons, text=self.t('close'), command=win.destroy).pack(side='right')
+        ttk.Button(buttons, text=self.t('disc_check_open'), command=lambda: tlg_run.open_external(path)).pack(
+            side='right', padx=(0, 6))
+        ttk.Button(buttons, text=self.t('disc_check_copy'), command=copy).pack(side='right', padx=(0, 6))
 
     def copy_command(self):
         self.root.clipboard_clear()

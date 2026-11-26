@@ -485,7 +485,14 @@
     "launcher.trophy_key_format": "Une clé compte 32 chiffres hexadécimaux (0-9, A-F). Non enregistrée.",
     "launcher.trophy_key_nofile": "Enregistrée, mais non vérifiée : aucun fichier de trophées dans le dossier du jeu.",
     "launcher.trophy_key_cleared": "Clé supprimée : les trophées sont numérotés.",
-    "launcher.trophy_key_hint": "Facultatif : la clé des trophées PS4 (32 chiffres hexadécimaux) affiche le nom des trophées. Le portage ne la fournit pas. Aussi dans le menu du jeu (onglet Trophées)."
+    "launcher.trophy_key_hint": "Facultatif : la clé des trophées PS4 (32 chiffres hexadécimaux) affiche le nom des trophées. Le portage ne la fournit pas. Aussi dans le menu du jeu (onglet Trophées).",
+    "launcher.disc_check": "Vérifier le disque du jeu",
+    "launcher.disc_check_busy": "Vérification des fichiers du jeu…",
+    "launcher.disc_check_no_game": "Choisissez d'abord le dossier du jeu (Paramètres > Dossier du jeu).",
+    "launcher.disc_check_done": "Vérification enregistrée sous {file} dans le dossier des journaux. Envoyez ce fichier ou le texte copié aux développeurs.",
+    "launcher.disc_check_copy": "Copier",
+    "launcher.disc_check_copied": "Copié : collez-le dans votre ticket GitHub ou votre message.",
+    "launcher.disc_check_open": "Ouvrir le fichier"
   },
   "items": {
     "menu:sharpen": {
@@ -853,6 +860,10 @@
         "3": "Élevé",
         "4": "Extrême"
       }
+    },
+    "menu:shader_prebuild": {
+      "name": "Compiler les shaders à l'avance",
+      "what": "Au démarrage, compile en arrière-plan les shaders de la liste de shaders fournie avec le portage, pour que les lieux que vous voyez pour la première fois saccadent moins. Le premier démarrage après une mise à jour ou après avoir vidé le cache des shaders est plus long : le chargement d'un niveau attend la fin de la compilation. La liste ne contient que des recettes de compilation, aucun code du jeu. S'applique au prochain démarrage. Activé par défaut."
     }
   },
   "menu": {
@@ -1269,6 +1280,9 @@
     "High": "Élevé",
     "Extreme": "Extrême",
     "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "Les cimes des arbres paraissent plates et trop claires : la lumière à l'intérieur n'a pas d'ombre entre les couches de feuilles. Ceci assombrit la lumière à l'intérieur des cimes.",
-    "Realistic tree shade": "Ombre réaliste des arbres"
+    "Realistic tree shade": "Ombre réaliste des arbres",
+    "Build shaders ahead": "Compiler les shaders à l'avance",
+    "At start, builds the shaders of the shader list that comes with the port in the background, so places you see for the first time stutter less. The first start after an update or after clearing the shader cache takes longer: loading a stage waits until the build is done. The list holds only build recipes, no game code. Applies at the next start. On by default.": "Au démarrage, compile en arrière-plan les shaders de la liste de shaders fournie avec le portage, pour que les lieux que vous voyez pour la première fois saccadent moins. Le premier démarrage après une mise à jour ou après avoir vidé le cache des shaders est plus long : le chargement d'un niveau attend la fin de la compilation. La liste ne contient que des recettes de compilation, aucun code du jeu. S'applique au prochain démarrage. Activé par défaut.",
+    "Building shaders %u%%": "Compilation des shaders %u%%"
   }
 }

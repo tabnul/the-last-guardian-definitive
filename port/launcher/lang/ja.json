@@ -485,7 +485,14 @@
     "launcher.trophy_key_format": "キーは16進数32桁（0-9、A-F）です。保存していません。",
     "launcher.trophy_key_nofile": "保存しましたが未確認です：ゲームフォルダにトロフィーファイルがありません。",
     "launcher.trophy_key_cleared": "キーを削除しました：トロフィーは番号で表示されます。",
-    "launcher.trophy_key_hint": "任意：PS4のトロフィーキー（16進数32桁）を入れるとトロフィー名が表示されます。このポートには含まれていません。ゲーム内メニュー（トロフィータブ）でも設定できます。"
+    "launcher.trophy_key_hint": "任意：PS4のトロフィーキー（16進数32桁）を入れるとトロフィー名が表示されます。このポートには含まれていません。ゲーム内メニュー（トロフィータブ）でも設定できます。",
+    "launcher.disc_check": "ゲームディスクを確認",
+    "launcher.disc_check_busy": "ゲームファイルを確認中…",
+    "launcher.disc_check_no_game": "先にゲームフォルダーを選んでください（設定 > ゲームフォルダー）。",
+    "launcher.disc_check_done": "ディスク確認を {file} としてログフォルダーに保存しました。このファイルかコピーしたテキストを開発者に送ってください。",
+    "launcher.disc_check_copy": "コピー",
+    "launcher.disc_check_copied": "コピーしました。GitHub の issue かメッセージに貼り付けてください。",
+    "launcher.disc_check_open": "ファイルを開く"
   },
   "items": {
     "menu:sharpen": {
@@ -853,6 +860,10 @@
         "3": "高",
         "4": "最大"
       }
+    },
+    "menu:shader_prebuild": {
+      "name": "シェーダーを事前に構築",
+      "what": "起動時に、移植版に同梱のシェーダーリストのシェーダーをバックグラウンドで構築し、初めて訪れる場所でのカクつきを減らします。アップデート後やシェーダーキャッシュの削除後の最初の起動は時間がかかります：ステージの読み込みは構築の完了を待ちます。リストには構築用のレシピだけが含まれ、ゲームのコードは含まれません。次回の起動から有効です。初期設定はオンです。"
     }
   },
   "menu": {
@@ -1269,6 +1280,9 @@
     "High": "高",
     "Extreme": "最大",
     "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "木の葉の茂みが平たく明るすぎて見えます。内部の光に、葉の重なりによる影がありません。この設定は茂みの内部の光を暗くします。",
-    "Realistic tree shade": "リアルな木の陰影"
+    "Realistic tree shade": "リアルな木の陰影",
+    "Build shaders ahead": "シェーダーを事前に構築",
+    "At start, builds the shaders of the shader list that comes with the port in the background, so places you see for the first time stutter less. The first start after an update or after clearing the shader cache takes longer: loading a stage waits until the build is done. The list holds only build recipes, no game code. Applies at the next start. On by default.": "起動時に、移植版に同梱のシェーダーリストのシェーダーをバックグラウンドで構築し、初めて訪れる場所でのカクつきを減らします。アップデート後やシェーダーキャッシュの削除後の最初の起動は時間がかかります：ステージの読み込みは構築の完了を待ちます。リストには構築用のレシピだけが含まれ、ゲームのコードは含まれません。次回の起動から有効です。初期設定はオンです。",
+    "Building shaders %u%%": "シェーダーを構築中 %u%%"
   }
 }

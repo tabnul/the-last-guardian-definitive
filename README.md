@@ -184,7 +184,14 @@ Each setting shows what the game originally used and what we recommend.
   generation off, and every graphics setting at Stock (as on PS4). It is new and still being tuned: tell us how it runs.
 - **Shader stutter:** shaders are prepared at start from shader recipes (from
   [bloodborne_pc](https://github.com/deadinside28/bloodborne_pc) by @deadinside28), so new
-  drivers and updates don't bring the stutter back.
+  drivers and updates don't bring the stutter back. The port also comes with a shader list: on
+  the first start it builds the shaders the game uses in the background, so even places you have
+  never visited stutter less. The list holds only build recipes, no game code: the shaders are
+  made from your own game files. Loading a stage waits until the build is done, so the first
+  start takes a little longer. **Build shaders ahead** (in-game menu, Performance; launcher,
+  Advanced settings) turns it off; on by default. When the game still has to build a shader
+  the list lacks, it writes one line "Shader recipe (not in list)" into its log (build settings
+  only, no game code): posting such a log in an issue helps make the list complete.
 - **Wind and grass:** the stock wind looks like a storm on PC. You can set it separately for the
   boy, the trees and Trico; 50% is a breeze. Grass that the game moved only every 4th frame now
   moves every frame, which stops the flicker.

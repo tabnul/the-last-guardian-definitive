@@ -492,7 +492,14 @@
     "launcher.trophy_key_format": "Uma chave tem 32 dígitos hexadecimais (0-9, A-F). Não guardada.",
     "launcher.trophy_key_nofile": "Guardada, mas não verificada: nenhum ficheiro de troféus na pasta do jogo.",
     "launcher.trophy_key_cleared": "Chave removida: os troféus são numerados.",
-    "launcher.trophy_key_hint": "Opcional: a chave de troféus da PS4 (32 dígitos hexadecimais) mostra os nomes dos troféus. O port não a inclui. Também no menu do jogo (separador Troféus)."
+    "launcher.trophy_key_hint": "Opcional: a chave de troféus da PS4 (32 dígitos hexadecimais) mostra os nomes dos troféus. O port não a inclui. Também no menu do jogo (separador Troféus).",
+    "launcher.disc_check": "Verificar disco do jogo",
+    "launcher.disc_check_busy": "A verificar os ficheiros do jogo…",
+    "launcher.disc_check_no_game": "Escolha primeiro a pasta do jogo (Definições > Pasta do jogo).",
+    "launcher.disc_check_done": "Verificação guardada como {file} na pasta de registos. Envie esse ficheiro ou o texto copiado aos programadores.",
+    "launcher.disc_check_copy": "Copiar",
+    "launcher.disc_check_copied": "Copiado: cole-o na sua issue do GitHub ou na sua mensagem.",
+    "launcher.disc_check_open": "Abrir ficheiro"
   },
   "items": {
     "menu:sharpen": {
@@ -860,6 +867,10 @@
         "3": "Alto",
         "4": "Extremo"
       }
+    },
+    "menu:shader_prebuild": {
+      "name": "Compilar shaders antecipadamente",
+      "what": "Ao iniciar, compila em segundo plano os shaders da lista de shaders que vem com o port, para que os locais que vês pela primeira vez engasguem menos. O primeiro arranque após uma atualização ou após limpar a cache de shaders demora mais: o carregamento de uma fase espera que a compilação termine. A lista contém apenas receitas de compilação, nenhum código do jogo. Aplica-se no próximo arranque. Ativado por predefinição."
     }
   },
   "menu": {
@@ -1282,6 +1293,9 @@
     "High": "Alto",
     "Extreme": "Extremo",
     "Tree crowns look flat and too bright: the light inside them has no shadow between the layers of leaves. This darkens the light inside the crowns.": "As copas das árvores parecem planas e demasiado claras: a luz dentro delas não tem sombra entre as camadas de folhas. Isto escurece a luz dentro das copas.",
-    "Realistic tree shade": "Sombra realista das árvores"
+    "Realistic tree shade": "Sombra realista das árvores",
+    "Build shaders ahead": "Compilar shaders antecipadamente",
+    "At start, builds the shaders of the shader list that comes with the port in the background, so places you see for the first time stutter less. The first start after an update or after clearing the shader cache takes longer: loading a stage waits until the build is done. The list holds only build recipes, no game code. Applies at the next start. On by default.": "Ao iniciar, compila em segundo plano os shaders da lista de shaders que vem com o port, para que os locais que vês pela primeira vez engasguem menos. O primeiro arranque após uma atualização ou após limpar a cache de shaders demora mais: o carregamento de uma fase espera que a compilação termine. A lista contém apenas receitas de compilação, nenhum código do jogo. Aplica-se no próximo arranque. Ativado por predefinição.",
+    "Building shaders %u%%": "A compilar shaders %u%%"
   }
 }
