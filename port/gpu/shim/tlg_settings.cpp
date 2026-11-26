@@ -474,7 +474,7 @@ bool ReadFile(Values& v) {
     if (!file) {
         return false;
     }
-    char line[1024]; // key_map can be long
+    char line[2048]; // key_map can be long
     while (std::fgets(line, sizeof(line), file)) {
         std::string text{line};
         text.erase(text.find_last_not_of(" \t\r\n") + 1);

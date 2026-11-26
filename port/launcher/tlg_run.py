@@ -314,6 +314,10 @@ DEFAULT_KEYS = {
     'cross': 'Space', 'circle': 'Left Shift', 'square': 'E|Mouse Middle', 'triangle': 'Q|Mouse Left',
     'l1': '1', 'r1': '3|Mouse Right', 'l2': 'R', 'r2': 'F', 'l3': 'Z', 'r3': 'C', 'options': 'Return',
     'touchpad_left': 'Tab', 'touchpad_right': 'Backspace', 'up': 'I', 'down': 'K', 'left': 'J', 'right': 'L',
+    # No buttons: the left stick, the right stick and the simulated motion sensor (issue #104).
+    'move_up': 'W', 'move_down': 'S', 'move_left': 'A', 'move_right': 'D',
+    'camera_up': 'Up', 'camera_down': 'Down', 'camera_left': 'Left', 'camera_right': 'Right',
+    'tilt_right': 'T', 'tilt_left': 'G', 'shake': 'Y',
 }
 # Synced with tlg.ini both ways: the in-game menu saves them there.
 INI_KEYS = ('mouse_enabled', 'mouse_sensitivity', 'mouse_invert_y', 'key_map', 'menu_confirm')

@@ -550,6 +550,13 @@ PS4_BUTTONS = [
     ('touchpad_left', 'Touchpad (left)', 'photo mode'),
     ('touchpad_right', 'Touchpad (right)', 'pause'),
     ('up', 'D-pad up', None), ('down', 'D-pad down', None), ('left', 'D-pad left', None), ('right', 'D-pad right', None),
+    # Not buttons: the sticks and the motion sensor from the keyboard (issue #104).
+    ('move_up', 'Left stick up', 'move forward'), ('move_down', 'Left stick down', 'move back'),
+    ('move_left', 'Left stick left', 'move left'), ('move_right', 'Left stick right', 'move right'),
+    ('camera_up', 'Right stick up', 'camera up'), ('camera_down', 'Right stick down', 'camera down'),
+    ('camera_left', 'Right stick left', 'camera left'), ('camera_right', 'Right stick right', 'camera right'),
+    ('tilt_right', 'Tilt controller right', None), ('tilt_left', 'Tilt controller left', None),
+    ('shake', 'Shake controller', None),
 ]
 # Tk key names -> SDL key names (src/runtime_pad.c reads SDL names); letters and digits are the same.
 TK_TO_SDL = {
