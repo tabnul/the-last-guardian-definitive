@@ -3260,9 +3260,15 @@ class Launcher:
             url = report.issue_url(title, full, short)[0]
             zip_name = 'report-' + time.strftime('%Y%m%d-%H%M%S') + '.zip'
             clean_log = report.redact(log_text, names)[0] if log_text else None
-            if not report.leftover_home_paths((clean_log or '') + full, names):   # never save a leak
+            try:   # is this disc the same game as the tested US/EU ones (#105); checksums only
+                import disc_check
+                disc_text = report.redact(disc_check.report(self.settings.get('game_dir', '')), names)[0] \
+                    if self.settings.get('game_dir') else None
+            except Exception:
+                disc_text = None
+            if not report.leftover_home_paths((clean_log or '') + full + (disc_text or ''), names):   # never save a leak
                 try:
-                    report.write_zip(tlg_run.LOG_DIR / zip_name, full, clean_log, log_name)
+                    report.write_zip(tlg_run.LOG_DIR / zip_name, full, clean_log, log_name, disc_text)
                 except OSError:
                     pass
             self.root.after(0, lambda: (self.open(tlg_run.LOG_DIR), tlg_run.open_external(url),
