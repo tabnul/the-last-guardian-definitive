@@ -71,6 +71,38 @@ DECK_INI = {**GAME_LOWEND, 'upscaler': 'off', 'aa_row': '1', 'preset': '0', 'dla
             'frame_generation': '0'}
 
 
+# Issue #112: what the Deck entry sets on top of Low-end PC (its tlg.ini extras and the launcher's
+# resolution and frame rate). Picking the Deck saves what these were before; picking another
+# preset puts them back, or the defaults below when nothing was saved (an older launcher). Without
+# that the Deck's 1280x800 at 30 FPS stayed and the list showed the Deck again.
+DECK_EXTRA_INI = {k: v for k, v in DECK_INI.items() if GAME_LOWEND.get(k) != v}
+DECK_LEAVE_INI = {'upscaler': 'dlss', 'aa_row': '1', 'preset': '0', 'frame_generation': '0'}
+BEFORE_DECK = 'before_deck'  # launcher settings key: {'settings': {...}, 'ini': {...}}
+
+
+def remember_before_deck(settings, ini):
+    """Saves the values the Deck entry is about to change, unless the Deck setup is already on
+    (picking it twice must not save the Deck's own values)."""
+    if all(settings.get(k) == v for k, v in DECK_SETTINGS.items()) and \
+            all(ini.get(k) == v for k, v in DECK_EXTRA_INI.items()):
+        return
+    settings[BEFORE_DECK] = {'settings': {k: settings.get(k) for k in DECK_SETTINGS},
+                             'ini': {k: ini[k] for k in DECK_EXTRA_INI if k in ini}}
+
+
+def leave_deck(settings, ini, defaults):
+    """For a pick of another preset: ({setting: value}, {tlg.ini key: value}) that undo the Deck
+    entry. Only values that still are the Deck's change; one the player set since stays.
+    defaults: the launcher's default settings. Drops the saved values."""
+    saved = settings.pop(BEFORE_DECK, None) or {}
+    saved_settings, saved_ini = saved.get('settings') or {}, saved.get('ini') or {}
+    new_settings = {k: saved_settings.get(k) or defaults[k]
+                    for k, v in DECK_SETTINGS.items() if settings.get(k) == v}
+    new_ini = {k: saved_ini.get(k, DECK_LEAVE_INI[k])
+               for k, v in DECK_EXTRA_INI.items() if ini.get(k) == v and k in DECK_LEAVE_INI}
+    return new_settings, new_ini
+
+
 DECK_NAME = 'Steam Deck'
 DECK_INDEX = 3  # its place in launcher_presets, after Stock, Recommended and Low-end PC
 

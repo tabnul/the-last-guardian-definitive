@@ -2878,14 +2878,24 @@ class Launcher:
         if index < 0:
             return
         tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
-        tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', {**self.presets[index][1], 'game_smaa': 1})  # as the in-game menu (SetUpscaler)
-        self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
+        ini_path = tlg_run.USER_DIR / 'tlg.ini'
+        old_ini = tlg_run.read_ini(ini_path)
+        values = {**self.presets[index][1], 'game_smaa': 1}  # as the in-game menu (SetUpscaler)
         if index == preset_share.DECK_INDEX:  # the Steam Deck entry: its resolution and frame rate too
-            self.settings.update(preset_share.DECK_SETTINGS)
-            tlg_run.save_settings(self.settings)
-            for key, value in preset_share.DECK_SETTINGS.items():
-                box, values = self.combo_boxes[key]
-                box.current(values.index(value))
+            preset_share.remember_before_deck(self.settings, old_ini)
+            new_settings = dict(preset_share.DECK_SETTINGS)
+        else:  # leaving the Deck entry puts back what it changed (issue #112)
+            new_settings, leave_ini = preset_share.leave_deck(self.settings, old_ini, tlg_run.DEFAULT_SETTINGS)
+            values = {**leave_ini, **values}
+        tlg_run.update_ini(ini_path, values)
+        self.ini_stamp = self.ini_files_stamp()  # our own write: nothing to reload
+        self.settings.update(new_settings)
+        tlg_run.save_settings(self.settings)
+        for key, value in new_settings.items():
+            box, choices = self.combo_boxes[key]
+            if value in choices:
+                box.current(choices.index(value))
+        if new_settings:
             self.refresh_status()
         self.reload_ini()
         self.refresh_preset()
