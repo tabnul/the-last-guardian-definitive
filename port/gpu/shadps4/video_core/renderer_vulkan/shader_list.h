@@ -13,6 +13,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -55,7 +56,33 @@ struct List {
     std::vector<std::pair<std::string, std::vector<u8>>> keys; ///< pipeline key files
     u32 keys_refused = 0;         ///< version 3: keys this build does not read (key version)
     std::string keys_refused_why; ///< the reason of the last one
+    /// version 3: keys of kind OtherKeyKind (a key form this build does not read), as they are
+    std::vector<std::vector<u8>> other_keys;
 };
+
+/// A pipeline key kind kept in the list as it is (the second number of a portable key; the kinds
+/// this build reads are ShaderFields::KindGraphics and KindCompute).
+constexpr u32 OtherKeyKind = 2;
+
+/// The kind of a portable key (its second LEB128 number); ~0u when it is too short.
+inline u32 PortableKind(std::span<const u8> portable) {
+    size_t pos = 0;
+    u64 value = 0;
+    for (int field = 0; field < 2; ++field) {
+        value = 0;
+        for (int shift = 0;; shift += 7) {
+            if (pos >= portable.size() || shift > 63) {
+                return ~0u;
+            }
+            const u8 byte = portable[pos++];
+            value |= u64(byte & 0x7f) << shift;
+            if (!(byte & 0x80)) {
+                break;
+            }
+        }
+    }
+    return value > 0xffffffffull ? ~0u : u32(value);
+}
 
 /// Reads a list; nullopt (with the reason in `error`) when it is damaged, was made with other
 /// field lists (version 3, ShaderRecipe::PortableId()) or, a version 2 list, by a build with other
@@ -64,8 +91,10 @@ struct List {
 std::optional<List> Read(const std::filesystem::path& path, std::string& error);
 
 /// The program hashes a list names, for the game's side (which shaders are covered); empty with
-/// the reason in `error` when the list cannot be read.
-std::vector<u64> Programs(const std::filesystem::path& path, std::string& error);
+/// the reason in `error` when the list cannot be read. `key_names` (optional): the file names of
+/// its pipeline keys as this build names them, sorted.
+std::vector<u64> Programs(const std::filesystem::path& path, std::string& error,
+                          std::vector<std::string>* key_names = nullptr);
 
 /// Reads programs out of the game folder: the ps4_shader_cache entries of trico_bootp.psarc and
 /// trico_boot.psarc (the update first, as the game does) and files of the folder.

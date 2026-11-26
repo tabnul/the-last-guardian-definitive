@@ -269,6 +269,10 @@ std::optional<List> Read(const std::filesystem::path& path, std::string& error) 
         if (!raw) {
             // The key file of this build, named as this build names it.
             const auto portable = r.Blob();
+            if (r.ok && PortableKind(portable) == OtherKeyKind) {
+                list.other_keys.push_back(portable); // a key of another kind: kept as it is
+                continue;
+            }
             std::string name, why;
             if (auto bytes = KeyFromPortable(portable, name, why); bytes && r.ok) {
                 list.keys.emplace_back(std::move(name), std::move(*bytes));
@@ -292,12 +296,19 @@ std::optional<List> Read(const std::filesystem::path& path, std::string& error) 
     return list;
 }
 
-std::vector<u64> Programs(const std::filesystem::path& path, std::string& error) {
+std::vector<u64> Programs(const std::filesystem::path& path, std::string& error,
+                          std::vector<std::string>* key_names) {
     const auto list = Read(path, error);
     std::vector<u64> programs;
     if (list) {
         for (const auto& e : list->entries) {
             programs.push_back(e.pgm_hash);
+        }
+        if (key_names) {
+            for (const auto& [name, _bytes] : list->keys) {
+                key_names->push_back(name);
+            }
+            std::ranges::sort(*key_names);
         }
     }
     std::ranges::sort(programs);

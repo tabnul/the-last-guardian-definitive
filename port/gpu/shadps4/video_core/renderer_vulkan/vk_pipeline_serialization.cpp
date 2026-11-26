@@ -592,8 +592,11 @@ void RegisterPipelineData(const ComputePipelineKey& key,
     key.Serialize(ar);
     sdata.Serialize(ar);
 
+    // tlg: a key the shader list lacks goes into the log (ShaderRecipe::LogUnlistedKey).
+    auto bytes = ar.TakeOff();
+    ShaderRecipe::LogUnlistedKey(fmt::format("c_{:#018x}.key", key.value), bytes);
     Storage::DataBase::Instance().Save(Storage::BlobType::PipelineKey,
-                                       fmt::format("c_{:#018x}", key.value), ar.TakeOff());
+                                       fmt::format("c_{:#018x}", key.value), std::move(bytes));
 }
 
 void RegisterPipelineData(const GraphicsPipelineKey& key, u64 hash,
@@ -611,8 +614,11 @@ void RegisterPipelineData(const GraphicsPipelineKey& key, u64 hash,
     key.Serialize(ar);
     sdata.Serialize(ar);
 
+    // tlg: a key the shader list lacks goes into the log (ShaderRecipe::LogUnlistedKey).
+    auto bytes = ar.TakeOff();
+    ShaderRecipe::LogUnlistedKey(fmt::format("g_{:#018x}.key", hash), bytes);
     Storage::DataBase::Instance().Save(Storage::BlobType::PipelineKey,
-                                       fmt::format("g_{:#018x}", hash), ar.TakeOff());
+                                       fmt::format("g_{:#018x}", hash), std::move(bytes));
 }
 
 void RegisterShaderMeta(const Shader::Info& info,

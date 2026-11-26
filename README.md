@@ -64,7 +64,8 @@ No game files are included. You need your own copy, dumped from your own PS4.
   textures look rough up close on a modern screen. Our
   [generator](https://github.com/tabnul/ps4-texturepack-generator) builds a 4x texture pack from
   your own copy, with more detail in stone, moss, wood and cloth. Optional, and you can switch
-  it on and off while you play.
+  it on and off while you play. New (experimental): the launcher can build it for you, with
+  nothing to install.
 - **[Realistic tree shade](#graphics):** the game lights its trees oddly. The inside of a
   crown is as bright as the outside, so the trees look flat and over-exposed, with no shade
   between the layers of leaves. This setting adds that shade, so the crowns get depth. Five
@@ -204,7 +205,12 @@ Each setting shows what the game originally used and what we recommend.
 
   <img src="docs/screenshots/crops/LEAF_TREE_PAIR.png" alt="tree crown, tree shade off on the left and medium on the right">
 - **Texture pack (optional):** [ps4-texturepack-generator](https://github.com/tabnul/ps4-texturepack-generator)
-  makes a 4x texture pack from your own copy. It can be switched on and off while you play. See
+  makes a 4x texture pack from your own copy. It can be switched on and off while you play.
+  **Experimental:** *Image* > *Texture pack* > *Build a texture pack…* in the launcher downloads
+  a ready-made kit for NVIDIA, AMD (experimental) or CPU, on Windows and Linux, and builds the pack
+  for you. For now it upscales every texture, which needs about 160 GB free while building and
+  80 GB for the pack; a lighter build is planned in
+  [issue #43](https://github.com/tabnul/the-last-guardian-definitive/issues/43). See
   [docs/texture-pack.md](docs/texture-pack.md).
 
 The in-game menu also has:

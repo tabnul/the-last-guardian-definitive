@@ -19,6 +19,12 @@ further folder), for merge_recipes.py to merge them with the other recordings:
   merge_recipes.py --probe out/tlg-probe --profile <cache>/profile.bin MERGED RECORDED OUT/*
   tlg-probe --portable-recipes MERGED PORTABLE_FILE
   make_list.py MERGED GAME_DIR LIST --portable PORTABLE_FILE
+A line
+  Pipeline key (not in list): <key file name> <base64 of the zlib-packed portable key>
+(shader_recipe.cpp, LogUnlistedKey) names a pipeline the game made whose key the list lacks: it
+goes into the log's folder as <key file name>.pkey (the portable form; stage names and pipeline
+state, no game code). add_from_logs.py turns them into key files (tlg-probe --keys-from-portable)
+before merge_recipes.py, which keeps a key whose stages are this log's recipes or the list's.
 --payloads FILE writes the unpacked recipes exactly as the logs hold them, one after the other,
 for check_no_code.py --file FILE GAME_DIR (proof that the log lines hold no game code).
 Exit 0 when every recipe line was turned into a recipe file."""
@@ -35,6 +41,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import make_list as ml  # noqa: E402
 
 LINE = re.compile(r'Shader recipe \(not in list\): (0x[0-9a-f]{16})_(\d+) ([A-Za-z0-9+/]+=*)\s*$')
+# c_/g_ ...key: keys this build reads; v_ ...vkey: keys of another kind, already final.
+KEY_LINE = re.compile(r'Pipeline key \(not in list\): ([cg]_0x[0-9a-f]{16}\.key|v_0x[0-9a-f]{16}\.vkey) ([A-Za-z0-9+/]+=*)\s*$')
+KEY_LEFT_OUT = re.compile(r'Pipeline key \(not in list\): ([cgv]_0x[0-9a-f]{16}\.v?key) left out: (.*)$')
 LEFT_OUT = re.compile(r'Shader recipe \(not in list\): (0x[0-9a-f]{16}_\d+) left out: (.*)$')
 SCAN = 0x10000  # how far before a shader header in eboot.bin its program may start
 MAX_RECIPE = 1 << 20  # a logged recipe unpacks to a few KB at most; more is a damaged or forged line
@@ -118,12 +127,31 @@ def main():
     shaders = None
     payloads = bytearray()
     sizes, folders, problems = [], [], 0
-    written = left_out = 0
+    written = left_out = keys = 0
     for log in a.logs:
         stem = log.stem
         folder_of = {}  # name -> bytes written there, per folder of this log
         log_folders = []
         for number, line in enumerate(log.read_text(errors='replace').splitlines(), 1):
+            if m := KEY_LEFT_OUT.search(line):
+                print(f'{log.name}:{number}: key {m[1]} left out by the game ({m[2]})')
+                continue
+            if m := KEY_LINE.search(line):
+                try:
+                    key = unpack(m[2])
+                except (binascii.Error, zlib.error, ValueError) as e:
+                    print(f'{log.name}:{number}: key {m[1]}: damaged line ({e})')
+                    problems += 1
+                    continue
+                if not log_folders:
+                    log_folders.append(a.out / stem)
+                log_folders[0].mkdir(parents=True, exist_ok=True)
+                # a .vkey is kept as it is (merge_recipes.py and the list take it unchanged)
+                target = log_folders[0] / (m[1] if m[1].endswith('.vkey') else f'{m[1]}.pkey')
+                if not target.exists():
+                    target.write_bytes(key)
+                    keys += 1
+                continue
             if m := LEFT_OUT.search(line):
                 left_out += 1
                 print(f'{log.name}:{number}: {m[1]} left out by the game ({m[2]})')
@@ -170,7 +198,8 @@ def main():
     if a.payloads:
         a.payloads.write_bytes(bytes(payloads))
     print(f'{len(sizes)} recipe lines in {len(a.logs)} logs: {written} recipe files written into '
-          f'{len(folders)} folders, {problems} not usable, {left_out} shaders left out by the game')
+          f'{len(folders)} folders, {keys} pipeline keys, {problems} not usable, {left_out} shaders '
+          f'left out by the game')
     if sizes:
         typical = sorted(sizes)[len(sizes) // 2]
         print(f'line size: largest {max(sizes)} bytes, typical (median) {typical} bytes')

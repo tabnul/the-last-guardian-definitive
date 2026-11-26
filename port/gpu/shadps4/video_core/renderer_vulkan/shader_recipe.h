@@ -13,6 +13,7 @@
 
 #include <filesystem>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "common/types.h"
@@ -85,6 +86,16 @@ void WaitImport(const char* why, bool (*stop)(void*) = nullptr, void* stop_arg =
 int ImportChild(const std::filesystem::path& cache_dir, const std::filesystem::path& recipe_dir,
                 const std::filesystem::path& list_path = {},
                 const std::filesystem::path& game_dir = {}, u32 part = 0, u32 parts = 1);
+
+/// A pipeline the game made while playing whose key the shader list lacks: one log line per key
+/// and session, so players' logs alone can add the key to the list (log_recipes.py):
+///   Pipeline key (not in list): <key file name> <base64 of the zlib-packed portable key>
+/// The portable key (vk_pipeline_serialization.h PortableKey) holds stage hashes and pipeline
+/// state, no game code. Only while the shader list is used. `key_file`: the key file's bytes.
+void LogUnlistedKey(const std::string& name, std::span<const u8> key_file);
+/// The same line for a key already in its portable form (a key of another kind; the
+/// caller checks that the list lacks it and logs it once).
+void LogPortableKey(const std::string& name, std::span<const u8> portable);
 
 /// Counts a shader the game process translated itself (not from the cache): with
 /// shader_prebuild on or TLG_SHADER_BUILD_STATS=1 each is logged, so the list can grow.
