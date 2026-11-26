@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 // TLG_VKB_SHADER_PREBUILD: the new engine's shader list is the normal renderer's (owner decision 2026-11-24: one shipped list for both
-// renderers; way A of 2026-11-25). The list file is shader-list/<serial>.tlgsl next to the executable, made by
+// renderers; way A of 2026-11-25). The list file is shader-list/shaders.tlgsl next to the executable, made by
 // port/tools/shader-list/make_list.py and read by the normal renderer's own reader (video_core/renderer_vulkan/shader_list.h: its Read and
 // GameFiles, which only read files; port/gpu/shadps4 is not changed: principle 8). Each entry names one shader stage as the normal
 // renderer's translator was handed it, its program by where the player's game files hold it; Convert below turns it into the inputs of the
@@ -51,7 +51,7 @@ inline constexpr bool FixedDepthBeforeShader = false;
            (runtime.hw_stage == VkbShader::HwStage::Fragment && runtime.hw.fs.depth_before_shader != FixedDepthBeforeShader);
 }
 
-/// The list of this game: TLG_VKB_SHADER_LIST (a path; "0": none), else <serial>.tlgsl in shader-list/ next to the executable or one folder
+/// The list of this game: TLG_VKB_SHADER_LIST (a path; "0": none), else shaders.tlgsl in shader-list/ next to the executable or one folder
 /// above it (a build in port/out); the US game (CUSA03627) without a list of its own reads the European one's (CUSA03745: the same game
 /// files), and says so. Empty when there is none.
 [[nodiscard]] std::filesystem::path Path();

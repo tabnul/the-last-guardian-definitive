@@ -491,7 +491,7 @@ void Start(const std::filesystem::path& store_folder) {
     std::call_once(once, [&] {
         const auto list = ShaderList::Path();
         if (list.empty()) {
-            std::printf("Shader prebuild (new engine): no shader list for this game (shader-list/<serial>.tlgsl, the normal renderer's; TLG_VKB_SHADER_LIST)\n");
+            std::printf("Shader prebuild (new engine): no shader list for this game (shader-list/shaders.tlgsl, the normal renderer's; TLG_VKB_SHADER_LIST)\n");
             std::scoped_lock lock{S().mutex};
             S().outcome = "no list";
             return;
