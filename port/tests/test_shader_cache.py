@@ -94,6 +94,45 @@ class ShaderCacheTest(unittest.TestCase):
             self.assertFalse(path.exists(), path)
         self.assertTrue(shipped.exists())
 
+    def test_new_engine_store_is_counted_and_cleared(self):
+        """The new engine's shader store (TLG_VKB_SHADER_PREBUILD: translated stages, a write cut
+        by the end of a session) is in <serial>-vkb-shaders/ and goes with the rest; the shader
+        list shipped next to the executable stays."""
+        store = self.user / 'cache' / 'CUSA03627-vkb-shaders' / '0123456789abcdef'
+        before = shader_cache.size(['CUSA03627'], self.user, self.env)  # the rest of this game's cache (OS-dependent)
+        files = [store / '00000000deadbeef_1_1_0011223344556677.vst',
+                 store / '00000000deadbeef_0_0_8899aabbccddeeff.vst',
+                 store / '00000000deadbeef_0_0_0000000000000001.vst.tmp']
+        for path in files:
+            write(path, 100)
+        shipped = self.root / 'port' / 'shader-list' / 'CUSA03627.tlgsl'
+        write(shipped, 10)
+        self.assertEqual(shader_cache.size(['CUSA03627'], self.user, self.env), before + 300)
+        freed, failures = shader_cache.clear(['CUSA03627'], self.user, self.env)
+        self.assertEqual((freed, failures), (before + 300, []))
+        for path in files:
+            self.assertFalse(path.exists(), path)
+        self.assertFalse(store.parent.exists())
+        self.assertTrue(shipped.exists())
+
+    def test_new_engine_recipes_are_cleared(self):
+        """The new engine's shader recipes (TLG_VKB_SHADER_RECIPES) are in <serial>-vkb-recipes/: the
+        rule cache/<serial>* takes them with the store, and the store folder's profile.bin and
+        settings.txt with it."""
+        cache = self.user / 'cache'
+        before = shader_cache.size(['CUSA03627'], self.user, self.env)
+        files = [cache / 'CUSA03627-vkb-recipes' / '00000000deadbeef_1_1_0011223344556677.vkr',
+                 cache / 'CUSA03627-vkb-recipes' / '00000000deadbeef_4_4_8899aabbccddeeff.vkr.tmp',
+                 cache / 'CUSA03627-vkb-shaders' / '0123456789abcdef' / 'profile.bin',
+                 cache / 'CUSA03627-vkb-shaders' / '0123456789abcdef' / 'settings.txt']
+        for path in files:
+            write(path, 50)
+        freed, failures = shader_cache.clear(['CUSA03627'], self.user, self.env)
+        self.assertEqual((freed, failures), (before + 200, []))
+        for path in files:
+            self.assertFalse(path.exists(), path)
+        self.assertFalse((cache / 'CUSA03627-vkb-recipes').exists())
+
     def test_files_that_cannot_go_are_reported(self):
         if os.name == 'nt' or os.geteuid() == 0:
             self.skipTest('needs POSIX permissions without root')
