@@ -209,7 +209,9 @@ Each setting shows what the game originally used and what we recommend.
   **Experimental:** *Image* > *Texture pack* > *Build a texture pack…* in the launcher downloads
   a ready-made kit for NVIDIA, AMD (experimental) or CPU, on Windows and Linux, and builds the pack
   for you. For now it upscales every texture, which needs about 160 GB free while building and
-  80 GB for the pack. See [docs/texture-pack.md](docs/texture-pack.md).
+  80 GB for the pack; a lighter build is planned in
+  [issue #43](https://github.com/tabnul/the-last-guardian-definitive/issues/43). See
+  [docs/texture-pack.md](docs/texture-pack.md).
 
 The in-game menu also has:
 
