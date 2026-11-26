@@ -1081,9 +1081,13 @@ void LogUnlistedKey(const std::string& name, std::span<const u8> key_file) {
         std::printf("Pipeline key (not in list): %s left out: it %s\n", name.c_str(), why.c_str());
         return;
     }
-    mz_ulong packed_size = mz_compressBound(mz_ulong(portable->size()));
+    LogPortableKey(name, *portable);
+}
+
+void LogPortableKey(const std::string& name, std::span<const u8> portable) {
+    mz_ulong packed_size = mz_compressBound(mz_ulong(portable.size()));
     std::vector<u8> packed(packed_size);
-    if (mz_compress2(packed.data(), &packed_size, portable->data(), mz_ulong(portable->size()),
+    if (mz_compress2(packed.data(), &packed_size, portable.data(), mz_ulong(portable.size()),
                      9) != MZ_OK) {
         std::printf("Pipeline key (not in list): %s left out: it could not be packed\n",
                     name.c_str());
@@ -1761,13 +1765,16 @@ int PortableRecipes(const std::filesystem::path& recipe_dir, const std::filesyst
         return 2;
     }
 
-    std::vector<std::filesystem::path> ins, key_files;
+    std::vector<std::filesystem::path> ins, key_files, other_key_files;
     std::error_code error;
     for (const auto& entry : std::filesystem::directory_iterator{recipe_dir, error}) {
         if (entry.path().extension() == ".in") {
             ins.push_back(entry.path());
         } else if (entry.path().extension() == ".key") {
             key_files.push_back(entry.path());
+        } else if (entry.path().extension() == ".vkey") {
+            // a key of another kind, already in its portable form (log_recipes.py): as it is
+            other_key_files.push_back(entry.path());
         }
     }
     if (error) {
@@ -1776,6 +1783,7 @@ int PortableRecipes(const std::filesystem::path& recipe_dir, const std::filesyst
     }
     std::ranges::sort(ins);
     std::ranges::sort(key_files);
+    std::ranges::sort(other_key_files);
 
     u32 written = 0, refused = 0, v1 = 0, raw_same = 0;
     for (const auto& path : ins) {
@@ -1837,6 +1845,20 @@ int PortableRecipes(const std::filesystem::path& recipe_dir, const std::filesyst
         keys.Blob(*portable);
         ++key_count;
     }
+    u32 other_count = 0;
+    for (const auto& path : other_key_files) {
+        const auto data = ReadFile(path);
+        if (ShaderList::PortableKind(data) != ShaderList::OtherKeyKind) {
+            std::printf("portable-recipes: key %s skipped: not a key of kind %u\n",
+                        path.filename().string().c_str(), ShaderList::OtherKeyKind);
+            ++keys_refused;
+            continue;
+        }
+        keys.Text(path.filename().string());
+        keys.Blob(data);
+        ++key_count;
+        ++other_count;
+    }
 
     head.bytes = {'T', 'L', 'G', 'P', 'O', 'R', 'T', 'B'};
     head.Pod(u32{1});
@@ -1852,9 +1874,9 @@ int PortableRecipes(const std::filesystem::path& recipe_dir, const std::filesyst
     }
     std::printf("portable-recipes: %u recipes written (%u of them version 1, read on the struct "
                 "sizes alone; %u read back byte for byte as recorded), %u skipped; %u pipeline "
-                "keys written (%u under the recorded file name), %u skipped; "
+                "keys written (%u under the recorded file name, %u of kind 2 as they are), %u skipped; "
                 "portable id %#018llx, layout id %#018llx\n",
-                written, v1, raw_same, refused, key_count, keys_same, keys_refused,
+                written, v1, raw_same, refused, key_count, keys_same, other_count, keys_refused,
                 static_cast<unsigned long long>(PortableId()),
                 static_cast<unsigned long long>(LayoutId()));
     return refused || keys_refused ? 1 : 0;

@@ -136,6 +136,7 @@ def main():
         sys.exit(f'{out} exists and is not empty')
     result = {}   # program -> {perm: recipe bytes}
     keys = {}     # file name -> bytes
+    other_keys = {}  # .vkey file name -> bytes (keys of another kind, as they are)
     caches = []   # per folder: its import's cache
     maps = []     # per folder: {(program, own perm): perm in the result}
     with tempfile.TemporaryDirectory() as tmp:
@@ -216,6 +217,12 @@ def main():
                     renamed += 1
                 keys[name] = data
                 taken += 1
+            # Keys of another kind (.vkey, log_recipes.py): they name the list's own shaders, which keep
+            # their names here; taken as they are, once.
+            for f in sorted(folder.glob('*.vkey')):
+                data = f.read_bytes()
+                if data not in other_keys.values():
+                    other_keys.setdefault(f.name, data)
             print(f'{folder}: recipes {kept} as they are, {matched} the same shader as one '
                   f'already there, {renumbered} new settings renumbered; keys {taken} taken '
                   f'({changed} with stages renamed), {dup} already there, {unknown} left out (a '
@@ -232,8 +239,10 @@ def main():
             (out / f'{program:#018x}_{perm}.in').write_bytes(data)
     for name, data in keys.items():
         (out / name).write_bytes(data)
+    for name, data in other_keys.items():
+        (out / name).write_bytes(data)
     print(f'{out}: {len(result)} programs, {sum(len(p) for p in result.values())} recipes, '
-          f'{len(keys)} keys')
+          f'{len(keys)} keys, {len(other_keys)} keys of another kind')
 
 
 if __name__ == '__main__':
