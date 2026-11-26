@@ -193,7 +193,9 @@ Each setting shows what the game originally used and what we recommend.
   never visited stutter less. The list holds only build recipes, no game code: the shaders are
   made from your own game files. Loading a stage waits until the build is done, so the first
   start takes a little longer. **Build shaders ahead** (in-game menu, Performance; launcher,
-  Advanced settings) turns it off; on by default. When the game still has to build a shader
+  Advanced settings) turns it off; on by default for the normal renderer. The new engine
+  (`TLG_VKB=1`) does not use this setting: its own pre-build is `TLG_VKB_SHADER_PREBUILD`, off by
+  default. When the game still has to build a shader
   the list lacks, it writes one line "Shader recipe (not in list)" into its log (build settings
   only, no game code): posting such a log in an issue helps make the list complete.
 - **Wind and grass:** the stock wind looks like a storm on PC. You can set it separately for the

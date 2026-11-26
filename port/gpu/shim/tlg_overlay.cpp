@@ -1037,7 +1037,9 @@ void PerformanceTab() {
                  TR("At start, builds the shaders of the shader list that comes with the port in the background, so "
                     "places you see for the first time stutter less. The first start after an update or after "
                     "clearing the shader cache takes longer: loading a stage waits until the build is done. The list "
-                    "holds only build recipes, no game code. Applies at the next start. On by default."),
+                    "holds only build recipes, no game code. Applies at the next start. On by default for the normal "
+                    "renderer; the new engine (TLG_VKB=1) uses its own switch TLG_VKB_SHADER_PREBUILD, off by "
+                    "default."),
                  d.shader_prebuild);
         // Test switches for the buffer memory return of v0.5.2 (SotC port), issue #38.
         CheckRow(TR("Debug: give back freed buffer memory"), s.arena_release,
