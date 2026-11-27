@@ -2555,7 +2555,9 @@ class Launcher:
                                      fill=ACCENT)
             label = c.create_text(left + 95, height - 36, text=play_text, fill=BG, font=(SERIF, 13))
             c.create_window(300, 40, window=self.panel, anchor='nw', width=width - 340, height=height - 80)
-        self.home_items['status'] = c.create_text(left, status_y, text='', anchor='w', fill=MUTED,
+        # Anchored at the bottom: a long message wraps upward only, so it never covers the cache
+        # and music links or PLAY below it (issue #114: the narrow side column took 5 lines).
+        self.home_items['status'] = c.create_text(left, status_y + 9, text='', anchor='sw', fill=MUTED,
                                                   font=(SERIF, 11 if home else 10, 'italic'), width=status_width)
         cache = c.create_text(left, cache_y, text=self.t('home_cache'), anchor='w', fill=MUTED,
                               font=(SERIF, 9), tags='cache')
@@ -3761,6 +3763,15 @@ class Launcher:
             self.root.clipboard_clear()
             self.root.clipboard_append(text)
             note.configure(text=self.t('disc_check_copied'))
+
+        def closed(event):
+            # The 'saved as' line has done its job once the window is gone (issue #114: it stayed
+            # in the status line until a restart). Left alone if something newer replaced it.
+            if event.widget is win and self.status.winfo_exists() and \
+                    self.status.cget('text') == self.t('disc_check_done', file=path.name):
+                self.status.configure(text='')
+                self.refresh_home()
+        win.bind('<Destroy>', closed)
         ttk.Button(buttons, text=self.t('close'), command=win.destroy).pack(side='right')
         ttk.Button(buttons, text=self.t('disc_check_open'), command=lambda: tlg_run.open_external(path)).pack(
             side='right', padx=(0, 6))
@@ -3770,6 +3781,19 @@ class Launcher:
         self.root.clipboard_clear()
         self.root.clipboard_append(tlg_run.play_command())
         self.home.itemconfig(self.home_items['status'], text=self.t('copy_command'))
+        # Back to the normal status line after a few seconds (issue #114).
+        if getattr(self, 'copy_note_timer', None):
+            self.root.after_cancel(self.copy_note_timer)
+        self.copy_note_timer = self.root.after(8000, self.end_copy_note)
+
+    def end_copy_note(self):
+        self.copy_note_timer = None
+        item = self.home_items.get('status') if getattr(self, 'home_items', None) else None
+        try:
+            if item and self.home.itemcget(item, 'text') == self.t('copy_command'):
+                self.refresh_home()
+        except tk.TclError:   # page redrawn or closed meanwhile: nothing to put back
+            pass
 
     def toggle_music(self, item):
         on = not self.settings.get('menu_music', True)
