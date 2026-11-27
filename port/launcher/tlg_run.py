@@ -324,7 +324,11 @@ INI_KEYS = ('mouse_enabled', 'mouse_sensitivity', 'mouse_invert_y', 'key_map', '
 
 
 def key_map_spec(mapping):
-    """The tlg.ini key_map value: only the buttons that differ from the defaults."""
+    """The tlg.ini key_map value: only the buttons that differ from the defaults. A ',' key
+    (typed in, or saved by an older launcher) goes out as "Comma": ',' splits the entries."""
+    def comma(value):
+        return '|'.join('Comma' if part.strip() == ',' else part.strip() for part in value.split('|'))
+    mapping = {button: comma(value) for button, value in mapping.items()}
     return ','.join(f'{button}={value.strip()}' for button, value in mapping.items()
                     if button in DEFAULT_KEYS and value.strip() and value.strip() != DEFAULT_KEYS[button])
 

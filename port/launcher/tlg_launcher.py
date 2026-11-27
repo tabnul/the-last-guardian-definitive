@@ -629,15 +629,26 @@ TK_TO_SDL = {
     'Control_R': 'Right Ctrl', 'Alt_L': 'Left Alt', 'Alt_R': 'Right Alt', 'Return': 'Return', 'Tab': 'Tab',
     'BackSpace': 'Backspace', 'Up': 'Up', 'Down': 'Down', 'Left': 'Left', 'Right': 'Right', 'Delete': 'Delete',
     'Insert': 'Insert', 'Home': 'Home', 'End': 'End', 'Prior': 'PageUp', 'Next': 'PageDown',
-    'Caps_Lock': 'CapsLock', 'comma': ',', 'period': '.', 'minus': '-', 'equal': '=', 'slash': '/',
+    # The comma is "Comma": a bare ',' splits the key_map entries (issue #115).
+    'Caps_Lock': 'CapsLock', 'comma': 'Comma', 'period': '.', 'minus': '-', 'equal': '=', 'slash': '/',
     'semicolon': ';', 'apostrophe': "'", 'bracketleft': '[', 'bracketright': ']', 'backslash': '\\',
     'grave': '`', 'KP_Enter': 'Keypad Enter',
+    # The rest of the numpad (issue #115); with NumLock off Tk names the digits by their arrows.
+    'KP_Add': 'Keypad +', 'KP_Subtract': 'Keypad -', 'KP_Multiply': 'Keypad *', 'KP_Divide': 'Keypad /',
+    'KP_Decimal': 'Keypad .', 'KP_Delete': 'Keypad .', 'KP_Insert': 'Keypad 0', 'KP_End': 'Keypad 1',
+    'KP_Down': 'Keypad 2', 'KP_Next': 'Keypad 3', 'KP_Left': 'Keypad 4', 'KP_Begin': 'Keypad 5',
+    'KP_Right': 'Keypad 6', 'KP_Home': 'Keypad 7', 'KP_Up': 'Keypad 8', 'KP_Prior': 'Keypad 9',
 }
+# Windows key codes of the numpad: Tk there may name its keys as the main ones ('8', 'Up').
+WIN_NUMPAD = {**{0x60 + n: f'Keypad {n}' for n in range(10)}, 0x6A: 'Keypad *', 0x6B: 'Keypad +',
+              0x6D: 'Keypad -', 0x6E: 'Keypad .', 0x6F: 'Keypad /'}
 TK_MOUSE = {1: 'Mouse Left', 2: 'Mouse Middle', 3: 'Mouse Right', 8: 'Mouse X1', 9: 'Mouse X2'}
 
 
-def sdl_key_name(keysym):
+def sdl_key_name(keysym, keycode=None):
     """The SDL name of a Tk key, or None (Esc releases the mouse in game; F-keys are the port's)."""
+    if sys.platform == 'win32' and keycode in WIN_NUMPAD:
+        return WIN_NUMPAD[keycode]
     if keysym in TK_TO_SDL:
         return TK_TO_SDL[keysym]
     if len(keysym) == 1 and keysym.isalnum():
@@ -3047,7 +3058,7 @@ class Launcher:
                 if event.keysym == 'Escape':
                     done(None)
                 else:
-                    done(sdl_key_name(event.keysym))
+                    done(sdl_key_name(event.keysym, event.keycode))
                 return 'break'
 
             def mouse(event):

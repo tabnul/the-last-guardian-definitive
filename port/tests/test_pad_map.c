@@ -6,6 +6,8 @@
 void tlggpu_pad_game_buttons(uint32_t buttons) { (void)buttons; }
 void tlggpu_pad_kind(int xbox) { (void)xbox; }
 int tlggpu_overlay_captures_input(void) { return 0; }
+int tlggpu_photo_takes_pad(uint8_t lx, uint8_t ly, uint8_t rx, uint8_t ry) { (void)lx; (void)ly; (void)rx; (void)ry; return 0; }
+void tlggpu_overlay_notice(const char *text, float seconds) { (void)text; (void)seconds; }
 void tlggpu_mouse_take(TlgGpuMouse *m) { memset(m,0,sizeof(*m)); }
 void tlggpu_input_settings(TlgGpuInputSettings *s) { memset(s,0,sizeof(*s)); }
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *name) {
@@ -83,6 +85,9 @@ int main(void) {
      * is free for a button and no longer moves; the gamepad map does not take these names. */
     assert(pressed_by(&key_map,SDL_SCANCODE_W)==KEY_MOVE_UP && pressed_by(&key_map,SDL_SCANCODE_LEFT)==KEY_CAM_LEFT);
     assert(pressed_by(&key_map,SDL_SCANCODE_T)==KEY_TILT_RIGHT && pressed_by(&key_map,SDL_SCANCODE_Y)==KEY_SHAKE);
+    ButtonMap comma=key_map; /* issue #115: the comma key by name, a bare ',' is the separator */
+    assert(apply_button_map(&comma,"camera_left=Comma,camera_right=;",true)==2);
+    assert(pressed_by(&comma,SDL_SCANCODE_COMMA)==KEY_CAM_LEFT && pressed_by(&comma,SDL_SCANCODE_SEMICOLON)==KEY_CAM_RIGHT);
     ButtonMap move=key_map;
     assert(apply_button_map(&move,"move_up=E,move_down=D,move_left=S,move_right=F,square=W,r2=A,camera_left=Keypad 4,shake=none",true)==8);
     assert(pressed_by(&move,SDL_SCANCODE_E)==KEY_MOVE_UP && pressed_by(&move,SDL_SCANCODE_D)==KEY_MOVE_DOWN);

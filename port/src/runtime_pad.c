@@ -208,7 +208,8 @@ static SDL_Gamepad *current_gamepad(void) {
  * changed per PS4 button with TLG_PAD_MAP (gamepad) and TLG_KEY_MAP (keyboard), e.g.
  * TLG_KEY_MAP="cross=Q,square=Left Shift" or TLG_PAD_MAP="cross=b,circle=a": comma-separated
  * <ps4 button>=<SDL key or gamepad button name>. A mapped PS4 button loses its default sources;
- * '|' gives it several ("triangle=Q|Mouse Left") and "none" leaves it without any. The keyboard
+ * '|' gives it several ("triangle=Q|Mouse Left") and "none" leaves it without any. The comma
+ * key is "Comma" (a bare ',' would split the entry). The keyboard
  * map also takes the mouse: Mouse Left/Middle/Right/X1/X2, Wheel Up/Down/Left/Right.
  * touchpad_left (alias touchpad) and touchpad_right are the two sides of the touchpad click:
  * photo mode and the pause menu. Back/View (Share on a DualSense) is the right click, and with
@@ -287,6 +288,8 @@ static int source_from_name(const char *name, bool keyboard) {
         return b>SDL_GAMEPAD_BUTTON_INVALID ? (int)b : -1;
     }
     for (size_t i=0;i<sizeof(mouse_names)/sizeof(*mouse_names);++i) if (!SDL_strcasecmp(name,mouse_names[i].name)) return mouse_names[i].source;
+    /* SDL calls the comma key ",", which is the entry separator here (issue #115). */
+    if (!SDL_strcasecmp(name,"Comma")) return SDL_SCANCODE_COMMA;
     const SDL_Scancode k=SDL_GetScancodeFromName(name);
     return k>SDL_SCANCODE_UNKNOWN ? (int)k : -1;
 }
